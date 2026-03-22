@@ -1,0 +1,47 @@
+# Ruby
+*.gem
+.bundle/
+vendor/bundle/
+
+# Rails
+/log/*
+!/log/.keep
+/tmp/*
+!/tmp/.keep
+/storage/*
+!/storage/.keep
+/db/*.sqlite3*
+/public/assets
+/public/packs
+
+# Environment
+.env
+.env.local
+.env.*.local
+config/master.key
+config/credentials/*.key
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Node (Chrome Extension)
+node_modules/
+dist/
+.cache/
+
+# Docker
+docker-compose.override.yml
+
+# Coverage
+coverage/
+
+# Byebug
+.byebug_history
