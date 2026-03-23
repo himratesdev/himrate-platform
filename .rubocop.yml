@@ -1,0 +1,7 @@
+# Omakase Ruby styling for Rails
+inherit_gem: { rubocop-rails-omakase: rubocop.yml }
+
+# HimRate house style
+Style/FrozenStringLiteralComment:
+  Enabled: true
+  EnforcedStyle: always

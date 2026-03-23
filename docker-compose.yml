@@ -1,0 +1,77 @@
+# FR-002: Docker Compose — 4 сервиса для локальной разработки
+# PostgreSQL 16 + Redis 7 + Rails 8 (Puma) + Sidekiq 7
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-himrate}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-himrate_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-himrate_development}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: pg_isready -U ${POSTGRES_USER:-himrate}
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: redis-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+
+  web:
+    build: .
+    command: bundle exec puma -C config/puma.rb
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: curl -f http://localhost:3000/health || exit 1
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    environment:
+      RAILS_ENV: ${RAILS_ENV:-development}
+      DATABASE_URL: postgres://${POSTGRES_USER:-himrate}:${POSTGRES_PASSWORD:-himrate_dev}@db:5432/${POSTGRES_DB:-himrate_development}
+      REDIS_URL: redis://redis:6379/0
+      RAILS_LOG_TO_STDOUT: "true"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/rails
+      - bundle_cache:/usr/local/bundle
+
+  sidekiq:
+    build: .
+    command: bundle exec sidekiq
+    environment:
+      RAILS_ENV: ${RAILS_ENV:-development}
+      DATABASE_URL: postgres://${POSTGRES_USER:-himrate}:${POSTGRES_PASSWORD:-himrate_dev}@db:5432/${POSTGRES_DB:-himrate_development}
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - .:/rails
+      - bundle_cache:/usr/local/bundle
+
+volumes:
+  postgres_data:
+  redis_data:
+  bundle_cache:
