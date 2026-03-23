@@ -1,0 +1,100 @@
+# HimRate — Kamal Deployment Configuration
+# Staging + Production on single VPS (194.135.85.159)
+
+service: himrate
+image: ghcr.io/himratesdev/himrate-platform
+
+servers:
+  web:
+    hosts:
+      - 194.135.85.159
+  job:
+    hosts:
+      - 194.135.85.159
+    cmd: bundle exec sidekiq
+
+proxy:
+  ssl: true
+  host: himrate.com
+
+registry:
+  server: ghcr.io
+  username: himratesdev
+  password:
+    - KAMAL_REGISTRY_PASSWORD
+
+env:
+  secret:
+    - RAILS_MASTER_KEY
+    - DATABASE_URL
+    - REDIS_URL
+  clear:
+    RAILS_LOG_TO_STDOUT: true
+    RAILS_SERVE_STATIC_FILES: true
+    WEB_CONCURRENCY: 2
+
+# Accessories: PostgreSQL + Redis on the same VPS
+accessories:
+  db:
+    image: postgres:16
+    host: 194.135.85.159
+    port: "127.0.0.1:5432:5432"
+    env:
+      secret:
+        - POSTGRES_PASSWORD
+      clear:
+        POSTGRES_USER: himrate
+        POSTGRES_DB: himrate_production
+    directories:
+      - himrate_pgdata:/var/lib/postgresql/data
+  redis:
+    image: redis:7
+    host: 194.135.85.159
+    port: "127.0.0.1:6379:6379"
+    directories:
+      - himrate_redis:/data
+
+volumes:
+  - "himrate_storage:/rails/storage"
+
+asset_path: /rails/public/assets
+
+builder:
+  arch: amd64
+
+aliases:
+  console: app exec --interactive --reuse "bin/rails console"
+  shell: app exec --interactive --reuse "bash"
+  logs: app logs -f
+
+# === DESTINATIONS ===
+# Staging and Production on the SAME server, different configs
+
+destinations:
+  staging:
+    proxy:
+      ssl: true
+      host: staging.himrate.com
+    env:
+      clear:
+        RAILS_ENV: staging
+        WEB_CONCURRENCY: 1
+    accessories:
+      db:
+        env:
+          clear:
+            POSTGRES_DB: himrate_staging
+
+  production:
+    proxy:
+      ssl: true
+      host: api.himrate.com
+    env:
+      clear:
+        RAILS_ENV: production
+        WEB_CONCURRENCY: 2
+    accessories:
+      db:
+        env:
+          clear:
+            POSTGRES_DB: himrate_production
