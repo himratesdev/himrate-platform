@@ -8,6 +8,9 @@ Rails.application.configure do
   # Code is not reloaded between requests.
   config.enable_reloading = false
 
+  # Use Sidekiq for background jobs (not Solid Queue)
+  config.active_job.queue_adapter = :sidekiq
+
   # Eager load code on boot for better performance and memory savings (ignored by Rake tasks).
   config.eager_load = true
 
