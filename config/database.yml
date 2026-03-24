@@ -22,10 +22,7 @@ default: &default
 
 development:
   <<: *default
-  database: himrate_development
-  username: <%= ENV.fetch("POSTGRES_USER", "himrate") %>
-  password: <%= ENV.fetch("POSTGRES_PASSWORD", "himrate_dev") %>
-  host: <%= ENV.fetch("DB_HOST", "localhost") %>
+  url: <%= ENV.fetch("DATABASE_URL", "postgres://himrate:himrate_dev@localhost:5432/himrate_development") %>
 
 # Warning: The database defined as "test" will be erased and
 # re-generated from your development database when you run "rake".
