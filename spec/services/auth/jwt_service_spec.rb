@@ -29,7 +29,7 @@ RSpec.describe Auth::JwtService do
   describe "forged token" do
     it "raises AuthError for invalid token" do
       expect { described_class.decode("forged.token.here") }
-        .to raise_error(Auth::JwtService::AuthError)
+        .to raise_error(Auth::AuthError)
     end
   end
 end

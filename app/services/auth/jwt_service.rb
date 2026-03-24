@@ -20,7 +20,7 @@ module Auth
       payload = JWT.decode(token, SECRET, true, algorithm: ALGORITHM).first
       payload.symbolize_keys
     rescue JWT::DecodeError, JWT::ExpiredSignature => e
-      raise AuthError, e.message
+      raise Auth::AuthError, e.message
     end
 
     def self.encode(user_id, type:, ttl:)
@@ -32,7 +32,5 @@ module Auth
       }
       JWT.encode(payload, SECRET, ALGORITHM)
     end
-
-    class AuthError < StandardError; end
   end
 end

@@ -1,6 +1,8 @@
 # frozen_string_literal: true
 
 module Auth
+  class AuthError < StandardError; end
+
   class TwitchOauth
     AUTHORIZE_URL = "https://id.twitch.tv/oauth2/authorize"
     TOKEN_URL = "https://id.twitch.tv/oauth2/token"
@@ -54,7 +56,7 @@ module Auth
         code_verifier: code_verifier
       })
 
-      raise Auth::JwtService::AuthError, "Twitch token exchange failed: #{response.status}" unless response.status.success?
+      raise Auth::AuthError, "Twitch token exchange failed: #{response.status}" unless response.status.success?
 
       JSON.parse(response.body, symbolize_names: true)
     end
@@ -65,54 +67,56 @@ module Auth
         .headers("Client-Id" => @client_id)
         .get(USER_URL)
 
-      raise Auth::JwtService::AuthError, "Twitch user fetch failed: #{response.status}" unless response.status.success?
+      raise Auth::AuthError, "Twitch user fetch failed: #{response.status}" unless response.status.success?
 
       JSON.parse(response.body, symbolize_names: true)[:data].first
     end
 
-    # FR-005: Auto-create user + FR-006: Streamer Mode
+    # FR-005 + FR-006: Atomic find_or_create with transaction (Must Fix #1)
     def find_or_create_user(twitch_user, tokens)
-      auth_provider = AuthProvider.find_by(
-        provider: "twitch",
-        provider_id: twitch_user[:id]
-      )
-
-      if auth_provider
-        # Existing user — update tokens
-        auth_provider.update!(
-          access_token: tokens[:access_token],
-          refresh_token: tokens[:refresh_token],
-          expires_at: Time.current + tokens[:expires_in].to_i.seconds,
-          scopes: SCOPES.split(" ")
-        )
-        user = auth_provider.user
-      else
-        # New user — create
-        user = User.create!(
-          email: twitch_user[:email],
-          username: twitch_user[:login],
-          role: determine_role(twitch_user[:broadcaster_type]),
-          tier: "free"
-        )
-
-        AuthProvider.create!(
-          user: user,
+      ActiveRecord::Base.transaction do
+        auth_provider = AuthProvider.find_by(
           provider: "twitch",
-          provider_id: twitch_user[:id],
-          access_token: tokens[:access_token],
-          refresh_token: tokens[:refresh_token],
-          expires_at: Time.current + tokens[:expires_in].to_i.seconds,
-          scopes: SCOPES.split(" "),
-          is_broadcaster: streamer?(twitch_user[:broadcaster_type])
+          provider_id: twitch_user[:id]
         )
-      end
 
-      # FR-006: Update role if broadcaster status changed
-      if streamer?(twitch_user[:broadcaster_type]) && user.role != "streamer"
-        user.update!(role: "streamer")
-      end
+        if auth_provider
+          auth_provider.update!(
+            access_token: tokens[:access_token],
+            refresh_token: tokens[:refresh_token],
+            expires_at: Time.current + tokens[:expires_in].to_i.seconds,
+            scopes: SCOPES.split(" ")
+          )
+          user = auth_provider.user
+        else
+          user = User.create!(
+            email: twitch_user[:email],
+            username: twitch_user[:login],
+            role: determine_role(twitch_user[:broadcaster_type]),
+            tier: "free"
+          )
 
-      user
+          AuthProvider.create!(
+            user: user,
+            provider: "twitch",
+            provider_id: twitch_user[:id],
+            access_token: tokens[:access_token],
+            refresh_token: tokens[:refresh_token],
+            expires_at: Time.current + tokens[:expires_in].to_i.seconds,
+            scopes: SCOPES.split(" "),
+            is_broadcaster: streamer?(twitch_user[:broadcaster_type])
+          )
+        end
+
+        if streamer?(twitch_user[:broadcaster_type]) && user.role != "streamer"
+          user.update!(role: "streamer")
+        end
+
+        user
+      end
+    rescue ActiveRecord::RecordNotUnique
+      # Race condition: retry once (another request created the record)
+      retry
     end
 
     def determine_role(broadcaster_type)
