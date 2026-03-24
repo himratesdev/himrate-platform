@@ -111,6 +111,9 @@ jobs:
           TWITCH_CLIENT_ID=${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET=${{ secrets.TWITCH_CLIENT_SECRET }}
           TWITCH_REDIRECT_URI=https://staging.himrate.com/api/v1/auth/twitch/callback
+          ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
+          ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
+          ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
           SECRETS
       - name: Deploy to staging
         run: kamal setup -d staging
