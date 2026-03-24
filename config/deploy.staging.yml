@@ -1,0 +1,17 @@
+# HimRate — Kamal Staging Destination
+# Overrides config/deploy.yml for staging environment
+
+proxy:
+  ssl: true
+  host: staging.himrate.com
+
+env:
+  clear:
+    RAILS_ENV: staging
+    WEB_CONCURRENCY: 1
+
+accessories:
+  db:
+    env:
+      clear:
+        POSTGRES_DB: himrate_staging
