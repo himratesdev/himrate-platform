@@ -1,11 +1,24 @@
 # frozen_string_literal: true
 
-# This file should ensure the existence of records required to run the application in every environment (production,
-# development, test). The code here should be idempotent so that it can be executed at any point in every environment.
-# The data can then be loaded with the bin/rails db:seed command (or created alongside the database with db:setup).
-#
-# Example:
-#
-#   ["Action", "Comedy", "Drama", "Horror"].each do |genre_name|
-#     MovieGenre.find_or_create_by!(name: genre_name)
-#   end
+# Seed data for development/test (FR-008 → US-003)
+
+user = User.find_or_create_by!(email: "dev@himrate.com") do |u|
+  u.username = "dev_user"
+  u.role = "viewer"
+  u.tier = "free"
+end
+
+channel = Channel.find_or_create_by!(twitch_id: "12345678") do |c|
+  c.login = "test_streamer"
+  c.display_name = "Test Streamer"
+  c.broadcaster_type = "partner"
+  c.is_monitored = true
+end
+
+Stream.find_or_create_by!(channel: channel, started_at: 1.hour.ago) do |s|
+  s.title = "Test Stream"
+  s.game_name = "Just Chatting"
+  s.language = "en"
+end
+
+puts "Seed complete: 1 user, 1 channel, 1 stream"
