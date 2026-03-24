@@ -30,6 +30,7 @@ gem "redis", "~> 5.0"
 
 # Background jobs
 gem "sidekiq", "~> 7.0"
+gem "connection_pool", "~> 2.5"
 
 # RSpec for testing
 group :development, :test do
