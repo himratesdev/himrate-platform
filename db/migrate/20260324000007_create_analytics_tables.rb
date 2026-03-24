@@ -59,7 +59,7 @@ class CreateAnalyticsTables < ActiveRecord::Migration[8.0]
     end
 
     create_table :streamer_reputations, id: :uuid do |t|
-      t.references :channel, type: :uuid, null: false, foreign_key: true
+      t.references :channel, type: :uuid, null: false, foreign_key: true, index: false
       t.decimal :growth_pattern_score, precision: 5, scale: 2
       t.decimal :follower_quality_score, precision: 5, scale: 2
       t.decimal :engagement_consistency_score, precision: 5, scale: 2
@@ -69,7 +69,7 @@ class CreateAnalyticsTables < ActiveRecord::Migration[8.0]
     add_index :streamer_reputations, :channel_id, unique: true
 
     create_table :post_stream_reports, id: :uuid do |t|
-      t.references :stream, type: :uuid, null: false, foreign_key: true
+      t.references :stream, type: :uuid, null: false, foreign_key: true, index: false
       t.integer :erv_final
       t.decimal :erv_percent_final, precision: 5, scale: 2
       t.decimal :trust_index_final, precision: 5, scale: 2

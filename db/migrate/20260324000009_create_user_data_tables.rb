@@ -24,10 +24,10 @@ class CreateUserDataTables < ActiveRecord::Migration[8.0]
       t.datetime :added_at, null: false
     end
 
-    add_index :known_bot_list, :username, unique: true
+    add_index :known_bot_lists, :username, unique: true
 
     create_table :channel_protection_configs, id: :uuid do |t|
-      t.references :channel, type: :uuid, null: false, foreign_key: true
+      t.references :channel, type: :uuid, null: false, foreign_key: true, index: false
       t.integer :followers_only_duration_min
       t.integer :slow_mode_seconds
       t.boolean :emote_only_enabled, null: false, default: false
