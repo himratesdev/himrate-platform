@@ -1,5 +1,6 @@
 # HimRate — Kamal Deployment Configuration
 # Staging + Production on single VPS (194.135.85.159)
+# Destinations: config/deploy.staging.yml, config/deploy.production.yml
 
 service: himrate
 image: himratesdev/himrate-platform
