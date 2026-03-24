@@ -1,8 +1,6 @@
 # frozen_string_literal: true
 
 module Auth
-  class AuthError < StandardError; end
-
   class TwitchOauth
     AUTHORIZE_URL = "https://id.twitch.tv/oauth2/authorize"
     TOKEN_URL = "https://id.twitch.tv/oauth2/token"

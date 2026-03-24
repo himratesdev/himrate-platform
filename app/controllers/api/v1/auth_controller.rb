@@ -58,8 +58,10 @@ module Api
           }
         }
       rescue Auth::AuthError => e
+        Rails.logger.error("Auth failed: #{e.class} #{e.message}")
         render json: { error: "TWITCH_AUTH_FAILED", message: e.message }, status: :unauthorized
-      rescue Errno::ECONNREFUSED, HTTP::TimeoutError
+      rescue Errno::ECONNREFUSED, HTTP::TimeoutError => e
+        Rails.logger.error("Twitch API unavailable: #{e.class} #{e.message}")
         render json: { error: "TWITCH_UNAVAILABLE", message: "Twitch API unavailable" }, status: :service_unavailable
       end
 
@@ -82,8 +84,10 @@ module Api
 
         render json: { access_token: access_token, refresh_token: new_refresh, expires_in: 3600 }
       rescue Auth::AuthError => e
+        Rails.logger.error("Token refresh failed: #{e.class} #{e.message}")
         render json: { error: "INVALID_TOKEN", message: e.message }, status: :unauthorized
       rescue ActiveRecord::RecordNotFound
+        Rails.logger.error("Token refresh: user not found")
         render json: { error: "USER_NOT_FOUND" }, status: :unauthorized
       end
 
@@ -97,7 +101,8 @@ module Api
         user.sessions.where(is_active: true).update_all(is_active: false)
 
         render json: { status: "logged_out" }
-      rescue Auth::AuthError, ActiveRecord::RecordNotFound
+      rescue Auth::AuthError, ActiveRecord::RecordNotFound => e
+        Rails.logger.error("Logout failed: #{e.class} #{e.message}")
         render json: { error: "INVALID_TOKEN" }, status: :unauthorized
       end
     end
