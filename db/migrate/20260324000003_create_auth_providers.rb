@@ -15,6 +15,6 @@ class CreateAuthProviders < ActiveRecord::Migration[8.0]
       t.timestamps
     end
 
-    add_index :auth_providers, [:provider, :provider_id], unique: true
+    add_index :auth_providers, [ :provider, :provider_id ], unique: true
   end
 end

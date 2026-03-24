@@ -24,6 +24,6 @@ class CreateSubscriptionsAndTracking < ActiveRecord::Migration[8.0]
       t.boolean :tracking_enabled, null: false, default: true
     end
 
-    add_index :tracked_channels, [:user_id, :channel_id], unique: true
+    add_index :tracked_channels, [ :user_id, :channel_id ], unique: true
   end
 end

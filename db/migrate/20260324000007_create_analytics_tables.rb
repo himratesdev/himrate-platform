@@ -23,7 +23,7 @@ class CreateAnalyticsTables < ActiveRecord::Migration[8.0]
       t.datetime :calculated_at, null: false
     end
 
-    add_index :trust_index_history, :calculated_at
+    add_index :trust_index_histories, :calculated_at
 
     create_table :erv_estimates, id: :uuid do |t|
       t.references :stream, type: :uuid, null: false, foreign_key: true
