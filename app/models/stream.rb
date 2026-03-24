@@ -3,7 +3,7 @@
 class Stream < ApplicationRecord
   belongs_to :channel
 
-  has_many :signals, dependent: :destroy
+  has_many :signals, class_name: "TiSignal", foreign_key: "stream_id", dependent: :destroy
   has_many :ccv_snapshots, dependent: :destroy
   has_many :chatters_snapshots, dependent: :destroy
   has_many :chat_messages, dependent: :destroy

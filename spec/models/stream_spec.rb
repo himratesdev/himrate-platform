@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe Stream, type: :model do
   describe "associations" do
     it { is_expected.to belong_to(:channel) }
-    it { is_expected.to have_many(:signals).dependent(:destroy) }
+    it { is_expected.to have_many(:signals).class_name("TiSignal").dependent(:destroy) }
     it { is_expected.to have_many(:ccv_snapshots).dependent(:destroy) }
     it { is_expected.to have_many(:chat_messages).dependent(:destroy) }
     it { is_expected.to have_many(:erv_estimates).dependent(:destroy) }
