@@ -73,33 +73,5 @@ aliases:
   logs: app logs -f
 
 # === DESTINATIONS ===
-# Staging and Production on the SAME server, different configs
-
-destinations:
-  staging:
-    proxy:
-      ssl: true
-      host: staging.himrate.com
-    env:
-      clear:
-        RAILS_ENV: staging
-        WEB_CONCURRENCY: 1
-    accessories:
-      db:
-        env:
-          clear:
-            POSTGRES_DB: himrate_staging
-
-  production:
-    proxy:
-      ssl: true
-      host: api.himrate.com
-    env:
-      clear:
-        RAILS_ENV: production
-        WEB_CONCURRENCY: 2
-    accessories:
-      db:
-        env:
-          clear:
-            POSTGRES_DB: himrate_production
+# Staging: config/deploy.staging.yml
+# Production: config/deploy.production.yml

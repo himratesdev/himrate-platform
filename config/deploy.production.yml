@@ -1,0 +1,17 @@
+# HimRate — Kamal Production Destination
+# Overrides config/deploy.yml for production environment
+
+proxy:
+  ssl: true
+  host: api.himrate.com
+
+env:
+  clear:
+    RAILS_ENV: production
+    WEB_CONCURRENCY: 2
+
+accessories:
+  db:
+    env:
+      clear:
+        POSTGRES_DB: himrate_production
