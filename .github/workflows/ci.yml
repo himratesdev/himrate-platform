@@ -67,6 +67,9 @@ jobs:
           TWITCH_CLIENT_ID: test_client_id
           TWITCH_CLIENT_SECRET: test_client_secret
           TWITCH_REDIRECT_URI: http://localhost:3000/api/v1/auth/twitch/callback
+          GOOGLE_CLIENT_ID: test_google_client_id
+          GOOGLE_CLIENT_SECRET: test_google_client_secret
+          GOOGLE_REDIRECT_URI: http://localhost:3000/api/v1/auth/google/callback
           DATABASE_URL: postgres://himrate_test:himrate_test@localhost:5432/himrate_test
           REDIS_URL: redis://localhost:6379/0
         run: bundle exec rspec
@@ -111,6 +114,9 @@ jobs:
           TWITCH_CLIENT_ID=${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET=${{ secrets.TWITCH_CLIENT_SECRET }}
           TWITCH_REDIRECT_URI=https://staging.himrate.com/api/v1/auth/twitch/callback
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URI=https://staging.himrate.com/api/v1/auth/google/callback
           ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
           ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}

@@ -15,6 +15,8 @@ Rails.application.routes.draw do
     namespace :v1 do
       post "auth/twitch", to: "auth#twitch"
       get "auth/twitch/callback", to: "auth#twitch_callback"
+      post "auth/google", to: "auth#google"
+      get "auth/google/callback", to: "auth#google_callback"
       post "auth/refresh", to: "auth#refresh"
       delete "auth/logout", to: "auth#logout"
     end
