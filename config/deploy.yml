@@ -12,6 +12,10 @@ servers:
     hosts:
       - 194.135.85.159
     cmd: bundle exec sidekiq
+    proxy: false
+    options:
+      health-cmd: pgrep -f sidekiq
+      health-interval: 10s
 
 proxy:
   ssl: true
