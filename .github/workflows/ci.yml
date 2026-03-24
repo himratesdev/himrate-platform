@@ -110,7 +110,7 @@ jobs:
           TWITCH_REDIRECT_URI=https://staging.himrate.com/api/v1/auth/twitch/callback
           SECRETS
       - name: Deploy to staging
-        run: kamal deploy -d staging
+        run: kamal setup -d staging
 
   # === Deploy to Production — on tag v*.*.* ===
   deploy-production:
