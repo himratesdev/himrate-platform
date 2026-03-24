@@ -14,7 +14,7 @@ class CreateAnalyticsTables < ActiveRecord::Migration[8.0]
     add_index :signals, :timestamp
     add_index :signals, :signal_type
 
-    create_table :trust_index_history, id: :uuid do |t|
+    create_table :trust_index_histories, id: :uuid do |t|
       t.references :channel, type: :uuid, null: false, foreign_key: true
       t.references :stream, type: :uuid, foreign_key: true
       t.decimal :trust_index_score, precision: 5, scale: 2, null: false

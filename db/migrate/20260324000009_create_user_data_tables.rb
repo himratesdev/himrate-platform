@@ -16,7 +16,7 @@ class CreateUserDataTables < ActiveRecord::Migration[8.0]
     add_index :user_accounts, :username, unique: true
     add_index :user_accounts, :twitch_id, unique: true
 
-    create_table :known_bot_list, id: :uuid do |t|
+    create_table :known_bot_lists, id: :uuid do |t|
       t.string :username, limit: 255, null: false
       t.string :source, limit: 30, null: false
       t.decimal :confidence, precision: 5, scale: 4, null: false
