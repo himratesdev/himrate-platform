@@ -89,7 +89,12 @@ jobs:
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
-          ssh-keyscan -H 194.135.85.159 >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host 194.135.85.159
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
       - name: Write Kamal secrets
         run: |
           cat > .kamal/secrets.staging <<SECRETS
