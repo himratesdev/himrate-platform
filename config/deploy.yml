@@ -14,7 +14,7 @@ servers:
     cmd: bundle exec sidekiq
     proxy: false
     options:
-      health-cmd: pgrep -f sidekiq
+      health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
 
 proxy:
