@@ -93,6 +93,9 @@ jobs:
           Host 194.135.85.159
             StrictHostKeyChecking accept-new
             IdentityFile ~/.ssh/id_ed25519
+            ServerAliveInterval 15
+            ServerAliveCountMax 10
+            ConnectTimeout 30
           SSH_CONFIG
           chmod 600 ~/.ssh/config
       - name: Write Kamal secrets
