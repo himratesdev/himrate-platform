@@ -114,8 +114,9 @@ module Auth
 
         user
       end
-    rescue ActiveRecord::RecordNotUnique
-      # Race condition: retry once (another request created the record)
+    rescue ActiveRecord::RecordNotUnique => e
+      @retry_count = (@retry_count || 0) + 1
+      raise e if @retry_count > 1
       retry
     end
 
