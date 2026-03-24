@@ -2,7 +2,7 @@
 # Staging + Production on single VPS (194.135.85.159)
 
 service: himrate
-image: ghcr.io/himratesdev/himrate-platform
+image: himratesdev/himrate-platform
 
 servers:
   web:
@@ -61,8 +61,6 @@ accessories:
 
 volumes:
   - "himrate_storage:/rails/storage"
-
-asset_path: /rails/public/assets
 
 builder:
   arch: amd64
