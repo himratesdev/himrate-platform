@@ -31,6 +31,7 @@ gem "sidekiq", "~> 7.0"
 group :development, :test do
   gem "rspec-rails", "~> 7.0"
   gem "factory_bot_rails"
+  gem "shoulda-matchers", "~> 6.0"
 end
 
 # Deploy this application anywhere as a Docker container [https://kamal-deploy.org]
