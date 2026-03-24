@@ -64,6 +64,9 @@ jobs:
       - name: Run RSpec
         env:
           RAILS_ENV: test
+          TWITCH_CLIENT_ID: test_client_id
+          TWITCH_CLIENT_SECRET: test_client_secret
+          TWITCH_REDIRECT_URI: http://localhost:3000/api/v1/auth/twitch/callback
           DATABASE_URL: postgres://himrate_test:himrate_test@localhost:5432/himrate_test
           REDIS_URL: redis://localhost:6379/0
         run: bundle exec rspec

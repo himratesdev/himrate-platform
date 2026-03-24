@@ -18,6 +18,10 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Removed solid_cache/solid_queue/solid_cable (Rails 8 defaults)
 # Project uses Sidekiq 7 + Redis 7 instead (per CLAUDE.md architecture)
 
+# Auth
+gem "jwt", "~> 2.8"
+gem "http", "~> 5.0"
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
@@ -32,6 +36,7 @@ group :development, :test do
   gem "rspec-rails", "~> 7.0"
   gem "factory_bot_rails"
   gem "shoulda-matchers", "~> 6.0"
+  gem "webmock", "~> 3.0"
 end
 
 # Deploy this application anywhere as a Docker container [https://kamal-deploy.org]
