@@ -3,7 +3,7 @@
 module Webhooks
   class TwitchController < ActionController::API
     def create
-      render json: { status: "not_implemented", endpoint: "POST /webhooks/twitch" }
+      render json: { data: nil, meta: { status: "not_implemented", endpoint: "POST /webhooks/twitch" } }
     end
   end
 end

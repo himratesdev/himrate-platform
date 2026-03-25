@@ -81,6 +81,30 @@ RSpec.describe "API Scaffold", type: :request do
     end
   end
 
+  # TC-012: GET /channels/:id/streams/:id → 200
+  describe "GET /api/v1/channels/:id/streams/:id" do
+    it "returns placeholder" do
+      get "/api/v1/channels/123/streams/456", headers: auth_headers
+      expect(response).to have_http_status(:ok)
+    end
+  end
+
+  # TC-013: DELETE /subscriptions/:id → 200
+  describe "DELETE /api/v1/subscriptions/:id" do
+    it "returns placeholder" do
+      delete "/api/v1/subscriptions/123", headers: auth_headers
+      expect(response).to have_http_status(:ok)
+    end
+  end
+
+  # TC-014: DELETE /watchlists/:id → 200
+  describe "DELETE /api/v1/watchlists/:id" do
+    it "returns placeholder" do
+      delete "/api/v1/watchlists/123", headers: auth_headers
+      expect(response).to have_http_status(:ok)
+    end
+  end
+
   # TC-010: GET /channels without token → 401
   describe "GET /api/v1/channels without auth" do
     it "returns 401" do
