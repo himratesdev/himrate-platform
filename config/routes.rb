@@ -10,17 +10,30 @@ Rails.application.routes.draw do
   # FR-003: Health endpoint with DB + Redis checks
   get "health" => "health#show"
 
-  # TASK-005: Auth endpoints
+  # Auth + API endpoints
   namespace :api do
     namespace :v1 do
+      # Auth (TASK-005 + TASK-007)
       post "auth/twitch", to: "auth#twitch"
       get "auth/twitch/callback", to: "auth#twitch_callback"
       post "auth/google", to: "auth#google"
       get "auth/google/callback", to: "auth#google_callback"
       post "auth/refresh", to: "auth#refresh"
       delete "auth/logout", to: "auth#logout"
+
+      # TASK-008: API scaffold
+      resources :channels, only: %i[index show] do
+        resource :trust, only: :show, controller: "trust"
+        resources :streams, only: %i[index show]
+        resource "bot-chain", only: :show, controller: "bot_chain", as: :bot_chain
+      end
+      resources :subscriptions, only: %i[index create destroy]
+      resources :watchlists, only: %i[index create destroy]
     end
   end
+
+  # Webhooks (public, no auth)
+  post "webhooks/twitch", to: "webhooks/twitch#create"
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
