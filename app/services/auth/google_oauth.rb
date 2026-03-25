@@ -106,7 +106,8 @@ module Auth
     end
 
     def derive_username(google_user)
-      google_user[:name].presence || google_user[:email]&.split("@")&.first || "google_user_#{google_user[:sub][0..7]}"
+      base = google_user[:name].presence || google_user[:email]&.split("@")&.first || "google_user"
+      "#{base}_#{google_user[:sub][-6..]}"
     end
   end
 end

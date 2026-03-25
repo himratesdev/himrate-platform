@@ -59,6 +59,7 @@ module Api
           }
         }
       rescue ActiveRecord::RecordNotUnique
+        Rails.logger.warn("Cross-provider email collision: #{request.path}")
         render json: { error: "EMAIL_ALREADY_EXISTS", message: "This email is registered with another provider" }, status: :conflict
       rescue Auth::AuthError => e
         Rails.logger.error("Auth failed: #{e.class} #{e.message}")
@@ -123,6 +124,7 @@ module Api
           }
         }
       rescue ActiveRecord::RecordNotUnique
+        Rails.logger.warn("Cross-provider email collision: #{request.path}")
         render json: { error: "EMAIL_ALREADY_EXISTS", message: "This email is registered with another provider" }, status: :conflict
       rescue Auth::AuthError => e
         Rails.logger.error("Google auth failed: #{e.class} #{e.message}")

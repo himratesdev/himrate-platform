@@ -48,7 +48,7 @@ RSpec.describe "Google Auth API", type: :request do
       expect(body["access_token"]).to be_present
       expect(body["refresh_token"]).to be_present
       expect(body["expires_in"]).to eq(3600)
-      expect(body["user"]["username"]).to eq("Test User")
+      expect(body["user"]["username"]).to start_with("Test User_")
       expect(body["user"]["role"]).to eq("viewer")
       expect(body["user"]["email"]).to eq("test@gmail.com")
     end
@@ -144,6 +144,30 @@ RSpec.describe "Google Auth API", type: :request do
 
       body = JSON.parse(response.body)
       expect(body["user"]["role"]).to eq("viewer")
+    end
+  end
+
+  # TC-009: Cross-provider email collision → 409
+  describe "GET /api/v1/auth/google/callback (email collision)" do
+    let!(:twitch_user) { User.create!(username: "twitch_user", email: "shared@gmail.com", role: "viewer", tier: "free") }
+    let!(:twitch_auth) { AuthProvider.create!(user: twitch_user, provider: "twitch", provider_id: "twitch_123", access_token: "at", refresh_token: "rt", is_broadcaster: false) }
+
+    before do
+      Rails.cache.write("google_state:collision_state", "valid")
+
+      stub_request(:post, "https://oauth2.googleapis.com/token")
+        .to_return(status: 200, body: { access_token: "at", refresh_token: "rt", expires_in: 3600 }.to_json, headers: { "Content-Type" => "application/json" })
+
+      stub_request(:get, "https://www.googleapis.com/oauth2/v3/userinfo")
+        .to_return(status: 200, body: { sub: "google_collision", email: "shared@gmail.com", name: "Collision User" }.to_json, headers: { "Content-Type" => "application/json" })
+    end
+
+    it "returns 409 when email exists with another provider" do
+      get "/api/v1/auth/google/callback", params: { code: "code", state: "collision_state" }
+
+      expect(response).to have_http_status(:conflict)
+      body = JSON.parse(response.body)
+      expect(body["error"]).to eq("EMAIL_ALREADY_EXISTS")
     end
   end
 end
