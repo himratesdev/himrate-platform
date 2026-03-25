@@ -53,10 +53,13 @@ module Api
           user: {
             id: user.id,
             username: user.username,
+            email: user.email,
             role: user.role,
             tier: user.tier
           }
         }
+      rescue ActiveRecord::RecordNotUnique
+        render json: { error: "EMAIL_ALREADY_EXISTS", message: "This email is registered with another provider" }, status: :conflict
       rescue Auth::AuthError => e
         Rails.logger.error("Auth failed: #{e.class} #{e.message}")
         render json: { error: "TWITCH_AUTH_FAILED", message: e.message }, status: :unauthorized
@@ -119,6 +122,8 @@ module Api
             tier: user.tier
           }
         }
+      rescue ActiveRecord::RecordNotUnique
+        render json: { error: "EMAIL_ALREADY_EXISTS", message: "This email is registered with another provider" }, status: :conflict
       rescue Auth::AuthError => e
         Rails.logger.error("Google auth failed: #{e.class} #{e.message}")
         render json: { error: "GOOGLE_AUTH_FAILED", message: e.message }, status: :unauthorized
