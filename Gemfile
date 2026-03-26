@@ -22,6 +22,9 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 gem "jwt", "~> 2.8"
 gem "http", "~> 5.0"
 
+# Authorization
+gem "pundit", "~> 2.4"
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 

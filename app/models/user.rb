@@ -11,6 +11,8 @@ class User < ApplicationRecord
   has_many :score_disputes, dependent: :destroy
   has_many :pdf_reports, dependent: :destroy
   has_many :api_keys, dependent: :destroy
+  has_many :team_memberships, dependent: :destroy
+  has_many :owned_team_memberships, class_name: "TeamMembership", foreign_key: :team_owner_id, dependent: :destroy
 
   validates :role, inclusion: { in: %w[viewer streamer] }
   validates :tier, inclusion: { in: %w[free premium business] }
