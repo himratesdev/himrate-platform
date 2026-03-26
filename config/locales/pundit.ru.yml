@@ -1,0 +1,19 @@
+ru:
+  pundit:
+    errors:
+      subscription_required: "Требуется подписка"
+      channel_not_tracked: "Канал не отслеживается. Начните tracking — $9.99/мес"
+      post_stream_window_expired: "Подробная аналитика этого стрима больше недоступна. Начните tracking — $9.99/мес за канал"
+      compare_unavailable: "Сравнение каналов доступно для Premium или Business"
+      compare_not_tracked: "Оба канала должны быть в отслеживании для сравнения"
+      bot_chain_unavailable: "Полная карта Bot-Raid Chain доступна в Premium или Business"
+      unauthenticated: "Войдите через Google или Twitch"
+      rate_limited: "Превышен лимит запросов. Попробуйте позже"
+      grace_period_notice: "Ваша подписка истекла. Доступ сохранится ещё %{days} дней"
+      grace_expired: "Период продления истёк. Оформите подписку заново"
+      team_membership_revoked: "Вы удалены из команды. Доступ ограничен вашим тарифом"
+    cta:
+      start_tracking: "Start Tracking — $9.99/мес"
+      view_analytics: "Посмотреть полную аналитику"
+      business_upgrade: "Business — $99/мес"
+      team_access: "Доступ через команду Business"

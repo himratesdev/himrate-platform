@@ -3,6 +3,8 @@
 module Api
   module V1
     class AuthController < Api::BaseController
+      skip_after_action :verify_authorized
+
       # FR-001: POST /api/v1/auth/twitch
       def twitch
         oauth = Auth::TwitchOauth.new

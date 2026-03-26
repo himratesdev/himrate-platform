@@ -1,0 +1,19 @@
+en:
+  pundit:
+    errors:
+      subscription_required: "Subscription required"
+      channel_not_tracked: "Channel not tracked. Start tracking — $9.99/mo"
+      post_stream_window_expired: "Detailed analytics for this stream is no longer available. Start tracking — $9.99/mo per channel"
+      compare_unavailable: "Compare is available for Premium or Business"
+      compare_not_tracked: "Both channels must be tracked for comparison"
+      bot_chain_unavailable: "Full Bot-Raid Chain map is available in Premium or Business"
+      unauthenticated: "Sign in with Google or Twitch"
+      rate_limited: "Rate limit exceeded. Please try again later"
+      grace_period_notice: "Your subscription has expired. Access continues for %{days} more days"
+      grace_expired: "Grace period expired. Please renew your subscription"
+      team_membership_revoked: "Removed from team. Access limited to your plan"
+    cta:
+      start_tracking: "Start Tracking — $9.99/mo"
+      view_analytics: "View full analytics"
+      business_upgrade: "Business — $99/mo"
+      team_access: "Access via Business team"
