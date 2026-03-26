@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe WatchlistPolicy do
+RSpec.describe WatchlistPolicy, type: :policy do
   let(:channel) { create(:channel) }
 
   context "when guest" do

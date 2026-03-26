@@ -3,9 +3,10 @@
 FactoryBot.define do
   factory :subscription do
     user
-    plan { "premium" }
-    status { "active" }
-    provider { "yookassa" }
-    current_period_end { 30.days.from_now }
+    tier { "premium" }
+    plan_type { "per_channel" }
+    is_active { true }
+    started_at { Time.current }
+    cancelled_at { nil }
   end
 end

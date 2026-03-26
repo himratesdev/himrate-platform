@@ -4,6 +4,7 @@ FactoryBot.define do
   factory :auth_provider do
     user
     provider { "twitch" }
-    sequence(:uid) { |n| "twitch_uid_#{n}" }
+    sequence(:provider_id) { |n| "twitch_#{n}" }
+    is_broadcaster { false }
   end
 end

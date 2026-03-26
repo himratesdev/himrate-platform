@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe "Team membership authorization" do
+RSpec.describe "Team membership authorization", type: :policy do
   let(:channel) { create(:channel) }
   let(:business_owner) { create(:user, role: "viewer", tier: "business") }
   let(:team_member) { create(:user, role: "viewer", tier: "free") }

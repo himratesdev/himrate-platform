@@ -5,5 +5,7 @@ FactoryBot.define do
     user
     channel
     subscription
+    added_at { Time.current }
+    tracking_enabled { true }
   end
 end

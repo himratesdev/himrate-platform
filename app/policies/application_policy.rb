@@ -58,15 +58,24 @@ class ApplicationPolicy
     return false unless streamer?
 
     provider = user.auth_providers.find_by(provider: "twitch")
-    provider.present? && provider.uid == channel.twitch_id
+    provider.present? && provider.provider_id == channel.twitch_id
   end
 
   def channel_tracked?(channel)
     user.tracked_channels
         .joins(:subscription)
-        .where(channel: channel)
-        .where(subscriptions: { status: %w[active past_due] })
-        .where("subscriptions.current_period_end > ?", 7.days.ago)
+        .where(channel: channel, tracking_enabled: true)
+        .where(subscriptions: { is_active: true })
+        .exists? ||
+      channel_in_grace_period?(channel)
+  end
+
+  def channel_in_grace_period?(channel)
+    user.tracked_channels
+        .joins(:subscription)
+        .where(channel: channel, tracking_enabled: true)
+        .where(subscriptions: { is_active: false })
+        .where("subscriptions.cancelled_at > ?", 7.days.ago)
         .exists?
   end
 

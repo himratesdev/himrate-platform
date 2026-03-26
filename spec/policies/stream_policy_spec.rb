@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe StreamPolicy do
+RSpec.describe StreamPolicy, type: :policy do
   subject { described_class.new(user, channel) }
 
   let(:channel) { create(:channel) }
@@ -44,7 +44,7 @@ RSpec.describe StreamPolicy do
 
   context "when premium user with tracked channel" do
     let(:user) { create(:user, role: "viewer", tier: "premium") }
-    let(:subscription) { create(:subscription, user: user, status: "active") }
+    let(:subscription) { create(:subscription, user: user, is_active: true) }
 
     before { create(:tracked_channel, user: user, channel: channel, subscription: subscription) }
 
@@ -68,7 +68,7 @@ RSpec.describe StreamPolicy do
   context "when streamer on own channel" do
     let(:user) { create(:user, role: "streamer", tier: "free") }
 
-    before { create(:auth_provider, user: user, provider: "twitch", uid: channel.twitch_id) }
+    before { create(:auth_provider, user: user, provider: "twitch", provider_id: channel.twitch_id) }
 
     it { is_expected.to permit_action(:index) }
   end

@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe TrustSnapshotPolicy do
+RSpec.describe TrustSnapshotPolicy, type: :policy do
   subject { described_class.new(user, channel) }
 
   let(:channel) { create(:channel) }
@@ -45,7 +45,7 @@ RSpec.describe TrustSnapshotPolicy do
 
   context "when premium user with tracked channel" do
     let(:user) { create(:user, role: "viewer", tier: "premium") }
-    let(:subscription) { create(:subscription, user: user, status: "active") }
+    let(:subscription) { create(:subscription, user: user, is_active: true) }
 
     before { create(:tracked_channel, user: user, channel: channel, subscription: subscription) }
 
@@ -69,16 +69,16 @@ RSpec.describe TrustSnapshotPolicy do
   context "when streamer on own channel" do
     let(:user) { create(:user, role: "streamer", tier: "free") }
 
-    before { create(:auth_provider, user: user, provider: "twitch", uid: channel.twitch_id) }
+    before { create(:auth_provider, user: user, provider: "twitch", provider_id: channel.twitch_id) }
 
     it "allows full_access" do
       expect(subject.full_access?).to be true
     end
   end
 
-  context "when subscription in grace period (day 5)" do
+  context "when subscription in grace period (cancelled 5 days ago)" do
     let(:user) { create(:user, role: "viewer", tier: "premium") }
-    let(:subscription) { create(:subscription, user: user, status: "past_due", current_period_end: 5.days.ago) }
+    let(:subscription) { create(:subscription, user: user, is_active: false, cancelled_at: 5.days.ago) }
 
     before { create(:tracked_channel, user: user, channel: channel, subscription: subscription) }
 
@@ -87,9 +87,9 @@ RSpec.describe TrustSnapshotPolicy do
     end
   end
 
-  context "when subscription grace period expired (day 8)" do
+  context "when subscription grace period expired (cancelled 8 days ago)" do
     let(:user) { create(:user, role: "viewer", tier: "premium") }
-    let(:subscription) { create(:subscription, user: user, status: "past_due", current_period_end: 8.days.ago) }
+    let(:subscription) { create(:subscription, user: user, is_active: false, cancelled_at: 8.days.ago) }
 
     before { create(:tracked_channel, user: user, channel: channel, subscription: subscription) }
 

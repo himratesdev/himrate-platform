@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe BotChainPolicy do
+RSpec.describe BotChainPolicy, type: :policy do
   subject { described_class.new(user, channel) }
 
   let(:channel) { create(:channel) }
@@ -37,7 +37,7 @@ RSpec.describe BotChainPolicy do
 
   context "when premium user with tracked channel" do
     let(:user) { create(:user, role: "viewer", tier: "premium") }
-    let(:subscription) { create(:subscription, user: user, status: "active") }
+    let(:subscription) { create(:subscription, user: user, is_active: true) }
 
     before { create(:tracked_channel, user: user, channel: channel, subscription: subscription) }
 

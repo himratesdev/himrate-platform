@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-RSpec.describe SubscriptionPolicy do
+RSpec.describe SubscriptionPolicy, type: :policy do
   context "when guest" do
     subject { described_class.new(nil, Subscription) }
 
