@@ -12,18 +12,4 @@ class StreamPolicy < ApplicationPolicy
   def show?
     index?
   end
-
-  private
-
-  def post_stream_window_open?(channel)
-    latest_stream = channel.streams.where.not(ended_at: nil).order(ended_at: :desc).first
-    return false unless latest_stream
-
-    next_stream = channel.streams
-                         .where("started_at > ?", latest_stream.ended_at)
-                         .exists?
-    return false if next_stream
-
-    latest_stream.ended_at >= 18.hours.ago
-  end
 end

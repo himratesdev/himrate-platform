@@ -87,4 +87,14 @@ class ApplicationPolicy
   def premium_access_for?(channel)
     effective_business? || channel_tracked?(channel) || owns_channel?(channel)
   end
+
+  def post_stream_window_open?(channel)
+    latest_stream = channel.streams.where.not(ended_at: nil).order(ended_at: :desc).first
+    return false unless latest_stream
+
+    next_stream = channel.streams.where("started_at > ?", latest_stream.ended_at).exists?
+    return false if next_stream
+
+    latest_stream.ended_at >= 18.hours.ago
+  end
 end

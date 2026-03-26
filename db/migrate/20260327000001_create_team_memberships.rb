@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class CreateTeamMemberships < ActiveRecord::Migration[8.1]
-  def change
+  def up
     create_table :team_memberships, id: :uuid, default: -> { "gen_random_uuid()" } do |t|
       t.references :user, null: false, foreign_key: true, type: :uuid
       t.references :team_owner, null: false, foreign_key: { to_table: :users }, type: :uuid
@@ -13,5 +13,9 @@ class CreateTeamMemberships < ActiveRecord::Migration[8.1]
 
     add_index :team_memberships, %i[user_id team_owner_id], unique: true, name: "idx_team_memberships_user_owner"
     add_index :team_memberships, :team_owner_id, name: "idx_team_memberships_owner_id"
+  end
+
+  def down
+    drop_table :team_memberships
   end
 end

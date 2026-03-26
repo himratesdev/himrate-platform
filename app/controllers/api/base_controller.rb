@@ -5,6 +5,7 @@ module Api
     include Pundit::Authorization
 
     after_action :verify_authorized
+    after_action :log_authorized
 
     rescue_from Pundit::NotAuthorizedError, with: :render_forbidden
 
@@ -55,19 +56,23 @@ module Api
       @current_user
     end
 
-    def pundit_user
-      current_user
-    end
-
     def render_forbidden(exception)
       error_payload = authorization_error_payload(exception)
 
       Rails.logger.info(
         "Authorization denied: user=#{current_user&.id} " \
-        "policy=#{exception.policy.class} action=#{exception.query}"
+        "policy=#{exception.policy.class} action=#{exception.query} " \
+        "code=#{error_payload[:error][:code]}"
       )
 
       render json: error_payload, status: :forbidden
+    end
+
+    def log_authorized
+      Rails.logger.debug(
+        "Authorization granted: user=#{current_user&.id} " \
+        "controller=#{controller_name} action=#{action_name}"
+      )
     end
 
     def authorization_error_payload(exception)
@@ -83,8 +88,22 @@ module Api
       }
     end
 
-    def resolve_error_code(_exception)
-      "SUBSCRIPTION_REQUIRED"
+    def resolve_error_code(exception)
+      policy_name = exception.policy.class.name
+      query = exception.query.to_s
+
+      case policy_name
+      when "BotChainPolicy"
+        "BOT_CHAIN_UNAVAILABLE"
+      when "StreamPolicy"
+        "POST_STREAM_WINDOW_EXPIRED"
+      when "TrustSnapshotPolicy"
+        query == "drill_down?" ? "POST_STREAM_WINDOW_EXPIRED" : "SUBSCRIPTION_REQUIRED"
+      when "ChannelPolicy"
+        query == "destroy?" ? "CHANNEL_NOT_TRACKED" : "SUBSCRIPTION_REQUIRED"
+      else
+        "SUBSCRIPTION_REQUIRED"
+      end
     end
 
     def resolve_cta(code, locale)
