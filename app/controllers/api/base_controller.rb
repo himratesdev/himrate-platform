@@ -4,7 +4,7 @@ module Api
   class BaseController < ActionController::API
     include Pundit::Authorization
 
-    after_action :verify_authorized
+    after_action :verify_authorized, if: :pundit_enabled?
     after_action :log_authorized
 
     rescue_from Pundit::NotAuthorizedError, with: :render_forbidden
@@ -56,6 +56,10 @@ module Api
       @current_user
     end
 
+    def pundit_enabled?
+      ENV.fetch("PUNDIT_ENABLED", "true") == "true"
+    end
+
     def render_forbidden(exception)
       error_payload = authorization_error_payload(exception)
 
@@ -89,6 +93,8 @@ module Api
     end
 
     def resolve_error_code(exception)
+      return "SUBSCRIPTION_REQUIRED" if current_user.nil?
+
       policy_name = exception.policy.class.name
       query = exception.query.to_s
 

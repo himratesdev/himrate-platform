@@ -89,12 +89,13 @@ class ApplicationPolicy
   end
 
   def post_stream_window_open?(channel)
-    latest_stream = channel.streams.where.not(ended_at: nil).order(ended_at: :desc).first
-    return false unless latest_stream
-
-    next_stream = channel.streams.where("started_at > ?", latest_stream.ended_at).exists?
-    return false if next_stream
-
-    latest_stream.ended_at >= 18.hours.ago
+    channel.streams
+           .where.not(ended_at: nil)
+           .where("ended_at >= ?", 18.hours.ago)
+           .where(
+             "NOT EXISTS (SELECT 1 FROM streams s2 WHERE s2.channel_id = streams.channel_id " \
+             "AND s2.started_at > streams.ended_at)"
+           )
+           .exists?
   end
 end

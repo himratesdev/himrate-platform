@@ -40,6 +40,7 @@ group :development, :test do
   gem "rspec-rails", "~> 7.0"
   gem "factory_bot_rails"
   gem "shoulda-matchers", "~> 6.0"
+  gem "pundit-matchers", "~> 3.1"
   gem "webmock", "~> 3.0"
 end
 
