@@ -1,0 +1,13 @@
+ru:
+  auth:
+    errors:
+      bearer_required: "Требуется Bearer токен"
+      access_required: "Требуется access токен"
+      user_not_found: "Пользователь не найден"
+      invalid_state: "Неверный или истёкший state"
+      email_exists: "Этот email зарегистрирован другим провайдером"
+      twitch_unavailable: "Twitch API недоступен"
+      google_unavailable: "Google API недоступен"
+      invalid_token: "Неверный токен"
+      not_refresh_token: "Это не refresh токен"
+      missing_token: "Отсутствует refresh токен"

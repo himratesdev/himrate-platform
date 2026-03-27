@@ -1,0 +1,6 @@
+ru:
+  api:
+    errors:
+      unauthorized: "Не авторизован"
+      not_found: "Не найдено"
+      internal_error: "Внутренняя ошибка сервера"

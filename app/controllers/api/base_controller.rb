@@ -4,6 +4,7 @@ module Api
   class BaseController < ActionController::API
     include Pundit::Authorization
 
+    around_action :set_locale
     after_action :verify_authorized, if: :pundit_enabled?
     after_action :log_authorized
 
@@ -11,11 +12,22 @@ module Api
 
     private
 
+    def set_locale(&action)
+      locale = extract_locale_from_header
+      I18n.with_locale(locale, &action)
+    end
+
+    def extract_locale_from_header
+      header = request.headers["Accept-Language"].to_s
+      preferred = header.scan(/[a-z]{2}/).first&.to_sym
+      I18n.available_locales.include?(preferred) ? preferred : I18n.default_locale
+    end
+
     def authenticate_user!
       token = request.headers["Authorization"]&.split(" ")&.last
       unless token
         Rails.logger.warn("Auth failed: no token from #{request.remote_ip}")
-        render json: { error: "UNAUTHORIZED", message: "Bearer token required" }, status: :unauthorized
+        render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.bearer_required") }, status: :unauthorized
         return
       end
 
@@ -23,7 +35,7 @@ module Api
 
       unless payload[:type] == "access"
         Rails.logger.warn("Auth failed: non-access token from #{request.remote_ip}")
-        render json: { error: "UNAUTHORIZED", message: "Access token required" }, status: :unauthorized
+        render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.access_required") }, status: :unauthorized
         return
       end
 
@@ -35,7 +47,7 @@ module Api
       render json: { error: "UNAUTHORIZED", message: e.message }, status: :unauthorized
     rescue ActiveRecord::RecordNotFound
       Rails.logger.warn("Auth failed: user not found from #{request.remote_ip}")
-      render json: { error: "UNAUTHORIZED", message: "User not found" }, status: :unauthorized
+      render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.user_not_found") }, status: :unauthorized
     end
 
     def authenticate_user_optional!
@@ -81,13 +93,12 @@ module Api
 
     def authorization_error_payload(exception)
       code = resolve_error_code(exception)
-      locale = request.headers["Accept-Language"]&.start_with?("ru") ? :ru : :en
 
       {
         error: {
           code: code,
-          message: I18n.t("pundit.errors.#{code.downcase}", locale: locale),
-          cta: resolve_cta(code, locale)
+          message: I18n.t("pundit.errors.#{code.downcase}"),
+          cta: resolve_cta(code)
         }
       }
     end
@@ -112,12 +123,12 @@ module Api
       end
     end
 
-    def resolve_cta(code, locale)
+    def resolve_cta(code)
       case code
       when "COMPARE_UNAVAILABLE", "BOT_CHAIN_UNAVAILABLE"
-        { action: "upgrade", label: I18n.t("pundit.cta.business_upgrade", locale: locale) }
+        { action: "upgrade", label: I18n.t("pundit.cta.business_upgrade") }
       else
-        { action: "subscribe", label: I18n.t("pundit.cta.start_tracking", locale: locale) }
+        { action: "subscribe", label: I18n.t("pundit.cta.start_tracking") }
       end
     end
   end
