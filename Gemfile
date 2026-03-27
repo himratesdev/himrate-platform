@@ -25,6 +25,12 @@ gem "http", "~> 5.0"
 # Authorization
 gem "pundit", "~> 2.4"
 
+# Feature flags
+gem "flipper", "~> 1.3"
+gem "flipper-redis", "~> 1.3"
+gem "flipper-active_record", "~> 1.3"
+gem "flipper-ui", "~> 1.3"
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
@@ -42,6 +48,7 @@ group :development, :test do
   gem "shoulda-matchers", "~> 6.0"
   gem "pundit-matchers", "~> 3.1"
   gem "webmock", "~> 3.0"
+  gem "climate_control", "~> 1.2"
 end
 
 # Deploy this application anywhere as a Docker container [https://kamal-deploy.org]

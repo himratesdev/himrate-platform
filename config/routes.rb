@@ -10,6 +10,18 @@ Rails.application.routes.draw do
   # FR-003: Health endpoint with DB + Redis checks
   get "health" => "health#show"
 
+  # TASK-013: Flipper UI (admin-only, HTTP Basic Auth)
+  flipper_app = Flipper::UI.app(Flipper) do |builder|
+    builder.use Rack::Auth::Basic, "Flipper" do |user, password|
+      ActiveSupport::SecurityUtils.secure_compare(user, ENV.fetch("FLIPPER_UI_USER", "admin")) &
+        ActiveSupport::SecurityUtils.secure_compare(
+          password,
+          ENV.fetch("FLIPPER_UI_PASSWORD") { Rails.env.production? ? raise("FLIPPER_UI_PASSWORD required") : "dev" }
+        )
+    end
+  end
+  mount flipper_app, at: "/admin/flipper"
+
   # Auth + API endpoints
   namespace :api do
     namespace :v1 do
