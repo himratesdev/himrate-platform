@@ -57,7 +57,7 @@ module Api
     end
 
     def pundit_enabled?
-      ENV.fetch("PUNDIT_ENABLED", "true") == "true"
+      Flipper.enabled?(:pundit_authorization)
     end
 
     def render_forbidden(exception)

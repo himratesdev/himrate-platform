@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 class User < ApplicationRecord
+  include Flipper::Identifier
   has_many :auth_providers, dependent: :destroy
   has_many :subscriptions, dependent: :destroy
   has_many :tracked_channels, dependent: :destroy

@@ -23,6 +23,10 @@ Shoulda::Matchers.configure do |config|
   end
 end
 
+Flipper.configure do |config|
+  config.adapter { Flipper::Adapters::Memory.new }
+end
+
 RSpec.configure do |config|
   config.fixture_paths = [ Rails.root.join("spec/fixtures") ]
   config.use_transactional_fixtures = true
@@ -30,4 +34,9 @@ RSpec.configure do |config|
   config.filter_rails_from_backtrace!
   config.include FactoryBot::Syntax::Methods
   config.include Pundit::Matchers, type: :policy
+
+  config.before(:each) do
+    Flipper.features.each(&:remove)
+    Flipper.enable(:pundit_authorization)
+  end
 end
