@@ -12,7 +12,7 @@ servers:
   job:
     hosts:
       - 194.135.85.159
-    cmd: bundle exec sidekiq
+    cmd: bundle exec sidekiq -C config/sidekiq.yml
     proxy: false
     options:
       health-cmd: "ruby -e 'puts :ok'"
@@ -44,6 +44,9 @@ env:
     - ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY
     - ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
     - ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
+    - FLIPPER_UI_PASSWORD
+    - FLIPPER_UI_USER
+    - ALLOWED_EXTENSION_ID
   clear:
     RAILS_LOG_TO_STDOUT: true
     RAILS_SERVE_STATIC_FILES: true
@@ -67,6 +70,7 @@ accessories:
     image: redis:7
     host: 194.135.85.159
     port: "127.0.0.1:6379:6379"
+    cmd: redis-server --appendonly yes
     directories:
       - himrate_redis:/data
 
