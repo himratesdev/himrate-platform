@@ -4,7 +4,7 @@ module Api
   class BaseController < ActionController::API
     include Pundit::Authorization
 
-    around_action :set_locale
+    before_action :set_locale
     after_action :verify_authorized, if: :pundit_enabled?
     after_action :log_authorized
 
@@ -12,9 +12,8 @@ module Api
 
     private
 
-    def set_locale(&action)
-      locale = extract_locale_from_header
-      I18n.with_locale(locale, &action)
+    def set_locale
+      I18n.locale = extract_locale_from_header
     end
 
     def extract_locale_from_header
