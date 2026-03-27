@@ -8,6 +8,11 @@
 # without restart. Supports comma-separated ALLOWED_EXTENSION_ID for
 # multiple Extension IDs (dev + production).
 
+# Fail fast: ALLOWED_EXTENSION_ID required in production
+if Rails.env.production? && ENV["ALLOWED_EXTENSION_ID"].blank?
+  raise "ALLOWED_EXTENSION_ID must be set in production"
+end
+
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
     origins do |source, _env|
