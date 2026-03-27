@@ -5,14 +5,20 @@ require "flipper/adapters/redis"
 require "flipper/adapters/active_record"
 require "flipper/adapters/memoizable"
 
+# Fail fast: FLIPPER_UI_PASSWORD required in production
+if Rails.env.production? && ENV["FLIPPER_UI_PASSWORD"].blank?
+  raise "FLIPPER_UI_PASSWORD must be set in production"
+end
+
 # Primary: Redis (fast). Fallback: ActiveRecord (durable).
 # Memoize: per-request cache on top.
 redis_url = ENV.fetch("REDIS_URL", "redis://localhost:6379/1")
 
 begin
   redis_instance = Redis.new(url: redis_url)
+  redis_instance.ping
   redis_adapter = Flipper::Adapters::Redis.new(redis_instance)
-rescue Redis::CannotConnectError => e
+rescue Redis::CannotConnectError, Redis::TimeoutError => e
   Rails.logger.error("Flipper: Redis unavailable (#{e.message}), using ActiveRecord only")
   redis_adapter = nil
 end
@@ -51,8 +57,10 @@ Flipper.register(:streamers) do |actor|
   actor.respond_to?(:role) && actor.role == "streamer"
 end
 
-# Base flags (created if not exist)
-base_flags = %i[
+# Base flags — created only if not exist. No re-enable on boot (kill switch safe).
+existing_keys = Flipper.features.map(&:key).to_set
+
+%i[
   pundit_authorization
   bot_raid_chain
   compare_unlimited
@@ -60,11 +68,9 @@ base_flags = %i[
   ad_calculator
   social_presence
   panel_tracking
-]
+].each do |flag|
+  next if existing_keys.include?(flag.to_s)
 
-base_flags.each do |flag|
-  Flipper.add(flag) unless Flipper.features.map(&:key).include?(flag.to_s)
+  Flipper.add(flag)
+  Flipper.enable(flag) if flag == :pundit_authorization
 end
-
-# Enable pundit_authorization by default (TASK-012 migration from ENV toggle)
-Flipper.enable(:pundit_authorization) unless Flipper.enabled?(:pundit_authorization)

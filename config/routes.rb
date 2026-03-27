@@ -14,7 +14,10 @@ Rails.application.routes.draw do
   flipper_app = Flipper::UI.app(Flipper) do |builder|
     builder.use Rack::Auth::Basic, "Flipper" do |user, password|
       ActiveSupport::SecurityUtils.secure_compare(user, ENV.fetch("FLIPPER_UI_USER", "admin")) &
-        ActiveSupport::SecurityUtils.secure_compare(password, ENV.fetch("FLIPPER_UI_PASSWORD", ""))
+        ActiveSupport::SecurityUtils.secure_compare(
+          password,
+          ENV.fetch("FLIPPER_UI_PASSWORD") { Rails.env.production? ? raise("FLIPPER_UI_PASSWORD required") : "dev" }
+        )
     end
   end
   mount flipper_app, at: "/admin/flipper"
