@@ -19,7 +19,7 @@ module Api
 
     def extract_locale_from_header
       header = request.headers["Accept-Language"].to_s
-      preferred = header.scan(/[a-z]{2}/).first&.to_sym
+      preferred = header.downcase.scan(/[a-z]{2}/).first&.to_sym
       I18n.available_locales.include?(preferred) ? preferred : I18n.default_locale
     end
 

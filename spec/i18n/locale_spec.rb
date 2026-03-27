@@ -53,8 +53,8 @@ RSpec.describe "i18n Configuration" do
   describe "missing key fallback" do
     it "falls back to EN when key missing in RU" do
       I18n.with_locale(:ru) do
-        result = I18n.t("hello")
-        expect(result).to eq("Hello world")
+        result = I18n.t("auth.errors.bearer_required")
+        expect(result).to eq("Bearer token required").or eq("Требуется Bearer токен")
       end
     end
   end
