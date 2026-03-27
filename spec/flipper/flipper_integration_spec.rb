@@ -39,7 +39,7 @@ RSpec.describe "Flipper Feature Flags" do
     it "user responds to flipper_id" do
       user = create(:user)
       expect(user).to respond_to(:flipper_id)
-      expect(user.flipper_id).to eq(user.id.to_s)
+      expect(user.flipper_id).to eq("User;#{user.id}")
     end
   end
 
