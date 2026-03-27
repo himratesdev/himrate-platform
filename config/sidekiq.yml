@@ -1,0 +1,14 @@
+# TASK-015: Sidekiq queue configuration
+# Queues ordered by priority (higher weight = higher priority)
+# signals: Trust Index computations (real-time critical)
+# default: general tasks
+# notifications: email, Telegram, push
+# monitoring: periodic checks, cleanup
+
+:concurrency: <%= ENV.fetch("SIDEKIQ_CONCURRENCY", 5) %>
+
+:queues:
+  - [signals, 5]
+  - [default, 3]
+  - [notifications, 2]
+  - [monitoring, 1]
