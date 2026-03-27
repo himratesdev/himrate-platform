@@ -25,5 +25,11 @@ module Himrate
     #
     # config.time_zone = "Central Time (US & Canada)"
     # config.eager_load_paths << Rails.root.join("extras")
+
+    # TASK-014: i18n configuration
+    config.i18n.default_locale = :en
+    config.i18n.available_locales = %i[en ru]
+    config.i18n.fallbacks = true
+    config.i18n.load_path += Dir[Rails.root.join("config/locales/**/*.yml")]
   end
 end

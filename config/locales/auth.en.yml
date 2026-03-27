@@ -1,0 +1,13 @@
+en:
+  auth:
+    errors:
+      bearer_required: "Bearer token required"
+      access_required: "Access token required"
+      user_not_found: "User not found"
+      invalid_state: "Invalid or expired state"
+      email_exists: "This email is registered with another provider"
+      twitch_unavailable: "Twitch API unavailable"
+      google_unavailable: "Google API unavailable"
+      invalid_token: "Invalid token"
+      not_refresh_token: "Not a refresh token"
+      missing_token: "Missing refresh token"

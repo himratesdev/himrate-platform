@@ -1,0 +1,6 @@
+en:
+  api:
+    errors:
+      unauthorized: "Unauthorized"
+      not_found: "Not found"
+      internal_error: "Internal server error"

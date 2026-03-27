@@ -28,7 +28,7 @@ module Api
 
         code_verifier = Rails.cache.read("pkce:#{state}")
         unless code_verifier
-          render json: { error: "INVALID_STATE", message: "Invalid or expired state" }, status: :unauthorized
+          render json: { error: "INVALID_STATE", message: I18n.t("auth.errors.invalid_state") }, status: :unauthorized
           return
         end
 
@@ -62,13 +62,13 @@ module Api
         }
       rescue ActiveRecord::RecordNotUnique
         Rails.logger.warn("Cross-provider email collision: #{request.path}")
-        render json: { error: "EMAIL_ALREADY_EXISTS", message: "This email is registered with another provider" }, status: :conflict
+        render json: { error: "EMAIL_ALREADY_EXISTS", message: I18n.t("auth.errors.email_exists") }, status: :conflict
       rescue Auth::AuthError => e
         Rails.logger.error("Auth failed: #{e.class} #{e.message}")
         render json: { error: "TWITCH_AUTH_FAILED", message: e.message }, status: :unauthorized
       rescue Errno::ECONNREFUSED, HTTP::TimeoutError => e
         Rails.logger.error("Twitch API unavailable: #{e.class} #{e.message}")
-        render json: { error: "TWITCH_UNAVAILABLE", message: "Twitch API unavailable" }, status: :service_unavailable
+        render json: { error: "TWITCH_UNAVAILABLE", message: I18n.t("auth.errors.twitch_unavailable") }, status: :service_unavailable
       end
 
       # TASK-007: POST /api/v1/auth/google
@@ -93,7 +93,7 @@ module Api
         end
 
         unless Rails.cache.read("google_state:#{state}")
-          render json: { error: "INVALID_STATE", message: "Invalid or expired state" }, status: :unauthorized
+          render json: { error: "INVALID_STATE", message: I18n.t("auth.errors.invalid_state") }, status: :unauthorized
           return
         end
 
@@ -127,24 +127,24 @@ module Api
         }
       rescue ActiveRecord::RecordNotUnique
         Rails.logger.warn("Cross-provider email collision: #{request.path}")
-        render json: { error: "EMAIL_ALREADY_EXISTS", message: "This email is registered with another provider" }, status: :conflict
+        render json: { error: "EMAIL_ALREADY_EXISTS", message: I18n.t("auth.errors.email_exists") }, status: :conflict
       rescue Auth::AuthError => e
         Rails.logger.error("Google auth failed: #{e.class} #{e.message}")
         render json: { error: "GOOGLE_AUTH_FAILED", message: e.message }, status: :unauthorized
       rescue Errno::ECONNREFUSED, HTTP::TimeoutError => e
         Rails.logger.error("Google API unavailable: #{e.class} #{e.message}")
-        render json: { error: "GOOGLE_UNAVAILABLE", message: "Google API unavailable" }, status: :service_unavailable
+        render json: { error: "GOOGLE_UNAVAILABLE", message: I18n.t("auth.errors.google_unavailable") }, status: :service_unavailable
       end
 
       # FR-003: POST /api/v1/auth/refresh
       def refresh
         token = params[:refresh_token]
-        return render json: { error: "MISSING_TOKEN" }, status: :unauthorized if token.blank?
+        return render json: { error: "MISSING_TOKEN", message: I18n.t("auth.errors.missing_token") }, status: :unauthorized if token.blank?
 
         payload = Auth::JwtService.decode(token)
 
         unless payload[:type] == "refresh"
-          render json: { error: "INVALID_TOKEN", message: "Not a refresh token" }, status: :unauthorized
+          render json: { error: "INVALID_TOKEN", message: I18n.t("auth.errors.not_refresh_token") }, status: :unauthorized
           return
         end
 
@@ -156,10 +156,10 @@ module Api
         render json: { access_token: access_token, refresh_token: new_refresh, expires_in: 3600 }
       rescue Auth::AuthError => e
         Rails.logger.error("Token refresh failed: #{e.class} #{e.message}")
-        render json: { error: "INVALID_TOKEN", message: e.message }, status: :unauthorized
+        render json: { error: "INVALID_TOKEN", message: I18n.t("auth.errors.invalid_token") }, status: :unauthorized
       rescue ActiveRecord::RecordNotFound
         Rails.logger.error("Token refresh: user not found")
-        render json: { error: "USER_NOT_FOUND" }, status: :unauthorized
+        render json: { error: "USER_NOT_FOUND", message: I18n.t("auth.errors.user_not_found") }, status: :unauthorized
       end
 
       # FR-004: DELETE /api/v1/auth/logout
@@ -174,7 +174,7 @@ module Api
         render json: { status: "logged_out" }
       rescue Auth::AuthError, ActiveRecord::RecordNotFound => e
         Rails.logger.error("Logout failed: #{e.class} #{e.message}")
-        render json: { error: "INVALID_TOKEN" }, status: :unauthorized
+        render json: { error: "INVALID_TOKEN", message: I18n.t("auth.errors.invalid_token") }, status: :unauthorized
       end
     end
   end
