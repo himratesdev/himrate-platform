@@ -26,6 +26,7 @@ RSpec.describe Twitch::GqlClient do
       expect(result[:followers_count]).to eq(9_500_000)
       expect(result[:follows_count]).to eq(42)
       expect(result[:videos_count]).to eq(150)
+      expect(result[:has_clips]).to be true
       expect(result[:profile_view_count]).to eq(150_000)
     end
 
@@ -194,6 +195,7 @@ RSpec.describe Twitch::GqlClient do
       stub_gql_request(body_includes: "ChatRoomState", response: {
         data: { user: { chatSettings: {
           followersOnlyDurationMinutes: 10,
+          isSubscribersOnlyModeEnabled: true,
           slowModeDurationSeconds: 30,
           isEmoteOnlyModeEnabled: false,
           blockLinks: true,
@@ -204,6 +206,7 @@ RSpec.describe Twitch::GqlClient do
 
       result = client.chat_room_state(channel_login: "test")
       expect(result[:followers_only_duration_minutes]).to eq(10)
+      expect(result[:subscriber_only_mode]).to be true
       expect(result[:slow_mode_duration_seconds]).to eq(30)
       expect(result[:emote_only_mode]).to be false
       expect(result[:block_links]).to be true
@@ -495,6 +498,7 @@ RSpec.describe Twitch::GqlClient do
         followers: { totalCount: 9_500_000 }, follows: { totalCount: 42 },
         lastBroadcast: { startedAt: "2026-03-27T02:00:00Z", title: "Stream", game: { name: "Valorant" } },
         videos: { totalCount: 150 },
+        clips: { edges: [ { node: { id: "clip1" } } ] },
         stream: live ? { id: "999", viewersCount: 32_000, game: { name: "Valorant" }, type: "live", createdAt: "2026-03-28T16:00:00Z" } : nil
       } }
     }

@@ -48,13 +48,11 @@ module Twitch
     end
 
     # FR-003: Channel viewer list (CommunityTab) — may require integrity token
-    def community_tab(channel_login:, first: 100, after: nil)
+    # Note: Twitch GQL chatters list does not support pagination
+    def community_tab(channel_login:)
       return nil if channel_login.blank?
 
-      variables = { login: channel_login, first: first }
-      variables[:after] = after if after
-
-      result = execute(QUERIES[:community_tab], variables)
+      result = execute(QUERIES[:community_tab], { login: channel_login })
       chatters = result&.dig("data", "channel", "chatters")
       return nil unless chatters
 
@@ -117,6 +115,7 @@ module Twitch
 
       {
         followers_only_duration_minutes: settings["followersOnlyDurationMinutes"],
+        subscriber_only_mode: settings["isSubscribersOnlyModeEnabled"],
         slow_mode_duration_seconds: settings["slowModeDurationSeconds"],
         emote_only_mode: settings["isEmoteOnlyModeEnabled"],
         block_links: settings["blockLinks"],
@@ -353,6 +352,7 @@ module Twitch
           game_name: user.dig("lastBroadcast", "game", "name")
         },
         videos_count: user.dig("videos", "totalCount"),
+        has_clips: user.dig("clips", "edges")&.any? || false,
         stream: user["stream"] && {
           id: user.dig("stream", "id"),
           viewers_count: user.dig("stream", "viewersCount"),
@@ -410,13 +410,14 @@ module Twitch
             follows { totalCount }
             lastBroadcast { startedAt title game { name } }
             videos { totalCount }
+            clips(first: 1, criteria: { period: ALL_TIME }) { edges { node { id } } }
             stream { id viewersCount game { name } type createdAt }
           }
         }
       GQL
 
       community_tab: <<~GQL.squish,
-        query CommunityTab($login: String!, $first: Int!, $after: String) {
+        query CommunityTab($login: String!) {
           channel(name: $login) {
             chatters {
               broadcasters { login }
@@ -466,6 +467,7 @@ module Twitch
           user(login: $login) {
             chatSettings {
               followersOnlyDurationMinutes
+              isSubscribersOnlyModeEnabled
               slowModeDurationSeconds
               isEmoteOnlyModeEnabled
               blockLinks
@@ -487,6 +489,7 @@ module Twitch
             follows { totalCount }
             lastBroadcast { startedAt title game { name } }
             videos { totalCount }
+            clips(first: 1, criteria: { period: ALL_TIME }) { edges { node { id } } }
             stream { id viewersCount game { name } type createdAt }
           }
         }
