@@ -24,9 +24,15 @@ module Api
 
       private
 
+      METADATA_KEYS = %w[browser os screen_resolution device locale].freeze
+      METADATA_VALUE_MAX = 100
+
       def auth_event_params
         permitted = params.permit(:provider, :result, :error_type, :extension_version)
-        permitted[:metadata] = params[:metadata].permit! if params[:metadata].present?
+        if params[:metadata].present?
+          raw = params[:metadata].to_unsafe_h.slice(*METADATA_KEYS)
+          permitted[:metadata] = raw.transform_values { |v| v.to_s.truncate(METADATA_VALUE_MAX) }
+        end
         permitted
       end
 
