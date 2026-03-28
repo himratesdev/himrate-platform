@@ -11,3 +11,6 @@ ru:
       invalid_token: "Неверный токен"
       not_refresh_token: "Это не refresh токен"
       missing_token: "Отсутствует refresh токен"
+      twitch_auth_failed: "Ошибка авторизации Twitch"
+      google_auth_failed: "Ошибка авторизации Google"
+      auth_failed: "Ошибка авторизации"
