@@ -43,7 +43,7 @@ module Api
                           .find(payload[:sub])
     rescue Auth::AuthError => e
       Rails.logger.warn("Auth failed: #{e.class} from #{request.remote_ip}")
-      render json: { error: "UNAUTHORIZED", message: e.message }, status: :unauthorized
+      render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.auth_failed") }, status: :unauthorized
     rescue ActiveRecord::RecordNotFound
       Rails.logger.warn("Auth failed: user not found from #{request.remote_ip}")
       render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.user_not_found") }, status: :unauthorized

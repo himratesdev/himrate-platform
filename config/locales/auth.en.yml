@@ -11,3 +11,6 @@ en:
       invalid_token: "Invalid token"
       not_refresh_token: "Not a refresh token"
       missing_token: "Missing refresh token"
+      twitch_auth_failed: "Twitch authentication failed"
+      google_auth_failed: "Google authentication failed"
+      auth_failed: "Authentication failed"

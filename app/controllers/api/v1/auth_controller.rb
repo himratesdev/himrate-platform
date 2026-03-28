@@ -65,7 +65,7 @@ module Api
         render json: { error: "EMAIL_ALREADY_EXISTS", message: I18n.t("auth.errors.email_exists") }, status: :conflict
       rescue Auth::AuthError => e
         Rails.logger.error("Auth failed: #{e.class} #{e.message}")
-        render json: { error: "TWITCH_AUTH_FAILED", message: e.message }, status: :unauthorized
+        render json: { error: "TWITCH_AUTH_FAILED", message: I18n.t("auth.errors.twitch_auth_failed") }, status: :unauthorized
       rescue Errno::ECONNREFUSED, HTTP::TimeoutError => e
         Rails.logger.error("Twitch API unavailable: #{e.class} #{e.message}")
         render json: { error: "TWITCH_UNAVAILABLE", message: I18n.t("auth.errors.twitch_unavailable") }, status: :service_unavailable
@@ -130,7 +130,7 @@ module Api
         render json: { error: "EMAIL_ALREADY_EXISTS", message: I18n.t("auth.errors.email_exists") }, status: :conflict
       rescue Auth::AuthError => e
         Rails.logger.error("Google auth failed: #{e.class} #{e.message}")
-        render json: { error: "GOOGLE_AUTH_FAILED", message: e.message }, status: :unauthorized
+        render json: { error: "GOOGLE_AUTH_FAILED", message: I18n.t("auth.errors.google_auth_failed") }, status: :unauthorized
       rescue Errno::ECONNREFUSED, HTTP::TimeoutError => e
         Rails.logger.error("Google API unavailable: #{e.class} #{e.message}")
         render json: { error: "GOOGLE_UNAVAILABLE", message: I18n.t("auth.errors.google_unavailable") }, status: :service_unavailable
