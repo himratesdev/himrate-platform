@@ -37,6 +37,15 @@ class CleanupWorker
   end
 
   def cleanup_expired_sessions
-    Session.where(is_active: false).where(expires_at: ...Time.current).delete_all
+    total = 0
+
+    loop do
+      deleted = Session.where(is_active: false).where(expires_at: ...Time.current)
+                       .limit(BATCH_SIZE).delete_all
+      total += deleted
+      break if deleted < BATCH_SIZE
+    end
+
+    total
   end
 end
