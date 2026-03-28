@@ -15,5 +15,8 @@ class Stream < ApplicationRecord
   has_many :anomalies, dependent: :destroy
   has_one :post_stream_report, dependent: :destroy
 
+  MERGE_STATUSES = %w[separate merged primary secondary].freeze
+
   validates :started_at, presence: true
+  validates :merge_status, inclusion: { in: MERGE_STATUSES }, allow_nil: true
 end
