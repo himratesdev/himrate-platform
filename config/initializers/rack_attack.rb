@@ -10,9 +10,10 @@ class Rack::Attack
     req.ip == "127.0.0.1" || req.ip == "::1"
   end
 
+  SAFELISTED_IPS = ENV.fetch("RACK_ATTACK_SAFELIST_IPS", "").split(",").map(&:strip).freeze
+
   safelist("staging_ips") do |req|
-    safelisted = ENV.fetch("RACK_ATTACK_SAFELIST_IPS", "").split(",").map(&:strip)
-    safelisted.include?(req.ip)
+    SAFELISTED_IPS.include?(req.ip)
   end
 
   # === Exclude OPTIONS preflight from all throttles ===

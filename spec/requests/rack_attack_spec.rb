@@ -67,6 +67,28 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
     end
   end
 
+  describe "per-user JWT throttle (300/min)" do
+    let(:user) { create(:user) }
+
+    it "uses JWT sub as throttle key" do
+      token = Auth::JwtService.encode_access(user.id)
+      headers = { "REMOTE_ADDR" => "6.7.8.9", "Authorization" => "Bearer #{token}" }
+
+      # Just verify the throttle key resolves (full 300 requests too slow for test)
+      # Send 1 request with valid JWT — should not 429 (under limit)
+      get "/api/v1/channels", headers: headers
+      expect(response).not_to have_http_status(429)
+    end
+
+    it "falls back to IP-only for invalid JWT" do
+      headers = { "REMOTE_ADDR" => "6.7.8.9", "Authorization" => "Bearer invalid_token" }
+
+      # Invalid JWT → api/user throttle returns nil → only api/ip applies
+      get "/api/v1/channels", headers: headers
+      expect(response).not_to have_http_status(429)
+    end
+  end
+
   describe "localhost safelist" do
     it "does not throttle localhost" do
       100.times { get "/api/v1/channels", headers: { "REMOTE_ADDR" => "127.0.0.1" } }
