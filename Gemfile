@@ -34,6 +34,9 @@ gem "flipper-ui", "~> 1.3"
 # CORS
 gem "rack-cors", "~> 2.0"
 
+# Rate limiting
+gem "rack-attack", "~> 6.7"
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 

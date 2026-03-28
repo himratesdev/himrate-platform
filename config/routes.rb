@@ -41,6 +41,9 @@ Rails.application.routes.draw do
       end
       resources :subscriptions, only: %i[index create destroy]
       resources :watchlists, only: %i[index create destroy]
+
+      # TASK-018: Auth events tracking (observability)
+      post "analytics/auth_events", to: "auth_events#create"
     end
   end
 
