@@ -4,6 +4,8 @@
 # Rating = weighted average TI with exponential decay (λ=0.05).
 
 class CreateStreamerRatings < ActiveRecord::Migration[8.1]
+  disable_ddl_transaction!
+
   def up
     create_table :streamer_ratings, id: :uuid do |t|
       t.references :channel, type: :uuid, null: false, foreign_key: true, index: false
@@ -15,7 +17,8 @@ class CreateStreamerRatings < ActiveRecord::Migration[8.1]
       t.timestamps
     end
 
-    add_index :streamer_ratings, :channel_id, unique: true
+    add_index :streamer_ratings, :channel_id, unique: true,
+      algorithm: :concurrently, if_not_exists: true
   end
 
   def down

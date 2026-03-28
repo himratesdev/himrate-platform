@@ -13,6 +13,14 @@ RSpec.describe "TASK-017 Models", type: :model do
       expect(rating).not_to be_valid
     end
 
+    it "validates decay_lambda range 0-1" do
+      expect(build(:streamer_rating, decay_lambda: 0)).not_to be_valid
+      expect(build(:streamer_rating, decay_lambda: -0.1)).not_to be_valid
+      expect(build(:streamer_rating, decay_lambda: 1.1)).not_to be_valid
+      expect(build(:streamer_rating, decay_lambda: 0.05)).to be_valid
+      expect(build(:streamer_rating, decay_lambda: 1.0)).to be_valid
+    end
+
     it "creates valid record via factory" do
       rating = create(:streamer_rating)
       expect(rating).to be_persisted
@@ -45,11 +53,24 @@ RSpec.describe "TASK-017 Models", type: :model do
   describe BillingEvent do
     it { is_expected.to belong_to(:user) }
     it { is_expected.to validate_presence_of(:event_type) }
-    it { is_expected.to validate_presence_of(:stripe_event_id) }
+    it { is_expected.to validate_presence_of(:provider_event_id) }
+    it { is_expected.to validate_presence_of(:provider) }
 
     it "validates event_type inclusion" do
       event = build(:billing_event, event_type: "invalid")
       expect(event).not_to be_valid
+    end
+
+    it "validates provider inclusion" do
+      event = build(:billing_event, provider: "invalid")
+      expect(event).not_to be_valid
+    end
+
+    it "allows valid providers" do
+      BillingEvent::PROVIDERS.each do |p|
+        event = build(:billing_event, provider: p)
+        expect(event).to be_valid, "Expected '#{p}' to be valid"
+      end
     end
 
     it "allows valid event_types" do
@@ -59,9 +80,9 @@ RSpec.describe "TASK-017 Models", type: :model do
       end
     end
 
-    it "enforces stripe_event_id uniqueness" do
-      create(:billing_event, stripe_event_id: "evt_dup")
-      dup = build(:billing_event, stripe_event_id: "evt_dup")
+    it "enforces provider_event_id uniqueness" do
+      create(:billing_event, provider_event_id: "evt_dup")
+      dup = build(:billing_event, provider_event_id: "evt_dup")
       expect(dup).not_to be_valid
     end
   end

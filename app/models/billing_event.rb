@@ -8,8 +8,11 @@ class BillingEvent < ApplicationRecord
     refund charge_dispute
   ].freeze
 
+  PROVIDERS = %w[yookassa stripe].freeze
+
   belongs_to :user
 
   validates :event_type, presence: true, inclusion: { in: EVENT_TYPES }
-  validates :stripe_event_id, presence: true, uniqueness: true
+  validates :provider, presence: true, inclusion: { in: PROVIDERS }
+  validates :provider_event_id, presence: true, uniqueness: true
 end
