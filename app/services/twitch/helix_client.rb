@@ -130,9 +130,11 @@ module Twitch
 
     def redis
       @redis ||= begin
-        Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
-      rescue Redis::CannotConnectError
-        Rails.logger.warn("Twitch::HelixClient: Redis unavailable, token caching disabled")
+        r = Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
+        r.ping
+        r
+      rescue Redis::CannotConnectError, Redis::TimeoutError => e
+        Rails.logger.warn("Twitch::HelixClient: Redis unavailable (#{e.message}), token caching disabled")
         nil
       end
     end
@@ -142,13 +144,19 @@ module Twitch
     def handle_rate_limit(response, path, params, retries)
       if retries >= MAX_RETRIES
         Rails.logger.error("Twitch Helix rate limit exhausted: #{path} after #{MAX_RETRIES} retries")
-        nil
-      else
-        wait = BACKOFF_BASE * (2**retries)
-        Rails.logger.warn("Twitch Helix 429: #{path}, retry #{retries + 1} in #{wait}s")
-        sleep(wait)
-        get(path, params, retries: retries + 1)
+        return nil
       end
+
+      reset_epoch = response.headers["Ratelimit-Reset"]&.to_i
+      wait = if reset_epoch && reset_epoch > Time.current.to_i
+        [ reset_epoch - Time.current.to_i + 1, 60 ].min # cap at 60s
+      else
+        BACKOFF_BASE * (2**retries)
+      end
+
+      Rails.logger.warn("Twitch Helix 429: #{path}, waiting #{wait}s (retry #{retries + 1})")
+      sleep(wait)
+      get(path, params, retries: retries + 1)
     end
 
     def handle_server_error(response, path, params, retries)
