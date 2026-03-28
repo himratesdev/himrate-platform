@@ -3,12 +3,13 @@
 module Api
   module V1
     class AuthEventsController < Api::BaseController
-      # Public endpoint — no auth required (anonymous users send events too)
+      # Public endpoint — anonymous users send events too
+      before_action :authenticate_user_optional!
       skip_after_action :verify_authorized
 
       def create
         event = AuthEvent.new(auth_event_params)
-        event.user = current_user_optional
+        event.user = current_user
         event.ip_address = request.remote_ip
         event.user_agent = request.user_agent
         event.created_at = Time.current
@@ -24,16 +25,9 @@ module Api
       private
 
       def auth_event_params
-        params.permit(:provider, :result, :error_type, :extension_version, metadata: {})
-      end
-
-      def current_user_optional
-        token = request.headers["Authorization"]&.delete_prefix("Bearer ")
-        return nil unless token
-
-        Auth::JwtService.decode(token)&.then { |payload| User.find_by(id: payload["sub"]) }
-      rescue StandardError
-        nil
+        permitted = params.permit(:provider, :result, :error_type, :extension_version)
+        permitted[:metadata] = params[:metadata].permit! if params[:metadata].present?
+        permitted
       end
 
       def check_consecutive_failures(event)
