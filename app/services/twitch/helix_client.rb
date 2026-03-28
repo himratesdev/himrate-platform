@@ -4,6 +4,9 @@
 # App access token (client_credentials) cached in Redis.
 # Rate limiting: 800 points/min via Ratelimit-Remaining header.
 # Exponential backoff on 429. Auto-refresh on 401.
+#
+# IMPORTANT: Call from Sidekiq workers only (not controllers).
+# sleep() in retry handlers blocks the thread — unacceptable in web request cycle.
 
 module Twitch
   class HelixClient

@@ -12,6 +12,11 @@ RSpec.describe Twitch::HelixClient do
     allow(ENV).to receive(:fetch).with("TWITCH_CLIENT_SECRET").and_return("test_secret")
     allow(ENV).to receive(:fetch).with("REDIS_URL", anything).and_return("redis://localhost:6379/1")
 
+    # Clear Redis token cache to prevent state leak between tests
+    Redis.new(url: "redis://localhost:6379/1").del("twitch:app_access_token")
+  rescue Redis::CannotConnectError
+    # Redis not available in CI — tests still work (token fetched each time)
+  ensure
     # Stub token request
     stub_request(:post, "https://id.twitch.tv/oauth2/token")
       .to_return(status: 200, body: token_response, headers: { "Content-Type" => "application/json" })
