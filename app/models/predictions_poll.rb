@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 class PredictionsPoll < ApplicationRecord
-  EVENT_TYPES = %w[prediction poll].freeze
+  EVENT_TYPES = %w[prediction poll hype_train].freeze
 
   belongs_to :stream
 

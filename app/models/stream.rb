@@ -19,4 +19,7 @@ class Stream < ApplicationRecord
 
   validates :started_at, presence: true
   validates :merge_status, inclusion: { in: MERGE_STATUSES }, allow_nil: true
+
+  scope :active, -> { where(ended_at: nil) }
+  scope :for_channel, ->(channel_id) { where(channel_id: channel_id) }
 end
