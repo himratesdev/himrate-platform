@@ -13,10 +13,14 @@ class Stream < ApplicationRecord
   has_many :health_scores, dependent: :destroy
   has_many :raid_attributions, dependent: :destroy
   has_many :anomalies, dependent: :destroy
+  has_many :predictions_polls, dependent: :destroy
   has_one :post_stream_report, dependent: :destroy
 
   MERGE_STATUSES = %w[separate merged primary secondary].freeze
 
   validates :started_at, presence: true
   validates :merge_status, inclusion: { in: MERGE_STATUSES }, allow_nil: true
+
+  scope :active, -> { where(ended_at: nil) }
+  scope :for_channel, ->(channel_id) { where(channel_id: channel_id) }
 end
