@@ -28,6 +28,11 @@ module Twitch
 
     # === Public API methods ===
 
+    # Public accessor for app access token (used by EventSubService)
+    def app_token
+      fetch_app_token
+    end
+
     def get_users(logins: [], ids: [])
       params = {}
       params[:login] = logins if logins.any?

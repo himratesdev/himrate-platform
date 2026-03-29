@@ -123,6 +123,8 @@ jobs:
           FLIPPER_UI_PASSWORD=${{ secrets.FLIPPER_UI_PASSWORD }}
           FLIPPER_UI_USER=${{ secrets.FLIPPER_UI_USER }}
           ALLOWED_EXTENSION_ID=${{ secrets.ALLOWED_EXTENSION_ID }}
+          TWITCH_WEBHOOK_SECRET=${{ secrets.TWITCH_WEBHOOK_SECRET }}
+          EVENTSUB_WEBHOOK_URL=${{ secrets.EVENTSUB_WEBHOOK_URL }}
           SECRETS
       - name: Deploy to staging
         run: kamal setup -d staging
