@@ -75,11 +75,12 @@ RSpec.describe "API Scaffold", type: :request do
     end
   end
 
-  # TC-009: POST /webhooks/twitch → 200 (public)
+  # TC-009: POST /webhooks/twitch — HMAC enforced (TASK-023)
+  # Full coverage: spec/requests/webhooks/twitch_spec.rb (13 tests)
   describe "POST /webhooks/twitch" do
-    it "returns placeholder without auth" do
+    it "returns 403 without HMAC headers" do
       post "/webhooks/twitch"
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:forbidden)
     end
   end
 
@@ -117,11 +118,11 @@ RSpec.describe "API Scaffold", type: :request do
     end
   end
 
-  # TC-011: POST /webhooks/twitch without token → 200 (public)
-  describe "POST /webhooks/twitch without auth" do
-    it "returns 200 (public endpoint)" do
+  # TC-011: POST /webhooks/twitch — HMAC enforced (TASK-023)
+  describe "POST /webhooks/twitch without HMAC" do
+    it "returns 403 (HMAC required)" do
       post "/webhooks/twitch"
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:forbidden)
     end
   end
 end
