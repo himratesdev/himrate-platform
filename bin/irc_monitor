@@ -1,0 +1,34 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# TASK-024: IRC Monitor entrypoint for Kamal accessory.
+# Runs Twitch::IrcMonitor as a standalone long-lived process.
+# Connects to active streams on startup, listens for JOIN/PART via Redis pub/sub.
+
+require_relative "../config/environment"
+
+Rails.logger.info("bin/irc_monitor: starting IRC Monitor process (PID: #{Process.pid})")
+
+# Check Flipper feature flag
+unless Flipper.enabled?(:irc_monitor)
+  Rails.logger.info("bin/irc_monitor: Flipper[:irc_monitor] disabled, exiting")
+  exit(0)
+end
+
+monitor = Twitch::IrcMonitor.new
+
+# Auto-join channels with active streams
+active_channels = Channel.monitored
+  .joins(:streams)
+  .where(streams: { ended_at: nil })
+  .distinct
+  .pluck(:login)
+
+Rails.logger.info("bin/irc_monitor: found #{active_channels.size} active channels to join")
+
+active_channels.each do |login|
+  monitor.subscribe(login)
+end
+
+# Start the monitor (blocks until SIGTERM/SIGINT)
+monitor.start
