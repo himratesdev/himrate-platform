@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_28_200001) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_29_140001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -131,15 +131,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_28_200001) do
   end
 
   create_table "chat_messages", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "badge_info", limit: 255
     t.integer "bits_used", default: 0
+    t.string "channel_login", limit: 255
+    t.string "color", limit: 7
+    t.string "display_name", limit: 255
+    t.text "emotes"
     t.decimal "entropy", precision: 8, scale: 4
     t.boolean "is_first_msg", default: false, null: false
     t.text "message_text"
-    t.uuid "stream_id", null: false
+    t.string "msg_type", limit: 20, default: "privmsg", null: false
+    t.jsonb "raw_tags", default: {}, null: false
+    t.boolean "returning_chatter", default: false, null: false
+    t.uuid "stream_id"
     t.string "subscriber_status", limit: 10
     t.datetime "timestamp", null: false
+    t.string "twitch_msg_id", limit: 255
     t.string "user_type", limit: 10
     t.string "username", limit: 255, null: false
+    t.boolean "vip", default: false, null: false
+    t.index ["channel_login", "timestamp"], name: "idx_chat_messages_channel_time"
+    t.index ["channel_login"], name: "idx_chat_messages_channel_login"
+    t.index ["msg_type"], name: "idx_chat_messages_msg_type"
     t.index ["stream_id", "timestamp"], name: "idx_chat_messages_stream_time"
     t.index ["stream_id"], name: "index_chat_messages_on_stream_id"
     t.index ["timestamp"], name: "index_chat_messages_on_timestamp"

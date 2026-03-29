@@ -17,6 +17,14 @@ servers:
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
+  irc:
+    hosts:
+      - 194.135.85.159
+    cmd: bin/irc_monitor
+    proxy: false
+    options:
+      health-cmd: "ruby -e 'puts :ok'"
+      health-interval: 30s
 
 proxy:
   ssl: true
