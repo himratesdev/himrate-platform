@@ -16,9 +16,15 @@ RSpec.describe StreamMonitorWorker do
     allow(Twitch::GqlClient).to receive(:new).and_return(gql)
     allow(Twitch::HelixClient).to receive(:new).and_return(helix)
 
-    # Default stubs
-    allow(gql).to receive(:stream_metadata).and_return({ viewers_count: 500, title: "Test", game_name: "JC" })
-    allow(gql).to receive(:channel_chatters_count).and_return(400)
+    # Default batch stubs
+    allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_return(
+      [{ "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } }]
+    )
+    allow(gql).to receive(:batch).with(array_including(hash_including(query: /ChattersCount/))).and_return(
+      [{ "data" => { "channel" => { "chatters" => { "count" => 400 } } } }]
+    )
+
+    # Tier 2 stubs
     allow(gql).to receive(:chat_room_state).and_return(nil)
     allow(gql).to receive(:predictions).and_return(nil)
     allow(gql).to receive(:polls).and_return(nil)
@@ -44,36 +50,36 @@ RSpec.describe StreamMonitorWorker do
 
     snapshot = ChattersSnapshot.last
     expect(snapshot.unique_chatters_count).to eq(400)
-    expect(snapshot.auth_ratio.to_f).to be_within(0.01).of(0.8) # 400/500
+    expect(snapshot.auth_ratio.to_f).to be_within(0.01).of(0.8)
   end
 
   # TC-011: Helix fallback
   it "falls back to Helix when GQL fails" do
-    allow(gql).to receive(:stream_metadata).and_raise(Twitch::GqlClient::Error, "GQL down")
+    allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_raise(Twitch::GqlClient::Error, "GQL down")
     allow(helix).to receive(:get_streams).and_return([{ "user_login" => "teststreamer", "viewer_count" => 300 }])
 
     expect { worker.perform }.to change(CcvSnapshot, :count).by(1)
     expect(CcvSnapshot.last.ccv_count).to eq(300)
   end
 
-  # TC-012: Tier 2 ChatRoomState (every 5th cycle)
+  # TC-012: Tier 2 ChatRoomState
   it "updates ChatRoomState on Tier 2 cycle" do
     allow(gql).to receive(:chat_room_state).and_return({
       followers_only_duration_minutes: 10,
       slow_mode_duration_seconds: 30,
       emote_only_mode: false,
-      subscriber_only_mode: false
+      subscriber_only_mode: false,
+      require_verified_account: true
     })
 
-    # Set cycle to multiple of 5
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-
     worker.perform
 
     config = channel.reload.channel_protection_config
     expect(config).to be_present
     expect(config.followers_only_duration_min).to eq(10)
     expect(config.slow_mode_seconds).to eq(30)
+    expect(config.email_verification_required).to be true
   end
 
   # TC-013: Tier 2 Predictions
@@ -84,7 +90,6 @@ RSpec.describe StreamMonitorWorker do
     })
 
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-
     expect { worker.perform }.to change(PredictionsPoll, :count).by(1)
 
     record = PredictionsPoll.last
@@ -100,7 +105,6 @@ RSpec.describe StreamMonitorWorker do
     })
 
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-
     expect { worker.perform }.to change(PredictionsPoll, :count).by(1)
     expect(PredictionsPoll.last.event_type).to eq("poll")
   end
@@ -113,19 +117,17 @@ RSpec.describe StreamMonitorWorker do
     })
 
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-
     expect { worker.perform }.to change(PredictionsPoll, :count).by(1)
     expect(PredictionsPoll.last.event_type).to eq("hype_train")
   end
 
-  # TC-016: Skip inactive predictions
+  # TC-016: Skip inactive
   it "skips when no active predictions/polls" do
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-
     expect { worker.perform }.not_to change(PredictionsPoll, :count)
   end
 
-  # TC-019: Stateless restart
+  # TC-019: Stateless
   it "reads active streams from DB each cycle (stateless)" do
     worker.perform
     expect(CcvSnapshot.count).to be >= 1

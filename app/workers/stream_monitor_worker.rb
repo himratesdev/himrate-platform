@@ -58,16 +58,15 @@ class StreamMonitorWorker
   end
 
   def fetch_ccv_batch(logins)
+    operations = logins.map do |login|
+      { query: Twitch::GqlClient::QUERIES[:stream_metadata], variables: { login: login } }
+    end
+
+    results = gql.batch(operations)
     result = {}
-    logins.each do |login|
-      data = gql.stream_metadata(channel_login: login)
-      if data
-        result[login] = data[:viewers_count].to_i
-      else
-        # Helix fallback
-        helix_data = helix.get_streams(user_logins: [ login ])&.first
-        result[login] = helix_data&.dig("viewer_count").to_i if helix_data
-      end
+    logins.each_with_index do |login, i|
+      viewers = results[i]&.dig("data", "user", "stream", "viewersCount")
+      result[login] = viewers.to_i if viewers
     end
     result
   rescue Twitch::GqlClient::Error => e
@@ -88,9 +87,14 @@ class StreamMonitorWorker
   end
 
   def fetch_chatters_batch(logins)
+    operations = logins.map do |login|
+      { query: Twitch::GqlClient::QUERIES[:chatters_count], variables: { login: login } }
+    end
+
+    results = gql.batch(operations)
     result = {}
-    logins.each do |login|
-      count = gql.channel_chatters_count(channel_login: login)
+    logins.each_with_index do |login, i|
+      count = results[i]&.dig("data", "channel", "chatters", "count")
       result[login] = count.to_i if count
     end
     result
@@ -132,6 +136,8 @@ class StreamMonitorWorker
     end
   end
 
+  # CPS (Channel Protection Score) calculation deferred to TASK-026+ (Signal Workers).
+  # This method stores raw settings; CPS formula applied in trust_index/signals/.
   def update_chat_room_state(channel, login)
     data = gql.chat_room_state(channel_login: login)
     return unless data
@@ -142,6 +148,8 @@ class StreamMonitorWorker
       slow_mode_seconds: data[:slow_mode_duration_seconds],
       emote_only_enabled: data[:emote_only_mode] || false,
       subs_only_enabled: data[:subscriber_only_mode] || false,
+      email_verification_required: data[:require_verified_account] || false,
+      phone_verification_required: data[:require_verified_account] || false,
       last_checked_at: Time.current
     )
   rescue ActiveRecord::RecordInvalid => e
@@ -226,6 +234,13 @@ class StreamMonitorWorker
   end
 
   def redis
-    @redis ||= Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
+    @redis ||= begin
+      r = Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
+      r.ping
+      r
+    rescue Redis::CannotConnectError => e
+      Rails.logger.warn("StreamMonitorWorker: Redis unavailable (#{e.message})")
+      Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
+    end
   end
 end

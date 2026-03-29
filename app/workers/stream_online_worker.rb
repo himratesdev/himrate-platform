@@ -21,7 +21,6 @@ class StreamOnlineWorker
     return if active_stream_exists?(channel)
 
     stream = merge_or_create_stream(channel, event_data)
-    enrich_stream(stream, broadcaster_login)
 
     # TASK-024: Tell IrcMonitor to join this channel's chat
     publish_irc_join(broadcaster_login)
@@ -45,10 +44,14 @@ class StreamOnlineWorker
   end
 
   def merge_or_create_stream(channel, event_data)
-    last_stream = channel.streams.where.not(ended_at: nil).order(ended_at: :desc).first
-    game_name = event_data["category_name"] || event_data.dig("category", "name")
+    # EventSub stream.online does NOT contain category_name/title — fetch from GQL first
+    metadata = fetch_metadata(channel.login)
+    game_name = metadata&.dig(:game_name)
+    title = metadata&.dig(:title)
+    language = metadata&.dig(:language)
 
-    if last_stream && last_stream.ended_at > MERGE_GAP_MINUTES.minutes.ago && last_stream.game_name == game_name
+    last_stream = channel.streams.where.not(ended_at: nil).order(ended_at: :desc).first
+    if last_stream && last_stream.ended_at > MERGE_GAP_MINUTES.minutes.ago && game_name.present? && last_stream.game_name == game_name
       last_stream.update!(ended_at: nil, merge_status: "merged")
       Rails.logger.info("StreamOnlineWorker: merged with previous stream #{last_stream.id}")
       last_stream
@@ -56,24 +59,18 @@ class StreamOnlineWorker
       Stream.create!(
         channel: channel,
         started_at: event_data["started_at"] || Time.current,
-        title: event_data["title"],
+        title: title,
         game_name: game_name,
-        language: event_data["language"]
+        language: language
       )
     end
   end
 
-  def enrich_stream(stream, login)
-    metadata = Twitch::GqlClient.new.stream_metadata(channel_login: login)
-    return unless metadata
-
-    stream.update!(
-      title: metadata[:title] || stream.title,
-      game_name: metadata[:game_name] || stream.game_name,
-      language: metadata[:language] || stream.language
-    )
+  def fetch_metadata(login)
+    Twitch::GqlClient.new.stream_metadata(channel_login: login)
   rescue StandardError => e
-    Rails.logger.warn("StreamOnlineWorker: GQL enrich failed (#{e.message})")
+    Rails.logger.warn("StreamOnlineWorker: GQL metadata failed (#{e.message})")
+    nil
   end
 
   def publish_irc_join(login)

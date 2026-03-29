@@ -14,40 +14,41 @@ class ChannelDiscoveryWorker
   def perform
     return unless Flipper.enabled?(:stream_monitor)
 
-    streams = helix.get_streams(user_logins: [], user_ids: [])
-    # get_streams without params returns top streams
-    # Use top_streams GQL for better data
-    streams_data = gql.top_streams(first: 100)
+    streams_data = helix.get_streams(user_logins: [], user_ids: []) || []
 
     new_channels = 0
     streams_data.each do |stream|
-      next unless stream[:viewers_count].to_i >= MIN_VIEWERS
+      next unless stream["viewer_count"].to_i >= MIN_VIEWERS
 
-      channel = Channel.find_or_initialize_by(login: stream[:login])
-      if channel.new_record?
-        channel.twitch_id = resolve_twitch_id(stream[:login])
-        channel.is_monitored = true
-        channel.save!
-
-        subscribe_eventsub(channel)
-        new_channels += 1
-      end
+      process_stream(stream)
+      new_channels += 1
+    rescue StandardError => e
+      Rails.logger.warn("ChannelDiscoveryWorker: failed for #{stream["user_login"]} (#{e.message})")
     end
 
-    Rails.logger.info("ChannelDiscoveryWorker: scanned #{streams_data.size} streams, #{new_channels} new channels")
+    Rails.logger.info("ChannelDiscoveryWorker: scanned #{streams_data.size} streams, #{new_channels} processed")
     schedule_next
   end
 
   private
 
-  def resolve_twitch_id(login)
-    users = helix.get_users(logins: [ login ])
-    users&.first&.dig("id")
+  def process_stream(stream)
+    twitch_id = stream["user_id"]
+    login = stream["user_login"]&.downcase
+    return unless twitch_id && login
+
+    channel = Channel.find_or_initialize_by(twitch_id: twitch_id)
+    if channel.new_record?
+      channel.login = login
+      channel.is_monitored = true
+      channel.save!
+
+      subscribe_eventsub(channel)
+      Rails.logger.info("ChannelDiscoveryWorker: new channel #{login} (#{twitch_id})")
+    end
   end
 
   def subscribe_eventsub(channel)
-    return unless channel.twitch_id
-
     Twitch::EventSubService.new.subscribe(broadcaster_id: channel.twitch_id)
   rescue StandardError => e
     Rails.logger.warn("ChannelDiscoveryWorker: EventSub subscribe failed for #{channel.login} (#{e.message})")
@@ -55,10 +56,6 @@ class ChannelDiscoveryWorker
 
   def schedule_next
     self.class.perform_in(DISCOVERY_INTERVAL)
-  end
-
-  def gql
-    @gql ||= Twitch::GqlClient.new
   end
 
   def helix
