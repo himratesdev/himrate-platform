@@ -133,7 +133,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_140001) do
   create_table "chat_messages", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.string "badge_info", limit: 255
     t.integer "bits_used", default: 0
-    t.string "channel_login", limit: 255
+    t.string "channel_login", limit: 255, null: false
     t.string "color", limit: 7
     t.string "display_name", limit: 255
     t.text "emotes"

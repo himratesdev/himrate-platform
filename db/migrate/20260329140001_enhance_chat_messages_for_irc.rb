@@ -11,7 +11,7 @@ class EnhanceChatMessagesForIrc < ActiveRecord::Migration[8.0]
 
   def up
     # New columns
-    add_column :chat_messages, :channel_login, :string, limit: 255
+    add_column :chat_messages, :channel_login, :string, limit: 255, null: false
     add_column :chat_messages, :msg_type, :string, limit: 20, default: "privmsg", null: false
     add_column :chat_messages, :display_name, :string, limit: 255
     add_column :chat_messages, :badge_info, :string, limit: 255

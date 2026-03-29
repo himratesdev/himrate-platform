@@ -41,7 +41,10 @@ module Twitch
       @parser = IrcParser.new
       @join_timestamps = []
       @last_message_at = Time.current
+      @last_heartbeat_at = Time.at(0)
+      @started_at = Time.current
       @awaiting_pong = false
+      @memory_buffer = []
     end
 
     # Start the IRC monitor loop. Blocks until stop is called.
@@ -140,6 +143,8 @@ module Twitch
     end
 
     def authenticate
+      # membership capability omitted: deprecated for large channels, generates
+      # excessive JOIN/PART traffic. Viewer lists via GQL CommunityTab (TASK-022).
       send_raw("CAP REQ :twitch.tv/tags twitch.tv/commands")
       send_raw("PASS SCHMOOPIIE")
       send_raw("NICK justinfan#{rand(1000..9999)}")
@@ -177,6 +182,13 @@ module Twitch
         else
           send_keepalive_ping if Time.current - @last_message_at > PING_INTERVAL
         end
+
+        # Periodic heartbeat for Kamal health check
+        if Time.current - @last_heartbeat_at > 30
+          update_heartbeat
+          flush_memory_buffer
+          @last_heartbeat_at = Time.current
+        end
       end
     end
 
@@ -197,6 +209,8 @@ module Twitch
 
     # === Redis Queue ===
 
+    MEMORY_BUFFER_MAX = 10_000
+
     def push_to_redis(parsed)
       record = @parser.to_record(parsed)
       return unless record
@@ -204,7 +218,22 @@ module Twitch
       payload = JSON.generate(record)
       redis.lpush(REDIS_QUEUE_KEY, payload)
     rescue Redis::BaseError => e
-      Rails.logger.warn("IrcMonitor: Redis push failed (#{e.message}), message dropped")
+      @memory_buffer.shift if @memory_buffer.size >= MEMORY_BUFFER_MAX
+      @memory_buffer << payload
+      Rails.logger.warn("IrcMonitor: Redis push failed, buffered in memory (#{@memory_buffer.size})")
+    end
+
+    def flush_memory_buffer
+      return if @memory_buffer.empty?
+
+      flushed = 0
+      while (payload = @memory_buffer.shift)
+        redis.lpush(REDIS_QUEUE_KEY, payload)
+        flushed += 1
+      end
+      Rails.logger.info("IrcMonitor: flushed #{flushed} messages from memory buffer to Redis")
+    rescue Redis::BaseError
+      # Redis still down — messages stay in memory buffer for next attempt
     end
 
     # === Reconnect ===
