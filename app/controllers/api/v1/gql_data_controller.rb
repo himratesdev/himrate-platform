@@ -7,6 +7,9 @@
 module Api
   module V1
     class GqlDataController < BaseController
+      skip_after_action :verify_authorized # Auth via JWT, no Pundit policy needed
+      before_action :authenticate_user!
+
       VALID_DATA_TYPES = %w[chatters_count community_tab social_medias user_follows].freeze
 
       def create
@@ -26,7 +29,9 @@ module Api
       private
 
       def data_params
-        params.permit(:data_type, :channel_id, payload: {})
+        permitted = params.permit(:data_type, :channel_id)
+        permitted[:payload] = params[:payload].permit! if params[:payload].present?
+        permitted
       end
     end
   end
