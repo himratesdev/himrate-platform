@@ -69,7 +69,10 @@ RSpec.describe StreamMonitorWorker do
       slow_mode_duration_seconds: 30,
       emote_only_mode: false,
       subscriber_only_mode: false,
-      require_verified_account: true
+      email_verification_mode: "REQUIRED",
+      phone_verification_mode: "REQUIRED",
+      minimum_account_age_minutes: 1440,
+      restrict_first_timers: true
     })
 
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)

@@ -113,6 +113,8 @@ module Twitch
       settings = result&.dig("data", "user", "chatSettings")
       return nil unless settings
 
+      verification = result&.dig("data", "user", "channel", "accountVerificationOptions") || {}
+
       {
         followers_only_duration_minutes: settings["followersOnlyDurationMinutes"],
         subscriber_only_mode: settings["isSubscribersOnlyModeEnabled"],
@@ -120,7 +122,11 @@ module Twitch
         emote_only_mode: settings["isEmoteOnlyModeEnabled"],
         block_links: settings["blockLinks"],
         chat_delay_ms: settings["chatDelayMs"],
-        require_verified_account: settings["requireVerifiedAccount"]
+        require_verified_account: settings["requireVerifiedAccount"],
+        email_verification_mode: verification["emailVerificationMode"],
+        phone_verification_mode: verification["phoneVerificationMode"],
+        minimum_account_age_minutes: verification["minimumAccountAgeInMinutes"],
+        restrict_first_timers: verification["shouldRestrictFirstTimeChatters"]
       }
     end
 
@@ -524,6 +530,14 @@ module Twitch
               blockLinks
               chatDelayMs
               requireVerifiedAccount
+            }
+            channel {
+              accountVerificationOptions {
+                emailVerificationMode
+                phoneVerificationMode
+                minimumAccountAgeInMinutes
+                shouldRestrictFirstTimeChatters
+              }
             }
           }
         }

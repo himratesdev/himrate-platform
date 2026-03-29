@@ -148,8 +148,8 @@ class StreamMonitorWorker
       slow_mode_seconds: data[:slow_mode_duration_seconds],
       emote_only_enabled: data[:emote_only_mode] || false,
       subs_only_enabled: data[:subscriber_only_mode] || false,
-      email_verification_required: data[:require_verified_account] || false,
-      phone_verification_required: data[:require_verified_account] || false,
+      email_verification_required: data[:email_verification_mode] == "REQUIRED",
+      phone_verification_required: data[:phone_verification_mode] == "REQUIRED",
       last_checked_at: Time.current
     )
   rescue ActiveRecord::RecordInvalid => e
