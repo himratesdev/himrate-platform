@@ -18,10 +18,10 @@ RSpec.describe StreamMonitorWorker do
 
     # Default batch stubs
     allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_return(
-      [{ "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } }]
+      [ { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } } ]
     )
     allow(gql).to receive(:batch).with(array_including(hash_including(query: /ChattersCount/))).and_return(
-      [{ "data" => { "channel" => { "chatters" => { "count" => 400 } } } }]
+      [ { "data" => { "channel" => { "chatters" => { "count" => 400 } } } } ]
     )
 
     # Tier 2 stubs
@@ -35,20 +35,24 @@ RSpec.describe StreamMonitorWorker do
     skip "Redis not available"
   end
 
+  before do
+    # Ensure no leaked active streams from other specs
+    Stream.where(ended_at: nil).where.not(id: stream.id).update_all(ended_at: Time.current)
+  end
+
   # TC-008: CCV snapshot
   it "creates ccv_snapshot for active stream" do
-    expect { worker.perform }.to change(CcvSnapshot, :count).by(1)
+    expect { worker.perform }.to change { stream.ccv_snapshots.count }.by(1)
 
-    snapshot = CcvSnapshot.last
-    expect(snapshot.stream).to eq(stream)
+    snapshot = stream.ccv_snapshots.order(timestamp: :desc).first
     expect(snapshot.ccv_count).to eq(500)
   end
 
   # TC-009: Chatters snapshot with auth_ratio
   it "creates chatters_snapshot with auth_ratio" do
-    expect { worker.perform }.to change(ChattersSnapshot, :count).by(1)
+    expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
 
-    snapshot = ChattersSnapshot.last
+    snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
     expect(snapshot.unique_chatters_count).to eq(400)
     expect(snapshot.auth_ratio.to_f).to be_within(0.01).of(0.8)
   end
@@ -56,10 +60,10 @@ RSpec.describe StreamMonitorWorker do
   # TC-011: Helix fallback
   it "falls back to Helix when GQL fails" do
     allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_raise(Twitch::GqlClient::Error, "GQL down")
-    allow(helix).to receive(:get_streams).and_return([{ "user_login" => "teststreamer", "viewer_count" => 300 }])
+    allow(helix).to receive(:get_streams).and_return([ { "user_login" => "teststreamer", "viewer_count" => 300 } ])
 
-    expect { worker.perform }.to change(CcvSnapshot, :count).by(1)
-    expect(CcvSnapshot.last.ccv_count).to eq(300)
+    expect { worker.perform }.to change { stream.ccv_snapshots.count }.by(1)
+    expect(stream.ccv_snapshots.order(timestamp: :desc).first.ccv_count).to eq(300)
   end
 
   # TC-012: Tier 2 ChatRoomState
@@ -93,9 +97,9 @@ RSpec.describe StreamMonitorWorker do
     })
 
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-    expect { worker.perform }.to change(PredictionsPoll, :count).by(1)
+    expect { worker.perform }.to change { stream.predictions_polls.count }.by(1)
 
-    record = PredictionsPoll.last
+    record = stream.predictions_polls.order(timestamp: :desc).first
     expect(record.event_type).to eq("prediction")
     expect(record.participants_count).to eq(200)
   end
@@ -108,8 +112,8 @@ RSpec.describe StreamMonitorWorker do
     })
 
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-    expect { worker.perform }.to change(PredictionsPoll, :count).by(1)
-    expect(PredictionsPoll.last.event_type).to eq("poll")
+    expect { worker.perform }.to change { stream.predictions_polls.count }.by(1)
+    expect(stream.predictions_polls.order(timestamp: :desc).first.event_type).to eq("poll")
   end
 
   # TC-015: Tier 2 HypeTrain
@@ -120,29 +124,29 @@ RSpec.describe StreamMonitorWorker do
     })
 
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-    expect { worker.perform }.to change(PredictionsPoll, :count).by(1)
-    expect(PredictionsPoll.last.event_type).to eq("hype_train")
+    expect { worker.perform }.to change { stream.predictions_polls.count }.by(1)
+    expect(stream.predictions_polls.order(timestamp: :desc).first.event_type).to eq("hype_train")
   end
 
   # TC-016: Skip inactive
   it "skips when no active predictions/polls" do
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-    expect { worker.perform }.not_to change(PredictionsPoll, :count)
+    expect { worker.perform }.not_to change { stream.predictions_polls.count }
   end
 
   # TC-019: Stateless
   it "reads active streams from DB each cycle (stateless)" do
     worker.perform
-    expect(CcvSnapshot.count).to be >= 1
+    expect(stream.ccv_snapshots.count).to be >= 1
   end
 
   it "skips when Flipper disabled" do
     allow(Flipper).to receive(:enabled?).with(:stream_monitor).and_return(false)
-    expect { worker.perform }.not_to change(CcvSnapshot, :count)
+    expect { worker.perform }.not_to change { stream.ccv_snapshots.count }
   end
 
   it "skips when no active streams" do
-    stream.update!(ended_at: Time.current)
-    expect { worker.perform }.not_to change(CcvSnapshot, :count)
+    Stream.where(ended_at: nil).update_all(ended_at: Time.current)
+    expect { worker.perform }.not_to change { CcvSnapshot.count }
   end
 end

@@ -13,6 +13,7 @@ class Stream < ApplicationRecord
   has_many :health_scores, dependent: :destroy
   has_many :raid_attributions, dependent: :destroy
   has_many :anomalies, dependent: :destroy
+  has_many :predictions_polls, dependent: :destroy
   has_one :post_stream_report, dependent: :destroy
 
   MERGE_STATUSES = %w[separate merged primary secondary].freeze

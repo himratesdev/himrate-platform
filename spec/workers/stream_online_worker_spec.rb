@@ -30,7 +30,7 @@ RSpec.describe StreamOnlineWorker do
   it "creates a Stream record on stream.online" do
     expect { worker.perform(event_data) }.to change(Stream, :count).by(1)
 
-    stream = Stream.last
+    stream = channel.streams.order(created_at: :desc).first
     expect(stream.channel).to eq(channel)
     expect(stream.started_at).to be_present
     expect(stream.ended_at).to be_nil

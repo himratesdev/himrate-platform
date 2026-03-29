@@ -128,11 +128,12 @@ class StreamMonitorWorker
   def poll_tier2(streams)
     streams.each do |stream|
       login = stream.channel.login
+      latest_ccv = stream.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count) || 0
 
       update_chat_room_state(stream.channel, login)
-      poll_predictions(stream, login)
-      poll_polls(stream, login)
-      poll_hype_train(stream, login)
+      poll_predictions(stream, login, latest_ccv)
+      poll_polls(stream, login, latest_ccv)
+      poll_hype_train(stream, login, latest_ccv)
     end
   end
 
@@ -156,11 +157,10 @@ class StreamMonitorWorker
     Rails.logger.warn("StreamMonitorWorker: ChatRoomState save failed for #{login} (#{e.message})")
   end
 
-  def poll_predictions(stream, login)
+  def poll_predictions(stream, login, ccv)
     data = gql.predictions(channel_login: login)
     return unless data
 
-    ccv = stream.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count) || 0
     ratio = ccv > 0 ? data[:total_users].to_f / ccv : nil
 
     PredictionsPoll.create!(
@@ -175,11 +175,10 @@ class StreamMonitorWorker
     Rails.logger.warn("StreamMonitorWorker: Prediction save failed (#{e.message})")
   end
 
-  def poll_polls(stream, login)
+  def poll_polls(stream, login, ccv)
     data = gql.polls(channel_login: login)
     return unless data
 
-    ccv = stream.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count) || 0
     ratio = ccv > 0 ? data[:total_voters].to_f / ccv : nil
 
     PredictionsPoll.create!(
@@ -194,11 +193,10 @@ class StreamMonitorWorker
     Rails.logger.warn("StreamMonitorWorker: Poll save failed (#{e.message})")
   end
 
-  def poll_hype_train(stream, login)
+  def poll_hype_train(stream, login, ccv)
     data = gql.hype_train(channel_login: login)
     return unless data
 
-    ccv = stream.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count) || 0
     ratio = ccv > 0 ? data[:conductors_count].to_f / ccv : nil
 
     PredictionsPoll.create!(

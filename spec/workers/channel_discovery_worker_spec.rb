@@ -16,7 +16,7 @@ RSpec.describe ChannelDiscoveryWorker do
 
     eventsub = instance_double(Twitch::EventSubService)
     allow(Twitch::EventSubService).to receive(:new).and_return(eventsub)
-    allow(eventsub).to receive(:subscribe).and_return([{ "id" => "sub-1" }])
+    allow(eventsub).to receive(:subscribe).and_return([ { "id" => "sub-1" } ])
   end
 
   # TC-017: New channel discovered

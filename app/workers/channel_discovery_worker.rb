@@ -16,36 +16,38 @@ class ChannelDiscoveryWorker
 
     streams_data = helix.get_streams(user_logins: [], user_ids: []) || []
 
-    new_channels = 0
+    new_count = 0
     streams_data.each do |stream|
       next unless stream["viewer_count"].to_i >= MIN_VIEWERS
 
-      process_stream(stream)
-      new_channels += 1
+      created = process_stream(stream)
+      new_count += 1 if created
     rescue StandardError => e
       Rails.logger.warn("ChannelDiscoveryWorker: failed for #{stream["user_login"]} (#{e.message})")
     end
 
-    Rails.logger.info("ChannelDiscoveryWorker: scanned #{streams_data.size} streams, #{new_channels} processed")
+    Rails.logger.info("ChannelDiscoveryWorker: scanned #{streams_data.size} streams, #{new_count} new channels")
     schedule_next
   end
 
   private
 
+  # Returns true if a new channel was created
   def process_stream(stream)
     twitch_id = stream["user_id"]
     login = stream["user_login"]&.downcase
-    return unless twitch_id && login
+    return false unless twitch_id && login
 
     channel = Channel.find_or_initialize_by(twitch_id: twitch_id)
-    if channel.new_record?
-      channel.login = login
-      channel.is_monitored = true
-      channel.save!
+    return false unless channel.new_record?
 
-      subscribe_eventsub(channel)
-      Rails.logger.info("ChannelDiscoveryWorker: new channel #{login} (#{twitch_id})")
-    end
+    channel.login = login
+    channel.is_monitored = true
+    channel.save!
+
+    subscribe_eventsub(channel)
+    Rails.logger.info("ChannelDiscoveryWorker: new channel #{login} (#{twitch_id})")
+    true
   end
 
   def subscribe_eventsub(channel)
