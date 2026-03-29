@@ -38,6 +38,9 @@ Rails.application.routes.draw do
         resource :trust, only: :show, controller: "trust"
         resources :streams, only: %i[index show]
         resource "bot-chain", only: :show, controller: "bot_chain", as: :bot_chain
+
+        # TASK-022: Extension-side GQL data ingestion
+        post "gql_data", to: "gql_data#create"
       end
       resources :subscriptions, only: %i[index create destroy]
       resources :watchlists, only: %i[index create destroy]
