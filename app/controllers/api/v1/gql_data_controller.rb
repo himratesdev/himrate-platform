@@ -12,6 +12,13 @@ module Api
 
       VALID_DATA_TYPES = %w[chatters_count community_tab social_medias user_follows].freeze
 
+      PAYLOAD_SCHEMAS = {
+        "chatters_count" => %w[count],
+        "community_tab" => %w[broadcasters moderators vips viewers count],
+        "social_medias" => %w[links],
+        "user_follows" => %w[total_count follows has_next_page cursor]
+      }.freeze
+
       def create
         channel = Channel.find_by!(twitch_id: params[:channel_id])
 
@@ -30,7 +37,8 @@ module Api
 
       def data_params
         permitted = params.permit(:data_type, :channel_id)
-        permitted[:payload] = params[:payload].permit! if params[:payload].present?
+        schema = PAYLOAD_SCHEMAS[params[:data_type]]
+        permitted[:payload] = params[:payload]&.permit(*schema) if schema
         permitted
       end
     end
