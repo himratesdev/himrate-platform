@@ -151,16 +151,8 @@ RSpec.describe "Twitch EventSub Webhooks", type: :request do
       expect(response).to have_http_status(:ok)
     end
 
-    it "routes channel.follow to FollowWorker (TC-010)" do
-      expect(FollowWorker).to receive(:perform_async)
-
-      body = {
-        subscription: { type: "channel.follow" },
-        event: { user_id: "789", user_login: "newuser", broadcaster_user_id: "123" }
-      }.to_json
-      post "/webhooks/twitch", params: body, headers: twitch_headers(body, sub_type: "channel.follow")
-      expect(response).to have_http_status(:ok)
-    end
+    # channel.follow removed: v2 requires user access token (moderator:read:followers)
+    # Follow tracking via Helix polling in TASK-025.
 
     it "handles unknown event type with 200 + log (TC-011)" do
       body = { subscription: { type: "channel.unknown_future_event" }, event: {} }.to_json

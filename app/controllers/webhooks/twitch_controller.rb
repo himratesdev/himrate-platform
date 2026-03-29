@@ -20,8 +20,8 @@ module Webhooks
       "stream.online" => "StreamOnlineWorker",
       "stream.offline" => "StreamOfflineWorker",
       "channel.raid" => "RaidWorker",
-      "channel.update" => "ChannelUpdateWorker",
-      "channel.follow" => "FollowWorker"
+      "channel.update" => "ChannelUpdateWorker"
+      # channel.follow removed: v2 requires user access token (not app token)
     }.freeze
 
     def create

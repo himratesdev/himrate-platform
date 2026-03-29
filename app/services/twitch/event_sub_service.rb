@@ -17,8 +17,10 @@ module Twitch
       "stream.online" => { version: "1", condition_key: "broadcaster_user_id" },
       "stream.offline" => { version: "1", condition_key: "broadcaster_user_id" },
       "channel.raid" => { version: "1", condition_key: "to_broadcaster_user_id" },
-      "channel.update" => { version: "2", condition_key: "broadcaster_user_id" },
-      "channel.follow" => { version: "2", condition_key: "broadcaster_user_id" }
+      "channel.update" => { version: "2", condition_key: "broadcaster_user_id" }
+      # channel.follow v2 requires moderator_id + user access token
+      # (moderator:read:followers scope). Not available with app access tokens.
+      # Follow tracking via Helix polling in TASK-025.
     }.freeze
 
     class Error < StandardError; end
@@ -65,7 +67,7 @@ module Twitch
 
     # List all current subscriptions
     def list_subscriptions
-      token = @helix.send(:fetch_app_token)
+      token = @helix.app_token
       response = HTTP.timeout(5).headers(
         "Client-ID" => ENV.fetch("TWITCH_CLIENT_ID"),
         "Authorization" => "Bearer #{token}"
@@ -82,7 +84,7 @@ module Twitch
     private
 
     def create_subscription(type:, version:, condition:)
-      token = @helix.send(:fetch_app_token)
+      token = @helix.app_token
 
       body = {
         type: type,
@@ -119,7 +121,7 @@ module Twitch
     end
 
     def delete_subscription(subscription_id)
-      token = @helix.send(:fetch_app_token)
+      token = @helix.app_token
 
       response = HTTP.timeout(5).headers(
         "Client-ID" => ENV.fetch("TWITCH_CLIENT_ID"),

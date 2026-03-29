@@ -32,8 +32,8 @@ RSpec.describe Twitch::EventSubService do
                    headers: { "Content-Type" => "application/json" })
 
       results = service.subscribe(broadcaster_id: "12345")
-      expect(results.size).to eq(5)
-      expect(WebMock).to have_requested(:post, helix_url).times(5)
+      expect(results.size).to eq(4)
+      expect(WebMock).to have_requested(:post, helix_url).times(4)
     end
 
     it "handles 409 conflict (subscription exists)" do
