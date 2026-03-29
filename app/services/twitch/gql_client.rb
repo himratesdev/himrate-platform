@@ -176,22 +176,20 @@ module Twitch
       }
     end
 
-    # FR-015: Channel leaderboards (bits/gift sub leaders)
-    def channel_leaderboards(channel_login:)
+    # FR-015 + FR-023: Channel bits leaderboard (cheer.leaderboard)
+    # Note: GQL BitsLeaderboardEntry has id+score+rank but NOT user login.
+    # Login can be resolved via separate bot_check(id) if needed.
+    def channel_leaderboards(channel_login:, first: 10)
       return nil if channel_login.blank?
 
-      result = execute(QUERIES[:channel_leaderboards], { login: channel_login })
-      user = result&.dig("data", "user")
-      return nil unless user
+      result = execute(QUERIES[:channel_leaderboards], { login: channel_login, first: first })
+      entries = result&.dig("data", "user", "cheer", "leaderboard", "entries", "edges")
+      return nil unless entries
 
-      {
-        bits_leaders: user.dig("channel", "leaderboards", "bitsLeaderboard")&.map do |entry|
-          { login: entry.dig("node", "login"), score: entry["score"] }
-        end || [],
-        gift_sub_leaders: user.dig("channel", "leaderboards", "giftSubLeaderboard")&.map do |entry|
-          { login: entry.dig("node", "login"), total_gifts: entry["score"] }
-        end || []
-      }
+      entries.map do |edge|
+        node = edge["node"]
+        { id: node["id"], score: node["score"], rank: node["rank"] }
+      end
     end
 
     # FR-016: Active moderators list
@@ -508,7 +506,7 @@ module Twitch
       GQL
 
       user_following: <<~GQL.squish,
-        query UserFollowing($login: String!, $first: Int!, $after: String) {
+        query UserFollowing($login: String!, $first: Int!, $after: Cursor) {
           user(login: $login) {
             follows(first: $first, after: $after) {
               totalCount
@@ -523,12 +521,15 @@ module Twitch
       GQL
 
       channel_leaderboards: <<~GQL.squish,
-        query ChannelLeaderboards($login: String!) {
+        query ChannelLeaderboards($login: String!, $first: Int!) {
           user(login: $login) {
-            channel {
-              leaderboards {
-                bitsLeaderboard { node { login } score }
-                giftSubLeaderboard { node { login } score }
+            cheer {
+              leaderboard(first: $first) {
+                entries {
+                  edges {
+                    node { id score rank }
+                  }
+                }
               }
             }
           }

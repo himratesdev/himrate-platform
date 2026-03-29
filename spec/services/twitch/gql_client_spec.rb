@@ -290,18 +290,19 @@ RSpec.describe Twitch::GqlClient do
   # === FR-015: ChannelLeaderboards ===
 
   describe "#channel_leaderboards" do
-    it "returns bits and gift sub leaders (TC-026)" do
+    it "returns bits leaderboard with id+score+rank (TC-026/TC-040)" do
       stub_gql_request(body_includes: "ChannelLeaderboards", response: {
-        data: { user: { channel: { leaderboards: {
-          bitsLeaderboard: [ { node: { login: "bits_king" }, score: 50_000 } ],
-          giftSubLeaderboard: [ { node: { login: "gift_master" }, score: 100 } ]
-        } } } }
+        data: { user: { cheer: { leaderboard: { entries: { edges: [
+          { node: { id: "1366665217", score: 2000, rank: 1 } },
+          { node: { id: "9876543210", score: 1104, rank: 2 } }
+        ] } } } } }
       })
 
-      result = client.channel_leaderboards(channel_login: "test")
-      expect(result[:bits_leaders].first[:login]).to eq("bits_king")
-      expect(result[:bits_leaders].first[:score]).to eq(50_000)
-      expect(result[:gift_sub_leaders].first[:login]).to eq("gift_master")
+      result = client.channel_leaderboards(channel_login: "test", first: 5)
+      expect(result.size).to eq(2)
+      expect(result.first[:id]).to eq("1366665217")
+      expect(result.first[:score]).to eq(2000)
+      expect(result.first[:rank]).to eq(1)
     end
   end
 
