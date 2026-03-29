@@ -34,7 +34,7 @@ RSpec.describe "Twitch IRC Real Integration", irc_real: true do
       break if line&.include?("376") || line&.include?("Welcome")
     end
 
-    [tcp, ssl]
+    [ tcp, ssl ]
   end
 
   # TC-001: Real TLS connection + justinfan auth
@@ -59,7 +59,7 @@ RSpec.describe "Twitch IRC Real Integration", irc_real: true do
     deadline = Time.current + 30
 
     while Time.current < deadline && messages.size < 3
-      if IO.select([tcp], nil, nil, 1)
+      if IO.select([ tcp ], nil, nil, 1)
         line = ssl.gets
         next unless line
 
@@ -104,7 +104,7 @@ RSpec.describe "Twitch IRC Real Integration", irc_real: true do
     deadline = Time.current + 10
 
     while Time.current < deadline && roomstate.nil?
-      if IO.select([tcp], nil, nil, 1)
+      if IO.select([ tcp ], nil, nil, 1)
         line = ssl.gets
         next unless line
 
@@ -136,7 +136,7 @@ RSpec.describe "Twitch IRC Real Integration", irc_real: true do
     deadline = Time.current + 10
 
     while Time.current < deadline && !pong_received
-      if IO.select([tcp], nil, nil, 1)
+      if IO.select([ tcp ], nil, nil, 1)
         line = ssl.gets
         pong_received = true if line&.include?("PONG")
       end
