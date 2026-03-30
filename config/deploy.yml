@@ -80,7 +80,9 @@ accessories:
     image: redis/redis-stack-server:7.4.0-v2
     host: 194.135.85.159
     port: "127.0.0.1:6379:6379"
-    cmd: --appendonly yes
+    env:
+      clear:
+        REDIS_ARGS: "--appendonly yes"
     directories:
       - himrate_redis:/data
 
