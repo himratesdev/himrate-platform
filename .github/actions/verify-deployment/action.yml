@@ -72,12 +72,14 @@ runs:
         fi
         echo "All running containers on SHA $SHORT_SHA"
 
-    - name: 'Check 2/7: Health endpoint (via SSH to avoid CI network issues)'
+    - name: 'Check 2/7: Health endpoint (container-internal, bypasses proxy)'
       shell: bash
       run: |
+        WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
+          "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=web")
         HEALTH=$(ssh root@${{ inputs.host }} \
-          "curl -sf http://localhost:80/health" || echo "FAIL")
-        echo "Health check (via SSH localhost): $HEALTH"
+          "docker exec $WEB_CONTAINER ruby -e \"require 'net/http'; puts Net::HTTP.get(URI('http://localhost:3000/health'))\"")
+        echo "Health check (container internal): $HEALTH"
         if echo "$HEALTH" | grep -q '"status":"ok"'; then
           echo "Health OK"
         else
