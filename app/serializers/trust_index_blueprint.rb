@@ -18,15 +18,16 @@ class TrustIndexBlueprint < Blueprinter::Base
       tih&.erv_percent&.to_f
     end
 
-    # erv_count computed from erv_percent + latest CCV
+    # erv_count computed from erv_percent × stream CCV (peak_ccv or avg_ccv — no extra query)
     field :erv_count do |tih, _options|
       erv = tih&.erv_percent&.to_f
       next nil unless erv && tih&.stream
 
-      latest_ccv = tih.stream.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count)
-      next nil unless latest_ccv
+      ccv = tih.stream.peak_ccv.to_i
+      ccv = tih.stream.avg_ccv.to_i if ccv.zero?
+      next nil if ccv.zero?
 
-      (latest_ccv * erv / 100.0).round
+      (ccv * erv / 100.0).round
     end
 
     # Labels from ErvCalculator (single source of truth, not duplicated)

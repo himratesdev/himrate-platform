@@ -20,7 +20,7 @@ class User < ApplicationRecord
   validates :role, inclusion: { in: %w[viewer streamer] }
   validates :tier, inclusion: { in: %w[free premium business] }
   validates :locale, inclusion: { in: VALID_LOCALES }, allow_nil: true
-  validates :avatar_url, format: { with: /\Ahttps?:\/\//i, message: "must be a valid URL" }, allow_blank: true
+  validates :avatar_url, format: { with: /\Ahttps?:\/\/\S+\z/i, message: "must be a valid URL" }, allow_blank: true
 
   scope :active, -> { where(deleted_at: nil) }
 end

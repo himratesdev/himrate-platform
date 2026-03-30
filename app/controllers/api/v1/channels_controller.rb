@@ -84,7 +84,7 @@ module Api
           Channel.find_by!(twitch_id: params[:twitch_id])
         elsif params[:login].present?
           Channel.find_by!(login: params[:login])
-        elsif params[:id] =~ /\A[0-9a-f]{8}-/
+        elsif params[:id] =~ /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
           Channel.find(params[:channel_id] || params[:id])
         else
           Channel.find_by!(login: params[:id])

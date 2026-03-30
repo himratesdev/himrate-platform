@@ -9,13 +9,14 @@ RSpec.describe "API Scaffold", type: :request do
   let(:channel) { create(:channel) }
   let(:watchlist) { create(:watchlist, user: user) }
 
-  # TC-001: GET /channels → 200
+  # TC-001: GET /channels → 200 (TASK-031: real data, was scaffold)
   describe "GET /api/v1/channels" do
-    it "returns placeholder with auth" do
+    it "returns tracked channels list with auth" do
       get "/api/v1/channels", headers: auth_headers
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
-      expect(body["meta"]["status"]).to eq("not_implemented")
+      expect(body).to have_key("data")
+      expect(body).to have_key("meta")
     end
   end
 
