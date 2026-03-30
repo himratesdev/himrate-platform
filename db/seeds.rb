@@ -93,7 +93,10 @@ if defined?(SignalConfiguration)
     { signal_type: "trust_index", category: "default", param_name: "suspicious_min", param_value: 25.0 },
 
     # === TASK-030: Signal Compute Worker configs ===
-    { signal_type: "signal_compute", category: "default", param_name: "throttle_seconds", param_value: 30.0 }
+    { signal_type: "signal_compute", category: "default", param_name: "throttle_seconds", param_value: 30.0 },
+
+    # === TASK-031: API configs ===
+    { signal_type: "api", category: "default", param_name: "channels_per_page", param_value: 20.0 }
   ]
 
   signal_configs.each do |config|

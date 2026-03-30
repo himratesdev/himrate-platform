@@ -25,6 +25,9 @@ gem "http", "~> 5.0"
 # Authorization
 gem "pundit", "~> 2.4"
 
+# Serialization
+gem "blueprinter", "~> 1.1"
+
 # Feature flags
 gem "flipper", "~> 1.3"
 gem "flipper-redis", "~> 1.3"

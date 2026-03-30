@@ -33,11 +33,19 @@ Rails.application.routes.draw do
       post "auth/refresh", to: "auth#refresh"
       delete "auth/logout", to: "auth#logout"
 
-      # TASK-008: API scaffold
+      # TASK-031: User profile
+      get "user/me", to: "users#me"
+      patch "user/me", to: "users#update"
+
+      # TASK-008 scaffold → TASK-031 real logic
       resources :channels, only: %i[index show] do
         resource :trust, only: :show, controller: "trust"
         resources :streams, only: %i[index show]
         resource "bot-chain", only: :show, controller: "bot_chain", as: :bot_chain
+
+        # TASK-031: Track/untrack channel
+        post "track", to: "channels#track"
+        delete "track", to: "channels#untrack"
 
         # TASK-022: Extension-side GQL data ingestion
         post "gql_data", to: "gql_data#create"
