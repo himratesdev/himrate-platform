@@ -97,7 +97,7 @@ runs:
           exit 1
         fi
         NEEDS_MIGRATION=$(ssh root@${{ inputs.host }} \
-          "docker exec $WEB_CONTAINER bin/rails runner 'puts ActiveRecord::Base.connection.migration_context.needs_migration?'")
+          "docker exec $WEB_CONTAINER bin/rails runner 'puts ActiveRecord::MigrationContext.new(\"db/migrate\").needs_migration?'")
         echo "Needs migration: $NEEDS_MIGRATION"
         if [ "$NEEDS_MIGRATION" = "true" ]; then
           echo "::error::Pending migrations detected"
