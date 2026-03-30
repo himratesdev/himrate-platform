@@ -6,6 +6,8 @@ RSpec.describe BotListRefreshWorker do
   let(:worker) { described_class.new }
 
   before do
+    KnownBotList.delete_all
+
     allow(ENV).to receive(:fetch).and_call_original
     allow(ENV).to receive(:fetch).with("REDIS_URL", anything).and_return("redis://localhost:6379/1")
     allow(Flipper).to receive(:enabled?).with(:known_bots).and_return(true)
