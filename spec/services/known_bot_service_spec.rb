@@ -6,6 +6,8 @@ RSpec.describe KnownBotService do
   let(:service) { described_class.new }
 
   before do
+    KnownBotList.delete_all
+
     allow(ENV).to receive(:fetch).and_call_original
     allow(ENV).to receive(:fetch).with("REDIS_URL", anything).and_return("redis://localhost:6379/1")
 
