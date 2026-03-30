@@ -9,7 +9,7 @@ class StreamMonitorWorker
   include Sidekiq::Job
   sidekiq_options queue: :monitoring, retry: 1
 
-  CYCLE_INTERVAL = 60 # seconds
+  CYCLE_INTERVAL = 60 # seconds — used by sidekiq-cron, documented here for reference
   TIER2_EVERY = 5     # every 5th cycle = ~5 minutes
   GQL_BATCH_SIZE = 35
   REDIS_CYCLE_KEY = "monitor:cycle_count"
@@ -18,7 +18,7 @@ class StreamMonitorWorker
     return unless Flipper.enabled?(:stream_monitor)
 
     active_streams = Stream.includes(:channel).where(ended_at: nil)
-    return schedule_next if active_streams.empty?
+    return if active_streams.empty?
 
     cycle = increment_cycle
 
@@ -29,7 +29,8 @@ class StreamMonitorWorker
     poll_tier2(active_streams) if (cycle % TIER2_EVERY).zero?
 
     Rails.logger.info("StreamMonitorWorker: cycle #{cycle}, #{active_streams.size} streams")
-    schedule_next
+    # Scheduling via sidekiq-cron (config/initializers/sidekiq_cron.rb)
+    # No self-scheduling — cron ensures periodic execution
   end
 
   private
@@ -217,9 +218,6 @@ class StreamMonitorWorker
     redis.incr(REDIS_CYCLE_KEY).to_i
   end
 
-  def schedule_next
-    self.class.perform_in(CYCLE_INTERVAL)
-  end
 
   # === Clients ===
 

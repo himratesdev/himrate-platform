@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_29_140001) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_30_140001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -233,11 +233,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_29_140001) do
 
   create_table "known_bot_lists", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "added_at", null: false
+    t.string "bot_category", limit: 20, default: "unknown", null: false
     t.decimal "confidence", precision: 5, scale: 4, null: false
+    t.datetime "last_seen_at"
     t.string "source", limit: 30, null: false
     t.string "username", limit: 255, null: false
     t.boolean "verified", default: false, null: false
-    t.index ["username"], name: "index_known_bot_lists_on_username", unique: true
+    t.index ["source"], name: "idx_known_bot_lists_source"
+    t.index ["username", "source"], name: "idx_known_bot_lists_username_source", unique: true
   end
 
   create_table "notifications", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
