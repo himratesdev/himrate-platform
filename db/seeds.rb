@@ -79,18 +79,8 @@ if defined?(SignalConfiguration)
     { signal_type: "known_bot_match", category: "default", param_name: "alert_threshold", param_value: 0.2 },
     { signal_type: "raid_attribution", category: "default", param_name: "alert_threshold", param_value: 0.5 },
     { signal_type: "ccv_chat_correlation", category: "default", param_name: "alert_threshold", param_value: 0.5 },
-    { signal_type: "account_profile_scoring", category: "default", param_name: "alert_threshold", param_value: 0.4 }
-  ]
+    { signal_type: "account_profile_scoring", category: "default", param_name: "alert_threshold", param_value: 0.4 },
 
-  signal_configs.each do |config|
-    SignalConfiguration.find_or_create_by!(
-      signal_type: config[:signal_type],
-      category: config[:category],
-      param_name: config[:param_name]
-    ) do |c|
-      c.param_value = config[:param_value]
-    end
-  end
     # === TASK-029: Trust Index Engine configs ===
     { signal_type: "trust_index", category: "default", param_name: "population_mean", param_value: 65.0 },
     { signal_type: "trust_index", category: "default", param_name: "incident_threshold", param_value: 40.0 },
