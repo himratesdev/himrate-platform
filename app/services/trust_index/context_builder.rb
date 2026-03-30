@@ -101,14 +101,27 @@ module TrustIndex
         nil
       end
 
-      # Cross-channel from bot_scores components (not live query).
-      # Uses SQL jsonb operator to extract cross_channel data without loading full components.
+      # Cross-channel: count distinct channels per username in 24h.
+      # Uses chat_messages (works during live, not just post-stream).
+      # Limited to stream's chatters to keep query bounded.
+      CROSS_CHANNEL_CHATTER_LIMIT = 500
+
       def fetch_cross_channel(stream)
-        PerUserBotScore
-          .where(stream_id: stream.id)
-          .where("components ? 'cross_channel_100plus' OR components ? 'cross_channel_count'")
-          .pluck(:username, Arel.sql("COALESCE((components->>'cross_channel_count')::int, 0)"))
-          .to_h
+        # Get usernames from current stream's chat (limit for performance at 1000+ streams)
+        usernames = ChatMessage
+          .where(stream_id: stream.id, msg_type: "privmsg")
+          .distinct
+          .limit(CROSS_CHANNEL_CHATTER_LIMIT)
+          .pluck(:username)
+
+        return {} if usernames.empty?
+
+        ChatMessage
+          .where(username: usernames)
+          .where("timestamp > ?", 24.hours.ago)
+          .group(:username)
+          .distinct
+          .count(:channel_login)
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: cross_channel failed (#{e.message})")
         {}
