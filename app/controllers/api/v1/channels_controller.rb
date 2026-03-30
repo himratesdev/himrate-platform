@@ -15,7 +15,7 @@ module Api
         authorize Channel
 
         tracked = current_user.tracked_channels
-          .includes(channel: { trust_index_histories: [], streams: [] })
+          .includes(channel: [ :trust_index_histories, :streams ])
           .order(added_at: :desc)
 
         page = (params[:page] || 1).to_i

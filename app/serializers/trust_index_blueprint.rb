@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 # TASK-031: TrustIndexHistory serializer with tier-scoped views.
+# Label logic delegated to ErvCalculator (single source of truth).
 
 class TrustIndexBlueprint < Blueprinter::Base
   # === Headline (Guest) ===
@@ -17,27 +18,31 @@ class TrustIndexBlueprint < Blueprinter::Base
       tih&.erv_percent&.to_f
     end
 
+    # erv_count computed from erv_percent + latest CCV
+    field :erv_count do |tih, _options|
+      erv = tih&.erv_percent&.to_f
+      next nil unless erv && tih&.stream
+
+      latest_ccv = tih.stream.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count)
+      next nil unless latest_ccv
+
+      (latest_ccv * erv / 100.0).round
+    end
+
+    # Labels from ErvCalculator (single source of truth, not duplicated)
     field :label do |tih, _options|
       erv = tih&.erv_percent&.to_f
-      return nil unless erv
+      next nil unless erv
 
-      if erv >= 80
-        I18n.t("erv.labels.green", default: "Аномалий не замечено")
-      elsif erv >= 50
-        I18n.t("erv.labels.yellow", default: "Аномалия онлайна")
-      else
-        I18n.t("erv.labels.red", default: "Значительная аномалия онлайна")
-      end
+      label_data = TrustIndex::ErvCalculator.resolve_label(erv)
+      I18n.locale == :ru ? label_data[:ru] : label_data[:en]
     end
 
     field :label_color do |tih, _options|
       erv = tih&.erv_percent&.to_f
-      return nil unless erv
+      next nil unless erv
 
-      if erv >= 80 then "green"
-      elsif erv >= 50 then "yellow"
-      else "red"
-      end
+      TrustIndex::ErvCalculator.resolve_label(erv)[:color]
     end
 
     field :cold_start_status do |tih, _options|

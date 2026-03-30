@@ -40,6 +40,33 @@ RSpec.describe "Channels API", type: :request do
       get "/api/v1/channels/nonexistent"
       expect(response).to have_http_status(:not_found)
     end
+
+    # TC-004: Free user during live stream → drill_down (signal_breakdown visible)
+    it "returns drill_down with signal_breakdown for Free user during live stream" do
+      Stream.create!(channel: channel, started_at: 30.minutes.ago) # live stream (no ended_at)
+      TrustIndexHistory.create!(channel: channel, stream: channel.streams.last, trust_index_score: 72,
+        confidence: 0.9, signal_breakdown: { "auth_ratio" => { "value" => 0.15 } },
+        calculated_at: 5.minutes.ago, classification: "needs_review", cold_start_status: "full", erv_percent: 72.0)
+
+      get "/api/v1/channels/#{channel.id}", headers: headers
+      expect(response).to have_http_status(:ok)
+      ti = response.parsed_body["data"]["trust_index"]
+      expect(ti).to have_key("signal_breakdown")
+      expect(ti["signal_breakdown"]).to have_key("auth_ratio")
+    end
+
+    # TC-005: Premium user tracking channel → full (recent_streams visible)
+    it "returns full with recent_streams for Premium user tracking channel" do
+      sub = Subscription.create!(user: premium_user, tier: "premium", is_active: true, started_at: Time.current)
+      TrackedChannel.create!(user: premium_user, channel: channel, tracking_enabled: true, added_at: Time.current, subscription: sub)
+      Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
+
+      get "/api/v1/channels/#{channel.id}", headers: premium_headers
+      expect(response).to have_http_status(:ok)
+      data = response.parsed_body["data"]
+      expect(data).to have_key("recent_streams")
+      expect(data).to have_key("tracked_since")
+    end
   end
 
   describe "GET /api/v1/channels" do

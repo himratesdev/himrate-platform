@@ -15,8 +15,12 @@ class User < ApplicationRecord
   has_many :team_memberships, dependent: :destroy
   has_many :owned_team_memberships, class_name: "TeamMembership", foreign_key: :team_owner_id, dependent: :destroy
 
+  VALID_LOCALES = %w[en ru].freeze
+
   validates :role, inclusion: { in: %w[viewer streamer] }
   validates :tier, inclusion: { in: %w[free premium business] }
+  validates :locale, inclusion: { in: VALID_LOCALES }, allow_nil: true
+  validates :avatar_url, format: { with: /\Ahttps?:\/\//i, message: "must be a valid URL" }, allow_blank: true
 
   scope :active, -> { where(deleted_at: nil) }
 end
