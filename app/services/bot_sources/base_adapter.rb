@@ -6,6 +6,7 @@
 module BotSources
   class BaseAdapter
     REQUEST_TIMEOUT = 30
+    USER_AGENT = "HimRate/1.0 (bot-detection; https://himrate.com)"
 
     def fetch
       raise NotImplementedError, "#{self.class}#fetch must be implemented"
@@ -23,7 +24,7 @@ module BotSources
 
     # Uses http gem (gem "http" ~> 5.0 in Gemfile)
     def http_get(url, timeout: REQUEST_TIMEOUT)
-      response = HTTP.timeout(timeout).get(url)
+      response = HTTP.timeout(timeout).headers("User-Agent" => USER_AGENT).get(url)
       return nil unless response.status.to_i == 200
 
       response.body.to_s

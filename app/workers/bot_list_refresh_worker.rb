@@ -8,7 +8,6 @@ class BotListRefreshWorker
   include Sidekiq::Job
   sidekiq_options queue: :monitoring, retry: 2
 
-  REFRESH_INTERVAL = 86_400 # 24 hours
   ADAPTERS = [
     BotSources::CommanderRootAdapter,
     BotSources::TwitchInsightsAdapter,
@@ -53,7 +52,8 @@ class BotListRefreshWorker
     # FR-015: Trend logging
     log_trend(trend_stats, total)
 
-    schedule_next
+    # Scheduling via sidekiq-cron (config/initializers/sidekiq_cron.rb)
+    # No self-scheduling chain needed — cron ensures daily execution
   end
 
   private
@@ -88,9 +88,5 @@ class BotListRefreshWorker
       "total: #{total || "N/A"}, " \
       "per_source: #{stats.map { |s, c| "#{s}=#{c}" }.join(", ")}"
     )
-  end
-
-  def schedule_next
-    self.class.perform_in(REFRESH_INTERVAL)
   end
 end

@@ -12,7 +12,10 @@ RSpec.describe BotListRefreshWorker do
 
     # Clean Redis
     r = Redis.new(url: "redis://localhost:6379/1")
-    r.keys("known_bots:*").each { |k| r.del(k) }
+    %w[all commanderroot twitchinsights twitchbots_info streamscharts truevio].each do |suffix|
+      r.del("known_bots:#{suffix}")
+      r.del("known_bots:#{suffix}:new")
+    end
   rescue Redis::CannotConnectError
     skip "Redis not available"
   end

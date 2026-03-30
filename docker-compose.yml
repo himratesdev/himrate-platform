@@ -20,7 +20,7 @@ services:
 
   redis:
     image: redis/redis-stack-server:7.4.0-v2
-    command: redis-server --appendonly yes
+    command: --appendonly yes
     ports:
       - "6379:6379"
     volumes:
