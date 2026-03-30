@@ -9,10 +9,26 @@
 # The process NEVER exits on its own (except SIGTERM/SIGINT).
 # Kamal health-check (irc:heartbeat) works in both modes.
 
-require_relative "../config/environment"
-
 HEARTBEAT_KEY = "irc:heartbeat"
 HEARTBEAT_TTL = 120
+
+# Write initial heartbeat BEFORE Rails boot (which takes 10-20s).
+# Kamal health-check has 30s timeout — without this, container fails health-check
+# during boot. This uses raw Redis (no Rails, no Flipper — just redis gem).
+require "redis"
+require "json"
+
+boot_redis = Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
+boot_redis.setex(HEARTBEAT_KEY, HEARTBEAT_TTL, {
+  mode: "booting",
+  pid: Process.pid,
+  at: Time.now.utc.iso8601
+}.to_json)
+boot_redis.close
+puts "bin/irc_monitor: heartbeat written (booting), loading Rails..."
+
+# Now load Rails (heavy operation, 10-20s)
+require_relative "../config/environment"
 STANDBY_INTERVAL = 60       # seconds between Flipper checks in standby
 ACTIVE_FLIPPER_INTERVAL = 300 # seconds between Flipper checks in active (5 min)
 
