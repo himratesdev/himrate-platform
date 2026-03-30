@@ -86,6 +86,12 @@ class KnownBotService
     :error
   end
 
+  # FR-013: Add Twitch-native chatbot (from CommunityTab "chatbots" role).
+  # Confidence 1.0 — Twitch itself marked the account.
+  def add_twitch_native_bot(username)
+    add_bot(username, "truevio", CONFIDENCE_NATIVE, category: "service_bot")
+  end
+
   # FR-014: Update last_seen_at when bot is seen in real chat.
   def touch_bot(username)
     name = username.to_s.downcase.strip
@@ -152,7 +158,7 @@ class KnownBotService
     if @use_bloom
       redis.call("BF.MEXISTS", BF_KEY_ALL, *usernames).map { |r| r == 1 }
     else
-      usernames.map { |u| redis.sismember(BF_KEY_ALL, u) }
+      redis.pipelined { |p| usernames.each { |u| p.sismember(BF_KEY_ALL, u) } }
     end
   end
 

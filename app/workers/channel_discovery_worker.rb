@@ -8,7 +8,7 @@ class ChannelDiscoveryWorker
   include Sidekiq::Job
   sidekiq_options queue: :monitoring, retry: 1
 
-  DISCOVERY_INTERVAL = 300 # 5 minutes
+  DISCOVERY_INTERVAL = 300 # seconds — used by sidekiq-cron, documented here for reference
   MIN_VIEWERS = 50
 
   def perform
@@ -27,7 +27,7 @@ class ChannelDiscoveryWorker
     end
 
     Rails.logger.info("ChannelDiscoveryWorker: scanned #{streams_data.size} streams, #{new_count} new channels")
-    schedule_next
+    # Scheduling via sidekiq-cron (config/initializers/sidekiq_cron.rb)
   end
 
   private
@@ -54,10 +54,6 @@ class ChannelDiscoveryWorker
     Twitch::EventSubService.new.subscribe(broadcaster_id: channel.twitch_id)
   rescue StandardError => e
     Rails.logger.warn("ChannelDiscoveryWorker: EventSub subscribe failed for #{channel.login} (#{e.message})")
-  end
-
-  def schedule_next
-    self.class.perform_in(DISCOVERY_INTERVAL)
   end
 
   def helix
