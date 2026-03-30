@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe SignalConfiguration do
+  before { SignalConfiguration.delete_all }
+
   describe "validations" do
     it "validates uniqueness of signal_type + category + param_name" do
       SignalConfiguration.create!(signal_type: "auth_ratio", category: "default", param_name: "weight", param_value: 0.15)

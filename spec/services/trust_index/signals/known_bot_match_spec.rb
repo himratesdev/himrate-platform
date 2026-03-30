@@ -13,7 +13,7 @@ RSpec.describe TrustIndex::Signals::KnownBotMatch do
 
   it "returns percentage of known bots" do
     scores = [
-      { components: { "known_bot_single" => { sources: ["commanderroot"] } } },
+      { components: { "known_bot_single" => { sources: [ "commanderroot" ] } } },
       { components: { "known_bot_multi" => { sources: %w[commanderroot twitchinsights] } } },
       { components: {} },
       { components: {} },
@@ -31,7 +31,7 @@ RSpec.describe TrustIndex::Signals::KnownBotMatch do
   end
 
   it "handles symbol keys in components" do
-    scores = [{ components: { known_bot_single: { sources: ["x"] } } }]
+    scores = [ { components: { known_bot_single: { sources: [ "x" ] } } } ]
     result = signal.calculate(bot_scores: scores)
     expect(result.value).to eq(1.0)
   end

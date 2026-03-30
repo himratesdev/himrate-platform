@@ -29,12 +29,12 @@ RSpec.describe TrustIndex::Signals::CcvTierClustering do
   end
 
   it "returns nil for insufficient data (< 15 snapshots)" do
-    result = signal.calculate(ccv_series_30min: make_series([500] * 10))
+    result = signal.calculate(ccv_series_30min: make_series([ 500 ] * 10))
     expect(result.value).to be_nil
   end
 
   it "returns nil for mean CCV = 0" do
-    result = signal.calculate(ccv_series_30min: make_series([0] * 20))
+    result = signal.calculate(ccv_series_30min: make_series([ 0 ] * 20))
     expect(result.value).to be_nil
   end
 

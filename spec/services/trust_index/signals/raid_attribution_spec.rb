@@ -18,7 +18,7 @@ RSpec.describe TrustIndex::Signals::RaidAttribution do
   end
 
   it "returns positive value when bot-raid detected" do
-    raids = [{ timestamp: 5.minutes.ago, is_bot_raid: true, raid_viewers_count: 500, bot_score: 0.8 }]
+    raids = [ { timestamp: 5.minutes.ago, is_bot_raid: true, raid_viewers_count: 500, bot_score: 0.8 } ]
     ccv_series = [
       { ccv: 200, timestamp: 10.minutes.ago },
       { ccv: 700, timestamp: 4.minutes.ago }
@@ -29,7 +29,7 @@ RSpec.describe TrustIndex::Signals::RaidAttribution do
   end
 
   it "returns lower value for organic raid" do
-    raids = [{ timestamp: 5.minutes.ago, is_bot_raid: false, raid_viewers_count: 500, bot_score: 0.0 }]
+    raids = [ { timestamp: 5.minutes.ago, is_bot_raid: false, raid_viewers_count: 500, bot_score: 0.0 } ]
     ccv_series = [
       { ccv: 200, timestamp: 10.minutes.ago },
       { ccv: 700, timestamp: 4.minutes.ago }
@@ -39,7 +39,7 @@ RSpec.describe TrustIndex::Signals::RaidAttribution do
   end
 
   it "includes raid details in metadata" do
-    raids = [{ timestamp: 5.minutes.ago, is_bot_raid: true, raid_viewers_count: 100, bot_score: 0.5 }]
+    raids = [ { timestamp: 5.minutes.ago, is_bot_raid: true, raid_viewers_count: 100, bot_score: 0.5 } ]
     result = signal.calculate(raids: raids, ccv_series_15min: [])
     expect(result.metadata[:raids_count]).to eq(1)
   end
