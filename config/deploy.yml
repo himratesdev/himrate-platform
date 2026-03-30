@@ -77,7 +77,7 @@ accessories:
     directories:
       - himrate_pgdata:/var/lib/postgresql/data
   redis:
-    image: redis:7
+    image: redis/redis-stack-server:latest
     host: 194.135.85.159
     port: "127.0.0.1:6379:6379"
     cmd: redis-server --appendonly yes
