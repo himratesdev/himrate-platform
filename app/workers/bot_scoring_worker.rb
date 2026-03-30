@@ -78,6 +78,9 @@ class BotScoringWorker
     Rails.logger.info(
       "BotScoringWorker: stream #{stream_id} scored #{scores.size} chatters in #{duration}ms — #{summary.inspect}"
     )
+
+    # TASK-030 FR-007: Final signal compute with complete bot scores (force=true skips throttle)
+    SignalComputeWorker.perform_async(stream.id, true)
   end
 
   private
