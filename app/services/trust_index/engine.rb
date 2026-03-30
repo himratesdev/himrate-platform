@@ -172,6 +172,7 @@ module TrustIndex
       )
     rescue ActiveRecord::RecordInvalid => e
       Rails.logger.error("TrustIndex::Engine: persist failed — #{e.message}")
+      raise
     end
   end
 end

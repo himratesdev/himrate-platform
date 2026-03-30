@@ -4,6 +4,8 @@
 # to trust_index_histories for Trust Index Engine output.
 
 class EnhanceTrustIndexHistoriesForEngine < ActiveRecord::Migration[8.0]
+  disable_ddl_transaction!
+
   def up
     add_column :trust_index_histories, :classification, :string, limit: 20
     add_column :trust_index_histories, :cold_start_status, :string, limit: 20

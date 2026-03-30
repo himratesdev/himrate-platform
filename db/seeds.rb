@@ -94,13 +94,13 @@ if defined?(SignalConfiguration)
   ]
 
   signal_configs.each do |config|
-    SignalConfiguration.find_or_create_by!(
+    record = SignalConfiguration.find_or_initialize_by(
       signal_type: config[:signal_type],
       category: config[:category],
       param_name: config[:param_name]
-    ) do |c|
-      c.param_value = config[:param_value]
-    end
+    )
+    record.param_value = config[:param_value]
+    record.save!
   end
   # rubocop:enable Metrics/BlockLength
 
