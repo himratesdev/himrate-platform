@@ -39,9 +39,11 @@ class KnownBotService
     { bot: false, confidence: 0.0, sources: [] }
   end
 
-  # FR-003: Batch check. Returns Hash{username => result}.
+  BATCH_LIMIT = 1000
+
+  # FR-003: Batch check. Returns Hash{username => result}. Max 1000 per call.
   def check_batch(usernames)
-    names = usernames.map { |u| u.to_s.downcase.strip }.reject(&:blank?)
+    names = usernames.map { |u| u.to_s.downcase.strip }.reject(&:blank?).first(BATCH_LIMIT)
     return {} if names.empty?
 
     results = batch_exists_all(names)

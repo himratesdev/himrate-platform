@@ -161,5 +161,13 @@ RSpec.describe KnownBotService do
       expect(stats[:per_source]).to include("commanderroot" => 1)
       expect(stats[:per_category]).to include("view_bot" => 1, "service_bot" => 1)
     end
+
+    # TC-014: Explicit bloom_support check
+    it "reports bloom_support status" do
+      stats = service.stats
+      expect(stats).to have_key(:bloom_support)
+      # Local test Redis likely has no Bloom → false
+      expect(stats[:bloom_support]).to be(true).or be(false)
+    end
   end
 end

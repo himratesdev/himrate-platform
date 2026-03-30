@@ -2,27 +2,17 @@
 
 # TASK-026: CommanderRoot known bot list adapter.
 # Largest public bot database (11.8M+).
-# API endpoint needs investigation at Dev time — using known public endpoint.
-# Fallback: direct known_bot_stats page parsing.
+# Bulk download endpoint: TBD — needs research (SRS §14).
+# Until endpoint is found, returns empty (honest stub, not fake data).
 
 module BotSources
   class CommanderRootAdapter < BaseAdapter
-    # CommanderRoot provides a bulk download at this endpoint
-    API_URL = "https://api.twitchinsights.net/v1/bots/all"
-    STATS_URL = "https://twitch-tools.rootonline.de/known_bot_stats.php"
-
     def fetch
-      # Primary: TwitchInsights /bots/all includes CommanderRoot data
-      body = http_get(API_URL, timeout: 120)
-      return [] unless body
-
-      data = JSON.parse(body)
-      bots = data["bots"] || data
-      return [] unless bots.is_a?(Array)
-
-      bots.map { |bot| bot.is_a?(Array) ? bot[0]&.downcase : bot["name"]&.downcase }.compact.uniq
-    rescue JSON::ParserError => e
-      Rails.logger.warn("CommanderRootAdapter: JSON parse error (#{e.message})")
+      # CommanderRoot bulk API endpoint not yet researched.
+      # SRS §14 open question: "CommanderRoot bulk download endpoint — нужно исследовать при Dev"
+      # Returning empty until real endpoint is implemented.
+      # DO NOT use TwitchInsights API and label it as CommanderRoot — that inflates cross-reference.
+      Rails.logger.info("CommanderRootAdapter: bulk endpoint TBD, returning empty")
       []
     end
 

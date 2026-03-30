@@ -21,6 +21,7 @@ module BotSources
 
     private
 
+    # Uses http gem (same as HelixClient, GqlClient — gem "http" in Gemfile)
     def http_get(url, timeout: REQUEST_TIMEOUT)
       response = HTTP.timeout(timeout).get(url)
       return nil unless response.status.to_i == 200
