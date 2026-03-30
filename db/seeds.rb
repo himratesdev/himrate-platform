@@ -91,6 +91,27 @@ if defined?(SignalConfiguration)
       c.param_value = config[:param_value]
     end
   end
+    # === TASK-029: Trust Index Engine configs ===
+    { signal_type: "trust_index", category: "default", param_name: "population_mean", param_value: 65.0 },
+    { signal_type: "trust_index", category: "default", param_name: "incident_threshold", param_value: 40.0 },
+    { signal_type: "trust_index", category: "default", param_name: "rehabilitation_streams", param_value: 15.0 },
+    { signal_type: "trust_index", category: "default", param_name: "rehabilitation_bonus_max", param_value: 15.0 },
+    { signal_type: "trust_index", category: "default", param_name: "engagement_percentile_threshold", param_value: 80.0 },
+    # Classification thresholds (QDC: from DB, not hardcoded)
+    { signal_type: "trust_index", category: "default", param_name: "trusted_min", param_value: 80.0 },
+    { signal_type: "trust_index", category: "default", param_name: "needs_review_min", param_value: 50.0 },
+    { signal_type: "trust_index", category: "default", param_name: "suspicious_min", param_value: 25.0 }
+  ]
+
+  signal_configs.each do |config|
+    SignalConfiguration.find_or_create_by!(
+      signal_type: config[:signal_type],
+      category: config[:category],
+      param_name: config[:param_name]
+    ) do |c|
+      c.param_value = config[:param_value]
+    end
+  end
   # rubocop:enable Metrics/BlockLength
 
   puts "Seed complete: #{SignalConfiguration.count} signal configurations"

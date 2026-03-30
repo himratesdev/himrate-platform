@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_30_300001) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_30_400001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -464,7 +464,12 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_30_300001) do
   create_table "trust_index_histories", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "calculated_at", null: false
     t.uuid "channel_id", null: false
+    t.string "classification", limit: 20
+    t.string "cold_start_status", limit: 20
     t.decimal "confidence", precision: 5, scale: 4
+    t.decimal "erv_percent", precision: 5, scale: 2
+    t.decimal "rehabilitation_bonus", precision: 5, scale: 2, default: "0.0"
+    t.decimal "rehabilitation_penalty", precision: 5, scale: 2, default: "0.0"
     t.jsonb "signal_breakdown", default: {}
     t.uuid "stream_id"
     t.decimal "trust_index_score", precision: 5, scale: 2, null: false
