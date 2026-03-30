@@ -18,14 +18,11 @@ class TrustIndexBlueprint < Blueprinter::Base
       tih&.erv_percent&.to_f
     end
 
-    # erv_count computed from erv_percent × stream CCV (peak_ccv or avg_ccv — no extra query)
+    # erv_count from denormalized ccv in trust_index_histories (no N+1)
     field :erv_count do |tih, _options|
       erv = tih&.erv_percent&.to_f
-      next nil unless erv && tih&.stream
-
-      ccv = tih.stream.peak_ccv.to_i
-      ccv = tih.stream.avg_ccv.to_i if ccv.zero?
-      next nil if ccv.zero?
+      ccv = tih&.ccv.to_i
+      next nil unless erv && ccv.positive?
 
       (ccv * erv / 100.0).round
     end

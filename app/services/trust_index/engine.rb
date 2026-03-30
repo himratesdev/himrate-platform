@@ -47,7 +47,8 @@ module TrustIndex
         stream: stream, channel: channel, ti_score: ti_final,
         classification: classification, cold_start: cold_start,
         erv: erv, breakdown: breakdown, confidence: signal_confidence,
-        rehabilitation_penalty: rehab[:penalty], rehabilitation_bonus: rehab[:bonus]
+        rehabilitation_penalty: rehab[:penalty], rehabilitation_bonus: rehab[:bonus],
+        ccv: ccv
       )
 
       Result.new(
@@ -147,7 +148,7 @@ module TrustIndex
     end
 
     def persist(stream:, channel:, ti_score:, classification:, cold_start:, erv:,
-                breakdown:, confidence:, rehabilitation_penalty:, rehabilitation_bonus:)
+                breakdown:, confidence:, rehabilitation_penalty:, rehabilitation_bonus:, ccv:)
       TrustIndexHistory.create!(
         channel: channel,
         stream: stream,
@@ -159,7 +160,8 @@ module TrustIndex
         cold_start_status: cold_start[:status],
         erv_percent: erv[:erv_percent],
         rehabilitation_penalty: rehabilitation_penalty,
-        rehabilitation_bonus: rehabilitation_bonus
+        rehabilitation_bonus: rehabilitation_bonus,
+        ccv: ccv
       )
 
       ErvEstimate.create!(
