@@ -121,18 +121,30 @@ RSpec.describe "Channels API", type: :request do
   end
 
   describe "DELETE /api/v1/channels/:id/track" do
-    it "removes tracked channel" do
+    it "disables tracking (soft delete, preserves record)" do
       sub = Subscription.create!(user: user, tier: "premium", is_active: true, started_at: Time.current)
       TrackedChannel.create!(user: user, channel: channel, tracking_enabled: true, added_at: Time.current, subscription: sub)
 
       delete "/api/v1/channels/#{channel.id}/track", headers: headers
       expect(response).to have_http_status(:ok)
-      expect(TrackedChannel.exists?(user: user, channel: channel)).to be false
+      # Record preserved but tracking_enabled = false
+      tc = TrackedChannel.find_by(user: user, channel: channel)
+      expect(tc).to be_present
+      expect(tc.tracking_enabled).to be false
     end
 
     it "returns 404 when not tracked" do
       delete "/api/v1/channels/#{channel.id}/track", headers: headers
       expect(response).to have_http_status(:not_found)
+    end
+
+    it "re-tracking after untrack re-enables record" do
+      sub = Subscription.create!(user: premium_user, tier: "premium", is_active: true, started_at: Time.current)
+      tc = TrackedChannel.create!(user: premium_user, channel: channel, tracking_enabled: false, added_at: 1.week.ago, subscription: sub)
+
+      post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
+      expect(response).to have_http_status(:created)
+      expect(tc.reload.tracking_enabled).to be true
     end
   end
 end

@@ -15,6 +15,7 @@ module Api
         authorize Channel
 
         tracked = current_user.tracked_channels
+          .where(tracking_enabled: true)
           .includes(channel: [ :trust_index_histories, :streams ])
           .order(added_at: :desc)
 
@@ -46,13 +47,20 @@ module Api
         channel = Channel.find(params[:channel_id] || params[:id])
         authorize channel, :track?
 
-        if TrackedChannel.exists?(user: current_user, channel: channel)
+        existing = TrackedChannel.find_by(user: current_user, channel: channel)
+
+        if existing&.tracking_enabled?
           render json: { error: "ALREADY_TRACKED", message: I18n.t("channels.errors.already_tracked", default: "Channel is already tracked") },
             status: :conflict
           return
         end
 
-        TrackedChannel.create!(user: current_user, channel: channel, tracking_enabled: true, added_at: Time.current)
+        if existing
+          # Re-enable previously disabled tracking
+          existing.update!(tracking_enabled: true, added_at: Time.current)
+        else
+          TrackedChannel.create!(user: current_user, channel: channel, tracking_enabled: true, added_at: Time.current)
+        end
         channel.update!(is_monitored: true) unless channel.is_monitored
 
         render json: { data: ChannelBlueprint.render_as_hash(channel, view: :headline, current_user: current_user) }, status: :created
@@ -63,7 +71,7 @@ module Api
         channel = Channel.find(params[:channel_id] || params[:id])
         authorize channel, :untrack?
 
-        tracked = TrackedChannel.find_by(user: current_user, channel: channel)
+        tracked = TrackedChannel.find_by(user: current_user, channel: channel, tracking_enabled: true)
 
         unless tracked
           render json: { error: "CHANNEL_NOT_TRACKED", message: I18n.t("channels.errors.not_tracked", default: "Channel is not tracked") },
@@ -71,7 +79,7 @@ module Api
           return
         end
 
-        tracked.destroy!
+        tracked.update!(tracking_enabled: false)
 
         render json: { status: "untracked", channel_id: channel.id }
       end
