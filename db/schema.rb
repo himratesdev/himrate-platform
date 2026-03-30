@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_30_140001) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_30_200001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -154,6 +154,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_30_140001) do
     t.index ["channel_login"], name: "idx_chat_messages_channel_login"
     t.index ["msg_type"], name: "idx_chat_messages_msg_type"
     t.index ["stream_id", "timestamp"], name: "idx_chat_messages_stream_time"
+    t.index ["stream_id", "username"], name: "idx_chat_messages_stream_username"
     t.index ["stream_id"], name: "index_chat_messages_on_stream_id"
     t.index ["timestamp"], name: "index_chat_messages_on_timestamp"
     t.index ["username"], name: "index_chat_messages_on_username"
@@ -277,11 +278,14 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_30_140001) do
 
   create_table "per_user_bot_scores", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.decimal "bot_score", precision: 5, scale: 4, null: false
+    t.string "classification", limit: 20, default: "unknown", null: false
     t.jsonb "components", default: {}
     t.decimal "confidence", precision: 5, scale: 4
     t.uuid "stream_id", null: false
     t.string "user_id", limit: 50
     t.string "username", limit: 255, null: false
+    t.index ["stream_id", "classification"], name: "idx_bot_scores_stream_classification"
+    t.index ["stream_id", "username"], name: "idx_bot_scores_stream_username", unique: true
     t.index ["stream_id"], name: "idx_per_user_bot_scores_stream"
     t.index ["stream_id"], name: "index_per_user_bot_scores_on_stream_id"
     t.index ["username"], name: "index_per_user_bot_scores_on_username"

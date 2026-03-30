@@ -3,6 +3,7 @@
 # TASK-023: EventSub stream.offline handler.
 # TASK-024: IRC PART via Redis pub/sub.
 # TASK-025: Finalize Stream record (peak_ccv, avg_ccv, duration_ms).
+# TASK-027: Trigger BotScoringWorker for per-user bot scoring.
 
 class StreamOfflineWorker
   include Sidekiq::Job
@@ -32,6 +33,9 @@ class StreamOfflineWorker
 
     # TASK-024: Tell IrcMonitor to leave this channel's chat
     publish_irc_part(broadcaster_login)
+
+    # TASK-027: Trigger per-user bot scoring
+    BotScoringWorker.perform_async(stream.id)
 
     Rails.logger.info("StreamOfflineWorker: finalized Stream #{stream.id} — peak:#{stream.peak_ccv} avg:#{stream.avg_ccv} duration:#{stream.duration_ms}ms")
   end
