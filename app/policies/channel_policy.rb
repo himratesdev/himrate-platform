@@ -28,6 +28,12 @@ class ChannelPolicy < ApplicationPolicy
     premium? || effective_business? || owns_channel?(record)
   end
 
+  # TASK-031 FR-005: Untrack — any registered user can untrack their own tracked channel.
+  # Ownership verified in controller (TrackedChannel.find_by user + channel).
+  def untrack?
+    registered?
+  end
+
   # TASK-031 FR-008: Serializer view selection — single source of truth for tier-scoped fields.
   def serializer_view
     return :headline unless registered?

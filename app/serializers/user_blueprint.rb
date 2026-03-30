@@ -5,9 +5,7 @@
 class UserBlueprint < Blueprinter::Base
   identifier :id
 
-  # Users table columns: username, email, role, tier, goal_tag
-  # display_name and avatar_url are in auth_providers (Twitch/Google profile data)
-  fields :username, :email, :role, :tier
+  fields :username, :email, :display_name, :avatar_url, :role, :tier, :locale
 
   field :tracked_channels_count do |user, _options|
     user.tracked_channels.size

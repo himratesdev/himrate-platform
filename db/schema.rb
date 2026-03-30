@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_31_100001) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_31_100002) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -499,10 +499,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_100001) do
   end
 
   create_table "users", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.text "avatar_url"
     t.datetime "created_at", null: false
     t.datetime "deleted_at"
+    t.string "display_name", limit: 255
     t.string "email", limit: 255
     t.string "goal_tag", limit: 20
+    t.string "locale", limit: 5, default: "en", null: false
     t.string "role", limit: 20, default: "viewer", null: false
     t.string "tier", limit: 20, default: "free", null: false
     t.datetime "updated_at", null: false

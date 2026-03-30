@@ -28,10 +28,19 @@ RSpec.describe "Users API", type: :request do
   end
 
   describe "PATCH /api/v1/user/me" do
-    it "updates username" do
-      patch "/api/v1/user/me", params: { username: "newname" }, headers: headers
+    it "updates display_name and locale" do
+      patch "/api/v1/user/me", params: { display_name: "New Name", locale: "ru" }, headers: headers
       expect(response).to have_http_status(:ok)
-      expect(response.parsed_body["data"]["username"]).to eq("newname")
+      expect(response.parsed_body["data"]["display_name"]).to eq("New Name")
+      expect(response.parsed_body["data"]["locale"]).to eq("ru")
+    end
+
+    it "returns avatar_url and display_name fields" do
+      get "/api/v1/user/me", headers: headers
+      data = response.parsed_body["data"]
+      expect(data).to have_key("display_name")
+      expect(data).to have_key("avatar_url")
+      expect(data).to have_key("locale")
     end
   end
 end

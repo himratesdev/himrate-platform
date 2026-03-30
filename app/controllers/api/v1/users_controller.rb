@@ -25,7 +25,7 @@ module Api
       private
 
       def user_params
-        params.permit(:username, :goal_tag)
+        params.permit(:display_name, :avatar_url, :locale)
       end
     end
   end

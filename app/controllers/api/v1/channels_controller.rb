@@ -61,7 +61,7 @@ module Api
       # FR-005: DELETE /api/v1/channels/:id/track — stop tracking
       def untrack
         channel = Channel.find(params[:channel_id] || params[:id])
-        authorize channel, :show? # authorize access to channel, tracking ownership checked below
+        authorize channel, :untrack?
 
         tracked = TrackedChannel.find_by(user: current_user, channel: channel)
 
