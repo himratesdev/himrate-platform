@@ -72,13 +72,16 @@ runs:
         fi
         echo "All running containers on SHA $SHORT_SHA"
 
-    - name: 'Check 2/7: Health endpoint'
+    - name: 'Check 2/7: Health endpoint (via SSH to avoid CI network issues)'
       shell: bash
       run: |
-        HTTP_CODE=$(curl -sf -o /dev/null -w '%{http_code}' "${{ inputs.health_url }}" || echo "000")
-        echo "Health check: $HTTP_CODE"
-        if [ "$HTTP_CODE" != "200" ]; then
-          echo "::error::Health check failed (HTTP $HTTP_CODE)"
+        HEALTH=$(ssh root@${{ inputs.host }} \
+          "curl -sf http://localhost:80/health" || echo "FAIL")
+        echo "Health check (via SSH localhost): $HEALTH"
+        if echo "$HEALTH" | grep -q '"status":"ok"'; then
+          echo "Health OK"
+        else
+          echo "::error::Health check failed: $HEALTH"
           exit 1
         fi
 
