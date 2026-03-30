@@ -54,6 +54,9 @@ class StreamMonitorWorker
 
         save_ccv_snapshot(stream, ccv) if ccv
         save_chatters_snapshot(stream, ccv, chatters) if chatters
+
+        # TASK-030: Trigger signal computation after data saved
+        SignalComputeWorker.perform_async(stream.id) if ccv || chatters
       end
     end
   end

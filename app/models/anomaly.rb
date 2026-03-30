@@ -6,6 +6,7 @@ class Anomaly < ApplicationRecord
     auth_ratio chatter_ccv_ratio ccv_step_function ccv_tier_clustering
     chat_behavior channel_protection_score cross_channel_presence
     known_bot_match raid_attribution ccv_chat_correlation account_profile_scoring
+    compute_failure
   ].freeze
 
   belongs_to :stream

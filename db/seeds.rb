@@ -90,7 +90,10 @@ if defined?(SignalConfiguration)
     # Classification thresholds (QDC: from DB, not hardcoded)
     { signal_type: "trust_index", category: "default", param_name: "trusted_min", param_value: 80.0 },
     { signal_type: "trust_index", category: "default", param_name: "needs_review_min", param_value: 50.0 },
-    { signal_type: "trust_index", category: "default", param_name: "suspicious_min", param_value: 25.0 }
+    { signal_type: "trust_index", category: "default", param_name: "suspicious_min", param_value: 25.0 },
+
+    # === TASK-030: Signal Compute Worker configs ===
+    { signal_type: "signal_compute", category: "default", param_name: "throttle_seconds", param_value: 30.0 }
   ]
 
   signal_configs.each do |config|
