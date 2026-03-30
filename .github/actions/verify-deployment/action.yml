@@ -23,6 +23,10 @@ inputs:
   ssh_private_key:
     description: 'SSH private key for VPS access'
     required: true
+  redis_container:
+    description: 'Redis container name (Kamal accessory naming: {service}-{name})'
+    required: false
+    default: 'himrate-redis'
 
 runs:
   using: 'composite'
@@ -115,7 +119,7 @@ runs:
       shell: bash
       run: |
         REDIS_VERSION=$(ssh root@${{ inputs.host }} \
-          "docker exec himrate-redis redis-cli INFO server 2>/dev/null | grep redis_version | cut -d: -f2 | tr -d '\r'" || echo "unavailable")
+          "docker exec ${{ inputs.redis_container }} redis-cli INFO server 2>/dev/null | grep redis_version | cut -d: -f2 | tr -d '\r'" || echo "unavailable")
         echo "Redis version: $REDIS_VERSION"
         if [ "$REDIS_VERSION" = "unavailable" ]; then
           echo "::error::Redis not accessible"
@@ -123,10 +127,10 @@ runs:
         fi
 
         BLOOM=$(ssh root@${{ inputs.host }} \
-          "docker exec himrate-redis redis-cli MODULE LIST 2>/dev/null | grep -c bf" || echo "0")
+          "docker exec ${{ inputs.redis_container }} redis-cli MODULE LIST 2>/dev/null | grep -c bf" || echo "0")
         echo "RedisBloom loaded: $BLOOM"
 
-        PING=$(ssh root@${{ inputs.host }} "docker exec himrate-redis redis-cli PING" || echo "FAIL")
+        PING=$(ssh root@${{ inputs.host }} "docker exec ${{ inputs.redis_container }} redis-cli PING" || echo "FAIL")
         echo "Redis PING: $PING"
         if [ "$PING" != "PONG" ]; then
           echo "::error::Redis PING failed"
