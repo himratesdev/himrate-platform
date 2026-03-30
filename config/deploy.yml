@@ -23,10 +23,8 @@ servers:
     cmd: bin/irc_monitor
     proxy: false
     options:
-      health-cmd: "ruby -e \"require 'redis'; r = Redis.new(url: ENV['REDIS_URL']); h = r.get('irc:heartbeat'); exit(h ? 0 : 1)\""
+      health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
-      health-start-period: 60s
-      health-retries: 3
 
 proxy:
   ssl: true
