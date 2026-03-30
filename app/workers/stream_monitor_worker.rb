@@ -152,6 +152,8 @@ class StreamMonitorWorker
       subs_only_enabled: data[:subscriber_only_mode] || false,
       email_verification_required: data[:email_verification_mode] == "REQUIRED",
       phone_verification_required: data[:phone_verification_mode] == "REQUIRED",
+      minimum_account_age_minutes: data[:minimum_account_age_minutes],
+      restrict_first_time_chatters: data[:restrict_first_timers] || false,
       last_checked_at: Time.current
     )
   rescue ActiveRecord::RecordInvalid => e

@@ -68,34 +68,21 @@ module TrustIndex
         { results: results, interactions: interactions_applied }
       end
 
-      # Load rules from DB if available, otherwise use defaults.
+      # Rules source: DEFAULT_RULES constant.
+      # Multipliers are overridable via signal_configurations:
+      #   signal_type: "interaction", category: "cps_known_bot", param_name: "multiplier", param_value: 1.3
       def self.rules
-        db_rules = load_db_rules
-        db_rules.any? ? db_rules : DEFAULT_RULES
-      end
-
-      def self.load_db_rules
-        configs = SignalConfiguration.where("param_name LIKE 'interaction_%'")
-        return [] if configs.empty?
-
-        configs.group_by { |c| c.signal_type }.map do |_signal_type, group|
-          params = group.each_with_object({}) { |c, h| h[c.param_name] = c.param_value.to_f }
-          next unless params["interaction_condition"] && params["interaction_target"]
-
-          {
-            condition: params["interaction_condition"].to_s,
-            cond_min: params["interaction_cond_min"] || 0.5,
-            target: params["interaction_target"].to_s,
-            target_min: params["interaction_target_min"] || 0.3,
-            multiplier: params["interaction_multiplier"] || 1.0
-          }
-        end.compact
+        DEFAULT_RULES.map do |rule|
+          config_key = "#{rule[:condition]}_#{rule[:target]}"
+          override = SignalConfiguration.find_by(
+            signal_type: "interaction", category: config_key, param_name: "multiplier"
+          )
+          override ? rule.merge(multiplier: override.param_value.to_f) : rule
+        end
       rescue ActiveRecord::StatementInvalid => e
-        Rails.logger.warn("InteractionMatrix: DB rules failed (#{e.message}), using defaults")
-        []
+        Rails.logger.warn("InteractionMatrix: DB lookup failed (#{e.message}), using defaults")
+        DEFAULT_RULES
       end
-
-      private_class_method :load_db_rules
     end
   end
 end

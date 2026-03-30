@@ -26,7 +26,11 @@ module TrustIndex
 
         return insufficient(reason: "baseline_zero") if ccv_old.zero? || chat_old.zero?
 
-        ccv_delta_pct = ((ccv_new - ccv_old) / ccv_old * 100).abs
+        # Only positive CCV delta matters (bots inject viewers = CCV increase).
+        # CCV decrease with stable chat = normal end-of-stream, not bots.
+        ccv_delta_pct = (ccv_new - ccv_old) / ccv_old * 100
+        return result(value: 0.0, confidence: 1.0, metadata: { reason: "ccv_decrease", ccv_delta_pct: ccv_delta_pct.round(2) }) if ccv_delta_pct <= 0
+
         chat_delta_pct = ((chat_new - chat_old) / chat_old * 100).abs
 
         # Divergence: CCV goes up significantly but chat doesn't follow
