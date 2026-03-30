@@ -22,3 +22,76 @@ Stream.find_or_create_by!(channel: channel, started_at: 1.hour.ago) do |s|
 end
 
 puts "Seed complete: 1 user, 1 channel, 1 stream"
+
+# TASK-028 FR-015: Signal configurations (thresholds + weights from BFT §07.1)
+if defined?(SignalConfiguration)
+  # rubocop:disable Metrics/BlockLength
+  signal_configs = [
+    # === Auth Ratio (Signal #1) — BFT §5.1 ===
+    { signal_type: "auth_ratio", category: "just_chatting", param_name: "expected_min", param_value: 0.75 },
+    { signal_type: "auth_ratio", category: "just_chatting", param_name: "expected_max", param_value: 0.90 },
+    { signal_type: "auth_ratio", category: "esports", param_name: "expected_min", param_value: 0.58 },
+    { signal_type: "auth_ratio", category: "esports", param_name: "expected_max", param_value: 0.74 },
+    { signal_type: "auth_ratio", category: "gaming", param_name: "expected_min", param_value: 0.65 },
+    { signal_type: "auth_ratio", category: "gaming", param_name: "expected_max", param_value: 0.80 },
+    { signal_type: "auth_ratio", category: "irl", param_name: "expected_min", param_value: 0.70 },
+    { signal_type: "auth_ratio", category: "irl", param_name: "expected_max", param_value: 0.85 },
+    { signal_type: "auth_ratio", category: "music", param_name: "expected_min", param_value: 0.60 },
+    { signal_type: "auth_ratio", category: "music", param_name: "expected_max", param_value: 0.78 },
+    { signal_type: "auth_ratio", category: "default", param_name: "expected_min", param_value: 0.65 },
+    { signal_type: "auth_ratio", category: "default", param_name: "expected_max", param_value: 0.80 },
+
+    # === Chatter-to-CCV Ratio (Signal #2) — BFT §5.2 ===
+    { signal_type: "chatter_ccv_ratio", category: "just_chatting", param_name: "expected_ratio_min", param_value: 0.20 },
+    { signal_type: "chatter_ccv_ratio", category: "just_chatting", param_name: "expected_ratio_max", param_value: 0.33 },
+    { signal_type: "chatter_ccv_ratio", category: "esports", param_name: "expected_ratio_min", param_value: 0.02 },
+    { signal_type: "chatter_ccv_ratio", category: "esports", param_name: "expected_ratio_max", param_value: 0.067 },
+    { signal_type: "chatter_ccv_ratio", category: "gaming", param_name: "expected_ratio_min", param_value: 0.10 },
+    { signal_type: "chatter_ccv_ratio", category: "gaming", param_name: "expected_ratio_max", param_value: 0.20 },
+    { signal_type: "chatter_ccv_ratio", category: "irl", param_name: "expected_ratio_min", param_value: 0.125 },
+    { signal_type: "chatter_ccv_ratio", category: "irl", param_name: "expected_ratio_max", param_value: 0.25 },
+    { signal_type: "chatter_ccv_ratio", category: "music", param_name: "expected_ratio_min", param_value: 0.067 },
+    { signal_type: "chatter_ccv_ratio", category: "music", param_name: "expected_ratio_max", param_value: 0.15 },
+    { signal_type: "chatter_ccv_ratio", category: "default", param_name: "expected_ratio_min", param_value: 0.10 },
+    { signal_type: "chatter_ccv_ratio", category: "default", param_name: "expected_ratio_max", param_value: 0.20 },
+
+    # === Signal Weights (weight_in_ti for all 11 signals) ===
+    { signal_type: "auth_ratio", category: "default", param_name: "weight_in_ti", param_value: 0.15 },
+    { signal_type: "chatter_ccv_ratio", category: "default", param_name: "weight_in_ti", param_value: 0.10 },
+    { signal_type: "ccv_step_function", category: "default", param_name: "weight_in_ti", param_value: 0.12 },
+    { signal_type: "ccv_tier_clustering", category: "default", param_name: "weight_in_ti", param_value: 0.10 },
+    { signal_type: "chat_behavior", category: "default", param_name: "weight_in_ti", param_value: 0.12 },
+    { signal_type: "channel_protection_score", category: "default", param_name: "weight_in_ti", param_value: 0.05 },
+    { signal_type: "cross_channel_presence", category: "default", param_name: "weight_in_ti", param_value: 0.08 },
+    { signal_type: "known_bot_match", category: "default", param_name: "weight_in_ti", param_value: 0.10 },
+    { signal_type: "raid_attribution", category: "default", param_name: "weight_in_ti", param_value: 0.06 },
+    { signal_type: "ccv_chat_correlation", category: "default", param_name: "weight_in_ti", param_value: 0.07 },
+    { signal_type: "account_profile_scoring", category: "default", param_name: "weight_in_ti", param_value: 0.05 },
+
+    # === Alert Thresholds (FR-017) ===
+    { signal_type: "auth_ratio", category: "default", param_name: "alert_threshold", param_value: 0.5 },
+    { signal_type: "chatter_ccv_ratio", category: "default", param_name: "alert_threshold", param_value: 0.5 },
+    { signal_type: "ccv_step_function", category: "default", param_name: "alert_threshold", param_value: 0.5 },
+    { signal_type: "ccv_tier_clustering", category: "default", param_name: "alert_threshold", param_value: 0.6 },
+    { signal_type: "chat_behavior", category: "default", param_name: "alert_threshold", param_value: 0.5 },
+    { signal_type: "channel_protection_score", category: "default", param_name: "alert_threshold", param_value: 0.8 },
+    { signal_type: "cross_channel_presence", category: "default", param_name: "alert_threshold", param_value: 0.3 },
+    { signal_type: "known_bot_match", category: "default", param_name: "alert_threshold", param_value: 0.2 },
+    { signal_type: "raid_attribution", category: "default", param_name: "alert_threshold", param_value: 0.5 },
+    { signal_type: "ccv_chat_correlation", category: "default", param_name: "alert_threshold", param_value: 0.5 },
+    { signal_type: "account_profile_scoring", category: "default", param_name: "alert_threshold", param_value: 0.4 }
+  ]
+
+  signal_configs.each do |config|
+    SignalConfiguration.find_or_create_by!(
+      signal_type: config[:signal_type],
+      category: config[:category],
+      param_name: config[:param_name]
+    ) do |c|
+      c.param_value = config[:param_value]
+    end
+  end
+  # rubocop:enable Metrics/BlockLength
+
+  puts "Seed complete: #{SignalConfiguration.count} signal configurations"
+end
