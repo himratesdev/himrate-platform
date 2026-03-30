@@ -21,11 +21,11 @@ RSpec.describe CleanupWorker, type: :worker do
       it "deletes signals older than 90 days" do
         old_signal = TiSignal.create!(
           stream: stream, timestamp: 91.days.ago,
-          signal_type: "account_age", value: 0.5
+          signal_type: "auth_ratio", value: 0.5
         )
         recent_signal = TiSignal.create!(
           stream: stream, timestamp: 1.day.ago,
-          signal_type: "account_age", value: 0.8
+          signal_type: "auth_ratio", value: 0.8
         )
 
         described_class.new.perform

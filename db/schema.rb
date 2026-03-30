@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_30_200001) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_30_300001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -354,14 +354,28 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_30_200001) do
     t.index ["user_id"], name: "index_sessions_on_user_id"
   end
 
+  create_table "signal_configurations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "category", limit: 50, null: false
+    t.datetime "created_at", null: false
+    t.string "param_name", limit: 100, null: false
+    t.decimal "param_value", precision: 10, scale: 4, null: false
+    t.string "signal_type", limit: 50, null: false
+    t.datetime "updated_at", null: false
+    t.index ["signal_type", "category", "param_name"], name: "idx_signal_configs_type_category_param", unique: true
+  end
+
   create_table "signals", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "category", limit: 50
     t.decimal "confidence", precision: 5, scale: 4
+    t.datetime "created_at", default: -> { "now()" }, null: false
+    t.jsonb "metadata", default: {}, null: false
     t.string "signal_type", limit: 50, null: false
     t.uuid "stream_id", null: false
     t.datetime "timestamp", null: false
     t.decimal "value", precision: 10, scale: 4, null: false
     t.decimal "weight_in_ti", precision: 5, scale: 4
     t.index ["signal_type"], name: "index_signals_on_signal_type"
+    t.index ["stream_id", "signal_type", "timestamp"], name: "idx_signals_stream_type_timestamp"
     t.index ["stream_id", "timestamp"], name: "idx_signals_stream_time"
     t.index ["stream_id"], name: "index_signals_on_stream_id"
     t.index ["timestamp"], name: "index_signals_on_timestamp"
