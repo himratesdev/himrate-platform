@@ -30,6 +30,7 @@ module Twitch
     class Error < StandardError; end
 
     attr_reader :channels
+    attr_writer :on_periodic_check
 
     def initialize
       @channels = Set.new
@@ -45,6 +46,7 @@ module Twitch
       @started_at = Time.current
       @awaiting_pong = false
       @memory_buffer = []
+      @on_periodic_check = nil
     end
 
     # Start the IRC monitor loop. Blocks until stop is called.
@@ -183,10 +185,11 @@ module Twitch
           send_keepalive_ping if Time.current - @last_message_at > PING_INTERVAL
         end
 
-        # Periodic heartbeat for Kamal health check
+        # Periodic heartbeat for Kamal health check + optional callback
         if Time.current - @last_heartbeat_at > 30
           update_heartbeat
           flush_memory_buffer
+          @on_periodic_check&.call
           @last_heartbeat_at = Time.current
         end
       end

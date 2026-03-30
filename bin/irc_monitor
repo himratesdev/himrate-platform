@@ -1,34 +1,111 @@
 #!/usr/bin/env ruby
 # frozen_string_literal: true
 
-# TASK-024: IRC Monitor entrypoint for Kamal accessory.
-# Runs Twitch::IrcMonitor as a standalone long-lived process.
-# Connects to active streams on startup, listens for JOIN/PART via Redis pub/sub.
+# BUG-007 (FR-002): IRC Monitor entrypoint for Kamal accessory.
+# Long-running process with two modes:
+#   STANDBY — Flipper[:irc_monitor] disabled. Writes heartbeat, sleeps, polls Flipper.
+#   ACTIVE  — Flipper[:irc_monitor] enabled. Connects to Twitch IRC, processes messages.
+#
+# The process NEVER exits on its own (except SIGTERM/SIGINT).
+# Kamal health-check (irc:heartbeat) works in both modes.
 
 require_relative "../config/environment"
 
-Rails.logger.info("bin/irc_monitor: starting IRC Monitor process (PID: #{Process.pid})")
+HEARTBEAT_KEY = "irc:heartbeat"
+HEARTBEAT_TTL = 120
+STANDBY_INTERVAL = 60       # seconds between Flipper checks in standby
+ACTIVE_FLIPPER_INTERVAL = 300 # seconds between Flipper checks in active (5 min)
 
-# Check Flipper feature flag
-unless Flipper.enabled?(:irc_monitor)
-  Rails.logger.info("bin/irc_monitor: Flipper[:irc_monitor] disabled, exiting")
-  exit(0)
+Rails.logger.info("bin/irc_monitor: starting (PID: #{Process.pid})")
+
+running = true
+trap("SIGTERM") { running = false }
+trap("SIGINT") { running = false }
+
+def flipper_enabled?
+  Flipper.enabled?(:irc_monitor)
+rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid, PG::Error => e
+  Rails.logger.warn("bin/irc_monitor: Flipper check failed (#{e.class}), treating as disabled")
+  ActiveRecord::Base.connection_pool.disconnect! rescue nil
+  false
 end
 
-monitor = Twitch::IrcMonitor.new
-
-# Auto-join channels with active streams
-active_channels = Channel.monitored
-  .joins(:streams)
-  .where(streams: { ended_at: nil })
-  .distinct
-  .pluck(:login)
-
-Rails.logger.info("bin/irc_monitor: found #{active_channels.size} active channels to join")
-
-active_channels.each do |login|
-  monitor.subscribe(login)
+def write_heartbeat(redis, mode:, channels: 0)
+  redis.setex(HEARTBEAT_KEY, HEARTBEAT_TTL, {
+    mode: mode,
+    channels: channels,
+    pid: Process.pid,
+    at: Time.current.iso8601
+  }.to_json)
+rescue Redis::BaseError => e
+  Rails.logger.warn("bin/irc_monitor: heartbeat write failed (#{e.message})")
 end
 
-# Start the monitor (blocks until SIGTERM/SIGINT)
-monitor.start
+def connect_redis
+  Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1")).tap(&:ping)
+rescue Redis::CannotConnectError => e
+  Rails.logger.error("bin/irc_monitor: Redis unavailable (#{e.message}), retrying in 30s")
+  sleep(30)
+  retry
+end
+
+def run_standby(redis, running_ref)
+  write_heartbeat(redis, mode: "standby")
+  Rails.logger.info("bin/irc_monitor: STANDBY — Flipper disabled, next check in #{STANDBY_INTERVAL}s")
+
+  elapsed = 0
+  while running_ref.call && elapsed < STANDBY_INTERVAL
+    sleep(1)
+    elapsed += 1
+  end
+end
+
+def run_active(_redis, _running_ref)
+  Rails.logger.info("bin/irc_monitor: ACTIVE — connecting to Twitch IRC")
+
+  monitor = Twitch::IrcMonitor.new
+
+  active_channels = Channel.monitored
+    .joins(:streams)
+    .where(streams: { ended_at: nil })
+    .distinct
+    .pluck(:login)
+
+  Rails.logger.info("bin/irc_monitor: joining #{active_channels.size} active channels")
+  active_channels.each { |login| monitor.subscribe(login) }
+
+  # Flipper check via clean callback (IrcMonitor#on_periodic_check).
+  # Called every 30s from listen_loop — no separate Thread needed.
+  last_flipper_check = Time.current
+  monitor.on_periodic_check = lambda do
+    if Time.current - last_flipper_check > ACTIVE_FLIPPER_INTERVAL
+      last_flipper_check = Time.current
+      unless flipper_enabled?
+        Rails.logger.info("bin/irc_monitor: Flipper disabled during active, stopping")
+        monitor.stop
+      end
+    end
+  end
+
+  monitor.start
+rescue StandardError => e
+  Rails.logger.error("bin/irc_monitor: active mode error (#{e.class}: #{e.message})")
+ensure
+  monitor&.stop rescue nil
+end
+
+# === MAIN LOOP ===
+
+redis = connect_redis
+
+while running
+  if flipper_enabled?
+    run_active(redis, -> { running })
+  else
+    run_standby(redis, -> { running })
+  end
+end
+
+# Graceful shutdown
+Rails.logger.info("bin/irc_monitor: shutting down (PID: #{Process.pid})")
+redis.del(HEARTBEAT_KEY) rescue nil

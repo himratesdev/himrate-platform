@@ -42,9 +42,9 @@ RSpec.describe "Static configuration" do
       expect(deploy.dig("env", "secret")).to include("ALLOWED_EXTENSION_ID")
     end
 
-    it "redis accessory uses AOF persistence" do
-      redis_cmd = deploy.dig("accessories", "redis", "cmd")
-      expect(redis_cmd).to include("--appendonly yes")
+    it "redis accessory uses AOF persistence via REDIS_ARGS" do
+      redis_args = deploy.dig("accessories", "redis", "env", "clear", "REDIS_ARGS")
+      expect(redis_args).to include("--appendonly yes")
     end
   end
 
