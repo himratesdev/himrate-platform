@@ -129,6 +129,23 @@ jobs:
       - name: Deploy to staging
         run: kamal setup -d staging
 
+  # === Verify Staging Deploy — after deploy-staging ===
+  verify-staging:
+    needs: [deploy-staging]
+    if: always() && needs.deploy-staging.result != 'skipped'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify staging deployment
+        uses: ./.github/actions/verify-deployment
+        with:
+          destination: staging
+          expected_sha: ${{ github.sha }}
+          host: 194.135.85.159
+          health_url: https://staging.himrate.com/health
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
+
   # === Deploy to Production — on tag v*.*.* ===
   deploy-production:
     needs: [lint, security, test]

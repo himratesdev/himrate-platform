@@ -1,0 +1,160 @@
+# BUG-007 (FR-001): Reusable Deployment Verification Action
+# Verifies that Kamal deploy completed successfully on VPS.
+# Used for both staging and production.
+#
+# 7 checks: containers, health, migrations, sidekiq, redis, flipper, cron
+
+name: 'Verify Deployment'
+description: 'Verify Kamal deployment health on target VPS'
+
+inputs:
+  destination:
+    description: 'Kamal destination (staging or production)'
+    required: true
+  expected_sha:
+    description: 'Expected commit SHA for all containers'
+    required: true
+  host:
+    description: 'VPS host IP or hostname'
+    required: true
+  health_url:
+    description: 'URL for health check (e.g. https://staging.himrate.com/health)'
+    required: true
+  ssh_private_key:
+    description: 'SSH private key for VPS access'
+    required: true
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup SSH
+      shell: bash
+      run: |
+        mkdir -p ~/.ssh
+        echo "${{ inputs.ssh_private_key }}" > ~/.ssh/deploy_key
+        chmod 600 ~/.ssh/deploy_key
+        cat >> ~/.ssh/config <<EOF
+        Host ${{ inputs.host }}
+          StrictHostKeyChecking accept-new
+          IdentityFile ~/.ssh/deploy_key
+          ConnectTimeout 30
+          ServerAliveInterval 15
+        EOF
+        chmod 600 ~/.ssh/config
+
+    - name: Wait for containers to stabilize
+      shell: bash
+      run: sleep 30
+
+    - name: 'Check 1/7: Containers on correct SHA'
+      shell: bash
+      run: |
+        echo "Checking containers for SHA: ${{ inputs.expected_sha }}"
+        CONTAINERS=$(ssh root@${{ inputs.host }} \
+          "docker ps --filter label=service=himrate --filter label=destination=${{ inputs.destination }} --format '{{.Names}} {{.Image}} {{.Status}}'")
+        echo "$CONTAINERS"
+
+        if [ -z "$CONTAINERS" ]; then
+          echo "::error::No himrate containers found for destination ${{ inputs.destination }}"
+          exit 1
+        fi
+
+        SHORT_SHA=$(echo "${{ inputs.expected_sha }}" | head -c 12)
+        WRONG=$(echo "$CONTAINERS" | grep -v "$SHORT_SHA" | grep -v "Exited" || true)
+        if [ -n "$WRONG" ]; then
+          echo "::error::Containers not on expected SHA ($SHORT_SHA):"
+          echo "$WRONG"
+          exit 1
+        fi
+        echo "All running containers on SHA $SHORT_SHA"
+
+    - name: 'Check 2/7: Health endpoint'
+      shell: bash
+      run: |
+        HTTP_CODE=$(curl -sf -o /dev/null -w '%{http_code}' "${{ inputs.health_url }}" || echo "000")
+        echo "Health check: $HTTP_CODE"
+        if [ "$HTTP_CODE" != "200" ]; then
+          echo "::error::Health check failed (HTTP $HTTP_CODE)"
+          exit 1
+        fi
+
+    - name: 'Check 3/7: Migrations'
+      shell: bash
+      run: |
+        WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
+          "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=web")
+        if [ -z "$WEB_CONTAINER" ]; then
+          echo "::error::Web container not found"
+          exit 1
+        fi
+        NEEDS_MIGRATION=$(ssh root@${{ inputs.host }} \
+          "docker exec $WEB_CONTAINER bin/rails runner 'puts ActiveRecord::Base.connection.migration_context.needs_migration?'")
+        echo "Needs migration: $NEEDS_MIGRATION"
+        if [ "$NEEDS_MIGRATION" = "true" ]; then
+          echo "::error::Pending migrations detected"
+          exit 1
+        fi
+
+    - name: 'Check 4/7: Sidekiq'
+      shell: bash
+      run: |
+        JOB_CONTAINER=$(ssh root@${{ inputs.host }} \
+          "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=job")
+        if [ -z "$JOB_CONTAINER" ]; then
+          echo "::error::Job container not found"
+          exit 1
+        fi
+        SIDEKIQ=$(ssh root@${{ inputs.host }} "docker top $JOB_CONTAINER" | grep -c sidekiq || echo "0")
+        echo "Sidekiq processes: $SIDEKIQ"
+        if [ "$SIDEKIQ" = "0" ]; then
+          echo "::error::Sidekiq not running in job container"
+          exit 1
+        fi
+
+    - name: 'Check 5/7: Redis'
+      shell: bash
+      run: |
+        REDIS_VERSION=$(ssh root@${{ inputs.host }} \
+          "docker exec himrate-redis redis-cli INFO server 2>/dev/null | grep redis_version | cut -d: -f2 | tr -d '\r'" || echo "unavailable")
+        echo "Redis version: $REDIS_VERSION"
+        if [ "$REDIS_VERSION" = "unavailable" ]; then
+          echo "::error::Redis not accessible"
+          exit 1
+        fi
+
+        BLOOM=$(ssh root@${{ inputs.host }} \
+          "docker exec himrate-redis redis-cli MODULE LIST 2>/dev/null | grep -c bf" || echo "0")
+        echo "RedisBloom loaded: $BLOOM"
+
+        PING=$(ssh root@${{ inputs.host }} "docker exec himrate-redis redis-cli PING" || echo "FAIL")
+        echo "Redis PING: $PING"
+        if [ "$PING" != "PONG" ]; then
+          echo "::error::Redis PING failed"
+          exit 1
+        fi
+
+    - name: 'Check 6/7: Flipper'
+      shell: bash
+      run: |
+        WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
+          "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=web")
+        FLAGS=$(ssh root@${{ inputs.host }} \
+          "docker exec $WEB_CONTAINER bin/rails runner 'Flipper.features.each { |f| puts \"#{f.name}: #{f.enabled?}\" }' 2>/dev/null" | grep -v "Flipper audit" || echo "unavailable")
+        echo "Flipper flags:"
+        echo "$FLAGS"
+        if [ "$FLAGS" = "unavailable" ]; then
+          echo "::warning::Could not read Flipper flags"
+        fi
+
+    - name: 'Check 7/7: Sidekiq Cron'
+      shell: bash
+      run: |
+        WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
+          "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=web")
+        CRON=$(ssh root@${{ inputs.host }} \
+          "docker exec $WEB_CONTAINER bin/rails runner 'Sidekiq::Cron::Job.all.each { |j| puts \"#{j.name}: #{j.status}\" }' 2>/dev/null" | grep -v "Flipper audit" || echo "unavailable")
+        echo "Cron jobs:"
+        echo "$CRON"
+        if [ "$CRON" = "unavailable" ]; then
+          echo "::warning::Could not read Sidekiq Cron jobs"
+        fi
