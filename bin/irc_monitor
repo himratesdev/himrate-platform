@@ -9,6 +9,10 @@
 # The process NEVER exits on its own (except SIGTERM/SIGINT).
 # Kamal health-check (irc:heartbeat) works in both modes.
 
+# Boot timing: Rails loads in 10-20s. Docker health-start-period (deploy.yml)
+# gives the container grace time before health-checks count.
+# No early heartbeat hack needed — Docker handles startup natively.
+
 require_relative "../config/environment"
 
 HEARTBEAT_KEY = "irc:heartbeat"
