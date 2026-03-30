@@ -9,7 +9,7 @@ RSpec.describe BotDetection::Scorer do
   let(:base_context) do
     {
       irc_tags: { user_type: nil, subscriber_status: nil, returning_chatter: false, vip: false, badge_info: nil, bits_used: 0 },
-      chat_stats: { message_count: 10, cv_timing: nil, entropy: nil, custom_emote_ratio: nil },
+      chat_stats: { message_count: 10, cv_timing: nil, entropy: nil, has_custom_emotes: nil },
       known_bot: { bot: false, confidence: 0.0, sources: [] },
       cross_channel_count: 0,
       profile: nil
@@ -89,6 +89,36 @@ RSpec.describe BotDetection::Scorer do
       result = scorer.score("empty_profile", ctx)
       expect(result.score).to be >= 0.60
       expect(result.components).to include(:profile_view_zero, :followers_zero, :account_age_7d)
+    end
+  end
+
+  # Chat behavior signals (cv_timing, entropy, has_custom_emotes)
+  describe "chat behavior signals" do
+    it "adds 0.70 weight for low CV timing" do
+      ctx = base_context.merge(chat_stats: { message_count: 10, cv_timing: 0.2, entropy: nil, has_custom_emotes: nil })
+      result = scorer.score("bot", ctx)
+      expect(result.components).to include(:cv_timing)
+      expect(result.components[:cv_timing][:weight]).to eq(0.70)
+    end
+
+    it "adds 0.70 weight for low entropy" do
+      ctx = base_context.merge(chat_stats: { message_count: 10, cv_timing: nil, entropy: 2.1, has_custom_emotes: nil })
+      result = scorer.score("bot", ctx)
+      expect(result.components).to include(:entropy)
+      expect(result.components[:entropy][:weight]).to eq(0.70)
+    end
+
+    it "adds 0.35 weight for zero custom emotes with 8+ messages" do
+      ctx = base_context.merge(chat_stats: { message_count: 10, cv_timing: nil, entropy: nil, has_custom_emotes: 0.0 })
+      result = scorer.score("bot", ctx)
+      expect(result.components).to include(:zero_custom_emotes)
+      expect(result.components[:zero_custom_emotes][:weight]).to eq(0.35)
+    end
+
+    it "does NOT add emote weight for < 8 messages" do
+      ctx = base_context.merge(chat_stats: { message_count: 5, cv_timing: nil, entropy: nil, has_custom_emotes: 0.0 })
+      result = scorer.score("bot", ctx)
+      expect(result.components).not_to include(:zero_custom_emotes)
     end
   end
 

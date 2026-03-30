@@ -123,6 +123,9 @@ class BotScoringWorker
   end
 
   # Calculate per-user CV timing and Shannon entropy from raw messages.
+  # NOTE: 3 pluck queries load all messages into Ruby memory.
+  # For 200K messages ≈ 20-50MB — acceptable on 8GB VPS.
+  # Monitor and optimize to SQL aggregation if streams exceed 500K messages.
   def enrich_chat_stats(stream, chatters)
     # Fetch timestamps per user for CV timing
     user_timestamps = ChatMessage
@@ -181,7 +184,7 @@ class BotScoringWorker
       next unless chatters[username]
 
       total_emotes = emote_strings.sum { |e| e.split("/").size }
-      chatters[username][:chat_stats][:custom_emote_ratio] = total_emotes > 0 ? 1.0 : 0.0
+      chatters[username][:chat_stats][:has_custom_emotes] = total_emotes > 0 ? 1.0 : 0.0
     end
   end
 

@@ -17,11 +17,11 @@ module BotDetection
   class Scorer
     # BFT thresholds. Upper bound exclusive (except confirmed_bot).
     CLASSIFICATION_THRESHOLDS = [
-      ["human",         0.0, 0.2],
-      ["low_suspicion", 0.2, 0.5],
-      ["suspicious",    0.5, 0.75],
-      ["probable_bot",  0.75, 0.95],
-      ["confirmed_bot", 0.95, Float::INFINITY]
+      [ "human",         0.0, 0.2 ],
+      [ "low_suspicion", 0.2, 0.5 ],
+      [ "suspicious",    0.5, 0.75 ],
+      [ "probable_bot",  0.75, 0.95 ],
+      [ "confirmed_bot", 0.95, Float::INFINITY ]
     ].freeze
 
     WHITELIST_TYPES = %w[mod vip partner affiliate staff].freeze
@@ -35,7 +35,7 @@ module BotDetection
     # Main scoring method.
     # stream_context = {
     #   irc_tags: { subscriber_status:, user_type:, returning_chatter:, vip:, badge_info:, bits_used: },
-    #   chat_stats: { message_count:, cv_timing:, entropy:, custom_emote_ratio: },
+    #   chat_stats: { message_count:, cv_timing:, entropy:, has_custom_emotes: },
     #   known_bot: { bot:, confidence:, sources: },
     #   cross_channel_count: Integer,
     #   profile: { created_at:, profile_view_count:, followers_count:, follows_count:,
@@ -141,7 +141,7 @@ module BotDetection
         total += weight
       end
 
-      if chat_stats[:custom_emote_ratio] && chat_stats[:message_count].to_i >= 8 && chat_stats[:custom_emote_ratio] == 0.0
+      if chat_stats[:has_custom_emotes] && chat_stats[:message_count].to_i >= 8 && chat_stats[:has_custom_emotes] == 0.0
         weight = 0.35
         components[:zero_custom_emotes] = { value: 0, weight: weight, contribution: weight, messages: chat_stats[:message_count] }
         total += weight
@@ -247,7 +247,11 @@ module BotDetection
         total += weight
       end
 
-      # Bits used (proxy for prediction/poll/hype train engagement)
+      # Bits used as proxy for monetary engagement (prediction/poll/hype train).
+      # Per-user participation data not available from IRC tags — bits_used is
+      # the closest available signal for "user spent real money".
+      # BFT: prediction -0.4, hype train -0.6, leaderboard -1.0.
+      # Using -0.6 as weighted average for bits engagement.
       if irc_tags[:bits_used].to_i > 0
         weight = -0.6
         components[:bits_used] = { value: irc_tags[:bits_used], weight: weight, contribution: weight }
