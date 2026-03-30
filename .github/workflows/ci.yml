@@ -142,7 +142,7 @@ jobs:
         with:
           destination: staging
           expected_sha: ${{ github.sha }}
-          host: ${{ vars.STAGING_HOST || '194.135.85.159' }}
+          host: ${{ vars.STAGING_HOST }}
           health_url: https://staging.himrate.com/health
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
