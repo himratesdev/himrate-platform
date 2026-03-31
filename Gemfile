@@ -49,7 +49,7 @@ gem "redis", "~> 5.0"
 # Background jobs
 gem "sidekiq", "~> 7.0"
 gem "sidekiq-cron", "~> 2.0"
-gem "connection_pool", "~> 2.5"
+gem "connection_pool", "~> 3.0"
 
 # RSpec for testing
 group :development, :test do
