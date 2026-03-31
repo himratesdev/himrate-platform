@@ -76,9 +76,13 @@ class TiDivergenceAlerter
     response = http.request(request)
 
     if response.code.to_i == 429
-      retry_after = response["Retry-After"]&.to_i || 5
-      sleep(retry_after) if retry_after <= 10
-      http.request(request)
+      Rails.logger.warn("TiDivergenceAlerter: Telegram rate limited (429), skipping retry")
+      return
+    end
+
+    unless response.is_a?(Net::HTTPSuccess)
+      Rails.logger.warn("TiDivergenceAlerter: Telegram HTTP #{response.code}")
+      return
     end
 
     Rails.logger.info("TiDivergenceAlerter: alert sent for stream #{stream.id} (part #{part_from}→#{part_to}, diff=#{divergence.round(1)})")

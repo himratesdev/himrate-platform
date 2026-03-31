@@ -10,8 +10,8 @@ class HealthScoreRefreshWorker
 
   PERIOD = 30.days
 
-  # Component weights (configurable via signal_configurations in future)
-  WEIGHTS = {
+  # Default weights, overridable from signal_configurations
+  DEFAULT_WEIGHTS = {
     ti: 0.35,
     engagement: 0.25,
     stability: 0.15,
@@ -145,7 +145,7 @@ class HealthScoreRefreshWorker
     total_weight = 0.0
     total_value = 0.0
 
-    WEIGHTS.each do |key, weight|
+    load_weights.each do |key, weight|
       value = components[key]
       next if value.nil?
 
@@ -156,6 +156,14 @@ class HealthScoreRefreshWorker
     return 0.0 if total_weight.zero?
 
     total_value / total_weight
+  end
+
+  def load_weights
+    DEFAULT_WEIGHTS.each_with_object({}) do |(key, default), weights|
+      weights[key] = SignalConfiguration.value_for("health_score", "default", "weight_#{key}").to_f
+    rescue SignalConfiguration::ConfigurationMissing
+      weights[key] = default
+    end
   end
 
   def assess_confidence(stream_count)

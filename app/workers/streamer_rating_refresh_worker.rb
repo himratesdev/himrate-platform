@@ -40,11 +40,11 @@ class StreamerRatingRefreshWorker
 
   private
 
-  # Load final TI per completed stream (last 90 days), newest first
+  # Load final TI per completed stream (last 90 days), newest first.
+  # Single query using DISTINCT ON to avoid N+1.
   def load_ti_data(channel)
     cutoff = RATING_PERIOD.ago
 
-    # Get completed stream IDs in the period
     stream_ids = channel.streams
                         .where.not(ended_at: nil)
                         .where("ended_at > ?", cutoff)
@@ -53,13 +53,15 @@ class StreamerRatingRefreshWorker
 
     return [] if stream_ids.empty?
 
-    # For each stream, get the latest TI score
-    stream_ids.filter_map do |stream_id|
-      ti_score = TrustIndexHistory.where(stream_id: stream_id)
-                                  .order(calculated_at: :desc)
-                                  .pick(:trust_index_score)
-      ti_score&.to_f
-    end
+    # DISTINCT ON (stream_id) picks latest TI per stream, then re-sort by stream order
+    ti_by_stream = TrustIndexHistory
+      .where(stream_id: stream_ids)
+      .select("DISTINCT ON (stream_id) stream_id, trust_index_score")
+      .order(:stream_id, calculated_at: :desc)
+      .index_by(&:stream_id)
+
+    # Preserve newest-first order from stream_ids
+    stream_ids.filter_map { |sid| ti_by_stream[sid]&.trust_index_score&.to_f }
   end
 
   # Weighted average with exponential decay: weight = exp(-lambda * index)

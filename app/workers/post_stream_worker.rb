@@ -78,7 +78,9 @@ class PostStreamWorker
     SignalComputeWorker.new.perform(stream.id, true)
   rescue StandardError => e
     Rails.logger.error("PostStreamWorker: final compute failed for stream #{stream.id} — #{e.message}")
-    # Report will be generated from last available TI data
+    # Re-raise if no TI data exists at all — triggers Sidekiq retry
+    # If TI data exists from live compute, continue with last available data
+    raise if TrustIndexHistory.where(stream_id: stream.id).none?
   end
 
   def generate_report(stream)
@@ -94,6 +96,7 @@ class PostStreamWorker
     attrs = {
       trust_index_final: ti_history&.trust_index_score,
       erv_percent_final: ti_history&.erv_percent,
+      erv_final: ti_history ? (ti_history.ccv.to_i * ti_history.trust_index_score.to_f / 100.0).round : nil,
       ccv_peak: stream.peak_ccv,
       ccv_avg: stream.avg_ccv,
       duration_ms: stream.duration_ms,
@@ -109,23 +112,16 @@ class PostStreamWorker
   end
 
   def build_signals_summary(stream)
-    # Get latest signal of each type for this stream
-    latest_timestamps = TiSignal.where(stream_id: stream.id)
-                                .group(:signal_type)
-                                .maximum(:timestamp)
-
-    summary = {}
-    latest_timestamps.each do |signal_type, timestamp|
-      signal = TiSignal.find_by(stream_id: stream.id, signal_type: signal_type, timestamp: timestamp)
-      next unless signal
-
-      summary[signal_type] = {
-        value: signal.value.to_f,
-        confidence: signal.confidence&.to_f,
-        weight: signal.weight_in_ti&.to_f
-      }
-    end
-    summary
+    TiSignal.where(stream_id: stream.id)
+            .select("DISTINCT ON (signal_type) signal_type, value, confidence, weight_in_ti")
+            .order(:signal_type, timestamp: :desc)
+            .each_with_object({}) do |sig, summary|
+              summary[sig.signal_type] = {
+                value: sig.value.to_f,
+                confidence: sig.confidence&.to_f,
+                weight: sig.weight_in_ti&.to_f
+              }
+            end
   end
 
   def schedule_expiring_warning(stream)
