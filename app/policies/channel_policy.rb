@@ -34,6 +34,20 @@ class ChannelPolicy < ApplicationPolicy
     registered?
   end
 
+  # TASK-032 FR-002: Stream history — Premium tracked, Business, or Streamer own.
+  def view_streams?
+    return false unless registered?
+
+    premium_access_for?(record)
+  end
+
+  # TASK-032 FR-004: Health Score — Streamer own, Premium tracked, Business.
+  def view_health_score?
+    return false unless registered?
+
+    owns_channel?(record) || premium_access_for?(record)
+  end
+
   # TASK-031 FR-008: Serializer view selection — single source of truth for tier-scoped fields.
   def serializer_view
     return :headline unless registered?

@@ -67,6 +67,12 @@ module Api
       @current_user
     end
 
+    # TASK-032 FR-007: Guest identification via Extension install ID.
+    # Used for: rate limiting per install_id, analytics, merge on registration.
+    def extension_install_id
+      @extension_install_id ||= request.headers["X-Extension-Install-Id"]
+    end
+
     def pundit_enabled?
       Flipper.enabled?(:pundit_authorization)
     end

@@ -7,6 +7,7 @@ class Channel < ApplicationRecord
   has_many :trust_index_histories, dependent: :destroy
   has_many :health_scores, dependent: :destroy
   has_one :streamer_reputation, dependent: :destroy
+  has_one :streamer_rating, dependent: :destroy
   has_one :channel_protection_config, dependent: :destroy
 
   validates :twitch_id, presence: true, uniqueness: true

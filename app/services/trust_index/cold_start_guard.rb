@@ -17,8 +17,12 @@ module TrustIndex
     # Returns {status: String, confidence: Float, stream_count: Integer}
     def self.assess(channel)
       stream_count = channel.streams.where.not(ended_at: nil).count
-      confidence = [ 1.0, stream_count / 10.0 ].min
+      assess_hash(stream_count)
+    end
 
+    # TASK-032: Assess by stream_count directly (avoids extra DB query when count already known).
+    def self.assess_hash(stream_count)
+      confidence = [ 1.0, stream_count / 10.0 ].min
       status = TIERS.find { |t| stream_count >= t[:min_streams] }[:status]
 
       { status: status, confidence: confidence.round(2), stream_count: stream_count }

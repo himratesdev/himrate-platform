@@ -85,11 +85,12 @@ RSpec.describe "API Scaffold", type: :request do
     end
   end
 
-  # TC-012: GET /channels/:id/streams/:id → 403 (Free without window)
-  describe "GET /api/v1/channels/:id/streams/:id" do
+  # TC-012: GET /channels/:id/streams/:stream_id/report → 403 (Free without window)
+  # TASK-032: streams show replaced by report action
+  describe "GET /api/v1/channels/:id/streams/:stream_id/report" do
     it "returns 403 for free user without active stream window" do
       stream = create(:stream, channel: channel, started_at: 2.days.ago, ended_at: 2.days.ago)
-      get "/api/v1/channels/#{channel.id}/streams/#{stream.id}", headers: auth_headers
+      get "/api/v1/channels/#{channel.id}/streams/#{stream.id}/report", headers: auth_headers
       expect(response).to have_http_status(:forbidden)
     end
   end
