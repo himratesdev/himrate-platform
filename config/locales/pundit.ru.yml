@@ -1,7 +1,7 @@
 ru:
   pundit:
     errors:
-      subscription_required: "Требуется подписка"
+      subscription_required: "Для доступа к аналитика требуется подписка"
       channel_not_tracked: "Канал не отслеживается. Начните tracking — $9.99/мес"
       post_stream_window_expired: "Подробная аналитика этого стрима больше недоступна. Начните tracking — $9.99/мес за канал"
       compare_unavailable: "Сравнение каналов доступно для Premium или Business"
