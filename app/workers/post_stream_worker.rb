@@ -146,7 +146,9 @@ class PostStreamWorker
   end
 
   def acquire_lock(stream_id)
-    acquired = redis.set("#{LOCK_KEY_PREFIX}#{stream_id}", "1", ex: LOCK_TTL, nx: true)
+    acquired = Sidekiq.redis do |conn|
+      conn.set("#{LOCK_KEY_PREFIX}#{stream_id}", "1", ex: LOCK_TTL, nx: true)
+    end
     unless acquired
       Rails.logger.info("PostStreamWorker: stream #{stream_id} already being processed, skipping")
       return false
@@ -158,12 +160,8 @@ class PostStreamWorker
   end
 
   def release_lock(stream_id)
-    redis.del("#{LOCK_KEY_PREFIX}#{stream_id}")
+    Sidekiq.redis { |conn| conn.del("#{LOCK_KEY_PREFIX}#{stream_id}") }
   rescue Redis::BaseError
     # Best effort
-  end
-
-  def redis
-    @redis ||= Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
   end
 end
