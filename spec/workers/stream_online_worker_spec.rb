@@ -70,4 +70,64 @@ RSpec.describe StreamOnlineWorker do
 
     expect { worker.perform(event) }.to change(Stream, :count).by(1)
   end
+
+  # TASK-033 TC-004: Merge increments merged_parts_count and records part_boundaries
+  it "increments merged_parts_count and records part_boundaries on merge" do
+    old_stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: 10.minutes.ago,
+      game_name: "Just Chatting", merged_parts_count: 1, part_boundaries: [])
+
+    create(:trust_index_history,
+      channel: channel, stream: old_stream,
+      trust_index_score: 65.0, erv_percent: 65.0, ccv: 3000,
+      confidence: 0.8, classification: "needs_review", cold_start_status: "full",
+      signal_breakdown: {}, calculated_at: 11.minutes.ago)
+
+    worker.perform(event_data)
+
+    old_stream.reload
+    expect(old_stream.merged_parts_count).to eq(2)
+    expect(old_stream.part_boundaries.size).to eq(1)
+    expect(old_stream.part_boundaries.first["ti_score"]).to eq(65.0)
+  end
+
+  # TASK-033 TC-005: =30min → NOT merge
+  it "does NOT merge when gap is exactly 30 minutes" do
+    create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: 30.minutes.ago,
+      game_name: "Just Chatting")
+
+    expect { worker.perform(event_data) }.to change(Stream, :count).by(1)
+  end
+
+  # TASK-033 TC-007: 3 reconnects → parts_count=3, 2 boundaries
+  it "handles multiple reconnects with cumulative part_boundaries" do
+    old_stream = create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 10.minutes.ago,
+      game_name: "Just Chatting", merged_parts_count: 2,
+      part_boundaries: [ { "ended_at" => 1.hour.ago.iso8601, "ti_score" => 60.0, "erv_percent" => 60.0, "part_number" => 1 } ])
+
+    create(:trust_index_history,
+      channel: channel, stream: old_stream,
+      trust_index_score: 70.0, erv_percent: 70.0, ccv: 4000,
+      confidence: 0.85, classification: "needs_review", cold_start_status: "full",
+      signal_breakdown: {}, calculated_at: 11.minutes.ago)
+
+    worker.perform(event_data)
+
+    old_stream.reload
+    expect(old_stream.merged_parts_count).to eq(3)
+    expect(old_stream.part_boundaries.size).to eq(2)
+  end
+
+  # TASK-033: nil game_name fallback — both nil → merge
+  it "merges when both game_names are nil (GQL failure)" do
+    old_stream = create(:stream, channel: channel, ended_at: 10.minutes.ago, game_name: nil)
+
+    # Stub GQL to return nil game
+    stub_request(:post, "https://gql.twitch.tv/gql")
+      .to_return(status: 200, body: { data: { user: { stream: nil, broadcastSettings: { title: "Test", language: "en", game: nil } } } }.to_json,
+                 headers: { "Content-Type" => "application/json" })
+
+    expect { worker.perform(event_data) }.not_to change(Stream, :count)
+    old_stream.reload
+    expect(old_stream.merge_status).to eq("merged")
+  end
 end
