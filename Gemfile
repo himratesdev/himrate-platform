@@ -47,7 +47,7 @@ gem "bootsnap", require: false
 gem "redis", "~> 5.0"
 
 # Background jobs
-gem "sidekiq", "~> 7.0"
+gem "sidekiq", "~> 8.0"
 gem "sidekiq-cron", "~> 2.0"
 gem "connection_pool", "~> 2.5"
 
