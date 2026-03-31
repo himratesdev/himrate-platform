@@ -17,21 +17,24 @@ RSpec.describe TiDivergenceAlerter do
       confidence: 0.85, classification: "needs_review", cold_start_status: "full",
       signal_breakdown: {}, calculated_at: 30.minutes.ago)
 
-    # Stub Telegram
-    stub_request(:post, /api.telegram.org/).to_return(status: 200, body: '{"ok":true}')
+    allow(TelegramAlertWorker).to receive(:perform_async)
   end
 
   describe ".check" do
     context "when divergence > 20" do
-      it "sends Telegram alert" do
+      it "enqueues TelegramAlertWorker" do
         # Part 1 TI = 50.0, Final TI = 75.0 → divergence = 25
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("TELEGRAM_BOT_TOKEN").and_return("test-token")
-        allow(ENV).to receive(:[]).with("TELEGRAM_ALERT_CHAT_ID").and_return("12345")
-
         described_class.check(stream)
 
-        expect(WebMock).to have_requested(:post, "https://api.telegram.org/bottest-token/sendMessage")
+        expect(TelegramAlertWorker).to have_received(:perform_async)
+          .with(a_string_including("TI Divergence Alert"))
+      end
+
+      it "includes channel login and divergence in message" do
+        described_class.check(stream)
+
+        expect(TelegramAlertWorker).to have_received(:perform_async)
+          .with(a_string_including(channel.login).and(including("25.0 points")))
       end
     end
 
@@ -40,11 +43,11 @@ RSpec.describe TiDivergenceAlerter do
         stream.update!(part_boundaries: [ { "ended_at" => 3.hours.ago.iso8601, "ti_score" => 70.0 } ])
       end
 
-      it "does not send alert" do
+      it "does not enqueue alert" do
         # Part 1 TI = 70.0, Final TI = 75.0 → divergence = 5
         described_class.check(stream)
 
-        expect(WebMock).not_to have_requested(:post, /api.telegram.org/)
+        expect(TelegramAlertWorker).not_to have_received(:perform_async)
       end
     end
 
@@ -53,16 +56,7 @@ RSpec.describe TiDivergenceAlerter do
 
       it "skips" do
         described_class.check(stream)
-        expect(WebMock).not_to have_requested(:post, /api.telegram.org/)
-      end
-    end
-
-    context "when TELEGRAM_BOT_TOKEN not set" do
-      it "skips without error" do
-        allow(ENV).to receive(:[]).and_call_original
-        allow(ENV).to receive(:[]).with("TELEGRAM_BOT_TOKEN").and_return(nil)
-
-        expect { described_class.check(stream) }.not_to raise_error
+        expect(TelegramAlertWorker).not_to have_received(:perform_async)
       end
     end
 
@@ -73,7 +67,26 @@ RSpec.describe TiDivergenceAlerter do
 
       it "skips that pair" do
         described_class.check(stream)
-        expect(WebMock).not_to have_requested(:post, /api.telegram.org/)
+        expect(TelegramAlertWorker).not_to have_received(:perform_async)
+      end
+    end
+
+    context "with multiple parts and divergence only in one pair" do
+      before do
+        stream.update!(
+          merged_parts_count: 3,
+          part_boundaries: [
+            { "ended_at" => 4.hours.ago.iso8601, "ti_score" => 72.0, "part_number" => 1 },
+            { "ended_at" => 2.hours.ago.iso8601, "ti_score" => 45.0, "part_number" => 2 }
+          ]
+        )
+        # Final TI = 75.0. Pair 1→2: |45-72|=27 > 20. Pair 2→3: |75-45|=30 > 20.
+      end
+
+      it "enqueues alert for each divergent pair" do
+        described_class.check(stream)
+
+        expect(TelegramAlertWorker).to have_received(:perform_async).twice
       end
     end
   end

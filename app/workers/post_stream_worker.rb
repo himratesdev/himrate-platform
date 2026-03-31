@@ -78,9 +78,13 @@ class PostStreamWorker
     SignalComputeWorker.new.perform(stream.id, true)
   rescue StandardError => e
     Rails.logger.error("PostStreamWorker: final compute failed for stream #{stream.id} — #{e.message}")
-    # Re-raise if no TI data exists at all — triggers Sidekiq retry
-    # If TI data exists from live compute, continue with last available data
-    raise if TrustIndexHistory.where(stream_id: stream.id).none?
+    # If no TI data from live compute either — re-raise for Sidekiq retry.
+    # Otherwise continue with last available data from live phase.
+    raise unless ti_data_available?(stream)
+  end
+
+  def ti_data_available?(stream)
+    TrustIndexHistory.where(stream_id: stream.id).exists?
   end
 
   def generate_report(stream)
@@ -93,10 +97,18 @@ class PostStreamWorker
                             .select(:anomaly_type, :cause, :ccv_impact, :confidence, :timestamp)
                             .map { |a| a.attributes.except("id") }
 
+    erv_data = if ti_history
+                  TrustIndex::ErvCalculator.compute(
+                    ti_score: ti_history.trust_index_score.to_f,
+                    ccv: ti_history.ccv.to_i,
+                    confidence: ti_history.confidence.to_f
+                  )
+    end
+
     attrs = {
       trust_index_final: ti_history&.trust_index_score,
       erv_percent_final: ti_history&.erv_percent,
-      erv_final: ti_history ? (ti_history.ccv.to_i * ti_history.trust_index_score.to_f / 100.0).round : nil,
+      erv_final: erv_data&.dig(:erv_count),
       ccv_peak: stream.peak_ccv,
       ccv_avg: stream.avg_ccv,
       duration_ms: stream.duration_ms,

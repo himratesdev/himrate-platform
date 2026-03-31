@@ -2,11 +2,10 @@
 
 # TASK-033 FR-007: TI Divergence detection for merged streams.
 # Compares TI between adjacent parts. |TI diff| > 20 → Telegram alert.
-# Best effort: Telegram failure does not block pipeline.
+# Alert delivery delegated to TelegramAlertWorker (async, with Sidekiq retry).
 
 class TiDivergenceAlerter
   DIVERGENCE_THRESHOLD = 20
-  TELEGRAM_TIMEOUT = 5 # seconds
 
   # Check all adjacent part pairs for TI divergence.
   # Only runs for merged streams (merged_parts_count > 1).
@@ -22,7 +21,7 @@ class TiDivergenceAlerter
       divergence = (ti_b - ti_a).abs
       next unless divergence > DIVERGENCE_THRESHOLD
 
-      send_telegram_alert(
+      enqueue_alert(
         stream: stream,
         part_from: idx + 1,
         part_to: idx + 2,
@@ -46,15 +45,7 @@ class TiDivergenceAlerter
     values
   end
 
-  def self.send_telegram_alert(stream:, part_from:, part_to:, ti_from:, ti_to:, divergence:)
-    bot_token = ENV["TELEGRAM_BOT_TOKEN"]
-    chat_id = ENV["TELEGRAM_ALERT_CHAT_ID"]
-
-    unless bot_token.present? && chat_id.present?
-      Rails.logger.warn("TiDivergenceAlerter: TELEGRAM_BOT_TOKEN or CHAT_ID not configured, skipping alert")
-      return
-    end
-
+  def self.enqueue_alert(stream:, part_from:, part_to:, ti_from:, ti_to:, divergence:)
     text = <<~MSG.strip
       🟡 TI Divergence Alert
       Channel: #{stream.channel.login}
@@ -63,30 +54,11 @@ class TiDivergenceAlerter
       TI values: #{ti_from.round(1)} → #{ti_to.round(1)}
     MSG
 
-    uri = URI("https://api.telegram.org/bot#{bot_token}/sendMessage")
-    http = Net::HTTP.new(uri.host, uri.port)
-    http.use_ssl = true
-    http.open_timeout = TELEGRAM_TIMEOUT
-    http.read_timeout = TELEGRAM_TIMEOUT
+    TelegramAlertWorker.perform_async(text)
 
-    request = Net::HTTP::Post.new(uri)
-    request.content_type = "application/json"
-    request.body = { chat_id: chat_id, text: text, parse_mode: "HTML" }.to_json
-
-    response = http.request(request)
-
-    if response.code.to_i == 429
-      Rails.logger.warn("TiDivergenceAlerter: Telegram rate limited (429), skipping retry")
-      return
-    end
-
-    unless response.is_a?(Net::HTTPSuccess)
-      Rails.logger.warn("TiDivergenceAlerter: Telegram HTTP #{response.code}")
-      return
-    end
-
-    Rails.logger.info("TiDivergenceAlerter: alert sent for stream #{stream.id} (part #{part_from}→#{part_to}, diff=#{divergence.round(1)})")
-  rescue StandardError => e
-    Rails.logger.warn("TiDivergenceAlerter: Telegram alert failed — #{e.message}")
+    Rails.logger.info(
+      "TiDivergenceAlerter: alert enqueued for stream #{stream.id} " \
+      "(part #{part_from}→#{part_to}, diff=#{divergence.round(1)})"
+    )
   end
 end

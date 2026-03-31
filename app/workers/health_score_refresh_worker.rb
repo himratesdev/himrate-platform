@@ -159,10 +159,14 @@ class HealthScoreRefreshWorker
   end
 
   def load_weights
+    db_weights = SignalConfiguration
+      .where(signal_type: "health_score", category: "default")
+      .where("param_name LIKE 'weight_%'")
+      .pluck(:param_name, :param_value)
+      .to_h
+
     DEFAULT_WEIGHTS.each_with_object({}) do |(key, default), weights|
-      weights[key] = SignalConfiguration.value_for("health_score", "default", "weight_#{key}").to_f
-    rescue SignalConfiguration::ConfigurationMissing
-      weights[key] = default
+      weights[key] = db_weights["weight_#{key}"]&.to_f || default
     end
   end
 
