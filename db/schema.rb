@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_30_400001) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_31_100003) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -126,6 +126,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_30_400001) do
     t.datetime "updated_at", null: false
     t.index ["deleted_at"], name: "index_channels_on_deleted_at"
     t.index ["is_monitored"], name: "index_channels_on_is_monitored"
+    t.index ["login"], name: "idx_channels_login", unique: true
     t.index ["login"], name: "index_channels_on_login"
     t.index ["twitch_id"], name: "index_channels_on_twitch_id", unique: true
   end
@@ -463,6 +464,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_30_400001) do
 
   create_table "trust_index_histories", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "calculated_at", null: false
+    t.integer "ccv"
     t.uuid "channel_id", null: false
     t.string "classification", limit: 20
     t.string "cold_start_status", limit: 20
@@ -498,10 +500,13 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_30_400001) do
   end
 
   create_table "users", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.text "avatar_url"
     t.datetime "created_at", null: false
     t.datetime "deleted_at"
+    t.string "display_name", limit: 255
     t.string "email", limit: 255
     t.string "goal_tag", limit: 20
+    t.string "locale", limit: 5, default: "en", null: false
     t.string "role", limit: 20, default: "viewer", null: false
     t.string "tier", limit: 20, default: "free", null: false
     t.datetime "updated_at", null: false

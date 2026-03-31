@@ -49,6 +49,6 @@ module TrustIndex
       LABELS[:red]
     end
 
-    private_class_method :resolve_label
+    # Made public for TrustIndexBlueprint (single source of truth for label logic)
   end
 end
