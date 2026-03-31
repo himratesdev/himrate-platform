@@ -15,4 +15,9 @@ class Channel < ApplicationRecord
 
   scope :active, -> { where(deleted_at: nil) }
   scope :monitored, -> { where(is_monitored: true) }
+
+  # TASK-032 CR #5: channel_live? as instance method (DRY)
+  def live?
+    streams.where(ended_at: nil).exists?
+  end
 end

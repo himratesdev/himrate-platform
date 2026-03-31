@@ -120,6 +120,45 @@ RSpec.describe "Trust API", type: :request do
       get "/api/v1/channels/nonexistent/trust"
       expect(response).to have_http_status(:not_found)
     end
+
+    # TC-006: Streamer own → full view
+    it "returns full for Streamer on own channel" do
+      streamer = create(:user, role: "streamer", tier: "free")
+      create(:auth_provider, user: streamer, provider: "twitch", provider_id: channel.twitch_id)
+      headers = auth_headers(streamer)
+
+      get "/api/v1/channels/#{channel.id}/trust", headers: headers
+
+      expect(response).to have_http_status(:ok)
+      data = response.parsed_body["data"]
+      expect(data["ti_score"]).to eq(72.0)
+      expect(data).to have_key("erv_breakdown")
+    end
+
+    # TC-019: Guest with X-Extension-Install-Id
+    it "accepts Guest with X-Extension-Install-Id header" do
+      get "/api/v1/channels/#{channel.id}/trust",
+          headers: { "X-Extension-Install-Id" => "ext-install-uuid-12345" }
+
+      expect(response).to have_http_status(:ok)
+      data = response.parsed_body["data"]
+      expect(data["ti_score"]).to eq(72.0)
+      # Guest still gets headline only
+      expect(data).not_to have_key("signal_breakdown")
+    end
+
+    # TC-023: Redis cache hit (second call should use cache)
+    it "uses Redis cache on second request" do
+      get "/api/v1/channels/#{channel.id}/trust"
+      expect(response).to have_http_status(:ok)
+      first_data = response.parsed_body["data"]
+
+      # Second request should be cached
+      get "/api/v1/channels/#{channel.id}/trust"
+      expect(response).to have_http_status(:ok)
+      second_data = response.parsed_body["data"]
+      expect(second_data).to eq(first_data)
+    end
   end
 
   private

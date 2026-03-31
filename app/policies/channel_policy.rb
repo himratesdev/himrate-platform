@@ -48,22 +48,39 @@ class ChannelPolicy < ApplicationPolicy
     owns_channel?(record) || premium_access_for?(record)
   end
 
+  # TASK-032 CR #4: show_trust? — always allows (headline for all), determines view level
+  def show_trust?
+    true
+  end
+
+  # TASK-032 CR #4: show_erv? — always allows (headline for all)
+  def show_erv?
+    true
+  end
+
   # TASK-031 FR-008: Serializer view selection — single source of truth for tier-scoped fields.
   def serializer_view
     return :headline unless registered?
 
     if premium_access_for?(record)
       :full
-    elsif channel_live?(record) || post_stream_window_open?(record)
+    elsif record.live? || post_stream_window_open?(record)
       :drill_down
     else
       :headline
     end
   end
 
-  private
+  # TASK-032 CR #7: Public query methods (no more policy.send(:private_method))
+  def premium_access?
+    premium_access_for?(record)
+  end
 
-  def channel_live?(channel)
-    channel.streams.where(ended_at: nil).exists?
+  def effective_business_access?
+    effective_business?
+  end
+
+  def owns_channel_access?
+    owns_channel?(record)
   end
 end

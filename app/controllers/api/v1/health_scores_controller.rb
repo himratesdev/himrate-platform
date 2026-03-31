@@ -1,19 +1,29 @@
 # frozen_string_literal: true
 
-# TASK-032 FR-004: Health Score endpoint.
-# GET /channels/:id/health-score — HS + 5 components + trend.
-# Access: Streamer own (data exchange), Premium tracked, Business.
+# TASK-032 FR-004: Health Score endpoint. CR #5/#7/#10.
 
 module Api
   module V1
     class HealthScoresController < Api::BaseController
+      include Channelable
+
       before_action :authenticate_user!
       before_action :set_channel
 
-      # FR-004: GET /api/v1/channels/:id/health-score
       def show
         authorize @channel, :view_health_score?
 
+        # CR #10: Redis cache 1h
+        payload = Rails.cache.fetch("health_score:#{@channel.id}", expires_in: 1.hour) do
+          build_health_score_payload
+        end
+
+        render json: { data: payload }
+      end
+
+      private
+
+      def build_health_score_payload
         latest_hs = HealthScore.where(channel: @channel).order(calculated_at: :desc).first
         stream_count = @channel.streams.where.not(ended_at: nil).count
         cold_start_tier = health_score_cold_start_tier(stream_count)
@@ -35,28 +45,18 @@ module Api
           calculated_at: latest_hs&.calculated_at&.iso8601
         }
 
-        # Trend: Premium gets 30d, Business gets all periods
-        if effective_business?
+        # Trend: Business gets all, Premium gets 30d only
+        policy = ChannelPolicy.new(current_user, @channel)
+        if policy.effective_business_access?
           payload[:trend_30d] = hs_trend(30)
           payload[:trend_60d] = hs_trend(60)
           payload[:trend_90d] = hs_trend(90)
           payload[:trend_365d] = hs_trend(365)
-        elsif premium_access_for_channel?
+        elsif policy.premium_access?
           payload[:trend_30d] = hs_trend(30)
         end
 
-        render json: { data: payload }
-      end
-
-      private
-
-      def set_channel
-        id = params[:channel_id] || params[:id]
-        @channel = if id =~ /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
-                     Channel.find(id)
-        else
-                     Channel.find_by!(login: id)
-        end
+        payload
       end
 
       def hs_trend(days)
@@ -99,16 +99,6 @@ module Api
         when 20..39 then "orange"
         else "red"
         end
-      end
-
-      def effective_business?
-        policy = ChannelPolicy.new(current_user, @channel)
-        policy.send(:effective_business?)
-      end
-
-      def premium_access_for_channel?
-        policy = ChannelPolicy.new(current_user, @channel)
-        policy.send(:premium_access_for?, @channel)
       end
     end
   end
