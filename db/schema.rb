@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_31_100003) do
+ActiveRecord::Schema[8.1].define(version: 2026_03_31_200001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -412,6 +412,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_100003) do
     t.boolean "is_mature", default: false, null: false
     t.string "language", limit: 10
     t.string "merge_status", limit: 20, default: "separate"
+    t.integer "merged_parts_count", default: 1, null: false
     t.integer "peak_ccv", default: 0
     t.datetime "started_at", null: false
     t.text "title"

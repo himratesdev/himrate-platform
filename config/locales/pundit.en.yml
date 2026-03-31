@@ -1,7 +1,7 @@
 en:
   pundit:
     errors:
-      subscription_required: "Subscription required"
+      subscription_required: "Subscription required to access analytics"
       channel_not_tracked: "Channel not tracked. Start tracking — $9.99/mo"
       post_stream_window_expired: "Detailed analytics for this stream is no longer available. Start tracking — $9.99/mo per channel"
       compare_unavailable: "Compare is available for Premium or Business"

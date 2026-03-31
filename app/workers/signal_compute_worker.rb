@@ -62,6 +62,9 @@ class SignalComputeWorker
       category: context[:category] || "default"
     )
 
+    # TASK-032 CR #16: Explicit cache invalidation after TI compute
+    invalidate_api_cache(stream.channel_id)
+
     # FR-005: Redis publish
     publish_update(stream, result)
 
@@ -116,6 +119,18 @@ class SignalComputeWorker
     redis.publish("#{PUBLISH_CHANNEL_PREFIX}#{channel_id}", payload)
   rescue Redis::BaseError => e
     Rails.logger.warn("SignalComputeWorker: Redis publish failed (#{e.message})")
+  end
+
+  # TASK-032 CR #16: Invalidate REST API cache after TI recompute
+  def invalidate_api_cache(channel_id)
+    %w[headline drill_down full].each do |view|
+      Rails.cache.delete("trust:#{channel_id}:#{view}")
+      Rails.cache.delete("erv:#{channel_id}:#{view}")
+    end
+    Rails.cache.delete("erv:#{channel_id}:details")
+    Rails.cache.delete("health_score:#{channel_id}")
+  rescue StandardError => e
+    Rails.logger.warn("SignalComputeWorker: cache invalidation failed (#{e.message})")
   end
 
   def track_signal_health(signal_results)

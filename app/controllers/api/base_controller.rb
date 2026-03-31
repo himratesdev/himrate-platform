@@ -67,6 +67,12 @@ module Api
       @current_user
     end
 
+    # TASK-032 FR-007: Guest identification via Extension install ID.
+    # Used for: rate limiting per install_id, analytics, merge on registration.
+    def extension_install_id
+      @extension_install_id ||= request.headers["X-Extension-Install-Id"]
+    end
+
     def pundit_enabled?
       Flipper.enabled?(:pundit_authorization)
     end
@@ -116,7 +122,11 @@ module Api
       when "TrustSnapshotPolicy"
         query == "drill_down?" ? "POST_STREAM_WINDOW_EXPIRED" : "SUBSCRIPTION_REQUIRED"
       when "ChannelPolicy"
-        query == "destroy?" ? "CHANNEL_NOT_TRACKED" : "SUBSCRIPTION_REQUIRED"
+        case query
+        when "destroy?" then "CHANNEL_NOT_TRACKED"
+        when "view_report?" then "POST_STREAM_WINDOW_EXPIRED"
+        else "SUBSCRIPTION_REQUIRED"
+        end
       else
         "SUBSCRIPTION_REQUIRED"
       end

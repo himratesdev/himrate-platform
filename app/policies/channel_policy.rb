@@ -34,22 +34,64 @@ class ChannelPolicy < ApplicationPolicy
     registered?
   end
 
+  # TASK-032 FR-002: Stream history — Premium tracked, Business, or Streamer own.
+  def view_streams?
+    return false unless registered?
+
+    premium_access_for?(record)
+  end
+
+  # TASK-032 FR-004: Health Score — Streamer own, Premium tracked, Business.
+  def view_health_score?
+    return false unless registered?
+
+    owns_channel?(record) || premium_access_for?(record)
+  end
+
+  # TASK-032 CR #4: show_trust? — always allows (headline for all), determines view level
+  def show_trust?
+    true
+  end
+
+  # TASK-032 CR #4: show_erv? — always allows (headline for all)
+  def show_erv?
+    true
+  end
+
+  # TASK-032 PG WARNING #2: Paywall for stream report — via Pundit (not controller)
+  # Returns true if user can view the report for this channel.
+  # Premium/Business/Streamer own: always. Free: only if live or TIME-lock window open.
+  def view_report?
+    return false unless registered?
+    return true if premium_access_for?(record)
+    return true if record.live?
+
+    PostStreamWindowService.open?(record)
+  end
+
   # TASK-031 FR-008: Serializer view selection — single source of truth for tier-scoped fields.
   def serializer_view
     return :headline unless registered?
 
     if premium_access_for?(record)
       :full
-    elsif channel_live?(record) || post_stream_window_open?(record)
+    elsif record.live? || post_stream_window_open?(record)
       :drill_down
     else
       :headline
     end
   end
 
-  private
+  # TASK-032 CR #7: Public query methods (no more policy.send(:private_method))
+  def premium_access?
+    premium_access_for?(record)
+  end
 
-  def channel_live?(channel)
-    channel.streams.where(ended_at: nil).exists?
+  def effective_business_access?
+    effective_business?
+  end
+
+  def owns_channel_access?
+    owns_channel?(record)
   end
 end

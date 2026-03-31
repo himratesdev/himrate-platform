@@ -91,4 +91,9 @@ Rails.application.configure do
   #
   # Skip DNS rebinding protection for the default health check endpoint.
   # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }
+
+  # TASK-032: Action Cable WebSocket origins — Chrome Extension + web dashboard
+  config.action_cable.allowed_request_origins = ENV.fetch("ALLOWED_EXTENSION_ID", "").split(",").map { |id|
+    "chrome-extension://#{id.strip}"
+  } + [ ENV["CORS_ALLOWED_ORIGIN"] ].compact
 end

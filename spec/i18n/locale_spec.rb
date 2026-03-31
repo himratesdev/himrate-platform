@@ -15,7 +15,7 @@ RSpec.describe "i18n Configuration" do
       get "/api/v1/channels/#{channel.id}/streams",
           headers: { "Authorization" => "Bearer #{token}", "Accept-Language" => "ru" }
       body = JSON.parse(response.body)
-      expect(body.dig("error", "message")).to include("аналитика")
+      expect(body.dig("error", "message")).to include("аналитике")
     end
 
     it "returns EN error for Accept-Language: en", type: :request do

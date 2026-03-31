@@ -97,14 +97,8 @@ class ApplicationPolicy
     effective_business? || channel_tracked?(channel) || owns_channel?(channel)
   end
 
+  # TASK-032 PG WARNING #1: Consolidated — single source of truth
   def post_stream_window_open?(channel)
-    channel.streams
-           .where.not(ended_at: nil)
-           .where("ended_at >= ?", 18.hours.ago)
-           .where(
-             "NOT EXISTS (SELECT 1 FROM streams s2 WHERE s2.channel_id = streams.channel_id " \
-             "AND s2.started_at > streams.ended_at)"
-           )
-           .exists?
+    PostStreamWindowService.open?(channel)
   end
 end

@@ -37,11 +37,18 @@ Rails.application.routes.draw do
       get "user/me", to: "users#me"
       patch "user/me", to: "users#update"
 
-      # TASK-008 scaffold → TASK-031 real logic
+      # TASK-008 scaffold → TASK-031 real logic → TASK-032 analytics API
       resources :channels, only: %i[index show] do
         resource :trust, only: :show, controller: "trust"
-        resources :streams, only: %i[index show]
+        resources :streams, only: %i[index] do
+          # TASK-032 FR-003: Post-stream report
+          get "report", on: :member, to: "streams#report"
+        end
         resource "bot-chain", only: :show, controller: "bot_chain", as: :bot_chain
+        # TASK-032 FR-004: Health Score
+        resource :health_score, only: :show, controller: "health_scores"
+        # TASK-032 FR-005: ERV
+        resource :erv, only: :show, controller: "erv"
 
         # TASK-031: Track/untrack channel
         post "track", to: "channels#track"
@@ -57,6 +64,9 @@ Rails.application.routes.draw do
       post "analytics/auth_events", to: "auth_events#create"
     end
   end
+
+  # TASK-032 FR-012: Action Cable WebSocket mount
+  mount ActionCable.server => "/cable"
 
   # Webhooks (public, no auth)
   post "webhooks/twitch", to: "webhooks/twitch#create"
