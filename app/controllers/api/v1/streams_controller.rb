@@ -9,8 +9,7 @@ module Api
       include Channelable
 
       before_action :set_channel
-      before_action :authenticate_user!, only: :index
-      before_action :authenticate_user_optional!, only: :report
+      before_action :authenticate_user!, only: %i[index report]
 
       # FR-002: GET /api/v1/channels/:id/streams — stream history
       def index
@@ -37,10 +36,9 @@ module Api
       # FR-003: GET /api/v1/channels/:id/streams/:stream_id/report
       # PG WARNING #2: Paywall via Pundit view_report? (not controller logic)
       def report
-        @channel.streams.find(params[:stream_id] || params[:id])
+        stream = @channel.streams.find(params[:stream_id] || params[:id])
         authorize @channel, :view_report?
 
-        stream = @channel.streams.find(params[:stream_id] || params[:id])
         payload = Streams::ReportService.new(stream: stream, channel: @channel).call
 
         render json: { data: payload }

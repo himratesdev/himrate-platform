@@ -122,7 +122,11 @@ module Api
       when "TrustSnapshotPolicy"
         query == "drill_down?" ? "POST_STREAM_WINDOW_EXPIRED" : "SUBSCRIPTION_REQUIRED"
       when "ChannelPolicy"
-        query == "destroy?" ? "CHANNEL_NOT_TRACKED" : "SUBSCRIPTION_REQUIRED"
+        case query
+        when "destroy?" then "CHANNEL_NOT_TRACKED"
+        when "view_report?" then "POST_STREAM_WINDOW_EXPIRED"
+        else "SUBSCRIPTION_REQUIRED"
+        end
       else
         "SUBSCRIPTION_REQUIRED"
       end
