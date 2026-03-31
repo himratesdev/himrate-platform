@@ -88,7 +88,7 @@ module Api
           erv_percent: ti&.erv_percent&.to_f&.clamp(0.0, 100.0),
           classification: ti&.classification,
           # CR #12: real parts count
-          merged_parts_count: stream.respond_to?(:merged_parts_count) ? stream.merged_parts_count : 1
+          merged_parts_count: stream.merged_parts_count
         }
       end
     end

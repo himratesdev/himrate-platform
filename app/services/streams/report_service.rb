@@ -84,7 +84,7 @@ module Streams
         language: @stream.language,
         merge_status: @stream.merge_status,
         # CR #12: real parts count from DB
-        merged_parts_count: @stream.respond_to?(:merged_parts_count) ? @stream.merged_parts_count : 1
+        merged_parts_count: @stream.merged_parts_count
       }
     end
 
