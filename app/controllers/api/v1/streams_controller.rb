@@ -35,42 +35,18 @@ module Api
       end
 
       # FR-003: GET /api/v1/channels/:id/streams/:stream_id/report
+      # PG WARNING #2: Paywall via Pundit view_report? (not controller logic)
       def report
-        stream = @channel.streams.find(params[:stream_id] || params[:id])
-        authorize @channel, :show?
-        authorize_report_access!(stream)
-        return if performed?
+        @channel.streams.find(params[:stream_id] || params[:id])
+        authorize @channel, :view_report?
 
+        stream = @channel.streams.find(params[:stream_id] || params[:id])
         payload = Streams::ReportService.new(stream: stream, channel: @channel).call
 
         render json: { data: payload }
       end
 
       private
-
-      # CR #13: authorize_report_access! with early return pattern
-      def authorize_report_access!(stream)
-        if current_user.nil?
-          render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.bearer_required") }, status: :unauthorized
-          return
-        end
-
-        policy = ChannelPolicy.new(current_user, @channel)
-        return if policy.premium_access?
-
-        # Live stream — drill-down allowed for registered
-        return if stream.ended_at.nil?
-
-        # Free — check TIME-lock
-        unless PostStreamWindowService.open?(@channel)
-          render json: {
-            error: "POST_STREAM_WINDOW_EXPIRED",
-            message: I18n.t("streams.errors.window_expired",
-              default: "Detailed analytics for this stream are no longer available"),
-            cta: { action: "subscribe", label: I18n.t("pundit.cta.start_tracking") }
-          }, status: :forbidden
-        end
-      end
 
       def stream_summary(stream)
         ti = stream.trust_index_histories.max_by(&:calculated_at)

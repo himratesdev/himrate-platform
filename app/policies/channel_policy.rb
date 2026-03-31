@@ -58,6 +58,17 @@ class ChannelPolicy < ApplicationPolicy
     true
   end
 
+  # TASK-032 PG WARNING #2: Paywall for stream report — via Pundit (not controller)
+  # Returns true if user can view the report for this channel.
+  # Premium/Business/Streamer own: always. Free: only if live or TIME-lock window open.
+  def view_report?
+    return false unless registered?
+    return true if premium_access_for?(record)
+    return true if record.live?
+
+    PostStreamWindowService.open?(record)
+  end
+
   # TASK-031 FR-008: Serializer view selection — single source of truth for tier-scoped fields.
   def serializer_view
     return :headline unless registered?
