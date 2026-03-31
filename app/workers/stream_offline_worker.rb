@@ -37,6 +37,9 @@ class StreamOfflineWorker
     # TASK-027: Trigger per-user bot scoring
     BotScoringWorker.perform_async(stream.id)
 
+    # TASK-033 FR-001: Trigger post-stream pipeline (report, notifications, HS, Rating)
+    PostStreamWorker.perform_async(stream.id)
+
     Rails.logger.info("StreamOfflineWorker: finalized Stream #{stream.id} — peak:#{stream.peak_ccv} avg:#{stream.avg_ccv} duration:#{stream.duration_ms}ms")
   end
 

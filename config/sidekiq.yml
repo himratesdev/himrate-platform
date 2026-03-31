@@ -10,6 +10,7 @@
 :queues:
   - [signals, 5]
   - [chat, 4]
+  - [post_stream, 3]
   - [default, 3]
   - [notifications, 2]
   - [monitoring, 1]
