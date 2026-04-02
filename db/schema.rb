@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_03_31_300001) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_02_100001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -464,6 +464,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_300001) do
     t.index ["user_id"], name: "index_tracked_channels_on_user_id"
   end
 
+  create_table "tracking_requests", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "channel_login", limit: 50, null: false
+    t.uuid "user_id"
+    t.uuid "extension_install_id"
+    t.string "status", limit: 20, default: "pending", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["channel_login", "extension_install_id"], name: "idx_tracking_requests_unique_guest", unique: true, where: "(extension_install_id IS NOT NULL)"
+    t.index ["channel_login", "user_id"], name: "idx_tracking_requests_unique_user", unique: true, where: "(user_id IS NOT NULL)"
+    t.index ["channel_login"], name: "index_tracking_requests_on_channel_login"
+  end
+
   create_table "trust_index_histories", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "calculated_at", null: false
     t.integer "ccv"
@@ -576,6 +588,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_03_31_300001) do
   add_foreign_key "tracked_channels", "channels"
   add_foreign_key "tracked_channels", "subscriptions"
   add_foreign_key "tracked_channels", "users"
+  add_foreign_key "tracking_requests", "users", on_delete: :nullify
   add_foreign_key "trust_index_histories", "channels"
   add_foreign_key "trust_index_histories", "streams"
   add_foreign_key "watchlist_tags_notes", "channels"

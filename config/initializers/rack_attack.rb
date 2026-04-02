@@ -39,6 +39,11 @@ class Rack::Attack
     req.ip if req.path == "/api/v1/analytics/auth_events" && req.post?
   end
 
+  # TASK-034 FR-025: Request tracking (anti-spam, 5 per hour)
+  throttle("request_tracking/ip", limit: 5, period: 1.hour) do |req|
+    req.ip if req.path.match?(%r{/api/v1/channels/.+/request_tracking}) && req.post?
+  end
+
   # General API per IP
   throttle("api/ip", limit: 60, period: 1.minute) do |req|
     req.ip if req.path.start_with?("/api/") && !req.options?
