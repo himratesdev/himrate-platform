@@ -11,11 +11,18 @@ class ChannelBlueprint < Blueprinter::Base
   view :headline do
     fields :login, :display_name, :profile_image_url, :twitch_id, :is_monitored
 
+    # Accepts preloaded watched_channel_ids set to avoid N+1 in list endpoints.
+    # Single-channel endpoints (show) pass no set — single DB query is acceptable.
     field :is_watched_by_user do |channel, options|
       user = options[:current_user]
       next false unless user
 
-      TrackedChannel.where(user: user, channel: channel, tracking_enabled: true).exists?
+      preloaded = options[:watched_channel_ids]
+      if preloaded
+        preloaded.include?(channel.id)
+      else
+        TrackedChannel.where(user: user, channel: channel, tracking_enabled: true).exists?
+      end
     end
 
     association :latest_trust_index, blueprint: TrustIndexBlueprint, view: :headline,

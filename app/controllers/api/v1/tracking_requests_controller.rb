@@ -14,6 +14,11 @@ module Api
 
       # POST /api/v1/channels/:channel_id/request_tracking
       def create
+        unless Flipper.enabled?(:tracking_requests)
+          render json: { error: "FEATURE_DISABLED" }, status: :not_found
+          return
+        end
+
         channel_login = params[:channel_id].to_s.downcase.strip
 
         tracking_request = TrackingRequest.new(

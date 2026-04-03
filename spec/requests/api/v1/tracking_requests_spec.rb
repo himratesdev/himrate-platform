@@ -13,6 +13,14 @@ RSpec.describe "Api::V1::TrackingRequests" do
   end
 
   describe "POST /api/v1/channels/:channel_id/request_tracking" do
+    before { Flipper.enable(:tracking_requests) }
+
+    it "returns 404 when feature flag disabled" do
+      Flipper.disable(:tracking_requests)
+      post "/api/v1/channels/newstreamer/request_tracking", headers: headers
+      expect(response).to have_http_status(:not_found)
+    end
+
     it "creates tracking request for authenticated user" do
       post "/api/v1/channels/newstreamer/request_tracking", headers: headers
 
