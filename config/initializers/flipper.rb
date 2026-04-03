@@ -68,6 +68,7 @@ existing_keys = Flipper.features.map(&:key).to_set
   ad_calculator
   social_presence
   panel_tracking
+  tracking_requests
 ].each do |flag|
   next if existing_keys.include?(flag.to_s)
 

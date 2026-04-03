@@ -25,8 +25,9 @@ module Api
         paginated = tracked.offset((page - 1) * per_page).limit(per_page)
 
         channels = paginated.map(&:channel)
+        watched_ids = current_user.tracked_channels.where(tracking_enabled: true).pluck(:channel_id).to_set
         render json: {
-          data: channels.map { |ch| ChannelBlueprint.render_as_hash(ch, view: :headline, current_user: current_user) },
+          data: channels.map { |ch| ChannelBlueprint.render_as_hash(ch, view: :headline, current_user: current_user, watched_channel_ids: watched_ids) },
           meta: { page: page, per_page: per_page, total: total, total_pages: (total.to_f / per_page).ceil }
         }
       end

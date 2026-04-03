@@ -54,6 +54,9 @@ Rails.application.routes.draw do
         post "track", to: "channels#track"
         delete "track", to: "channels#untrack"
 
+        # TASK-034 FR-025: Request tracking for untracked channels
+        post "request_tracking", to: "tracking_requests#create"
+
         # TASK-022: Extension-side GQL data ingestion
         post "gql_data", to: "gql_data#create"
       end
