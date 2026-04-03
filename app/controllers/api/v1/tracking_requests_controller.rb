@@ -7,6 +7,8 @@
 module Api
   module V1
     class TrackingRequestsController < Api::BaseController
+      # Pundit skipped: endpoint accepts both authenticated users and guests (extension_install_id).
+      # Authorization is implicit — any requester can submit a tracking request.
       skip_after_action :verify_authorized
       before_action :authenticate_user_optional!
 
@@ -25,11 +27,7 @@ module Api
           render json: { status: "accepted", channel_login: channel_login }, status: :created
         else
           if tracking_request.errors.any? { |e| e.type == :already_requested || e.type == :taken }
-            render json: {
-              error: "ALREADY_REQUESTED",
-              message: I18n.t("tracking_requests.errors.already_requested",
-                default: "Tracking request already submitted for this channel")
-            }, status: :conflict
+            render_already_requested(channel_login)
           else
             render json: {
               error: "VALIDATION_ERROR",
@@ -37,6 +35,19 @@ module Api
             }, status: :unprocessable_entity
           end
         end
+      rescue ActiveRecord::RecordNotUnique
+        # Race condition: DB constraint caught duplicate between validation and insert
+        render_already_requested(channel_login)
+      end
+      private
+
+      def render_already_requested(channel_login)
+        render json: {
+          error: "ALREADY_REQUESTED",
+          message: I18n.t("tracking_requests.errors.already_requested",
+            default: "Tracking request already submitted for this channel"),
+          channel_login: channel_login
+        }, status: :conflict
       end
     end
   end

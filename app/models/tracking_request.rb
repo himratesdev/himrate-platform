@@ -12,6 +12,11 @@ class TrackingRequest < ApplicationRecord
     conditions: -> { where.not(user_id: nil) },
     message: :already_requested
   }
+  validates :channel_login, uniqueness: {
+    scope: :extension_install_id,
+    conditions: -> { where.not(extension_install_id: nil) },
+    message: :already_requested
+  }
 
   validate :must_have_identifier
 
