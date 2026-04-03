@@ -90,7 +90,7 @@ RSpec.describe "Twitch IRC Real Integration", irc_real: true do
       expect(record[:raw_tags]).to be_a(Hash)
     else
       # Channel might be offline or quiet — not a failure
-      pending "No PRIVMSG received in 30s (channel may be offline)"
+      skip "No PRIVMSG received in 30s (channel may be offline)"
     end
   end
 
@@ -122,7 +122,7 @@ RSpec.describe "Twitch IRC Real Integration", irc_real: true do
       # ROOMSTATE always has these keys
       expect(roomstate.tags).to include("followers-only")
     else
-      pending "No ROOMSTATE received (unusual but possible)"
+      skip "No ROOMSTATE received (unusual but possible)"
     end
   end
 
