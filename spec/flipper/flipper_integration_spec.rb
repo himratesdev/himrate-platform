@@ -3,10 +3,12 @@
 require "rails_helper"
 
 RSpec.describe "Flipper Feature Flags" do
-  # TC-001: pundit_authorization enabled after init
+  # TC-001: all operational flags enabled after init
   describe "default flags" do
-    it "pundit_authorization is enabled by default" do
-      expect(Flipper.enabled?(:pundit_authorization)).to be true
+    FlipperDefaults::ALL_FLAGS.each do |flag|
+      it "#{flag} is enabled by default" do
+        expect(Flipper.enabled?(flag)).to be true
+      end
     end
   end
 

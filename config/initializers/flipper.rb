@@ -57,21 +57,35 @@ Flipper.register(:streamers) do |actor|
   actor.respond_to?(:role) && actor.role == "streamer"
 end
 
-# Base flags — created only if not exist. No re-enable on boot (kill switch safe).
+# Single source of truth for all feature flags.
+# Paywall enforcement = Pundit policies. Flipper = kill switches only.
+# Default state = enabled. Disable only in emergency.
+module FlipperDefaults
+  ALL_FLAGS = %i[
+    pundit_authorization
+    bot_raid_chain
+    compare_unlimited
+    audience_overlap
+    ad_calculator
+    social_presence
+    panel_tracking
+    tracking_requests
+    irc_monitor
+    stream_monitor
+    known_bots
+    channel_discovery
+    bot_scoring
+    signal_compute
+  ].freeze
+end
+
+# Kill switch safe: if a flag already exists, its state is NOT changed.
+# To disable in production: Flipper.disable(:flag_name) — stays off until re-enabled manually.
 existing_keys = Flipper.features.map(&:key).to_set
 
-%i[
-  pundit_authorization
-  bot_raid_chain
-  compare_unlimited
-  audience_overlap
-  ad_calculator
-  social_presence
-  panel_tracking
-  tracking_requests
-].each do |flag|
+FlipperDefaults::ALL_FLAGS.each do |flag|
   next if existing_keys.include?(flag.to_s)
 
   Flipper.add(flag)
-  Flipper.enable(flag) if flag == :pundit_authorization
+  Flipper.enable(flag)
 end

@@ -37,6 +37,6 @@ RSpec.configure do |config|
 
   config.before(:each) do
     Flipper.features.each(&:remove)
-    Flipper.enable(:pundit_authorization)
+    FlipperDefaults::ALL_FLAGS.each { |flag| Flipper.enable(flag) }
   end
 end
