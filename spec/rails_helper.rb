@@ -37,6 +37,13 @@ RSpec.configure do |config|
 
   config.before(:each) do
     Flipper.features.each(&:remove)
-    Flipper.enable(:pundit_authorization)
+    # Enable all operational flags — mirrors production default.
+    # Individual tests disable specific flags as needed.
+    %i[
+      pundit_authorization bot_raid_chain compare_unlimited audience_overlap
+      ad_calculator social_presence panel_tracking tracking_requests
+      irc_monitor stream_monitor known_bots channel_discovery
+      bot_scoring signal_compute
+    ].each { |flag| Flipper.enable(flag) }
   end
 end
