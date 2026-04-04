@@ -5,22 +5,7 @@ require "rails_helper"
 RSpec.describe "Flipper Feature Flags" do
   # TC-001: all operational flags enabled after init
   describe "default flags" do
-    %i[
-      pundit_authorization
-      bot_raid_chain
-      compare_unlimited
-      audience_overlap
-      ad_calculator
-      social_presence
-      panel_tracking
-      tracking_requests
-      irc_monitor
-      stream_monitor
-      known_bots
-      channel_discovery
-      bot_scoring
-      signal_compute
-    ].each do |flag|
+    FlipperDefaults::ALL_FLAGS.each do |flag|
       it "#{flag} is enabled by default" do
         expect(Flipper.enabled?(flag)).to be true
       end
