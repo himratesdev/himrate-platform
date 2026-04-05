@@ -79,13 +79,11 @@ module FlipperDefaults
   ].freeze
 end
 
-# Kill switch safe: if a flag already exists, its state is NOT changed.
-# To disable in production: Flipper.disable(:flag_name) — stays off until re-enabled manually.
-existing_keys = Flipper.features.map(&:key).to_set
-
+# On every boot: ensure all flags exist and are enabled.
+# No manual steps. No "one-time scripts". Deploy = correct state.
+# Emergency disable: Flipper.disable(:flag) holds until next deploy.
+# When the fix is deployed → container restarts → flag back to enabled. Correct behavior.
 FlipperDefaults::ALL_FLAGS.each do |flag|
-  next if existing_keys.include?(flag.to_s)
-
   Flipper.add(flag)
   Flipper.enable(flag)
 end
