@@ -39,7 +39,15 @@ Rails.application.routes.draw do
 
       # TASK-008 scaffold → TASK-031 real logic → TASK-032 analytics API
       resources :channels, only: %i[index show] do
-        resource :trust, only: :show, controller: "trust"
+        resource :trust, only: :show, controller: "trust" do
+          # TASK-035 FR-017: Sparkline history
+          get "history", on: :member, to: "trust#history"
+        end
+        # TASK-035 FR-035: Badge embed
+        get "badge", to: "channels#badge"
+        get "badge.svg", to: "channels#badge_svg", defaults: { format: :svg }
+        # TASK-035 FR-036: Channel Card
+        get "card", to: "channels#card"
         resources :streams, only: %i[index] do
           # TASK-032 FR-003: Post-stream report
           get "report", on: :member, to: "streams#report"

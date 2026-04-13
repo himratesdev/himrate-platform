@@ -7,8 +7,10 @@
 module Api
   module V1
     class ChannelsController < Api::BaseController
-      before_action :authenticate_user!, except: :show
-      before_action :authenticate_user_optional!, only: :show
+      before_action :authenticate_user!, except: %i[show badge_svg]
+      before_action :authenticate_user_optional!, only: %i[show badge_svg]
+      # badge_svg is public (no auth, no Pundit) — cacheable CDN endpoint
+      skip_after_action :verify_authorized, only: :badge_svg
 
       # FR-003/010: GET /api/v1/channels — tracked channels list (paginated)
       def index
@@ -85,18 +87,150 @@ module Api
         render json: { status: "untracked", channel_id: channel.id }
       end
 
+      # TASK-035 FR-035: GET /api/v1/channels/:id/badge — SVG badge embed code
+      def badge
+        channel = find_channel
+        authorize channel, :badge?
+
+        ti = channel.trust_index_histories.order(calculated_at: :desc).first
+        ti_score = ti&.trust_index_score&.to_f&.round(0) || 0
+        erv_data = ti ? TrustIndex::ErvCalculator.compute(
+          ti_score: ti.trust_index_score.to_f,
+          ccv: ti.ccv.to_i,
+          confidence: ti.confidence.to_f
+        ) : {}
+
+        color = erv_data[:label_color] || "grey"
+        svg_url = "#{request.base_url}/api/v1/channels/#{channel.id}/badge.svg"
+
+        render json: {
+          data: {
+            html: badge_html(channel, svg_url, ti_score),
+            markdown: "[![HimRate](#{svg_url})](https://himrate.com/channel/#{channel.login})",
+            bbcode: "[url=https://himrate.com/channel/#{channel.login}][img]#{svg_url}[/img][/url]",
+            svg_url: svg_url,
+            ti_score: ti_score,
+            color: color
+          }
+        }
+      end
+
+      # TASK-035 FR-035: GET /api/v1/channels/:id/badge.svg — SVG image
+      def badge_svg
+        channel = find_channel
+        ti = channel.trust_index_histories.order(calculated_at: :desc).first
+        ti_score = ti&.trust_index_score&.to_f&.round(0) || 0
+
+        color = case ti_score
+        when 80..100 then "#22c55e"
+        when 50..79 then "#eab308"
+        when 25..49 then "#f97316"
+        else "#ef4444"
+        end
+
+        svg = <<~SVG
+          <svg xmlns="http://www.w3.org/2000/svg" width="200" height="40">
+            <rect width="100" height="40" rx="4" fill="#1f2937"/>
+            <rect x="100" width="100" height="40" rx="4" fill="#{color}"/>
+            <rect x="96" width="8" height="40" fill="#{color}"/>
+            <text x="50" y="25" font-family="sans-serif" font-size="13" fill="white" text-anchor="middle">HimRate</text>
+            <text x="150" y="25" font-family="sans-serif" font-size="13" fill="white" text-anchor="middle" font-weight="bold">TI #{ti_score}</text>
+          </svg>
+        SVG
+
+        expires_in 5.minutes, public: true
+        render inline: svg.strip, content_type: "image/svg+xml"
+      end
+
+      # TASK-035 FR-036: GET /api/v1/channels/:id/card — Channel Card data
+      def card
+        channel = find_channel
+        authorize channel, :card?
+
+        trust = Trust::ShowService.new(channel: channel, view: :full, user: current_user).call
+
+        completed_streams = channel.streams.where.not(ended_at: nil)
+        recent = completed_streams.order(ended_at: :desc).limit(5)
+
+        render json: {
+          data: {
+            channel: {
+              login: channel.login,
+              display_name: channel.display_name,
+              avatar_url: channel.profile_image_url,
+              partner_status: channel.broadcaster_type,
+              created_at: channel.created_at.iso8601,
+              followers_count: channel.followers_total
+            },
+            trust: trust.slice(:ti_score, :classification, :erv_percent, :erv_label, :erv_label_color),
+            health_score: trust[:health_score],
+            reputation: trust[:streamer_reputation],
+            stats: {
+              total_streams: completed_streams.count,
+              avg_ccv: completed_streams.average(:avg_ccv)&.to_i,
+              peak_ccv: completed_streams.maximum(:peak_ccv)&.to_i,
+              avg_duration_hours: avg_duration_hours(completed_streams),
+              streams_per_week: streams_per_week(channel)
+            },
+            recent_streams: recent.map { |s| format_stream(s) },
+            badge_url: "#{request.base_url}/api/v1/channels/#{channel.id}/badge.svg",
+            public_url: "https://himrate.com/channel/#{channel.login}"
+          }
+        }
+      end
+
       private
+
+      def badge_html(channel, svg_url, ti_score)
+        %(<a href="https://himrate.com/channel/#{channel.login}" target="_blank" rel="noopener">) +
+          %(<img src="#{svg_url}" alt="HimRate Trust Index: #{ti_score}" width="200" height="40" />) +
+          %(</a>)
+      end
+
+      def avg_duration_hours(streams)
+        avg_ms = streams.where.not(duration_ms: nil).average(:duration_ms)
+        return nil unless avg_ms
+
+        (avg_ms.to_f / 3_600_000).round(1)
+      end
+
+      def streams_per_week(channel)
+        first_stream = channel.streams.order(:started_at).first
+        return nil unless first_stream
+
+        weeks = [ (Time.current - first_stream.started_at) / 1.week, 1 ].max
+        total = channel.streams.where.not(ended_at: nil).count
+        (total.to_f / weeks).round(1)
+      end
+
+      def format_stream(stream)
+        ti = TrustIndexHistory.where(channel_id: stream.channel_id)
+                              .where("calculated_at BETWEEN ? AND ?", stream.started_at, stream.ended_at || Time.current)
+                              .order(calculated_at: :desc)
+                              .first
+
+        {
+          date: stream.started_at.iso8601,
+          duration_hours: stream.duration_ms ? (stream.duration_ms / 3_600_000.0).round(1) : nil,
+          peak_ccv: stream.peak_ccv,
+          avg_ccv: stream.avg_ccv,
+          ti_score: ti&.trust_index_score&.to_f&.round(1),
+          erv_percent: ti&.erv_percent&.to_f&.round(1)
+        }
+      end
 
       # FR-007/011: Find channel by UUID, login, or twitch_id
       def find_channel
+        identifier = params[:channel_id] || params[:id]
+
         if params[:twitch_id].present?
           Channel.find_by!(twitch_id: params[:twitch_id])
         elsif params[:login].present?
           Channel.find_by!(login: params[:login])
-        elsif params[:id] =~ /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
-          Channel.find(params[:channel_id] || params[:id])
+        elsif identifier =~ /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
+          Channel.find(identifier)
         else
-          Channel.find_by!(login: params[:id])
+          Channel.find_by!(login: identifier)
         end
       rescue ActiveRecord::RecordNotFound
         raise
