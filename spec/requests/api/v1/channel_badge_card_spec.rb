@@ -37,21 +37,12 @@ RSpec.describe "Channel Badge & Card API" do
   end
 
   describe "GET /api/v1/channels/:id/badge.svg" do
-    it "action exists and generates valid SVG content" do
-      # badge.svg public route has host authorization quirks in test env.
-      # Verify via controller method existence + SVG string validation.
-      controller = Api::V1::ChannelsController.new
-      expect(controller).to respond_to(:badge_svg)
-
-      # Verify SVG template produces valid output for known inputs
-      svg_template = <<~SVG
-        <svg xmlns="http://www.w3.org/2000/svg" width="200" height="40">
-          <text x="50" y="25">HimRate</text>
-          <text x="150" y="25">TI 85</text>
-        </svg>
-      SVG
-      expect(svg_template).to include("<svg")
-      expect(svg_template).to include("HimRate")
+    it "returns SVG without authentication" do
+      get "/api/v1/channels/#{channel.id}/badge.svg"
+      expect(response).to have_http_status(:ok)
+      expect(response.content_type).to include("image/svg+xml")
+      expect(response.body).to include("<svg")
+      expect(response.body).to include("HimRate")
     end
   end
 
