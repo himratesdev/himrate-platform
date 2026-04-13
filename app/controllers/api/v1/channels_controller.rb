@@ -152,6 +152,9 @@ module Api
         completed_streams = channel.streams.where.not(ended_at: nil)
         recent = completed_streams.order(ended_at: :desc).limit(5)
 
+        # S2 fix: prefetch TI records for all recent streams in one query (no N+1)
+        recent_ti = prefetch_ti_for_streams(recent, channel.id)
+
         render json: {
           data: {
             channel: {
@@ -172,7 +175,7 @@ module Api
               avg_duration_hours: avg_duration_hours(completed_streams),
               streams_per_week: streams_per_week(channel)
             },
-            recent_streams: recent.map { |s| format_stream(s) },
+            recent_streams: recent.map { |s| format_stream(s, recent_ti[s.id]) },
             badge_url: "#{request.base_url}/api/v1/channels/#{channel.id}/badge.svg",
             public_url: "https://himrate.com/channel/#{channel.login}"
           }
@@ -182,8 +185,9 @@ module Api
       private
 
       def badge_html(channel, svg_url, ti_score)
-        %(<a href="https://himrate.com/channel/#{channel.login}" target="_blank" rel="noopener">) +
-          %(<img src="#{svg_url}" alt="HimRate Trust Index: #{ti_score}" width="200" height="40" />) +
+        login = ERB::Util.html_escape(channel.login)
+        %(<a href="https://himrate.com/channel/#{login}" target="_blank" rel="noopener">) +
+          %(<img src="#{ERB::Util.html_escape(svg_url)}" alt="HimRate Trust Index: #{ti_score}" width="200" height="40" />) +
           %(</a>)
       end
 
@@ -203,12 +207,25 @@ module Api
         (total.to_f / weeks).round(1)
       end
 
-      def format_stream(stream)
-        ti = TrustIndexHistory.where(channel_id: stream.channel_id)
-                              .where("calculated_at BETWEEN ? AND ?", stream.started_at, stream.ended_at || Time.current)
-                              .order(calculated_at: :desc)
-                              .first
+      # S2 fix: single query for all recent streams' TI records (no N+1)
+      def prefetch_ti_for_streams(streams, channel_id)
+        return {} if streams.empty?
 
+        min_start = streams.map(&:started_at).min
+        max_end = streams.map { |s| s.ended_at || Time.current }.max
+
+        all_ti = TrustIndexHistory
+          .where(channel_id: channel_id)
+          .where(calculated_at: min_start..max_end)
+          .order(calculated_at: :desc)
+
+        streams.to_h do |s|
+          ti = all_ti.find { |t| t.calculated_at.between?(s.started_at, s.ended_at || Time.current) }
+          [ s.id, ti ]
+        end
+      end
+
+      def format_stream(stream, ti = nil)
         {
           date: stream.started_at.iso8601,
           duration_hours: stream.duration_ms ? (stream.duration_ms / 3_600_000.0).round(1) : nil,
