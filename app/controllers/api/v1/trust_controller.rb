@@ -32,6 +32,30 @@ module Api
           render json: { data: payload }
         end
       end
+
+      # TASK-035 FR-017: GET /api/v1/channels/:id/trust/history?period=30m|7d
+      def history
+        authorize @channel, :show_trust_history?
+
+        period = params[:period] || "30m"
+
+        # Free users: 30m only (live). 7d requires Premium.
+        if period == "7d" && !ChannelPolicy.new(current_user, @channel).premium_access?
+          render json: { error: "SUBSCRIPTION_REQUIRED" }, status: :forbidden
+          return
+        end
+
+        payload = Rails.cache.fetch("trust_history:#{@channel.id}:#{period}", expires_in: 30.seconds) do
+          Trust::HistoryService.new(channel: @channel, period: period).call
+        end
+
+        if payload[:error]
+          render json: { error: payload[:error] }, status: :bad_request
+          return
+        end
+
+        render json: { data: payload }
+      end
     end
   end
 end

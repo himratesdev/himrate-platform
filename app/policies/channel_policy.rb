@@ -53,6 +53,25 @@ class ChannelPolicy < ApplicationPolicy
     true
   end
 
+  # TASK-035 FR-017: Trust history — Guest denied, Free 30m live only, Premium all
+  def show_trust_history?
+    registered?
+  end
+
+  # TASK-035 FR-035: Badge — Streamer own channel only
+  def badge?
+    return false unless registered?
+
+    owns_channel?(record)
+  end
+
+  # TASK-035 FR-036: Channel Card — Streamer own channel only
+  def card?
+    return false unless registered?
+
+    owns_channel?(record)
+  end
+
   # TASK-032 CR #4: show_erv? — always allows (headline for all)
   def show_erv?
     true
