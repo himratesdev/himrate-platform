@@ -168,13 +168,7 @@ module Api
             trust: trust.slice(:ti_score, :classification, :erv_percent, :erv_label, :erv_label_color),
             health_score: trust[:health_score],
             reputation: trust[:streamer_reputation],
-            stats: {
-              total_streams: completed_streams.count,
-              avg_ccv: completed_streams.average(:avg_ccv)&.to_i,
-              peak_ccv: completed_streams.maximum(:peak_ccv)&.to_i,
-              avg_duration_hours: avg_duration_hours(completed_streams),
-              streams_per_week: streams_per_week(channel)
-            },
+            stats: stream_stats(completed_streams, channel),
             recent_streams: recent.map { |s| format_stream(s, recent_ti[s.id]) },
             badge_url: "#{request.base_url}/api/v1/channels/#{channel.id}/badge.svg",
             public_url: "https://himrate.com/channel/#{channel.login}"
@@ -184,18 +178,31 @@ module Api
 
       private
 
+      # W1 fix: single aggregate query instead of 3 separate (count + avg + max)
+      def stream_stats(completed_streams, channel)
+        agg = completed_streams
+          .pick(
+            Arel.sql("COUNT(*)"),
+            Arel.sql("AVG(avg_ccv)"),
+            Arel.sql("MAX(peak_ccv)"),
+            Arel.sql("AVG(duration_ms)")
+          )
+
+        total = agg[0].to_i
+        {
+          total_streams: total,
+          avg_ccv: agg[1]&.to_i,
+          peak_ccv: agg[2]&.to_i,
+          avg_duration_hours: agg[3] ? (agg[3].to_f / 3_600_000).round(1) : nil,
+          streams_per_week: streams_per_week(channel)
+        }
+      end
+
       def badge_html(channel, svg_url, ti_score)
         login = ERB::Util.html_escape(channel.login)
         %(<a href="https://himrate.com/channel/#{login}" target="_blank" rel="noopener">) +
           %(<img src="#{ERB::Util.html_escape(svg_url)}" alt="HimRate Trust Index: #{ti_score}" width="200" height="40" />) +
           %(</a>)
-      end
-
-      def avg_duration_hours(streams)
-        avg_ms = streams.where.not(duration_ms: nil).average(:duration_ms)
-        return nil unless avg_ms
-
-        (avg_ms.to_f / 3_600_000).round(1)
       end
 
       def streams_per_week(channel)
