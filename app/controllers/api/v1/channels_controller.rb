@@ -7,10 +7,8 @@
 module Api
   module V1
     class ChannelsController < Api::BaseController
-      before_action :authenticate_user!, except: %i[show badge_svg]
-      before_action :authenticate_user_optional!, only: %i[show badge_svg]
-      # badge_svg is public (no auth, no Pundit) — cacheable CDN endpoint
-      skip_after_action :verify_authorized, only: :badge_svg
+      before_action :authenticate_user!, except: :show
+      before_action :authenticate_user_optional!, only: :show
 
       # FR-003/010: GET /api/v1/channels — tracked channels list (paginated)
       def index
@@ -113,33 +111,6 @@ module Api
             color: color
           }
         }
-      end
-
-      # TASK-035 FR-035: GET /api/v1/channels/:id/badge.svg — SVG image
-      def badge_svg
-        channel = find_channel
-        ti = channel.trust_index_histories.order(calculated_at: :desc).first
-        ti_score = ti&.trust_index_score&.to_f&.round(0) || 0
-
-        color = case ti_score
-        when 80..100 then "#22c55e"
-        when 50..79 then "#eab308"
-        when 25..49 then "#f97316"
-        else "#ef4444"
-        end
-
-        svg = <<~SVG
-          <svg xmlns="http://www.w3.org/2000/svg" width="200" height="40">
-            <rect width="100" height="40" rx="4" fill="#1f2937"/>
-            <rect x="100" width="100" height="40" rx="4" fill="#{color}"/>
-            <rect x="96" width="8" height="40" fill="#{color}"/>
-            <text x="50" y="25" font-family="sans-serif" font-size="13" fill="white" text-anchor="middle">HimRate</text>
-            <text x="150" y="25" font-family="sans-serif" font-size="13" fill="white" text-anchor="middle" font-weight="bold">TI #{ti_score}</text>
-          </svg>
-        SVG
-
-        expires_in 5.minutes, public: true
-        render inline: svg.strip, content_type: "image/svg+xml"
       end
 
       # TASK-035 FR-036: GET /api/v1/channels/:id/card — Channel Card data
