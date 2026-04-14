@@ -3,6 +3,7 @@
 class Channel < ApplicationRecord
   has_many :streams, dependent: :destroy
   has_many :tracked_channels, dependent: :destroy
+  has_many :watchlist_channels, dependent: :destroy
   has_many :users, through: :tracked_channels
   has_many :trust_index_histories, dependent: :destroy
   has_many :health_scores, dependent: :destroy
