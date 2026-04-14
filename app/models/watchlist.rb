@@ -4,7 +4,7 @@
 # Watchlist = bookmarks (free). Tracking = monitoring ($9.99/mo per channel).
 class Watchlist < ApplicationRecord
   MAX_CHANNELS_PER_LIST = 100
-  DEFAULT_NAME = "My Watchlist"
+  MAX_WATCHLISTS_PER_USER = 50
 
   belongs_to :user
   has_many :watchlist_channels, dependent: :destroy
@@ -19,7 +19,7 @@ class Watchlist < ApplicationRecord
   def self.ensure_default_for(user)
     return if user.watchlists.exists?
 
-    user.watchlists.create!(name: DEFAULT_NAME, position: 0)
+    user.watchlists.create!(name: I18n.t("watchlists.default_name", default: "My Watchlist"), position: 0)
   end
 
   def channels_count

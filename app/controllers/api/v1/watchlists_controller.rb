@@ -24,9 +24,15 @@ module Api
         }
       end
 
-      # FR-002: Create watchlist
+      # FR-002 + S3: Create watchlist (max 50 per user)
       def create
         authorize Watchlist
+
+        if current_user.watchlists.count >= Watchlist::MAX_WATCHLISTS_PER_USER
+          render json: { error: "WATCHLIST_LIMIT_REACHED", message: I18n.t("watchlists.errors.watchlist_limit") },
+            status: :unprocessable_entity
+          return
+        end
 
         position = (current_user.watchlists.maximum(:position) || -1) + 1
         watchlist = current_user.watchlists.build(

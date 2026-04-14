@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_15_100004) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_15_200001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -555,10 +555,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_100004) do
     t.datetime "created_at", null: false
     t.string "name", limit: 255, null: false
     t.integer "position"
-    t.uuid "team_id"
+    t.uuid "team_owner_id"
     t.datetime "updated_at", null: false
     t.uuid "user_id", null: false
-    t.index ["team_id"], name: "idx_watchlists_team_id"
+    t.index ["team_owner_id"], name: "idx_watchlists_team_id"
     t.index ["user_id"], name: "idx_watchlists_user"
     t.index ["user_id"], name: "index_watchlists_on_user_id"
   end
@@ -609,5 +609,5 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_100004) do
   add_foreign_key "watchlist_tags_notes", "channels"
   add_foreign_key "watchlist_tags_notes", "watchlists"
   add_foreign_key "watchlists", "users"
-  add_foreign_key "watchlists", "users", column: "team_id", on_delete: :nullify
+  add_foreign_key "watchlists", "users", column: "team_owner_id", on_delete: :nullify
 end

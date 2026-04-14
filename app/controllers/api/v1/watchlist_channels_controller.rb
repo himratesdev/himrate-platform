@@ -16,11 +16,9 @@ module Api
         filters = filter_params
         sort = params[:sort] || "erv_desc"
 
-        # FR-014: Filters are Premium/Business only
-        if filters.any? && !can_filter?
-          render json: { error: "SUBSCRIPTION_REQUIRED", message: "Filters require Premium or Business" },
-            status: :forbidden
-          return
+        # FR-014/S2: Filters paywall via Pundit (not inline check)
+        if filters.any?
+          authorize @watchlist, :filter_channels?
         end
 
         svc = ::Watchlists::EnrichmentService.new(
@@ -38,7 +36,7 @@ module Api
         authorize @watchlist, :update?
 
         if @watchlist.full?
-          render json: { error: "LIMIT_REACHED", message: "Watchlist limit reached (#{Watchlist::MAX_CHANNELS_PER_LIST})" },
+          render json: { error: "LIMIT_REACHED", message: I18n.t("watchlists.errors.limit_reached") },
             status: :unprocessable_entity
           return
         end
@@ -49,7 +47,8 @@ module Api
         if wc.save
           render json: { data: { channel_id: channel.id, watchlist_id: @watchlist.id } }, status: :created
         else
-          render json: { error: "ALREADY_IN_LIST", message: "Channel already in this watchlist" }, status: :conflict
+          render json: { error: "ALREADY_IN_LIST", message: I18n.t("watchlists.errors.already_in_list") },
+            status: :conflict
         end
       end
 
@@ -71,12 +70,14 @@ module Api
         wc = @watchlist.watchlist_channels.find_by!(channel_id: params[:id])
 
         if target.id == @watchlist.id
-          render json: { error: "ALREADY_IN_LIST", message: "Channel already in this watchlist" }, status: :conflict
+          render json: { error: "ALREADY_IN_LIST", message: I18n.t("watchlists.errors.already_in_list") },
+            status: :conflict
           return
         end
 
         if target.full?
-          render json: { error: "LIMIT_REACHED", message: "Target watchlist is full" }, status: :unprocessable_entity
+          render json: { error: "LIMIT_REACHED", message: I18n.t("watchlists.errors.target_full") },
+            status: :unprocessable_entity
           return
         end
 
@@ -124,10 +125,6 @@ module Api
 
       def meta_params
         params.permit(:notes, tags: [])
-      end
-
-      def can_filter?
-        current_user.subscriptions.where(status: "active").exists?
       end
     end
   end
