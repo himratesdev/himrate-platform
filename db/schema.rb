@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_100003) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_16_200001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -402,6 +402,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_100003) do
     t.decimal "engagement_consistency_score", precision: 5, scale: 2
     t.decimal "follower_quality_score", precision: 5, scale: 2
     t.decimal "growth_pattern_score", precision: 5, scale: 2
+    t.decimal "pattern_history_score", precision: 5, scale: 2
     t.index ["channel_id", "calculated_at"], name: "idx_streamer_reputations_channel_latest", order: { calculated_at: :desc }
     t.index ["channel_id"], name: "idx_streamer_reputations_channel"
   end

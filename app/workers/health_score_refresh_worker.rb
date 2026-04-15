@@ -207,6 +207,7 @@ class HealthScoreRefreshWorker
   end
 
   # Category max expected growth (95th percentile or fallback)
+  # TODO: compute 95th percentile from real FollowerSnapshot data per category
   def category_max_growth(channel)
     cache_key = "growth_max:#{channel.streams.last&.game_name || 'global'}"
     Rails.cache.fetch(cache_key, expires_in: 24.hours) { 10_000.0 }

@@ -32,6 +32,7 @@ class StreamerReputationRefreshWorker
       growth_pattern_score: growth,
       follower_quality_score: quality,
       engagement_consistency_score: consistency,
+      pattern_history_score: pattern,
       calculated_at: Time.current
     )
 
@@ -103,16 +104,23 @@ class StreamerReputationRefreshWorker
   end
 
   def load_follower_trend(channel, recent_streams)
-    recent_streams.reverse.map do |stream|
-      snapshot = FollowerSnapshot
-        .where(channel_id: channel.id)
-        .where("timestamp <= ?", stream.ended_at || stream.started_at)
-        .order(timestamp: :desc)
-        .pick(:followers_count)
+    ordered = recent_streams.reverse
+    cutoff_dates = ordered.map { |s| s.ended_at || s.started_at }
 
-      return nil unless snapshot
+    # Single query: latest follower snapshot at or before each stream's end time
+    all_snapshots = FollowerSnapshot
+      .where(channel_id: channel.id)
+      .where("timestamp <= ?", cutoff_dates.max)
+      .order(:timestamp)
+      .pluck(:timestamp, :followers_count)
 
-      snapshot.to_f
+    return nil if all_snapshots.empty?
+
+    cutoff_dates.map do |cutoff|
+      match = all_snapshots.select { |ts, _| ts <= cutoff }.last
+      return nil unless match
+
+      match[1].to_f
     end
   end
 

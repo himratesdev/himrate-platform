@@ -44,7 +44,7 @@ module Reputation
         scope = scope.where(channel_id: channel_ids)
       end
 
-      scope.count
+      HealthScore.from("(#{scope.to_sql}) AS latest_hs").count
     end
 
     def count_below(target_hs, category)

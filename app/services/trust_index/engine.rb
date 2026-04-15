@@ -69,7 +69,7 @@ module TrustIndex
       rep = StreamerReputation.latest_for(channel.id)
       return ti_score unless rep&.calculated_at
 
-      scores = [ rep.growth_pattern_score, rep.follower_quality_score, rep.engagement_consistency_score ].compact
+      scores = [ rep.growth_pattern_score, rep.follower_quality_score, rep.engagement_consistency_score, rep.pattern_history_score ].compact
       return ti_score if scores.empty?
 
       rep_score = scores.sum / scores.size

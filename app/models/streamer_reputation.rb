@@ -10,6 +10,7 @@ class StreamerReputation < ApplicationRecord
   validates :growth_pattern_score, numericality: { in: 0..100 }, allow_nil: true
   validates :follower_quality_score, numericality: { in: 0..100 }, allow_nil: true
   validates :engagement_consistency_score, numericality: { in: 0..100 }, allow_nil: true
+  validates :pattern_history_score, numericality: { in: 0..100 }, allow_nil: true
 
   def self.latest_for(channel_id)
     where(channel_id: channel_id).order(calculated_at: :desc).first
