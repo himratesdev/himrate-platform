@@ -206,11 +206,49 @@ class HealthScoreRefreshWorker
       &.to_f || 0.1 # fallback 10%
   end
 
-  # Category max expected growth (95th percentile or fallback)
-  # TODO: compute 95th percentile from real FollowerSnapshot data per category
+  # Category max expected growth (95th percentile from real data)
   def category_max_growth(channel)
-    cache_key = "growth_max:#{channel.streams.last&.game_name || 'global'}"
-    Rails.cache.fetch(cache_key, expires_in: 24.hours) { 10_000.0 }
+    category = channel.streams.order(started_at: :desc).pick(:game_name)
+    cache_key = "growth_max:#{category || 'global'}"
+
+    Rails.cache.fetch(cache_key, expires_in: 24.hours) do
+      compute_category_max_growth(category) || compute_global_max_growth || 10_000.0
+    end
+  end
+
+  def compute_category_max_growth(category)
+    return nil unless category.present?
+
+    channel_ids = Stream.where(game_name: category).where.not(ended_at: nil)
+      .select("DISTINCT channel_id")
+    return nil if channel_ids.to_a.size < 10
+
+    compute_growth_p95(channel_ids)
+  end
+
+  def compute_global_max_growth
+    compute_growth_p95(nil)
+  end
+
+  # 95th percentile of 30-day follower delta across channels
+  def compute_growth_p95(channel_ids_scope)
+    cutoff = PERIOD.ago
+    scope = FollowerSnapshot.where("timestamp > ?", cutoff)
+    scope = scope.where(channel_id: channel_ids_scope) if channel_ids_scope
+
+    # Per-channel delta: last - first followers_count in period
+    deltas_sql = scope
+      .select(
+        "channel_id",
+        "MAX(followers_count) - MIN(followers_count) AS delta"
+      )
+      .group(:channel_id)
+      .having("COUNT(*) >= 2")
+
+    result = FollowerSnapshot.from("(#{deltas_sql.to_sql}) AS channel_deltas")
+      .pick(Arel.sql("PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY delta)"))
+
+    result&.to_f&.clamp(100.0, Float::INFINITY)
   end
 
   def weighted_average(components)

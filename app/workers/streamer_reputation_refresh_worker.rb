@@ -23,7 +23,7 @@ class StreamerReputationRefreshWorker
     recent = completed.limit(LOOKBACK_STREAMS).to_a
 
     growth = compute_growth_pattern(channel, recent)
-    quality = compute_follower_quality
+    quality = compute_follower_quality(channel)
     consistency = compute_engagement_consistency(recent)
     pattern = compute_pattern_history(channel)
 
@@ -59,9 +59,31 @@ class StreamerReputationRefreshWorker
     (100.0 * [ r, 0 ].max).round(2).clamp(0.0, 100.0)
   end
 
-  # FR-003: Stub 50.0 until GQL batch pipeline (TASK-040).
-  def compute_follower_quality
-    50.0
+  # FR-003: Follower growth organicity — spike detection.
+  # Score = 100 × (1 - spike_ratio). Spike = daily growth > 3σ from mean.
+  # Will be enriched with per-follower GQL data in TASK-040.
+  def compute_follower_quality(channel)
+    snapshots = FollowerSnapshot
+      .where(channel_id: channel.id)
+      .order(:timestamp)
+      .pluck(:followers_count)
+
+    return nil if snapshots.size < MIN_STREAMS
+
+    daily_deltas = snapshots.each_cons(2).map { |a, b| (b - a).to_f }
+    return 100.0 if daily_deltas.empty? || daily_deltas.all?(&:zero?)
+
+    mean = daily_deltas.sum / daily_deltas.size
+    variance = daily_deltas.sum { |d| (d - mean)**2 } / daily_deltas.size
+    stddev = Math.sqrt(variance)
+
+    return 100.0 if stddev.zero?
+
+    threshold = mean + 3.0 * stddev
+    spikes = daily_deltas.count { |d| d > threshold }
+    spike_ratio = spikes.to_f / daily_deltas.size
+
+    (100.0 * (1.0 - spike_ratio)).round(2).clamp(0.0, 100.0)
   end
 
   # FR-004: CV(chatter_ratio, N_streams). Score = 100 × (1 - CV).
