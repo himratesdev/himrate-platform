@@ -1,0 +1,8 @@
+ru:
+  watchlists:
+    default_name: "Мой Watchlist"
+    errors:
+      limit_reached: "Лимит каналов в списке исчерпан (100). Создайте новый список."
+      already_in_list: "Канал уже в этом списке"
+      target_full: "Целевой список заполнен"
+      watchlist_limit: "Достигнут лимит списков (50)"

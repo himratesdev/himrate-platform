@@ -1,0 +1,8 @@
+en:
+  watchlists:
+    default_name: "My Watchlist"
+    errors:
+      limit_reached: "Watchlist channel limit reached (100). Create a new list."
+      already_in_list: "Channel already in this watchlist"
+      target_full: "Target watchlist is full"
+      watchlist_limit: "Maximum number of watchlists reached (50)"

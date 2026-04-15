@@ -69,7 +69,16 @@ Rails.application.routes.draw do
         post "gql_data", to: "gql_data#create"
       end
       resources :subscriptions, only: %i[index create destroy]
-      resources :watchlists, only: %i[index create destroy]
+      # TASK-036: Watchlists CRUD + channels + tags
+      resources :watchlists, only: %i[index create update destroy] do
+        resources :channels, only: %i[index create destroy], controller: "watchlist_channels" do
+          member do
+            patch :move
+            patch :meta
+          end
+        end
+      end
+      get "watchlists/tags", to: "watchlists#tags"
 
       # TASK-018: Auth events tracking (observability)
       post "analytics/auth_events", to: "auth_events#create"
