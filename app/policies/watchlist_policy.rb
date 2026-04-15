@@ -27,7 +27,7 @@ class WatchlistPolicy < ApplicationPolicy
   def filter_channels?
     return false unless owner?
 
-    user.subscriptions.exists?(status: "active")
+    user.subscriptions.where(is_active: true).exists?
   end
 
   private
