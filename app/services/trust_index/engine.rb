@@ -34,7 +34,10 @@ module TrustIndex
 
       # FR-007: Rehabilitation
       rehab = RehabilitationCurve.apply(channel: channel, calculated_ti: ti_bayesian)
-      ti_final = (rehab[:adjusted_ti]).round(0).clamp(0, 100)
+      ti_after_rehab = rehab[:adjusted_ti]
+
+      # TASK-037 FR-007: Blend reputation (optional, 5% default weight)
+      ti_final = apply_reputation(channel, ti_after_rehab, category).round(0).clamp(0, 100)
 
       # FR-006: Classification (from DB thresholds)
       classification = classify(ti_final)
@@ -60,6 +63,25 @@ module TrustIndex
     end
 
     private
+
+    # TASK-037 FR-007: Blend reputation into TI (optional, weight configurable)
+    def apply_reputation(channel, ti_score, category)
+      rep = StreamerReputation.latest_for(channel.id)
+      return ti_score unless rep&.calculated_at
+
+      scores = [ rep.growth_pattern_score, rep.follower_quality_score, rep.engagement_consistency_score ].compact
+      return ti_score if scores.empty?
+
+      rep_score = scores.sum / scores.size
+
+      rep_weight = begin
+        SignalConfiguration.value_for("reputation", category, "weight_in_ti").to_f
+      rescue SignalConfiguration::ConfigurationMissing
+        0.05
+      end
+
+      (1.0 - rep_weight) * ti_score + rep_weight * rep_score
+    end
 
     def compute_raw_ti(signal_results, category)
       available = signal_results.select { |_, r| r.value && r.confidence > 0 }
