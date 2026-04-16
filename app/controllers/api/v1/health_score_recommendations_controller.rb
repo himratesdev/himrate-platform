@@ -21,16 +21,15 @@ module Api
           return
         end
 
-        DismissedRecommendation.create!(
+        DismissedRecommendation.find_or_create_by!(
           user_id: current_user.id,
           channel_id: @channel.id,
-          rule_id: rule_id,
-          dismissed_at: Time.current
-        )
+          rule_id: rule_id
+        ) { |r| r.dismissed_at = Time.current }
 
         invalidate_cache
         head :no_content
-      rescue ActiveRecord::RecordNotUnique
+      rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid
         # Idempotent: already dismissed
         invalidate_cache
         head :no_content
@@ -41,15 +40,21 @@ module Api
       def valid_rule_id?(rule_id)
         return false if rule_id.blank?
 
-        rule_id.match?(/\AR-\d{2}\z/) && RecommendationTemplate.exists?(rule_id: rule_id)
+        rule_id.match?(/\AR-\d{2,}\z/) && RecommendationTemplate.exists?(rule_id: rule_id)
       end
 
       def invalidate_cache
-        # Match any weights_version prefix for this channel
-        Rails.cache.delete_matched("health_score:*:#{@channel.id}")
-      rescue NotImplementedError
-        # Redis without delete_matched support — fallback: invalidate known key patterns
-        Rails.cache.delete("health_score:#{@channel.id}")
+        # Compute exact cache key (matches HealthScoresController#cache_key format)
+        latest = HealthScore.where(channel_id: @channel.id).order(calculated_at: :desc).first
+        category = latest&.category
+        version = if category
+          SignalConfiguration
+            .where(signal_type: "health_score", category: category)
+            .maximum(:updated_at)&.to_i || 0
+        else
+          0
+        end
+        Rails.cache.delete("health_score:cat_v#{version}:#{@channel.id}")
       end
     end
   end

@@ -80,6 +80,9 @@ module Hs
         next nil if duration_min <= 0
 
         messages = chat_totals[s.id].to_f
+        # Streams without chat records = IRC likely not monitoring (not "zero engagement").
+        # Skip rather than bias engagement downward with artificial zero.
+        # If we later distinguish "monitored+silent" → treat as 0 explicitly.
         next nil if messages.zero?
 
         msg_per_min = messages / duration_min

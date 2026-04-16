@@ -8,7 +8,7 @@ class DismissedRecommendation < ApplicationRecord
   belongs_to :channel
 
   validates :rule_id, presence: true,
-    format: { with: /\AR-\d{2}\z/, message: "must be in format R-NN" }
+    format: { with: /\AR-\d{2,}\z/, message: "must be in format R-NN (2+ digits)" }
   validates :rule_id, uniqueness: { scope: %i[user_id channel_id] }
   validates :dismissed_at, presence: true
 

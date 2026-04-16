@@ -9,7 +9,7 @@ class RecommendationTemplate < ApplicationRecord
   COMPONENTS = %w[engagement consistency stability growth trust_index all].freeze
 
   validates :rule_id, presence: true, uniqueness: true,
-    format: { with: /\AR-\d{2}\z/ }
+    format: { with: /\AR-\d{2,}\z/ }
   validates :component, presence: true, inclusion: { in: COMPONENTS }
   validates :priority, presence: true, inclusion: { in: PRIORITIES }
   validates :i18n_key, presence: true

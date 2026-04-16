@@ -8,12 +8,23 @@ module Hs
   class RecommendationService
     DEFAULT_MAX = 5
 
+    # Map template.component → weights key (Architect Q3: sort tiebreaker by component weight DESC)
+    COMPONENT_WEIGHT_KEY = {
+      "trust_index" => :ti,
+      "stability" => :stability,
+      "engagement" => :engagement,
+      "growth" => :growth,
+      "consistency" => :consistency
+    }.freeze
+
     def initialize(
       ti_drop_detector: TiDropDetector.new,
-      component_percentile_service: nil
+      component_percentile_service: nil,
+      weights_loader: nil
     )
       @ti_drop_detector = ti_drop_detector
       @component_percentile_service_class = component_percentile_service || ComponentPercentileService
+      @weights_loader = weights_loader || WeightsLoader.new
     end
 
     def call(channel:, user:, health_score_record:)
@@ -29,7 +40,9 @@ module Hs
         RecommendationRules.evaluate(template.rule_id, context)
       end
 
-      sorted = sort_recommendations(applicable)
+      category_key = health_score_record.category || Hs::CategoryMapper.default_key
+      category_weights = safe_load_weights(category_key)
+      sorted = sort_recommendations(applicable, category_weights)
       sorted.first(max_recommendations).map { |t| serialize(t) }
     end
 
@@ -75,14 +88,24 @@ module Hs
         .pluck(:rule_id)
     end
 
-    def sort_recommendations(templates)
+    # Architect Q3: Critical>High>Medium>Low → component weight DESC (TI first at ties) → rule_id ASC
+    def sort_recommendations(templates, category_weights)
       templates.sort_by do |t|
+        weight_key = COMPONENT_WEIGHT_KEY[t.component]
+        comp_weight = weight_key ? category_weights[weight_key].to_f : 0.0
         [
           RecommendationRules::PRIORITY_ORDER.fetch(t.priority, 99),
-          t.display_order,
+          -comp_weight,  # negative for DESC
           t.rule_id
         ]
       end
+    end
+
+    def safe_load_weights(category_key)
+      @weights_loader.call(category_key)
+    rescue WeightsLoader::MissingWeights
+      # Fallback: equal weights if config missing (degraded mode, still sortable)
+      WeightsLoader::COMPONENTS.index_with(0.2)
     end
 
     def serialize(template)
