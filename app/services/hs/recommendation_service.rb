@@ -29,6 +29,7 @@ module Hs
 
     def call(channel:, user:, health_score_record:)
       return [] unless health_score_record
+      return [] unless Flipper.enabled?(:hs_recommendations, user)
 
       context = build_context(channel, health_score_record)
       dismissed_ids = dismissed_rule_ids(user, channel) if user

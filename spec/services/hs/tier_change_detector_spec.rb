@@ -51,5 +51,20 @@ RSpec.describe Hs::TierChangeDetector do
       expect(detector.call(channel: channel, new_hs_record: new_hs)).to be_nil
       expect(HsTierChangeEvent.count).to eq(0)
     end
+
+    # EC-11: First HS record (no previous) → no tier change event
+    it "EC-11: does not emit on first HS record ever" do
+      first_hs = create_hs(72, "good", Time.current)
+      expect { detector.call(channel: channel, new_hs_record: first_hs) }
+        .not_to change(HsTierChangeEvent, :count)
+    end
+
+    # EC-12: Same classification → no event (already covered above but explicit)
+    it "EC-12: does not emit when classification key unchanged across boundary" do
+      create_hs(60, "good", 2.days.ago)
+      new_hs = create_hs(79, "good", Time.current)
+      expect { detector.call(channel: channel, new_hs_record: new_hs) }
+        .not_to change(HsTierChangeEvent, :count)
+    end
   end
 end

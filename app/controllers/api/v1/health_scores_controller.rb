@@ -117,8 +117,9 @@ module Api
 
       def build_recommendations(hs_record)
         return [] unless policy.can_receive_recommendations?
-        return [] unless Flipper.enabled?(:hs_recommendations, current_user)
 
+        # Flipper gate lives inside RecommendationService (shared guard for
+        # API + workers + rake). Single source of truth.
         Hs::RecommendationService.new.call(
           channel: @channel,
           user: current_user,

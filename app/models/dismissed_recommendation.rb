@@ -23,8 +23,8 @@ class DismissedRecommendation < ApplicationRecord
 
   def rule_id_must_exist
     return if rule_id.blank?
-    return if RecommendationTemplate.exists?(rule_id: rule_id)
+    return if RecommendationTemplate.enabled.exists?(rule_id: rule_id)
 
-    errors.add(:rule_id, "does not reference an existing RecommendationTemplate")
+    errors.add(:rule_id, "does not reference an enabled RecommendationTemplate")
   end
 end

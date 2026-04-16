@@ -46,5 +46,15 @@ RSpec.describe Hs::CategoryChangeDetector do
 
       expect(detector.call(channel: channel, new_hs_record: new_hs)).to be_nil
     end
+
+    # EC-13: Previous category was nil → no category_change event emitted
+    # (emission requires both previous AND new category to be present and different).
+    it "EC-13: does not emit when previous category was nil" do
+      create_hs(nil, 2.days.ago)
+      new_hs = create_hs("valorant", Time.current)
+
+      expect { detector.call(channel: channel, new_hs_record: new_hs) }
+        .not_to change(HsTierChangeEvent, :count)
+    end
   end
 end

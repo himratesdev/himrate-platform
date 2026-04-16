@@ -40,7 +40,7 @@ module Api
       def valid_rule_id?(rule_id)
         return false if rule_id.blank?
 
-        rule_id.match?(/\AR-\d{2,}\z/) && RecommendationTemplate.exists?(rule_id: rule_id)
+        rule_id.match?(/\AR-\d{2,}\z/) && RecommendationTemplate.enabled.exists?(rule_id: rule_id)
       end
 
       def invalidate_cache
