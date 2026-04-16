@@ -16,6 +16,11 @@ rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
 end
 
+# TASK-038: HealthScoreSeeds module lives in db/seeds/ (not autoloaded).
+# Specs rely on it for seeding test data — require eagerly to avoid NameError
+# when RecommendationTemplate already exists (skipping the conditional load).
+require Rails.root.join("db/seeds/health_score.rb")
+
 Shoulda::Matchers.configure do |config|
   config.integrate do |with|
     with.test_framework :rspec
