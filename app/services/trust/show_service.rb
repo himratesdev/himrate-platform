@@ -163,17 +163,9 @@ module Trust
       nil
     end
 
-    # CR #9: Redis cached percentile (5 min TTL)
-    def cached_percentile(latest_ti)
-      return nil unless latest_ti&.trust_index_score
-
-      current_stream = @channel.streams.order(started_at: :desc).first
-      category = current_stream&.game_name
-      return nil unless category
-
-      Rails.cache.fetch("percentile:#{category}:#{@channel.id}", expires_in: 5.minutes) do
-        compute_percentile(latest_ti.trust_index_score.to_f, category)
-      end
+    # TASK-037 FR-015: Use PercentileService (DISTINCT ON latest HS per channel, cached)
+    def cached_percentile(_latest_ti)
+      ::Reputation::PercentileService.new(channel: @channel).call
     end
 
     def compute_percentile(ti_score, category)

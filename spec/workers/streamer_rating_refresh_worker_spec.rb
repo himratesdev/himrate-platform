@@ -36,13 +36,16 @@ RSpec.describe StreamerRatingRefreshWorker do
         expect(rating.decay_lambda).to eq(0.05)
       end
 
-      it "weights recent streams more heavily" do
+      it "weights recent streams more heavily and applies Bayesian shrinkage" do
         described_class.new.perform(channel.id)
 
         rating = StreamerRating.last
         # Most recent stream has TI=80, oldest has TI=60
-        # With decay, rating should be closer to 80 than 60
-        expect(rating.rating_score).to be > 70.0
+        # Date-based decay weights recent higher → observed ~74
+        # Bayesian shrinkage (5 streams < 7 threshold, prior ~65) pulls down → final ~68
+        expect(rating.rating_observed).to be > 70.0 # pre-shrinkage
+        expect(rating.rating_score).to be_between(60.0, 80.0) # post-shrinkage
+        expect(rating.confidence_level).to eq("medium") # 3-7 streams
       end
 
       it "updates existing rating on re-run" do

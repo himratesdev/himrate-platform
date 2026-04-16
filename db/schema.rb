@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_15_200001) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_16_200001) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -225,6 +225,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_200001) do
     t.decimal "engagement_component", precision: 5, scale: 2
     t.decimal "growth_component", precision: 5, scale: 2
     t.decimal "health_score", precision: 5, scale: 2, null: false
+    t.string "hs_classification", limit: 20
     t.decimal "stability_component", precision: 5, scale: 2
     t.uuid "stream_id"
     t.decimal "ti_component", precision: 5, scale: 2
@@ -385,8 +386,10 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_200001) do
   create_table "streamer_ratings", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "calculated_at", null: false
     t.uuid "channel_id", null: false
+    t.string "confidence_level", limit: 20
     t.datetime "created_at", null: false
     t.decimal "decay_lambda", precision: 5, scale: 4, default: "0.05", null: false
+    t.decimal "rating_observed", precision: 5, scale: 2
     t.decimal "rating_score", precision: 5, scale: 2, null: false
     t.integer "streams_count", default: 0, null: false
     t.datetime "updated_at", null: false
@@ -399,7 +402,9 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_15_200001) do
     t.decimal "engagement_consistency_score", precision: 5, scale: 2
     t.decimal "follower_quality_score", precision: 5, scale: 2
     t.decimal "growth_pattern_score", precision: 5, scale: 2
-    t.index ["channel_id"], name: "index_streamer_reputations_on_channel_id", unique: true
+    t.decimal "pattern_history_score", precision: 5, scale: 2
+    t.index ["channel_id", "calculated_at"], name: "idx_streamer_reputations_channel_latest", order: { calculated_at: :desc }
+    t.index ["channel_id"], name: "idx_streamer_reputations_channel"
   end
 
   create_table "streams", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|

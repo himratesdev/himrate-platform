@@ -54,6 +54,9 @@ class PostStreamWorker
       # FR-009: Schedule expiring warning (17h after offline)
       schedule_expiring_warning(stream)
 
+      # TASK-037 FR-006: Reputation refresh (must run BEFORE Rating, as Rating may use reputation-adjusted TI)
+      StreamerReputationRefreshWorker.perform_async(stream.channel_id)
+
       # FR-011: Health Score refresh
       HealthScoreRefreshWorker.perform_async(stream.channel_id)
 
