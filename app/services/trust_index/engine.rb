@@ -54,6 +54,9 @@ module TrustIndex
         ccv: ccv
       )
 
+      # TASK-038 AR-11: Emit rehabilitation penalty/resolution events
+      PenaltyEventEmitter.call(channel: channel, stream: stream, ti_score: ti_final)
+
       Result.new(
         ti_score: ti_final, classification: classification, erv: erv,
         cold_start: cold_start, signal_breakdown: breakdown,

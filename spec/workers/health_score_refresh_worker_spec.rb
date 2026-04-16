@@ -5,6 +5,20 @@ require "rails_helper"
 RSpec.describe HealthScoreRefreshWorker do
   let(:channel) { create(:channel) }
 
+  before do
+    # TASK-038: Seed DB-driven config (categories, tiers, weights)
+    load Rails.root.join("db/seeds/health_score.rb") unless HealthScoreCategory.exists?
+    HealthScoreSeeds.seed_categories
+    HealthScoreSeeds.seed_tiers
+    { ti: 0.30, stability: 0.20, engagement: 0.20, growth: 0.15, consistency: 0.15 }.each do |comp, value|
+      cfg = SignalConfiguration.find_or_initialize_by(
+        signal_type: "health_score", category: "default", param_name: "weight_#{comp}"
+      )
+      cfg.param_value = value
+      cfg.save!
+    end
+  end
+
   describe "#perform" do
     context "with completed streams" do
       before do

@@ -54,7 +54,11 @@ Rails.application.routes.draw do
         end
         resource "bot-chain", only: :show, controller: "bot_chain", as: :bot_chain
         # TASK-032 FR-004: Health Score
-        resource :health_score, only: :show, controller: "health_scores"
+        resource :health_score, only: :show, controller: "health_scores" do
+          # TASK-038 FR-022: Dismiss recommendation
+          post "recommendations/:rule_id/dismiss", to: "health_score_recommendations#dismiss",
+            as: :dismiss_recommendation, constraints: { rule_id: /R-\d{2,}/ }
+        end
         # TASK-032 FR-005: ERV
         resource :erv, only: :show, controller: "erv"
 

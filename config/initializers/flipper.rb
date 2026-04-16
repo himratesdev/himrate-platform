@@ -76,6 +76,7 @@ module FlipperDefaults
     channel_discovery
     bot_scoring
     signal_compute
+    hs_recommendations
   ].freeze
 end
 

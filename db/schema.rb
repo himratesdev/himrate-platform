@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_04_16_200001) do
+ActiveRecord::Schema[8.1].define(version: 2026_04_17_100011) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
   enable_extension "pgcrypto"
@@ -182,6 +182,18 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_200001) do
     t.index ["username", "channel_id"], name: "idx_cross_channel_user_channel", unique: true
   end
 
+  create_table "dismissed_recommendations", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "channel_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "dismissed_at", null: false
+    t.string "rule_id", limit: 10, null: false
+    t.datetime "updated_at", null: false
+    t.uuid "user_id", null: false
+    t.index ["channel_id"], name: "index_dismissed_recommendations_on_channel_id"
+    t.index ["user_id", "channel_id", "rule_id"], name: "idx_dismissed_rec_uniq", unique: true
+    t.index ["user_id"], name: "index_dismissed_recommendations_on_user_id"
+  end
+
   create_table "erv_estimates", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.decimal "confidence", precision: 5, scale: 4
     t.integer "erv_count", null: false
@@ -217,8 +229,43 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_200001) do
     t.index ["channel_id", "timestamp"], name: "idx_follower_snapshots_channel_time"
   end
 
+  create_table "health_score_categories", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "display_name", limit: 100, null: false
+    t.boolean "is_default", default: false, null: false
+    t.string "key", limit: 100, null: false
+    t.datetime "updated_at", null: false
+    t.index ["is_default"], name: "idx_hs_categories_single_default", unique: true, where: "(is_default = true)"
+    t.index ["key"], name: "index_health_score_categories_on_key", unique: true
+  end
+
+  create_table "health_score_category_aliases", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "game_name_alias", limit: 200, null: false
+    t.uuid "health_score_category_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["game_name_alias"], name: "idx_hs_cat_aliases_name", unique: true
+    t.index ["health_score_category_id"], name: "idx_hs_cat_aliases_category"
+  end
+
+  create_table "health_score_tiers", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "bg_hex", limit: 7, null: false
+    t.string "color_name", limit: 20, null: false
+    t.datetime "created_at", null: false
+    t.integer "display_order", null: false
+    t.string "i18n_key", limit: 50, null: false
+    t.string "key", limit: 20, null: false
+    t.integer "max_score", null: false
+    t.integer "min_score", null: false
+    t.string "text_hex", limit: 7, null: false
+    t.datetime "updated_at", null: false
+    t.index ["display_order"], name: "index_health_score_tiers_on_display_order", unique: true
+    t.index ["key"], name: "index_health_score_tiers_on_key", unique: true
+  end
+
   create_table "health_scores", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
     t.datetime "calculated_at", null: false
+    t.string "category", limit: 100
     t.uuid "channel_id", null: false
     t.string "confidence_level", limit: 20
     t.decimal "consistency_component", precision: 5, scale: 2
@@ -229,9 +276,29 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_200001) do
     t.decimal "stability_component", precision: 5, scale: 2
     t.uuid "stream_id"
     t.decimal "ti_component", precision: 5, scale: 2
+    t.index ["channel_id", "category", "calculated_at"], name: "idx_hs_channel_cat_time", order: { calculated_at: :desc }
     t.index ["channel_id"], name: "idx_health_scores_channel"
     t.index ["channel_id"], name: "index_health_scores_on_channel_id"
     t.index ["stream_id"], name: "index_health_scores_on_stream_id"
+    t.check_constraint "hs_classification::text = ANY (ARRAY['excellent'::character varying::text, 'good'::character varying::text, 'average'::character varying::text, 'below_average'::character varying::text, 'poor'::character varying::text])", name: "hs_classification_5tier"
+  end
+
+  create_table "hs_tier_change_events", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.uuid "channel_id", null: false
+    t.datetime "created_at", null: false
+    t.string "event_type", limit: 30, default: "tier_change", null: false
+    t.string "from_tier", limit: 30
+    t.decimal "hs_after", precision: 5, scale: 2, null: false
+    t.decimal "hs_before", precision: 5, scale: 2
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "occurred_at", null: false
+    t.uuid "stream_id"
+    t.string "to_tier", limit: 30, null: false
+    t.datetime "updated_at", null: false
+    t.index ["channel_id", "event_type", "occurred_at"], name: "idx_hs_tier_events_channel_type_time", order: { occurred_at: :desc }
+    t.index ["channel_id"], name: "index_hs_tier_change_events_on_channel_id"
+    t.index ["occurred_at"], name: "idx_hs_tier_events_time", order: :desc
+    t.index ["stream_id"], name: "index_hs_tier_change_events_on_stream_id"
   end
 
   create_table "known_bot_lists", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -328,6 +395,37 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_200001) do
     t.index ["source_channel_id"], name: "index_raid_attributions_on_source_channel_id"
     t.index ["stream_id", "timestamp"], name: "idx_raid_attributions_stream_time"
     t.index ["stream_id"], name: "index_raid_attributions_on_stream_id"
+  end
+
+  create_table "recommendation_templates", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.string "component", limit: 30, null: false
+    t.datetime "created_at", null: false
+    t.string "cta_action", limit: 100
+    t.integer "display_order", default: 0, null: false
+    t.boolean "enabled", default: true, null: false
+    t.string "expected_impact", limit: 50
+    t.string "i18n_key", limit: 100, null: false
+    t.string "priority", limit: 15, null: false
+    t.string "rule_id", limit: 10, null: false
+    t.datetime "updated_at", null: false
+    t.index ["enabled"], name: "index_recommendation_templates_on_enabled"
+    t.index ["rule_id"], name: "index_recommendation_templates_on_rule_id", unique: true
+  end
+
+  create_table "rehabilitation_penalty_events", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
+    t.datetime "applied_at", null: false
+    t.uuid "applied_stream_id"
+    t.uuid "channel_id", null: false
+    t.integer "clean_streams_at_resolve"
+    t.datetime "created_at", null: false
+    t.decimal "initial_penalty", precision: 5, scale: 2, null: false
+    t.integer "required_clean_streams", default: 15, null: false
+    t.datetime "resolved_at"
+    t.datetime "updated_at", null: false
+    t.index ["applied_stream_id"], name: "index_rehabilitation_penalty_events_on_applied_stream_id"
+    t.index ["channel_id", "applied_at"], name: "idx_rehab_events_channel_time", order: { applied_at: :desc }
+    t.index ["channel_id"], name: "idx_rehab_events_active", where: "(resolved_at IS NULL)"
+    t.index ["channel_id"], name: "index_rehabilitation_penalty_events_on_channel_id"
   end
 
   create_table "score_disputes", id: :uuid, default: -> { "gen_random_uuid()" }, force: :cascade do |t|
@@ -579,10 +677,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_200001) do
   add_foreign_key "chatters_snapshots", "streams"
   add_foreign_key "cross_channel_presences", "channels"
   add_foreign_key "cross_channel_presences", "streams"
+  add_foreign_key "dismissed_recommendations", "channels"
+  add_foreign_key "dismissed_recommendations", "users"
   add_foreign_key "erv_estimates", "streams"
   add_foreign_key "follower_snapshots", "channels"
+  add_foreign_key "health_score_category_aliases", "health_score_categories"
   add_foreign_key "health_scores", "channels"
   add_foreign_key "health_scores", "streams"
+  add_foreign_key "hs_tier_change_events", "channels"
+  add_foreign_key "hs_tier_change_events", "streams"
   add_foreign_key "notifications", "channels"
   add_foreign_key "notifications", "streams"
   add_foreign_key "notifications", "users"
@@ -593,6 +696,8 @@ ActiveRecord::Schema[8.1].define(version: 2026_04_16_200001) do
   add_foreign_key "predictions_polls", "streams"
   add_foreign_key "raid_attributions", "channels", column: "source_channel_id"
   add_foreign_key "raid_attributions", "streams"
+  add_foreign_key "rehabilitation_penalty_events", "channels"
+  add_foreign_key "rehabilitation_penalty_events", "streams", column: "applied_stream_id"
   add_foreign_key "score_disputes", "channels"
   add_foreign_key "score_disputes", "users"
   add_foreign_key "sessions", "users"
