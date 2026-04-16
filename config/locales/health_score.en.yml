@@ -1,0 +1,50 @@
+en:
+  hs:
+    label:
+      excellent: Excellent
+      good: Good
+      average: Average
+      below_average: Below Average
+      poor: Poor
+    tier:
+      insufficient: Insufficient data
+      provisional_low: Provisional (low data)
+      provisional: Provisional
+      full: Full
+      deep: Deep Analytics
+    confidence:
+      insufficient: Insufficient data
+      provisional_low: Provisional (low data)
+      provisional: Provisional
+      full: Full
+      deep: Deep Analytics
+    priority:
+      critical: Critical
+      high: High
+      medium: Medium
+      low: Low
+    freshness:
+      fresh: Up to date
+      stale: Last updated %{days} days ago
+      very_stale: Data stale — reconnect required
+    tier_change:
+      up: Moved up to %{tier}
+      down: Dropped to %{tier}
+    rehabilitation:
+      title: Rehabilitation plan
+      progress: "%{clean_streams}/%{required} clean streams"
+    warning:
+      component_low: Low score — see recommendations below
+    badge:
+      top_x_in_category: "Top %{top_percent}% in %{category}"
+    rec:
+      engagement_low: Interact with chat more — ask questions, respond to messages
+      engagement_critical: Engagement critically low. Enable interactive elements (polls, predictions)
+      consistency_low: Create a streaming schedule and stick to it
+      consistency_critical: Irregular streams. Start with 3 days/week on schedule
+      stability_high_cv: Stabilize viewership — avoid sharp viewer fluctuations
+      growth_low: Promote channel on other platforms (Discord, YouTube Shorts)
+      growth_negative: Audience declining. Analyze causes and attract new viewers
+      ti_drop_sharp: Sharp Trust Index drop. Review chat moderation and enable follower-only mode
+      ti_penalty_active: Bot activity penalty active. 15 clean streams needed for full recovery
+      all_excellent: All metrics excellent — keep up the great work!

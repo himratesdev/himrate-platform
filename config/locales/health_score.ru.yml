@@ -1,0 +1,50 @@
+ru:
+  hs:
+    label:
+      excellent: Отличный
+      good: Хороший
+      average: Средний
+      below_average: Ниже среднего
+      poor: Плохой
+    tier:
+      insufficient: Недостаточно данных
+      provisional_low: Предварительно (мало данных)
+      provisional: Предварительно
+      full: Полный
+      deep: Глубокая аналитика
+    confidence:
+      insufficient: Недостаточно данных
+      provisional_low: Предварительно (мало данных)
+      provisional: Предварительно
+      full: Полный
+      deep: Глубокая аналитика
+    priority:
+      critical: Критический
+      high: Высокий
+      medium: Средний
+      low: Низкий
+    freshness:
+      fresh: Актуально
+      stale: Обновлено %{days} дней назад
+      very_stale: Данные устарели — требуется переподключение
+    tier_change:
+      up: Поднялся до %{tier}
+      down: Упал до %{tier}
+    rehabilitation:
+      title: План реабилитации
+      progress: "%{clean_streams}/%{required} чистых стримов"
+    warning:
+      component_low: Низкий балл — см. рекомендации ниже
+    badge:
+      top_x_in_category: "Топ-%{top_percent}% в %{category}"
+    rec:
+      engagement_low: Больше взаимодействуйте с чатом — задавайте вопросы, отвечайте на сообщения
+      engagement_critical: Вовлечённость критически низкая. Включите интерактивные элементы (polls, predictions)
+      consistency_low: Составьте расписание стримов и придерживайтесь его
+      consistency_critical: Нерегулярные стримы. Начните с 3 дней в неделю по расписанию
+      stability_high_cv: Стабилизируйте онлайн — избегайте резких перепадов зрителей
+      growth_low: Продвигайте канал на других платформах (Discord, YouTube Shorts)
+      growth_negative: Аудитория сокращается. Проанализируйте причины и привлекайте новых зрителей
+      ti_drop_sharp: Резкое падение Trust Index. Проверьте настройки модерации чата
+      ti_penalty_active: Активен штраф за бот-активность. Необходимо 15 чистых стримов для полного восстановления
+      all_excellent: Все показатели отличные — продолжайте в том же духе!

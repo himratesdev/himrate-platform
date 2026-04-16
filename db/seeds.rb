@@ -112,3 +112,11 @@ if defined?(SignalConfiguration)
 
   puts "Seed complete: #{SignalConfiguration.count} signal configurations"
 end
+
+# TASK-038: Health Score seed data (tiers, categories, recommendation templates)
+if defined?(HealthScoreTier) && defined?(HealthScoreCategory) && defined?(RecommendationTemplate)
+  load Rails.root.join("db/seeds/health_score.rb")
+  HealthScoreSeeds.run
+  puts "Seed complete: #{HealthScoreTier.count} tiers, #{HealthScoreCategory.count} categories, " \
+       "#{RecommendationTemplate.count} recommendation templates"
+end

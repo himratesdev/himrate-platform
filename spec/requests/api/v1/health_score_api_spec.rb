@@ -10,6 +10,10 @@ RSpec.describe "Health Score API", type: :request do
   let(:headers_premium) { auth_headers(user_premium) }
 
   before do
+    # TASK-038: seed DB-driven config
+    load Rails.root.join("db/seeds/health_score.rb") unless HealthScoreCategory.exists?
+    HealthScoreSeeds.run
+
     create(:health_score,
       channel: channel,
       health_score: 72.5,
