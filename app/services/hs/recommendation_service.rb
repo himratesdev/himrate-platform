@@ -114,15 +114,19 @@ module Hs
         component: template.component,
         priority: template.priority,
         i18n_key: template.i18n_key,
-        expected_impact: template.expected_impact,
+        # expected_impact is stored as i18n key (S1 fix). Return key + localized text.
+        expected_impact_key: template.expected_impact,
+        expected_impact: template.expected_impact.present? ? I18n.t(template.expected_impact, default: nil) : nil,
         cta_action: template.cta_action
       }
     end
 
     def max_recommendations
-      SignalConfiguration
-        .where(signal_type: "recommendation", category: "default", param_name: "max_recommendations")
-        .pick(:param_value)&.to_i || DEFAULT_MAX
+      @max_recommendations ||= (
+        SignalConfiguration
+          .where(signal_type: "recommendation", category: "default", param_name: "max_recommendations")
+          .pick(:param_value)&.to_i || DEFAULT_MAX
+      )
     end
   end
 end

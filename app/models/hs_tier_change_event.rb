@@ -17,6 +17,6 @@ class HsTierChangeEvent < ApplicationRecord
 
   scope :tier_changes, -> { where(event_type: "tier_change") }
   scope :category_changes, -> { where(event_type: "category_change") }
-  scope :recent, ->(days) { where("occurred_at > ?", days.days.ago) }
+  scope :within_days, ->(days) { where("occurred_at > ?", days.days.ago) }
   scope :for_channel, ->(channel_id) { where(channel_id: channel_id) }
 end

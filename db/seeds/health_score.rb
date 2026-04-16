@@ -43,36 +43,37 @@ module HealthScoreSeeds
     [ "default", "Other", true, [] ]
   ].freeze
 
+  # expected_impact stored as i18n key (localized at render time)
   RECOMMENDATION_RULES = [
     { rule_id: "R-01", component: "engagement", priority: "high",
-      i18n_key: "hs.rec.engagement_low", expected_impact: "+8-12",
+      i18n_key: "hs.rec.engagement_low", expected_impact: "hs.rec.impact.plus_8_12",
       cta_action: "settings/chat", display_order: 10 },
     { rule_id: "R-02", component: "engagement", priority: "critical",
-      i18n_key: "hs.rec.engagement_critical", expected_impact: "+12-18",
+      i18n_key: "hs.rec.engagement_critical", expected_impact: "hs.rec.impact.plus_12_18",
       cta_action: "settings/interactive", display_order: 20 },
     { rule_id: "R-03", component: "consistency", priority: "high",
-      i18n_key: "hs.rec.consistency_low", expected_impact: "+5-8",
+      i18n_key: "hs.rec.consistency_low", expected_impact: "hs.rec.impact.plus_5_8",
       cta_action: "settings/schedule", display_order: 30 },
     { rule_id: "R-04", component: "consistency", priority: "critical",
-      i18n_key: "hs.rec.consistency_critical", expected_impact: "+10-15",
+      i18n_key: "hs.rec.consistency_critical", expected_impact: "hs.rec.impact.plus_10_15",
       cta_action: "settings/schedule", display_order: 40 },
     { rule_id: "R-05", component: "stability", priority: "medium",
-      i18n_key: "hs.rec.stability_high_cv", expected_impact: "+5-10",
+      i18n_key: "hs.rec.stability_high_cv", expected_impact: "hs.rec.impact.plus_5_10",
       cta_action: "learn/tips", display_order: 50 },
     { rule_id: "R-06", component: "growth", priority: "medium",
-      i18n_key: "hs.rec.growth_low", expected_impact: "+3-8",
+      i18n_key: "hs.rec.growth_low", expected_impact: "hs.rec.impact.plus_3_8",
       cta_action: "learn/growth", display_order: 60 },
     { rule_id: "R-07", component: "growth", priority: "high",
-      i18n_key: "hs.rec.growth_negative", expected_impact: "+5-12",
+      i18n_key: "hs.rec.growth_negative", expected_impact: "hs.rec.impact.plus_5_12",
       cta_action: "learn/retention", display_order: 70 },
     { rule_id: "R-08", component: "trust_index", priority: "critical",
-      i18n_key: "hs.rec.ti_drop_sharp", expected_impact: "recovery 2-3 weeks",
+      i18n_key: "hs.rec.ti_drop_sharp", expected_impact: "hs.rec.impact.recovery_2_3_weeks",
       cta_action: "settings/moderation", display_order: 80 },
     { rule_id: "R-09", component: "trust_index", priority: "critical",
-      i18n_key: "hs.rec.ti_penalty_active", expected_impact: "full recovery",
+      i18n_key: "hs.rec.ti_penalty_active", expected_impact: "hs.rec.impact.full_recovery",
       cta_action: "rehab_plan", display_order: 90 },
     { rule_id: "R-10", component: "all", priority: "low",
-      i18n_key: "hs.rec.all_excellent", expected_impact: "maintain",
+      i18n_key: "hs.rec.all_excellent", expected_impact: "hs.rec.impact.maintain",
       cta_action: nil, display_order: 100 }
   ].freeze
 
@@ -115,4 +116,5 @@ module HealthScoreSeeds
   end
 end
 
-HealthScoreSeeds.run if $PROGRAM_NAME.end_with?("runner")
+# Invoked explicitly from db/seeds.rb or specs via HealthScoreSeeds.run.
+# Do NOT auto-run on `rails runner` — causes unexpected side effects.

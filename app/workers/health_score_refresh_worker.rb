@@ -8,9 +8,18 @@ class HealthScoreRefreshWorker
   include Sidekiq::Job
   sidekiq_options queue: :post_stream, retry: 3
 
+  DEDUPE_WINDOW = 60.seconds
+
   def perform(channel_id)
     channel = Channel.find_by(id: channel_id)
     return unless channel
+
+    # S8: Idempotency — skip if last HS record is very recent (double-trigger).
+    last = HealthScore.where(channel_id: channel.id).order(calculated_at: :desc).pick(:calculated_at)
+    if last && (Time.current - last) < DEDUPE_WINDOW
+      Rails.logger.info("HealthScoreRefreshWorker: skip channel #{channel_id} — last HS #{((Time.current - last).round)}s ago")
+      return
+    end
 
     result = Hs::Engine.new.call(channel)
     return unless result[:health_score]
@@ -20,7 +29,7 @@ class HealthScoreRefreshWorker
     Hs::TierChangeDetector.new.call(channel: channel, new_hs_record: hs_record)
     Hs::CategoryChangeDetector.new.call(channel: channel, new_hs_record: hs_record)
 
-    Rails.cache.delete("health_score:#{channel_id}")
+    invalidate_cache(channel.id, hs_record.category)
 
     Rails.logger.info(
       "HealthScoreRefreshWorker: channel #{channel_id} — " \
@@ -31,6 +40,18 @@ class HealthScoreRefreshWorker
   end
 
   private
+
+  # Must match HealthScoresController#cache_key format exactly.
+  def invalidate_cache(channel_id, category)
+    version = if category
+      SignalConfiguration
+        .where(signal_type: "health_score", category: category)
+        .maximum(:updated_at)&.to_i || 0
+    else
+      0
+    end
+    Rails.cache.delete("health_score:cat_v#{version}:#{channel_id}")
+  end
 
   def persist(channel, result)
     components = result[:components] || {}

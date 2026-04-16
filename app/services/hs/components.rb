@@ -61,32 +61,27 @@ module Hs
     def engagement_component(cutoff, stream_count)
       return nil if stream_count < 3
 
-      streams = @channel.streams
+      # S3 fix: single query — JOIN streams with chat_messages count.
+      # Returns [{id, duration_ms, avg_ccv, message_count}, ...] in one trip.
+      rows = @channel.streams
         .where.not(ended_at: nil)
         .where("ended_at > ?", cutoff)
         .where("avg_ccv > 0 AND duration_ms > 0")
+        .joins("LEFT JOIN chat_messages cm ON cm.stream_id = streams.id")
+        .group("streams.id, streams.duration_ms, streams.avg_ccv")
+        .pluck(
+          "streams.duration_ms",
+          "streams.avg_ccv",
+          Arel.sql("COUNT(cm.id)")
+        )
 
-      stream_ids = streams.pluck(:id)
-      return nil if stream_ids.empty?
+      ratios = rows.map do |duration_ms, avg_ccv, msg_count|
+        duration_min = duration_ms.to_f / 60_000.0
+        next nil if duration_min <= 0 || msg_count.to_i.zero?
 
-      # ChatMessage is row-per-message (not aggregated) → COUNT per stream
-      chat_totals = ChatMessage
-        .where(stream_id: stream_ids)
-        .group(:stream_id)
-        .count
-
-      ratios = streams.map do |s|
-        duration_min = s.duration_ms.to_f / 60_000.0
-        next nil if duration_min <= 0
-
-        messages = chat_totals[s.id].to_f
-        # Streams without chat records = IRC likely not monitoring (not "zero engagement").
-        # Skip rather than bias engagement downward with artificial zero.
-        # If we later distinguish "monitored+silent" → treat as 0 explicitly.
-        next nil if messages.zero?
-
-        msg_per_min = messages / duration_min
-        (msg_per_min / s.avg_ccv.to_f) * 1000.0
+        # Streams without chat records = IRC not monitoring, skip (not bias downward).
+        msg_per_min = msg_count.to_f / duration_min
+        (msg_per_min / avg_ccv.to_f) * 1000.0
       end.compact
 
       return nil if ratios.empty?

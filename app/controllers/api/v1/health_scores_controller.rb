@@ -117,6 +117,7 @@ module Api
 
       def build_recommendations(hs_record)
         return [] unless policy.can_receive_recommendations?
+        return [] unless Flipper.enabled?(:hs_recommendations, current_user)
 
         Hs::RecommendationService.new.call(
           channel: @channel,
@@ -130,7 +131,7 @@ module Api
 
         event = HsTierChangeEvent.tier_changes
           .for_channel(@channel.id)
-          .recent(7)
+          .within_days(7)
           .order(occurred_at: :desc)
           .first
         return nil unless event

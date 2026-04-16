@@ -48,3 +48,14 @@ en:
       ti_drop_sharp: Sharp Trust Index drop. Review chat moderation and enable follower-only mode
       ti_penalty_active: Bot activity penalty active. 15 clean streams needed for full recovery
       all_excellent: All metrics excellent — keep up the great work!
+      impact:
+        plus_3_8: "+3-8 points"
+        plus_5_8: "+5-8 points"
+        plus_5_10: "+5-10 points"
+        plus_5_12: "+5-12 points"
+        plus_8_12: "+8-12 points"
+        plus_10_15: "+10-15 points"
+        plus_12_18: "+12-18 points"
+        recovery_2_3_weeks: "Recovery in 2-3 weeks"
+        full_recovery: "Full recovery path"
+        maintain: "Keep it up"

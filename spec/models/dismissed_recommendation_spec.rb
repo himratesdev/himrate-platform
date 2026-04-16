@@ -6,6 +6,11 @@ RSpec.describe DismissedRecommendation do
   let(:user) { create(:user) }
   let(:channel) { create(:channel) }
 
+  before do
+    load Rails.root.join("db/seeds/health_score.rb") unless RecommendationTemplate.exists?
+    HealthScoreSeeds.seed_recommendation_templates
+  end
+
   it "validates rule_id format R-NN" do
     record = described_class.new(user: user, channel: channel, rule_id: "invalid")
     expect(record).not_to be_valid

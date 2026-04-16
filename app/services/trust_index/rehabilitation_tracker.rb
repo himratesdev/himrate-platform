@@ -24,10 +24,19 @@ module TrustIndex
       }
     end
 
+    # M6 fix: filter by stream.started_at > applied_at (not TI.calculated_at).
+    # Otherwise, post-penalty TI re-computations of pre-penalty streams
+    # (e.g. after backfill/reprocess) would count as "clean streams".
     def self.count_clean_streams_since(channel, since)
-      TrustIndexHistory
+      clean_stream_ids = Stream
         .where(channel_id: channel.id)
-        .where("calculated_at > ?", since)
+        .where("started_at > ?", since)
+        .pluck(:id)
+
+      return 0 if clean_stream_ids.empty?
+
+      TrustIndexHistory
+        .where(channel_id: channel.id, stream_id: clean_stream_ids)
         .where("trust_index_score >= ?", 50)
         .distinct
         .count(:stream_id)
