@@ -23,10 +23,28 @@ cp .env.example .env
 # 3. Start all services
 docker compose up
 
-# 4. Verify
+# 4. First-time DB setup (см. «Schema format» ниже)
+docker compose run web rails db:create db:migrate
+
+# 5. Verify
 curl http://localhost:3000/health
 # → {"status":"ok","db":true,"redis":true}
 ```
+
+### Schema format: `:sql` (не `:ruby`)
+
+TASK-039 (Trends Tab) требует native PG partitioning, несовместимое с Ruby
+schema dumper (INHERITS syntax для default partitions). Проект использует
+`config.active_record.schema_format = :sql`.
+
+**Последствия для онбординга:**
+- **Первый setup:** `rails db:create db:migrate` (не `db:setup`). После
+  первого migrate Rails auto-generates `db/structure.sql` локально.
+- **`db/structure.sql` не committed** (ephemeral). Каждый clone → первый
+  migrate создаёт локально. Accepted trade-off (см. PR #78 CR N-10).
+- **После migrate:** `rails db:setup` работает (structure.sql уже есть).
+- **CI:** runs migrations от scratch каждый build (workflow `db:create
+  db:migrate` вместо `db:prepare`).
 
 ## Running Tests
 
