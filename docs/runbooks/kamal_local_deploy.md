@@ -74,10 +74,14 @@ export KAMAL_REGISTRY_PASSWORD="$(security find-generic-password -a "$USER" -s "
 
 ```bash
 kamal() {
+  local KAMAL_REGISTRY_PASSWORD
   export KAMAL_REGISTRY_PASSWORD="$(security find-generic-password -a "$USER" -s "kamal-registry-pull" -w 2>/dev/null)"
   command kamal "$@"
 }
 ```
+
+`local` scopes переменную к function body — после return shell env чистый.
+`export` внутри function даёт kamal (child process) корректный env var.
 
 **Вариант B: direnv (если уже используешь)**
 
