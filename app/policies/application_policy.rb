@@ -57,8 +57,16 @@ class ApplicationPolicy
   def owns_channel?(channel)
     return false unless streamer?
 
-    provider = user.auth_providers.find_by(provider: "twitch")
-    provider.present? && provider.provider_id == channel.twitch_id
+    streamer_on_channel?(channel)
+  end
+
+  # TASK-039 FR-011: Trends-scoped predicate использует memoized user.streamer_twitch_ids
+  # (FR-039) для устранения N+1 при batched policy calls (10 Trends endpoints).
+  # owns_channel? делегирует сюда же — единая точка для streamer-ownership проверки.
+  def streamer_on_channel?(channel)
+    return false unless registered?
+
+    user.streamer_twitch_ids.include?(channel.twitch_id)
   end
 
   def channel_tracked?(channel)
