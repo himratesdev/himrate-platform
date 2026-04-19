@@ -28,16 +28,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
-      # W-3 PG: Validate image tag sync в 4 местах до build — fail early
+      # W-3 PG: Validate image tag sync в 3 местах до build — fail early
       # если bump version забыт в одном из файлов. Assertions simple grep.
+      # N-2 CR iter 2: deploy.yml pattern matches YAML directive (не comments).
       - name: Verify image tag drift (Dockerfile LABEL + deploy.yml + workflow env)
         run: |
           set -euo pipefail
           WORKFLOW_TAG="${IMAGE_TAG}"
           LABEL_TAG=$(grep 'LABEL org.opencontainers.image.version' db/Dockerfile \
                      | sed -E 's/.*version="([^"]+)".*/\1/')
-          DEPLOY_TAG=$(grep 'himrate-postgres:' config/deploy.yml \
-                      | head -1 | sed -E 's/.*himrate-postgres:([^ ]+).*/\1/')
+          DEPLOY_TAG=$(grep -E '^\s*image:\s*ghcr.io/himratesdev/himrate-postgres:' config/deploy.yml \
+                      | sed -E 's/.*himrate-postgres:([^ ]+).*/\1/')
 
           echo "Workflow IMAGE_TAG: $WORKFLOW_TAG"
           echo "Dockerfile LABEL:   $LABEL_TAG"
@@ -73,13 +74,12 @@ jobs:
 
       # CR N-5 + W-5 PG: CVE scan через trivy. Non-blocking (exit-code: 0) —
       # upstream postgres base могут содержать CVEs вне нашего контроля.
-      # SARIF upload в GitHub Security tab → автоматические email alerts + Dependabot-style
-      # notifications через GitHub built-in (weekly digest + новые finding notifications).
-      # Trade-off pin: @master — internal tooling moderate risk per Reviewer N-3,
-      # semver releases aquasecurity/trivy-action часто не соответствуют ожиданиям
-      # (попытка @0.28.0 упала на non-existent tag). Альтернатива future: pin by SHA.
+      # SARIF upload в GitHub Security tab → автоматические email alerts + GitHub weekly digest.
+      # Pin @v0.35.0 (verified via gh api trivy-action/tags). Предыдущая попытка @0.28.0
+      # упала т.к. trivy-action использует v-prefix в tags (@v0.28.0 существует, @0.28.0 — нет).
+      # Dependabot github-actions ecosystem auto-updates этот pin (MF-1 fix CR iter 2).
       - name: Scan image for CVEs (report-only)
-        uses: aquasecurity/trivy-action@master
+        uses: aquasecurity/trivy-action@v0.35.0
         with:
           image-ref: ghcr.io/himratesdev/himrate-postgres:${{ env.IMAGE_TAG }}
           format: sarif
