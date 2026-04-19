@@ -35,7 +35,10 @@ jobs:
         run: |
           set -euo pipefail
           WORKFLOW_TAG="${IMAGE_TAG}"
-          LABEL_TAG=$(grep 'LABEL org.opencontainers.image.version' db/Dockerfile \
+          # Anchor на ^LABEL (start of line) — excludes comments where
+          # `LABEL version="..."` упоминается как part checklist (false positive
+          # caught tag drift check сам себя при первом run).
+          LABEL_TAG=$(grep -E '^LABEL org.opencontainers.image.version=' db/Dockerfile \
                      | sed -E 's/.*version="([^"]+)".*/\1/')
           DEPLOY_TAG=$(grep -E '^\s*image:\s*ghcr.io/himratesdev/himrate-postgres:' config/deploy.yml \
                       | sed -E 's/.*himrate-postgres:([^ ]+).*/\1/')
