@@ -91,10 +91,10 @@ Rollback steps (в порядке execution):
    ```
    Prevents further writes к managed, которые не будут replicated обратно.
 
-2. **Revert DATABASE_URL secret**
-   - GitHub repo settings → Secrets → `KAMAL_REGISTRY_PASSWORD` (or inline construction в ci.yml):
-   - Вернуть к VPS DB URL: `postgres://himrate:${POSTGRES_PASSWORD}@himrate-db:5432/himrate_production`
-   - OR comment out Construct DATABASE_URL step в ci.yml если inline
+2. **Revert DATABASE_URL к VPS Postgres**
+   - **Если DATABASE_URL constructed inline в `ci.yml` (текущая архитектура):** revert commit который switched `Construct DATABASE_URL` step на managed-DB URL. Force-push hotfix tag чтобы триггер deploy-production.
+   - **Если `PRODUCTION_DATABASE_URL` secret используется (future managed-DB architecture):** GitHub repo Settings → Secrets → `PRODUCTION_DATABASE_URL` → Update value к VPS URL: `postgres://himrate:<URL_ENCODED_POSTGRES_PASSWORD>@himrate-db:5432/himrate_production`. Заметь: POSTGRES_PASSWORD должен быть URL-encoded — используй тот же Python `urllib.parse.quote` подход что в ci.yml, или `jq -rR @uri` one-liner.
+   - **НЕ путать с** `KAMAL_REGISTRY_PASSWORD` — это registry auth PAT, не DB URL, ротация другая (см. `docs/runbooks/kamal_local_deploy.md`).
 
 3. **Redeploy c old DATABASE_URL**
    ```bash
