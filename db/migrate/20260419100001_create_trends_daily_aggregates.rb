@@ -1,54 +1,76 @@
 # frozen_string_literal: true
 
-# TASK-039 FR-015: Aggregation layer для Trends Tab.
-# Daily rollup TI/ERV/CCV/components per channel + v2.0 columns
-# (discovery_phase, follower_ccv_coupling, tier_changes, best/worst markers).
-# schema_version=2 для cache versioning. Partition-ready (см. миграцию 100005).
+# TASK-039 FR-015 + ADR §4.2: Daily aggregation layer, NATIVE PARTITIONED BY RANGE(date).
+#
+# Архитектурные инварианты PG native partitioning:
+# 1. Parent table декларируется PARTITION BY RANGE(date) в CREATE TABLE (нет ALTER).
+# 2. Partition key (date) должен быть в КАЖДОМ UNIQUE constraint (включая PK) —
+#    PRIMARY KEY (id, date), UNIQUE (channel_id, date).
+# 3. FK на parent допустим (PG 11+). Partial indexes через add_index propagate
+#    на все partitions автоматически.
+# 4. Default partition ловит любые даты вне диапазона — safety net для dev/test
+#    без pg_partman. В prod pg_partman создаёт monthly partitions явно.
+#
+# schema_version=2 для cache versioning (config/initializers/trends.rb).
+# 5 v2.0 columns per SRS §2.3 FR-015.
 
 class CreateTrendsDailyAggregates < ActiveRecord::Migration[8.0]
-  def change
-    create_table :trends_daily_aggregates, id: :uuid do |t|
-      t.references :channel, type: :uuid, null: false, foreign_key: true
-      t.date :date, null: false
+  def up
+    execute(<<~SQL)
+      CREATE TABLE trends_daily_aggregates (
+        id uuid NOT NULL DEFAULT gen_random_uuid(),
+        channel_id uuid NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+        date date NOT NULL,
 
-      # Trust Index aggregates
-      t.decimal :ti_avg, precision: 5, scale: 2
-      t.decimal :ti_std, precision: 5, scale: 2
-      t.decimal :ti_min, precision: 5, scale: 2
-      t.decimal :ti_max, precision: 5, scale: 2
+        -- Trust Index aggregates (0..100)
+        ti_avg decimal(5,2),
+        ti_std decimal(5,2),
+        ti_min decimal(5,2),
+        ti_max decimal(5,2),
 
-      # ERV aggregates
-      t.decimal :erv_avg_percent, precision: 5, scale: 2
-      t.decimal :erv_min_percent, precision: 5, scale: 2
-      t.decimal :erv_max_percent, precision: 5, scale: 2
+        -- ERV aggregates (0..100 %)
+        erv_avg_percent decimal(5,2),
+        erv_min_percent decimal(5,2),
+        erv_max_percent decimal(5,2),
 
-      # CCV
-      t.integer :ccv_avg
-      t.integer :ccv_peak
+        -- CCV (non-negative integer)
+        ccv_avg integer,
+        ccv_peak integer,
 
-      # Stream metadata
-      t.integer :streams_count, null: false, default: 0
-      t.decimal :botted_fraction, precision: 4, scale: 3
-      t.string :classification_at_end, limit: 30
-      t.jsonb :categories, default: {}, null: false # { "Just Chatting" => 5, "Fortnite" => 2 }
-      t.jsonb :signal_breakdown, default: {}, null: false # {auth_ratio: 0.78, ...}
+        -- Stream metadata
+        streams_count integer NOT NULL DEFAULT 0,
+        botted_fraction decimal(4,3),
+        classification_at_end varchar(30),
+        categories jsonb NOT NULL DEFAULT '{}',
+        signal_breakdown jsonb NOT NULL DEFAULT '{}',
 
-      # v2.0 ШИРЕ extensions (TASK-039 SRS §2.3 FR-015)
-      t.decimal :discovery_phase_score, precision: 4, scale: 3 # 0-1 organic-ness
-      t.decimal :follower_ccv_coupling_r, precision: 4, scale: 3 # Pearson r 30d-rolling
-      t.boolean :tier_change_on_day, null: false, default: false
-      t.boolean :is_best_stream_day, null: false, default: false
-      t.boolean :is_worst_stream_day, null: false, default: false
+        -- v2.0 ШИРЕ extensions (TASK-039 SRS §2.3 FR-015)
+        discovery_phase_score decimal(4,3),
+        follower_ccv_coupling_r decimal(4,3),
+        tier_change_on_day boolean NOT NULL DEFAULT false,
+        is_best_stream_day boolean NOT NULL DEFAULT false,
+        is_worst_stream_day boolean NOT NULL DEFAULT false,
 
-      # Cache versioning (bump on response shape change)
-      t.integer :schema_version, null: false, default: 2
+        -- Cache versioning (ADR §4.12)
+        schema_version integer NOT NULL DEFAULT 2,
 
-      t.timestamps
-    end
+        created_at timestamp(6) without time zone NOT NULL,
+        updated_at timestamp(6) without time zone NOT NULL,
 
-    add_index :trends_daily_aggregates, %i[channel_id date],
-      unique: true, name: "idx_tda_channel_date"
+        -- Composite PK обязателен: partition key (date) в PK для native partitioning
+        PRIMARY KEY (id, date),
+        UNIQUE (channel_id, date)
+      ) PARTITION BY RANGE (date);
+    SQL
 
+    # Default partition ловит все даты. В prod pg_partman создаёт monthly + default
+    # остаётся пустым (safety net). В dev/test без pg_partman — catches все INSERT.
+    execute(<<~SQL)
+      CREATE TABLE trends_daily_aggregates_default
+        PARTITION OF trends_daily_aggregates DEFAULT;
+    SQL
+
+    # Partial indexes на parent автоматически propagate на все partitions (PG 11+).
     add_index :trends_daily_aggregates, %i[channel_id tier_change_on_day],
       where: "tier_change_on_day = true",
       name: "idx_tda_tier_change"
@@ -60,5 +82,9 @@ class CreateTrendsDailyAggregates < ActiveRecord::Migration[8.0]
     add_index :trends_daily_aggregates, %i[channel_id is_best_stream_day is_worst_stream_day],
       where: "is_best_stream_day = true OR is_worst_stream_day = true",
       name: "idx_tda_best_worst"
+  end
+
+  def down
+    drop_table :trends_daily_aggregates
   end
 end

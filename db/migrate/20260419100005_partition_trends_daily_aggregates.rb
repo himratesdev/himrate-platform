@@ -1,49 +1,54 @@
 # frozen_string_literal: true
 
-# TASK-039 ADR §4.2: pg_partman monthly partitions для trends_daily_aggregates.
-# 100k channels × 365d = 36.5M rows/year, 5y = 180M+. Per-partition ~3M rows.
-# Retention 2 years (drop старых партиций мгновенно vs months DELETE).
+# TASK-039 ADR §4.2: Handoff partition management to pg_partman.
 #
-# В production pg_partman extension ОБЯЗАТЕЛЕН — миграция raise если недоступен
-# (иначе таблица разрастётся до 50M+ rows без партиционирования незаметно для ops).
-# В dev/test — skip с warning (extension не всегда установлен локально).
-# Down migration marked irreversible — pg_partman undo_partition может создать
-# divergent state, manual rollback required (см. комментарий в def down).
+# Prerequisite: migration #1 уже создала trends_daily_aggregates как native
+# PARTITIONED BY RANGE(date) table + default partition. Эта миграция передаёт
+# управление pg_partman: создаёт monthly partitions (-3 .. +4 months от now)
+# и настраивает retention 2 years (drop старых партиций мгновенно).
+#
+# Backfill coverage: p_start_partition на 3 месяца назад для rake
+# trends:backfill_aggregates (SRS §6) — исторические данные уходят в monthly
+# partitions вместо default.
+#
+# В production pg_partman ОБЯЗАТЕЛЕН (raise). В dev/test допустим skip с say
+# (таблица partitioned declaratively в #1 + default partition catches всё).
+#
+# Down marked irreversible — undo_partition может создать divergent state,
+# manual rollback procedure documented в def down.
 
 class PartitionTrendsDailyAggregates < ActiveRecord::Migration[8.0]
   disable_ddl_transaction!
 
   def up
-    unless pg_partman_available?
+    unless pg_partman_installed?
       if Rails.env.production?
         raise ActiveRecord::MigrationError,
-          "TASK-039 partitioning: pg_partman extension required in production " \
-          "но недоступен. DBA должен установить pg_partman >= 4.7 на DB сервере " \
-          "перед повторным запуском миграции. См. ADR §4.2."
+          "TASK-039: pg_partman extension required in production. " \
+          "DBA должен выполнить CREATE EXTENSION pg_partman (superuser) перед миграцией."
       end
 
-      warn "[TASK-039 Migration #5] pg_partman extension недоступен в #{Rails.env} — skip partitioning. " \
-           "В production миграция raise."
+      say "[TASK-039 Migration #5] pg_partman не установлен в #{Rails.env} — " \
+          "skip managed partitioning. Таблица уже partitioned declaratively (migration #1) " \
+          "+ default partition catches все INSERTs. В prod — managed via pg_partman."
       return
     end
 
-    execute "CREATE EXTENSION IF NOT EXISTS pg_partman"
-
-    # Partition management в отдельной транзакции —
-    # если UPDATE part_config упадёт, create_parent уже done (idempotent через partman state).
     ActiveRecord::Base.transaction do
-      execute <<~SQL
+      start_partition = (Date.current.beginning_of_month - 3.months).strftime("%Y-%m-%d")
+
+      execute(<<~SQL)
         SELECT partman.create_parent(
           p_parent_table => 'public.trends_daily_aggregates',
           p_control => 'date',
           p_type => 'native',
           p_interval => 'monthly',
           p_premake => 4,
-          p_start_partition => to_char(CURRENT_DATE, 'YYYY-MM-01')
+          p_start_partition => '#{start_partition}'
         );
       SQL
 
-      execute <<~SQL
+      execute(<<~SQL)
         UPDATE partman.part_config
         SET retention = '2 years',
             retention_keep_table = false,
@@ -54,31 +59,29 @@ class PartitionTrendsDailyAggregates < ActiveRecord::Migration[8.0]
   rescue ActiveRecord::StatementInvalid => e
     raise if Rails.env.production?
 
-    warn "[TASK-039 Migration #5] partman setup failed in #{Rails.env}: #{e.message}"
+    say "[TASK-039 Migration #5] partman setup failed в #{Rails.env}: #{e.message}"
   end
 
   def down
-    # pg_partman undo_partition НЕ чистый reverse: либо создаёт divergent unpart table,
-    # либо требует pg_partman >= 4.7 для in-place consolidation. Production rollback:
-    # 1. pg_dump данных из trends_daily_aggregates_p* партиций
-    # 2. SELECT partman.undo_partition('public.trends_daily_aggregates') — вручную
+    # undo_partition может создать divergent state. Production rollback:
+    # 1. pg_dump trends_daily_aggregates_p*
+    # 2. SELECT partman.undo_partition('public.trends_daily_aggregates') (manual)
     # 3. DELETE FROM partman.part_config WHERE parent_table = '...'
-    # 4. DROP EXTENSION pg_partman CASCADE (если не нужен другим таблицам)
-    # 5. pg_restore данных в unpartitioned trends_daily_aggregates
+    # 4. Миграция #1 drop_table на rollback
     raise ActiveRecord::IrreversibleMigration,
-      "TASK-039 partitioning down требует ручного rollback процесса — см. комментарий в миграции. " \
-      "Automated down скрывал бы data loss risks."
+      "TASK-039 pg_partman setup down требует manual rollback — см. комментарий. " \
+      "Automated down скрывал бы data loss."
   end
 
   private
 
-  def pg_partman_available?
-    result = execute(<<~SQL).first
-      SELECT 1 FROM pg_available_extensions WHERE name = 'pg_partman' LIMIT 1
-    SQL
+  # Проверяет ЧТО extension INSTALLED (создан в DB), не только available (installable).
+  # SF-6 CR iter 2: pg_available_extensions показывает installable, pg_extension — created.
+  def pg_partman_installed?
+    result = execute("SELECT 1 FROM pg_extension WHERE extname = 'pg_partman' LIMIT 1").first
     !result.nil?
   rescue StandardError => e
-    warn "[TASK-039] pg_partman availability check failed: #{e.message}"
+    say "[TASK-039] pg_partman installation check failed: #{e.message}"
     false
   end
 end

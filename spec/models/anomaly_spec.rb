@@ -5,7 +5,7 @@ require "rails_helper"
 RSpec.describe Anomaly, type: :model do
   describe "associations" do
     it { is_expected.to belong_to(:stream) }
-    it { is_expected.to have_many(:anomaly_attributions).dependent(:destroy) }
+    it { is_expected.to have_many(:anomaly_attributions).dependent(:delete_all) }
   end
 
   describe "validations" do

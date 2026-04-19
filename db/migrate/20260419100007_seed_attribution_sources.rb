@@ -92,7 +92,10 @@ class SeedAttributionSources < ActiveRecord::Migration[8.0]
   def up
     now = Time.current
     rows = SOURCES.map { |s| s.merge(created_at: now, updated_at: now) }
-    AttributionSource.upsert_all(rows, unique_by: :source)
+
+    # N-6 CR iter 2: on_duplicate: :skip — idempotent re-run не перезаписывает
+    # admin-tuned priorities/enabled flags (будущие integration tasks toggle enabled=true).
+    AttributionSource.upsert_all(rows, unique_by: :source, on_duplicate: :skip)
 
     # Invalidate cache for known_sources lookup (AnomalyAttribution validator).
     Rails.cache.delete(AttributionSource::CACHE_KEY) if defined?(AttributionSource)

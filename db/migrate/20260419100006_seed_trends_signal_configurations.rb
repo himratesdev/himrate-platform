@@ -65,7 +65,11 @@ class SeedTrendsSignalConfigurations < ActiveRecord::Migration[8.0]
       }
     end
 
-    SignalConfiguration.upsert_all(rows, unique_by: %i[signal_type category param_name])
+    # N-6 CR iter 2: on_duplicate: :skip prevents перезапись admin-tuned values
+    # при db:migrate:redo. На первом deploy — insert. На повторе — no-op.
+    SignalConfiguration.upsert_all(rows,
+      unique_by: %i[signal_type category param_name],
+      on_duplicate: :skip)
   end
 
   def down
