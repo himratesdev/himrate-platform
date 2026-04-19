@@ -54,8 +54,11 @@ class CreateTrendsDailyAggregates < ActiveRecord::Migration[8.0]
         -- Cache versioning (ADR §4.12)
         schema_version integer NOT NULL DEFAULT 2,
 
-        created_at timestamp(6) without time zone NOT NULL,
-        updated_at timestamp(6) without time zone NOT NULL,
+        -- N-9 CR iter 3: DEFAULT now() для raw INSERT пути (workers' insert_all
+        -- с partial column mapping). Rails AR callbacks заполнят timestamps
+        -- при save, DB default — fallback для direct SQL writes.
+        created_at timestamp(6) without time zone NOT NULL DEFAULT now(),
+        updated_at timestamp(6) without time zone NOT NULL DEFAULT now(),
 
         -- Composite PK обязателен: partition key (date) в PK для native partitioning
         PRIMARY KEY (id, date),

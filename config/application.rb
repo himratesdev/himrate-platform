@@ -13,6 +13,13 @@ module Himrate
     # Initialize configuration defaults for originally generated Rails version.
     config.load_defaults 8.1
 
+    # TASK-039 MF-3: SQL schema format required for native PG partitioning.
+    # Ruby schema dumper не умеет корректно выражать declarative partitioning
+    # (default partitions emit INHERITS syntax, which PG 11+ запрещает для
+    # partitioned parents). SQL format через pg_dump корректно handles
+    # PARTITION OF syntax. structure.sql regenerated каждый db:migrate.
+    config.active_record.schema_format = :sql
+
     # Please, add to the `ignore` list any other `lib` subdirectories that do
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
