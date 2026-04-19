@@ -2,10 +2,12 @@
 # для native monthly partitioning (trends_daily_aggregates).
 #
 # Tag convention: ghcr.io/himratesdev/himrate-postgres:16-partman-v{N}.
-# При любом изменении этого Dockerfile:
-#   1. Bump версию здесь (VERSION below) + в build-db-image.yml + config/deploy.yml
-#   2. Commit → CI builds new image с новым tag
-#   3. Coordinated kamal accessory reboot db -d <dest>
+# При любом изменении этого Dockerfile bump version в 3 местах consistently:
+#   1. `FROM postgres:N.N` (если PG minor bump ниже в этом файле)
+#   2. `LABEL org.opencontainers.image.version="..."` ниже в этом файле
+#   3. `IMAGE_TAG` env в .github/workflows/build-db-image.yml
+#   4. `accessories.db.image` tag в config/deploy.yml
+# После bump: commit → CI builds new image → coordinated kamal accessory reboot.
 # Explicit versioning предотвращает mutable tag drift (CR SF-1).
 #
 # Image: ghcr.io/himratesdev/himrate-postgres:16-partman-v1
