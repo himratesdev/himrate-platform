@@ -2,7 +2,7 @@
 # Verifies that Kamal deploy completed successfully on VPS.
 # Used for both staging and production.
 #
-# 7 checks: containers, health, migrations, sidekiq, redis, flipper, cron
+# 8 checks: containers, health, migrations, sidekiq, redis, flipper, cron, pg_partman
 
 name: 'Verify Deployment'
 description: 'Verify Kamal deployment health on target VPS'
@@ -50,7 +50,7 @@ runs:
       shell: bash
       run: sleep 30
 
-    - name: 'Check 1/7: Containers on correct SHA'
+    - name: 'Check 1/8: Containers on correct SHA'
       shell: bash
       run: |
         echo "Checking containers for SHA: ${{ inputs.expected_sha }}"
@@ -72,7 +72,7 @@ runs:
         fi
         echo "All running containers on SHA $SHORT_SHA"
 
-    - name: 'Check 2/7: Health endpoint (container-internal, bypasses proxy)'
+    - name: 'Check 2/8: Health endpoint (container-internal, bypasses proxy)'
       shell: bash
       run: |
         WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
@@ -87,7 +87,7 @@ runs:
           exit 1
         fi
 
-    - name: 'Check 3/7: Migrations'
+    - name: 'Check 3/8: Migrations'
       shell: bash
       run: |
         WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
@@ -104,7 +104,7 @@ runs:
           exit 1
         fi
 
-    - name: 'Check 4/7: Sidekiq'
+    - name: 'Check 4/8: Sidekiq'
       shell: bash
       run: |
         JOB_CONTAINER=$(ssh root@${{ inputs.host }} \
@@ -120,7 +120,7 @@ runs:
           exit 1
         fi
 
-    - name: 'Check 5/7: Redis'
+    - name: 'Check 5/8: Redis'
       shell: bash
       run: |
         REDIS_VERSION=$(ssh root@${{ inputs.host }} \
@@ -142,7 +142,7 @@ runs:
           exit 1
         fi
 
-    - name: 'Check 6/7: Flipper'
+    - name: 'Check 6/8: Flipper'
       shell: bash
       run: |
         WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
@@ -155,7 +155,7 @@ runs:
           echo "::warning::Could not read Flipper flags"
         fi
 
-    - name: 'Check 7/7: Sidekiq Cron'
+    - name: 'Check 7/8: Sidekiq Cron'
       shell: bash
       run: |
         WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
@@ -166,4 +166,50 @@ runs:
         echo "$CRON"
         if [ "$CRON" = "unavailable" ]; then
           echo "::warning::Could not read Sidekiq Cron jobs"
+        fi
+
+    # TASK-039 PR #90: fail-fast verification что pg_partman configured. Migration
+    # #5 должна оставить 1 row в partman.part_config для public.trends_daily_aggregates.
+    # Если row missing — значит migration #5 skipped (schema_migrations drift) или
+    # create_parent failed silently. Broken partitioning = runtime INSERTs в default
+    # partition вместо monthly → retention/backfill механика не работает.
+    # Verification catches drift immediately instead of discovering в production runtime.
+    - name: 'Check 8/8: pg_partman configured (TASK-039)'
+      shell: bash
+      run: |
+        DB_CONTAINER=$(ssh root@${{ inputs.host }} \
+          "docker ps -qf name=himrate-db")
+        if [ -z "$DB_CONTAINER" ]; then
+          echo "::error::himrate-db container not found"
+          exit 1
+        fi
+
+        DB_NAME="himrate_${{ inputs.destination }}"
+        COUNT=$(ssh root@${{ inputs.host }} \
+          "docker exec $DB_CONTAINER psql -U himrate -d $DB_NAME -tAc \
+           \"SELECT COUNT(*) FROM partman.part_config WHERE parent_table = 'public.trends_daily_aggregates'\" 2>/dev/null" \
+          || echo "ERROR")
+
+        echo "partman.part_config rows для trends_daily_aggregates: $COUNT"
+
+        if [ "$COUNT" = "ERROR" ]; then
+          echo "::error::Cannot query partman.part_config. Extension not installed OR DB connection failed."
+          exit 1
+        fi
+
+        if [ "$COUNT" -lt 1 ]; then
+          echo "::error::pg_partman NOT configured для trends_daily_aggregates."
+          echo "::error::Migration #5 (20260419100005_partition_trends_daily_aggregates) не выполнила create_parent."
+          echo "::error::Likely cause: schema_migrations drift — row exists but migration fact-skipped."
+          echo "::error::Recovery: DELETE FROM schema_migrations WHERE version = '20260419100005' + redeploy."
+          exit 1
+        fi
+
+        PARTITIONS=$(ssh root@${{ inputs.host }} \
+          "docker exec $DB_CONTAINER psql -U himrate -d $DB_NAME -tAc \
+           \"SELECT COUNT(*) FROM pg_tables WHERE tablename LIKE 'trends_daily_aggregates_p2%'\" 2>/dev/null")
+        echo "Monthly partitions created: $PARTITIONS (expected ≥ 8 — 3 historical + current + 4 premake)"
+
+        if [ "$PARTITIONS" -lt 8 ]; then
+          echo "::warning::Fewer monthly partitions than expected — pg_partman create_parent могла частично отработать."
         fi
