@@ -30,11 +30,20 @@ class PartitionTrendsDailyAggregates < ActiveRecord::Migration[8.0]
 
   def up
     unless pg_partman_installed?
+      if Rails.env.test?
+        # CI test job запускает stock postgres:16 service (.github/workflows/ci.yml)
+        # БЕЗ pg_partman — мы тестируем логику приложения, не partitioning mechanics.
+        # Default partition (migration #1) catches все INSERTs — достаточно для тестов.
+        # В staging/production/dev — pg_partman обязателен (raise ниже).
+        say "[TASK-039 Migration #5] pg_partman skipped в test env — default partition handles INSERTs"
+        return
+      end
+
       raise ActiveRecord::MigrationError,
         "TASK-039: pg_partman extension required в #{Rails.env}. " \
-        "Dev/test: после build custom postgres image (db/Dockerfile), перед " \
-        "db:migrate execute 'CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman'. " \
-        "Production: DBA должен выполнить CREATE EXTENSION (superuser) на accessory reboot."
+        "Dev: используй custom postgres image (db/Dockerfile) локально ИЛИ " \
+        "execute 'CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman'. " \
+        "Staging/Production: DBA должен выполнить CREATE EXTENSION (superuser) на accessory reboot."
     end
 
     ActiveRecord::Base.transaction do
