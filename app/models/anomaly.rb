@@ -10,6 +10,9 @@ class Anomaly < ApplicationRecord
   ].freeze
 
   belongs_to :stream
+  # SF-5 CR iter 2: delete_all vs destroy — attribution data без callbacks,
+  # pipeline может создавать N attributions per anomaly, single SQL DELETE faster.
+  has_many :anomaly_attributions, dependent: :delete_all
 
   validates :timestamp, presence: true
   validates :anomaly_type, presence: true, inclusion: { in: ANOMALY_TYPES }

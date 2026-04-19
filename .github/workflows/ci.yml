@@ -60,7 +60,10 @@ jobs:
           RAILS_ENV: test
           DATABASE_URL: postgres://himrate_test:himrate_test@localhost:5432/himrate_test
           REDIS_URL: redis://localhost:6379/0
-        run: bundle exec rails db:prepare
+        # TASK-039 MF-3: db:create db:migrate (explicit) вместо db:prepare —
+        # schema_format = :sql, а structure.sql не committed в репо.
+        # db:migrate runs от scratch, structure.sql auto-generated после.
+        run: bundle exec rails db:create db:migrate
       - name: Run RSpec
         env:
           RAILS_ENV: test
