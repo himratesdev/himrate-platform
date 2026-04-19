@@ -26,25 +26,38 @@ jobs:
       # Extract image tag из config/deploy.yml — SINGLE SOURCE OF TRUTH.
       # deploy.yml accessories.db.image — authoritative version reference.
       # Dockerfile LABEL получает tag через --build-arg IMAGE_VERSION (below).
-      # Image pushed с тем же tag. Result: zero drift possible, no grep-based
-      # assertion нужна (3-way sync → 1-way read from deploy.yml).
+      # Image pushed с тем же tag. Result: zero drift possible.
+      #
+      # PG W-2 fix: proper YAML parsing через yq (v4.x pre-installed на
+      # ubuntu-latest runners, mikefarah/yq) вместо grep/sed heuristics.
+      # Benefits: future-proof для multi-accessory configs (db-replica, etc.),
+      # no regex fragility, standard tooling. Fail-fast если path не существует.
       - name: Read image tag from deploy.yml (single source of truth)
         id: image_tag
         run: |
           set -euo pipefail
-          # | head -1 — defensive: если deploy.yml когда-нибудь получит
-          # accessory override с second matching line, не формируем multiline output
-          # (GITHUB_OUTPUT требует heredoc для multiline — фикс для future-proof) (CR N-2).
-          TAG=$(grep -E '^\s*image:\s*ghcr.io/himratesdev/himrate-postgres:' config/deploy.yml \
-                | head -1 \
-                | sed -E 's/.*himrate-postgres:([^ ]+).*/\1/')
-          if [ -z "$TAG" ]; then
-            echo "::error::Failed to extract image tag from config/deploy.yml"
-            echo "::error::Expected line: accessories.db.image: ghcr.io/himratesdev/himrate-postgres:<TAG>"
+
+          # Verify yq available (ubuntu-latest runners ship с mikefarah/yq v4.x).
+          yq --version || (echo "::error::yq not installed on runner" && exit 1)
+
+          IMAGE=$(yq '.accessories.db.image' config/deploy.yml)
+          if [ -z "$IMAGE" ] || [ "$IMAGE" = "null" ]; then
+            echo "::error::accessories.db.image не найден в config/deploy.yml"
             exit 1
           fi
+
+          # Bash parameter expansion — extract substring после last ':'
+          # (handles ghcr.io/org/repo:tag correctly even if registry имеет ':').
+          TAG="${IMAGE##*:}"
+          if [ -z "$TAG" ] || [ "$TAG" = "$IMAGE" ]; then
+            echo "::error::Image reference без tag: $IMAGE"
+            echo "::error::Expected format: ghcr.io/himratesdev/himrate-postgres:<TAG>"
+            exit 1
+          fi
+
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "✓ Image tag (from deploy.yml): $TAG"
+          echo "✓ Image: $IMAGE"
+          echo "✓ Tag:   $TAG"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3.3.0
