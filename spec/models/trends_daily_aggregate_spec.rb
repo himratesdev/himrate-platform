@@ -27,29 +27,100 @@ RSpec.describe TrendsDailyAggregate do
       expect(second).to be_valid
     end
 
-    describe "numerical bounds" do
+    describe "Trust Index bounds (0..100)" do
       it "rejects ti_avg outside 0..100" do
-        record = build(:trends_daily_aggregate, ti_avg: 150)
-        expect(record).not_to be_valid
+        expect(build(:trends_daily_aggregate, ti_avg: 150)).not_to be_valid
+        expect(build(:trends_daily_aggregate, ti_avg: -1)).not_to be_valid
       end
 
+      it "rejects ti_min outside 0..100" do
+        expect(build(:trends_daily_aggregate, ti_min: 150)).not_to be_valid
+      end
+
+      it "rejects ti_max outside 0..100" do
+        expect(build(:trends_daily_aggregate, ti_max: 150)).not_to be_valid
+      end
+
+      it "accepts ti_std >= 0 (std не может быть отрицательным)" do
+        expect(build(:trends_daily_aggregate, ti_std: 5.5)).to be_valid
+      end
+
+      it "rejects negative ti_std" do
+        expect(build(:trends_daily_aggregate, ti_std: -1)).not_to be_valid
+      end
+    end
+
+    describe "ERV percentages (0..100)" do
+      it "rejects erv_min_percent outside 0..100" do
+        expect(build(:trends_daily_aggregate, erv_min_percent: 150)).not_to be_valid
+      end
+
+      it "rejects erv_max_percent outside 0..100" do
+        expect(build(:trends_daily_aggregate, erv_max_percent: -1)).not_to be_valid
+      end
+    end
+
+    describe "CCV non-negative" do
+      it "rejects negative ccv_avg" do
+        expect(build(:trends_daily_aggregate, ccv_avg: -1)).not_to be_valid
+      end
+
+      it "rejects negative ccv_peak" do
+        expect(build(:trends_daily_aggregate, ccv_peak: -1)).not_to be_valid
+      end
+    end
+
+    describe "fractions (0..1)" do
       it "rejects discovery_phase_score outside 0..1" do
-        record = build(:trends_daily_aggregate, discovery_phase_score: 1.5)
-        expect(record).not_to be_valid
+        expect(build(:trends_daily_aggregate, discovery_phase_score: 1.5)).not_to be_valid
       end
 
-      it "accepts follower_ccv_coupling_r in -1..1 (Pearson)" do
+      it "rejects botted_fraction outside 0..1" do
+        expect(build(:trends_daily_aggregate, botted_fraction: 1.5)).not_to be_valid
+      end
+    end
+
+    describe "Pearson r (-1..1)" do
+      it "accepts follower_ccv_coupling_r in [-1, 1]" do
         expect(build(:trends_daily_aggregate, follower_ccv_coupling_r: -0.5)).to be_valid
         expect(build(:trends_daily_aggregate, follower_ccv_coupling_r: 0.78)).to be_valid
       end
 
       it "rejects follower_ccv_coupling_r outside -1..1" do
         expect(build(:trends_daily_aggregate, follower_ccv_coupling_r: 1.5)).not_to be_valid
+        expect(build(:trends_daily_aggregate, follower_ccv_coupling_r: -1.5)).not_to be_valid
+      end
+    end
+
+    describe "streams_count non-negative" do
+      it "rejects negative streams_count" do
+        expect(build(:trends_daily_aggregate, streams_count: -1)).not_to be_valid
+      end
+    end
+
+    describe "classification_at_end inclusion" do
+      described_class::CLASSIFICATIONS.each do |cls|
+        it "accepts canonical classification: #{cls}" do
+          expect(build(:trends_daily_aggregate, classification_at_end: cls)).to be_valid
+        end
       end
 
-      it "rejects negative streams_count" do
-        record = build(:trends_daily_aggregate, streams_count: -1)
-        expect(record).not_to be_valid
+      it "rejects unknown classification" do
+        expect(build(:trends_daily_aggregate, classification_at_end: "unknown_tier")).not_to be_valid
+      end
+
+      it "allows nil (classification может отсутствовать для empty days)" do
+        expect(build(:trends_daily_aggregate, classification_at_end: nil)).to be_valid
+      end
+    end
+
+    describe "schema_version enforcement" do
+      it "accepts supported versions only" do
+        expect(build(:trends_daily_aggregate, schema_version: 2)).to be_valid
+      end
+
+      it "rejects unsupported version (prevents drift)" do
+        expect(build(:trends_daily_aggregate, schema_version: 99)).not_to be_valid
       end
     end
   end

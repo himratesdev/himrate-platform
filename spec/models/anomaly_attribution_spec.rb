@@ -3,6 +3,14 @@
 require "rails_helper"
 
 RSpec.describe AnomalyAttribution do
+  # Ensure known sources available для source inclusion validation.
+  before do
+    Rails.cache.clear
+    create(:attribution_source, :raid_organic)
+    create(:attribution_source, source: "platform_cleanup", adapter_class_name: "Trends::Attribution::PlatformCleanupAdapter")
+    create(:attribution_source, :unattributed)
+  end
+
   describe "associations" do
     it { is_expected.to belong_to(:anomaly) }
   end
@@ -31,6 +39,24 @@ RSpec.describe AnomalyAttribution do
       another = build(:anomaly_attribution, anomaly: existing.anomaly, source: "platform_cleanup")
       expect(another).to be_valid
     end
+
+    describe "source_is_known validator" do
+      it "rejects unknown source (typo protection)" do
+        record = build(:anomaly_attribution, source: "raid_bbot")
+        expect(record).not_to be_valid
+        expect(record.errors[:source]).to include(/is not a known attribution source/)
+      end
+
+      it "accepts canonical source from AttributionSource table" do
+        expect(build(:anomaly_attribution, source: "raid_organic")).to be_valid
+      end
+
+      it "accepts disabled sources (могут existing records ссылаться на disabled source)" do
+        create(:attribution_source, source: "igdb_release", enabled: false,
+          adapter_class_name: "Trends::Attribution::IgdbAdapter")
+        expect(build(:anomaly_attribution, source: "igdb_release")).to be_valid
+      end
+    end
   end
 
   describe "scopes" do
@@ -54,13 +80,17 @@ RSpec.describe AnomalyAttribution do
 
   describe "#source_config" do
     it "looks up canonical AttributionSource by source string" do
-      source_config = create(:attribution_source, :raid_organic)
+      source_config = AttributionSource.find_by(source: "raid_organic")
       attribution = create(:anomaly_attribution, source: "raid_organic")
       expect(attribution.source_config).to eq(source_config)
     end
 
     it "returns nil when source string has no config" do
-      attribution = create(:anomaly_attribution, source: "orphan_source")
+      # Валидатор блокирует unknown source через validation,
+      # но find_by возвращает nil если config был удалён между save и lookup.
+      attribution = create(:anomaly_attribution, source: "raid_organic")
+      AttributionSource.where(source: "raid_organic").delete_all
+      Rails.cache.clear
       expect(attribution.source_config).to be_nil
     end
   end

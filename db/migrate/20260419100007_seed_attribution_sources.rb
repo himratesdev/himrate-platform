@@ -1,8 +1,11 @@
 # frozen_string_literal: true
 
-# TASK-039 ADR §4.14: Seed 4 enabled v1 sources + 5 disabled placeholders для future.
+# TASK-039 ADR §4.14: Seed 4 enabled v1 sources + 4 disabled future placeholders.
 # Future integration tasks (TASK-XXX IGDB / Helix / Twitter / Viral Clip) =
 # create adapter class + UPDATE enabled=true. БЕЗ schema changes.
+#
+# Placeholders соответствуют конкретным ADR §4.14 future adapters —
+# никаких vacuous future_adapter stubs.
 
 class SeedAttributionSources < ActiveRecord::Migration[8.0]
   SOURCES = [
@@ -35,7 +38,8 @@ class SeedAttributionSources < ActiveRecord::Migration[8.0]
       metadata: {}
     },
 
-    # Future disabled placeholders (extensible БЕЗ migrations)
+    # Future disabled placeholders (каждый — конкретный ADR §4.14 адаптер,
+    # adapter_class_name готов к реализации в future integration task)
     {
       source: "igdb_release",
       enabled: false,
@@ -72,15 +76,6 @@ class SeedAttributionSources < ActiveRecord::Migration[8.0]
       display_label_ru: "Упоминание в Twitter/X",
       metadata: {}
     },
-    {
-      source: "future_adapter",
-      enabled: false,
-      priority: 100,
-      adapter_class_name: "Trends::Attribution::FutureAdapter",
-      display_label_en: "Future adapter (placeholder)",
-      display_label_ru: "Будущий адаптер (заглушка)",
-      metadata: {}
-    },
 
     # Fallback (всегда last)
     {
@@ -98,9 +93,13 @@ class SeedAttributionSources < ActiveRecord::Migration[8.0]
     now = Time.current
     rows = SOURCES.map { |s| s.merge(created_at: now, updated_at: now) }
     AttributionSource.upsert_all(rows, unique_by: :source)
+
+    # Invalidate cache for known_sources lookup (AnomalyAttribution validator).
+    Rails.cache.delete(AttributionSource::CACHE_KEY) if defined?(AttributionSource)
   end
 
   def down
     AttributionSource.where(source: SOURCES.map { |s| s[:source] }).delete_all
+    Rails.cache.delete(AttributionSource::CACHE_KEY) if defined?(AttributionSource)
   end
 end

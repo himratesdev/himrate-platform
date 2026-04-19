@@ -43,4 +43,38 @@ RSpec.describe AttributionSource do
       expect { source.adapter_class }.to raise_error(described_class::AdapterNotFound, /not found/)
     end
   end
+
+  describe ".known_sources (cached lookup for AnomalyAttribution validation)" do
+    before do
+      Rails.cache.clear
+      create(:attribution_source, :raid_organic)
+      create(:attribution_source, :unattributed)
+      create(:attribution_source, :disabled, source: "disabled_source")
+    end
+
+    it "returns all source strings (enabled + disabled)" do
+      result = described_class.known_sources
+      expect(result).to match_array([ "raid_organic", "unattributed", "disabled_source" ])
+    end
+
+    it "caches result for CACHE_TTL (10 minutes)" do
+      expect(Rails.cache).to receive(:fetch)
+        .with(described_class::CACHE_KEY, expires_in: described_class::CACHE_TTL)
+        .and_call_original
+      described_class.known_sources
+    end
+
+    it "invalidates cache on AttributionSource create" do
+      described_class.known_sources # prime cache
+      create(:attribution_source, source: "new_source")
+      expect(described_class.known_sources).to include("new_source")
+    end
+
+    it "invalidates cache on AttributionSource destroy" do
+      to_delete = create(:attribution_source, source: "transient")
+      expect(described_class.known_sources).to include("transient")
+      to_delete.destroy!
+      expect(described_class.known_sources).not_to include("transient")
+    end
+  end
 end
