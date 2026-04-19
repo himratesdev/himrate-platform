@@ -213,3 +213,19 @@ runs:
         if [ "$PARTITIONS" -lt 8 ]; then
           echo "::warning::Fewer monthly partitions than expected — pg_partman create_parent могла частично отработать."
         fi
+
+        # Default partition row count monitor (architectural caveat: default NOT managed
+        # by partman, retention не применяется). Baseline healthy = 0 rows. Non-zero
+        # = backfill drift / premake gap / far-past dates. Threshold 100 = warning
+        # (не fail) — temporary state during backfills OK, persistent accumulation = ops issue.
+        # См. docs/runbooks/pg_partman_recovery.md §Default partition accumulation.
+        DEFAULT_ROWS=$(ssh root@${{ inputs.host }} \
+          "docker exec $DB_CONTAINER psql -U himrate -d $DB_NAME -tAc \
+           \"SELECT COUNT(*) FROM trends_daily_aggregates_default\" 2>/dev/null" \
+          || echo "0")
+        echo "Default partition rows: $DEFAULT_ROWS (baseline 0 healthy)"
+        if [ "$DEFAULT_ROWS" -gt 100 ]; then
+          echo "::warning::Default partition имеет $DEFAULT_ROWS rows — retention НЕ применяется."
+          echo "::warning::Investigate: docs/runbooks/pg_partman_recovery.md §Default partition accumulation"
+          echo "::warning::Triage: oldest_date/newest_date distinguishes backfill drift vs premake gap vs data integrity"
+        fi
