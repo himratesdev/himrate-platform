@@ -32,11 +32,20 @@ KAMAL_REGISTRY_PASSWORD=${KAMAL_REGISTRY_PASSWORD:-$(gh auth token)}
 
 ```bash
 # .kamal/secrets-common
-KAMAL_REGISTRY_PASSWORD=${KAMAL_REGISTRY_PASSWORD:?must be exported...}
+KAMAL_REGISTRY_PASSWORD=$KAMAL_REGISTRY_PASSWORD
 ```
 
-Fail-fast если env var не установлен. Dedicated fine-grained PAT с минимальным
-scope required exported в shell перед kamal командой.
+Plain passthrough ($VAR). Fail-fast guard через `${VAR:?msg}` bash syntax НЕ
+работает в Kamal secrets files — Ruby-dotenv parser не поддерживает bash
+parameter expansion `:?` и включает literal `:?message` в value (результат:
+password length = 2× actual, docker login fails с denied: denied).
+
+Fail-fast validation реализован в другом месте:
+- **CI:** `Validate required secrets` step в `ci.yml` (bash loop с indirect
+  expansion `${!var:-}`) проверяет 16 required secrets ПЕРЕД kamal invocation.
+- **Local:** pre-deploy checklist в этом runbook — developer должен export
+  PAT в shell (Keychain helper function ниже автоматизирует). Если забыл —
+  kamal docker login fails loudly с actionable message.
 
 ## Генерация PAT (один раз, затем ротация каждые 90 дней)
 

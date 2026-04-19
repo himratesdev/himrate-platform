@@ -41,8 +41,11 @@ class PartitionTrendsDailyAggregates < ActiveRecord::Migration[8.0]
 
       raise ActiveRecord::MigrationError,
         "TASK-039: pg_partman extension required в #{Rails.env}. " \
-        "Dev: используй custom postgres image (db/Dockerfile) локально ИЛИ " \
-        "execute 'CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman'. " \
+        "Dev: запусти Postgres через custom image `db/Dockerfile` " \
+        "(docker build --build-arg IMAGE_VERSION=local -t himrate-postgres:local db/) — " \
+        "extension control files installed на image build. " \
+        "Stock postgres:16 image НЕ содержит pg_partman files, просто CREATE EXTENSION " \
+        "упадёт с 'could not open extension control file'. " \
         "Staging/Production: DBA должен выполнить CREATE EXTENSION (superuser) на accessory reboot."
     end
 
