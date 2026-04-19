@@ -163,7 +163,9 @@ jobs:
     timeout-minutes: 15
     environment: production
     permissions:
-      packages: read
+      # Registry auth через dedicated PAT (secrets.KAMAL_REGISTRY_PASSWORD), НЕ
+      # через workflow GITHUB_TOKEN → packages scope здесь не нужен. Staging
+      # job contrast: staging использует GITHUB_TOKEN для pull → ему packages: write.
       contents: read
     steps:
       - uses: actions/checkout@v4
@@ -199,6 +201,9 @@ jobs:
           KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
           RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          # ⚠️ POSTGRES_PASSWORD ДОЛЖЕН быть URL-safe (hex charset). Generate через
+          # `openssl rand -hex 32`, НЕ `-base64 32` (base64 содержит +/= которые
+          # ломают URI parsing). Same constraint applies для STAGING_DATABASE_URL secret.
           DATABASE_URL: postgres://himrate:${{ secrets.POSTGRES_PASSWORD }}@himrate-db:5432/himrate_production
           REDIS_URL: redis://himrate-redis:6379/0
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
@@ -217,4 +222,10 @@ jobs:
           ALLOWED_EXTENSION_ID: ${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
           EVENTSUB_WEBHOOK_URL: https://api.himrate.com
+        # kamal setup (vs kamal deploy): idempotent full boot — app + proxy +
+        # accessories. Безопасен на subsequent runs (Kamal skips healthy components).
+        # Немного тяжелее kamal deploy (~30s дополнительно на accessory health checks),
+        # но gives консистентный entry point: один command для first v*.* и для
+        # subsequent releases. Future optimization: split first-time setup в manual
+        # workflow, auto releases use kamal deploy (lighter).
         run: kamal setup -d production
