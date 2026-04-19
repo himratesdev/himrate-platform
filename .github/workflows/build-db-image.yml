@@ -28,19 +28,22 @@ jobs:
       # Dockerfile LABEL получает tag через --build-arg IMAGE_VERSION (below).
       # Image pushed с тем же tag. Result: zero drift possible.
       #
-      # PG W-2 fix: proper YAML parsing через yq (v4.x pre-installed на
-      # ubuntu-latest runners, mikefarah/yq) вместо grep/sed heuristics.
-      # Benefits: future-proof для multi-accessory configs (db-replica, etc.),
-      # no regex fragility, standard tooling. Fail-fast если path не существует.
-      - name: Read image tag from deploy.yml (single source of truth)
+      # PG W-2 revised: pinned mikefarah/yq@v4.44.3 action (not runner default).
+      # Rationale: ubuntu-latest pre-installs yq, но GHA может удалить binary
+      # в будущих images → silent breakage. Pinned action = supply-chain locked,
+      # reproducible builds, immune to runner image changes.
+      - name: Read image reference from deploy.yml via pinned yq
+        id: read_image
+        uses: mikefarah/yq@v4.44.3
+        with:
+          cmd: yq '.accessories.db.image' config/deploy.yml
+
+      - name: Extract tag portion and validate
         id: image_tag
         run: |
           set -euo pipefail
 
-          # Verify yq available (ubuntu-latest runners ship с mikefarah/yq v4.x).
-          yq --version || (echo "::error::yq not installed on runner" && exit 1)
-
-          IMAGE=$(yq '.accessories.db.image' config/deploy.yml)
+          IMAGE="${{ steps.read_image.outputs.result }}"
           if [ -z "$IMAGE" ] || [ "$IMAGE" = "null" ]; then
             echo "::error::accessories.db.image не найден в config/deploy.yml"
             exit 1
