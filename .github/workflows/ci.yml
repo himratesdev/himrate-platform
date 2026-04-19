@@ -181,8 +181,14 @@ jobs:
       # (app + proxy + accessories). Safe на subsequent runs (Kamal skips
       # healthy components). Немного heavier than kamal deploy ~30s на health
       # checks — acceptable cost для единого mental model entry point.
+      #
+      # Defense-in-depth: trap EXIT гарантирует cleanup .kamal/secrets.staging
+      # после step exit (success OR failure). Runner ephemeral всё равно, но
+      # снижает окно exposure если CI logs или cache checkpoints capture files.
       - name: Deploy to staging
-        run: kamal setup -d staging
+        run: |
+          trap 'rm -f .kamal/secrets.staging' EXIT
+          kamal setup -d staging
 
   # === Verify Staging Deploy — after deploy-staging ===
   verify-staging:
@@ -319,5 +325,8 @@ jobs:
       # kamal setup: idempotent full-boot (see staging decision comment выше).
       # Future optimization (when prod becomes real traffic): split first-time
       # manual workflow_dispatch setup, tag releases use kamal deploy (lighter).
+      # Trap EXIT cleanup для defense-in-depth (see staging).
       - name: Deploy to production
-        run: kamal setup -d production
+        run: |
+          trap 'rm -f .kamal/secrets.production' EXIT
+          kamal setup -d production
