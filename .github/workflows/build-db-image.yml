@@ -13,7 +13,6 @@ on:
 permissions:
   contents: read
   packages: write
-  security-events: write # trivy SARIF upload
 
 env:
   # Versioned tag — bump при любом intentional изменении db/Dockerfile (CR SF-1).
@@ -53,22 +52,7 @@ jobs:
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-      # CR N-5: trivy scan для CVE detection. Не-блокирующий (exit-code: 0 →
-      # report only) — postgres base может содержать upstream CVEs которые
-      # не под нашим контролем. Блокирующий scan создал бы false positives.
-      # SARIF upload в GitHub Security tab для tracking.
-      - name: Scan image for CVEs (report only)
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          image-ref: ghcr.io/himratesdev/himrate-postgres:${{ env.IMAGE_TAG }}
-          format: sarif
-          output: trivy-results.sarif
-          severity: CRITICAL,HIGH
-          exit-code: 0 # non-blocking — see comment above
-
-      - name: Upload Trivy scan results to GitHub Security tab
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3.27.0
-        with:
-          sarif_file: trivy-results.sarif
-          category: postgres-image
+      # CR N-5 (CVE scan) — deferred to separate follow-up PR.
+      # Initial attempt использовал aquasecurity/trivy-action@0.28.0 (non-existent tag).
+      # Требует корректного version pinning + настройки non-blocking exit + SARIF upload.
+      # Создать follow-up task: "TASK-XXX: CVE scanning в build workflows (trivy)".
