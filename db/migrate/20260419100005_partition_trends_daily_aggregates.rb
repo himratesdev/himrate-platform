@@ -11,8 +11,16 @@
 # trends:backfill_aggregates (SRS §6) — исторические данные уходят в monthly
 # partitions вместо default.
 #
-# В production pg_partman ОБЯЗАТЕЛЕН (raise). В dev/test допустим skip с say
-# (таблица partitioned declaratively в #1 + default partition catches всё).
+# pg_partman 5.x API (обязателен — Dockerfile pin'ит postgresql-16-partman 5.x):
+#   • p_interval: PostgreSQL standard interval format ('1 month'). 4.x shortcut
+#     'monthly' был removed в 5.0. Fail-loud если используется старый syntax.
+#   • p_type: default 'range' (native PostgreSQL RANGE partitioning). 4.x
+#     'native' keyword удалён — pg_partman 5.x supports только PostgreSQL-native
+#     partitioning, flag больше не нужен.
+#
+# В production pg_partman ОБЯЗАТЕЛЕН (raise). В dev/test same — fail-fast
+# раскрывает extension install bugs немедленно вместо silent skip, который
+# маскирует broken production partitions.
 #
 # Down marked irreversible — undo_partition может создать divergent state,
 # manual rollback procedure documented в def down.
@@ -22,16 +30,11 @@ class PartitionTrendsDailyAggregates < ActiveRecord::Migration[8.0]
 
   def up
     unless pg_partman_installed?
-      if Rails.env.production?
-        raise ActiveRecord::MigrationError,
-          "TASK-039: pg_partman extension required in production. " \
-          "DBA должен выполнить CREATE EXTENSION pg_partman (superuser) перед миграцией."
-      end
-
-      say "[TASK-039 Migration #5] pg_partman не установлен в #{Rails.env} — " \
-          "skip managed partitioning. Таблица уже partitioned declaratively (migration #1) " \
-          "+ default partition catches все INSERTs. В prod — managed via pg_partman."
-      return
+      raise ActiveRecord::MigrationError,
+        "TASK-039: pg_partman extension required в #{Rails.env}. " \
+        "Dev/test: после build custom postgres image (db/Dockerfile), перед " \
+        "db:migrate execute 'CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman'. " \
+        "Production: DBA должен выполнить CREATE EXTENSION (superuser) на accessory reboot."
     end
 
     ActiveRecord::Base.transaction do
@@ -41,8 +44,7 @@ class PartitionTrendsDailyAggregates < ActiveRecord::Migration[8.0]
         SELECT partman.create_parent(
           p_parent_table => 'public.trends_daily_aggregates',
           p_control => 'date',
-          p_type => 'native',
-          p_interval => 'monthly',
+          p_interval => '1 month',
           p_premake => 4,
           p_start_partition => '#{start_partition}'
         );
@@ -56,10 +58,6 @@ class PartitionTrendsDailyAggregates < ActiveRecord::Migration[8.0]
         WHERE parent_table = 'public.trends_daily_aggregates';
       SQL
     end
-  rescue ActiveRecord::StatementInvalid => e
-    raise if Rails.env.production?
-
-    say "[TASK-039 Migration #5] partman setup failed в #{Rails.env}: #{e.message}"
   end
 
   def down

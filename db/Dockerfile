@@ -30,11 +30,20 @@ FROM postgres:16.4
 # === Stable layers (cached across version bumps) ===
 #
 # Install pg_partman from PostgreSQL APT repo (postgresql-16-partman package).
-# Current stable в Debian bookworm: 4.7.x (supports native PG partitioning per
-# ADR §4.2). pg_partman НЕ требует shared_preload_libraries — используем Sidekiq
-# cron для partman.run_maintenance (ADR §4.2 Phase B).
+# PINNED version: pg_partman 5.4.3 (latest stable as of 2026-04).
+# ADR §4.2: native PostgreSQL RANGE partitioning. pg_partman НЕ требует
+# shared_preload_libraries — используем Sidekiq cron для partman.run_maintenance.
+#
+# pg_partman 5.x API (breaking changes от 4.x):
+#   • p_interval: PostgreSQL standard interval format ('1 month'), не shortcut 'monthly'
+#   • p_type: default 'range', keyword 'native' removed
+# db/migrate/*_partition_trends_daily_aggregates.rb использует 5.x syntax.
+#
+# Version pinning: exact version (5.4.3-1.pgdg12+1) для reproducible builds.
+# При bump — edit этот line + deploy.yml tag (16-partman-v<N>) + CR review.
+# Defense против breaking changes 5.x → 6.x whenever.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends postgresql-16-partman \
+ && apt-get install -y --no-install-recommends postgresql-16-partman=5.4.3-1.pgdg12+1 \
  && rm -rf /var/lib/apt/lists/*
 
 # Build-time verification: extension control файл присутствует.
