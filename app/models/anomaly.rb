@@ -10,6 +10,7 @@ class Anomaly < ApplicationRecord
   ].freeze
 
   belongs_to :stream
+  has_many :anomaly_attributions, dependent: :destroy
 
   validates :timestamp, presence: true
   validates :anomaly_type, presence: true, inclusion: { in: ANOMALY_TYPES }
