@@ -209,6 +209,52 @@ SELECT count(*) FROM trends_daily_aggregates_default;
 -- Expected: 0 (production). Non-zero → partition coverage gap
 ```
 
+### Default partition accumulation (архитектурный caveat)
+
+**Важно:** `trends_daily_aggregates_default` partition создана в migration #1 declaratively. Migration #5 `create_parent` вызывается с `p_default_table => false` — pg_partman использует existing default, НЕ управляет ею.
+
+**Последствия:**
+- Retention policy (2 years) **НЕ применяется** к rows в default partition. pg_partman drop'ает только старые monthly partitions (`trends_daily_aggregates_p*`).
+- Active window: current-3 до current+4 месяцев (7 months coverage via `p_premake=4` + `p_start_partition` offset). Rows вне окна landing в default.
+
+**Когда default получает rows (ожидаемые и неожиданные):**
+- 🔴 **Future INSERTs без premake-расширения:** если partman cron не успевает создать новые monthly partitions. Mitigation: Sidekiq cron `partman.run_maintenance` ежедневно (Phase B).
+- 🔴 **Backfill старых данных > 3 месяцев назад:** `rake trends:backfill_aggregates` с датами вне окна → rows в default. Mitigation: backfill ТОЛЬКО в active window; для historical imports — manual `partman.create_parent` с historical start_partition.
+- 🔴 **Edge-case recovery scenarios:** stream.online events с `started_at` из far past (broadcaster schedule error, TZ bug) — rare но possible.
+
+**Detection (add к monthly ops checklist):**
+
+```sql
+-- Baseline: production healthy state = 0 rows в default
+SELECT COUNT(*) AS default_row_count,
+       MIN(date) AS oldest_date,
+       MAX(date) AS newest_date
+FROM trends_daily_aggregates_default;
+
+-- Non-zero? Investigate:
+-- 1. oldest_date < current - 3 months → backfill drift. Fix: create historical partition + move rows.
+-- 2. newest_date > current + 4 months → premake gap. Fix: ensure partman cron running, run maintenance manually.
+-- 3. scattered → data integrity issue (bogus dates в source).
+```
+
+**Mitigation для routine backfills:**
+
+Если backfill required за period > 3 months назад, pre-create partition:
+
+```sql
+-- Example: backfill Jan 2025 data
+SELECT partman.create_parent(
+  p_parent_table => 'public.trends_daily_aggregates',
+  p_control => 'date',
+  p_interval => '1 month',
+  p_start_partition => '2025-01-01',
+  p_default_table => false
+);
+-- Then run rake trends:backfill_aggregates для Jan 2025
+```
+
+Альтернатива (не рекомендуется для routine): partman не knows об этой partition если create_parent дважды для same parent — нужен `partman.partition_data_proc('public.trends_daily_aggregates')` чтобы migrate rows из default в новые partitions.
+
 ### Sidekiq cron для partman maintenance
 
 В `config/schedule.yml` (или эквивалент):
