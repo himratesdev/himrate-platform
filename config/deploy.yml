@@ -65,7 +65,12 @@ env:
 # Accessories: PostgreSQL + Redis on the same VPS
 accessories:
   db:
-    image: postgres:16
+    # TASK-039 ADR §4.2: custom image с pg_partman extension (built in CI).
+    # Dockerfile: db/Dockerfile. Build workflow: .github/workflows/build-db-image.yml.
+    # Tag versioned (v1/v2/...) для deterministic rollback — bump triggered manual
+    # при Dockerfile changes (см. Dockerfile комментарий + workflow IMAGE_TAG).
+    # После build в ghcr → manual `kamal accessory reboot db -d <dest>` (volume сохраняется).
+    image: ghcr.io/himratesdev/himrate-postgres:16-partman-v1
     host: 194.135.85.159
     port: "127.0.0.1:5432:5432"
     env:
