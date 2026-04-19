@@ -13,10 +13,12 @@ on:
 permissions:
   contents: read
   packages: write
+  security-events: write # trivy SARIF upload в GitHub Security tab
 
 env:
   # Versioned tag — bump при любом intentional изменении db/Dockerfile (CR SF-1).
   # Matches LABEL version в Dockerfile + image reference в config/deploy.yml.
+  # Drift validated в assertion step ниже (W-3 PG).
   IMAGE_TAG: 16-partman-v1
 
 jobs:
@@ -24,9 +26,28 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # Pinned by tag (semver) — CR N-3. Safer than @v4 floating. Dependabot
-      # auto-bumps при новых releases.
       - uses: actions/checkout@v4.2.2
+
+      # W-3 PG: Validate image tag sync в 4 местах до build — fail early
+      # если bump version забыт в одном из файлов. Assertions simple grep.
+      - name: Verify image tag drift (Dockerfile LABEL + deploy.yml + workflow env)
+        run: |
+          set -euo pipefail
+          WORKFLOW_TAG="${IMAGE_TAG}"
+          LABEL_TAG=$(grep 'LABEL org.opencontainers.image.version' db/Dockerfile \
+                     | sed -E 's/.*version="([^"]+)".*/\1/')
+          DEPLOY_TAG=$(grep 'himrate-postgres:' config/deploy.yml \
+                      | head -1 | sed -E 's/.*himrate-postgres:([^ ]+).*/\1/')
+
+          echo "Workflow IMAGE_TAG: $WORKFLOW_TAG"
+          echo "Dockerfile LABEL:   $LABEL_TAG"
+          echo "deploy.yml image:   $DEPLOY_TAG"
+
+          if [ "$WORKFLOW_TAG" != "$LABEL_TAG" ] || [ "$WORKFLOW_TAG" != "$DEPLOY_TAG" ]; then
+            echo "::error::Image tag drift detected — versions не совпадают"
+            exit 1
+          fi
+          echo "✓ All image tags synchronized: $WORKFLOW_TAG"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3.3.0
@@ -45,14 +66,30 @@ jobs:
           context: ./db
           file: ./db/Dockerfile
           push: true
-          # Single versioned tag — no :latest (CR N-1, antipattern для prod).
-          # Bump IMAGE_TAG env when Dockerfile changes intentionally.
           tags: ghcr.io/himratesdev/himrate-postgres:${{ env.IMAGE_TAG }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-      # CR N-5 (CVE scan) — deferred to separate follow-up PR.
-      # Initial attempt использовал aquasecurity/trivy-action@0.28.0 (non-existent tag).
-      # Требует корректного version pinning + настройки non-blocking exit + SARIF upload.
-      # Создать follow-up task: "TASK-XXX: CVE scanning в build workflows (trivy)".
+      # CR N-5 + W-5 PG: CVE scan через trivy. Non-blocking (exit-code: 0) —
+      # upstream postgres base могут содержать CVEs вне нашего контроля.
+      # SARIF upload в GitHub Security tab → автоматические email alerts + Dependabot-style
+      # notifications через GitHub built-in (weekly digest + новые finding notifications).
+      # Trade-off pin: @master — internal tooling moderate risk per Reviewer N-3,
+      # semver releases aquasecurity/trivy-action часто не соответствуют ожиданиям
+      # (попытка @0.28.0 упала на non-existent tag). Альтернатива future: pin by SHA.
+      - name: Scan image for CVEs (report-only)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ghcr.io/himratesdev/himrate-postgres:${{ env.IMAGE_TAG }}
+          format: sarif
+          output: trivy-results.sarif
+          severity: CRITICAL,HIGH
+          exit-code: '0' # non-blocking — upstream CVEs не блокируют deploy
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3.27.0
+        with:
+          sarif_file: trivy-results.sarif
+          category: postgres-db-image
