@@ -25,7 +25,7 @@
 
 # Minor version pinned для security patching control. Dependabot docker
 # ecosystem (.github/dependabot.yml) auto-PR на postgres:16.x bumps.
-FROM postgres:16.4
+FROM postgres:18.3
 
 # === Stable layers (cached across version bumps) ===
 #
