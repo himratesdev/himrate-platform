@@ -23,4 +23,14 @@ class User < ApplicationRecord
   validates :avatar_url, format: { with: /\Ahttps?:\/\/\S+\z/i, message: "must be a valid URL" }, allow_blank: true
 
   scope :active, -> { where(deleted_at: nil) }
+
+  # TASK-039 FR-039: Memoized Twitch IDs of channels broadcaster по active OAuth providers.
+  # Eliminates per-policy-call N+1 (10 Trends endpoints на странице → 1 query вместо 10).
+  # Single Twitch OAuth = single channel today; Set keeps API stable если modeling меняется.
+  def streamer_twitch_ids
+    @streamer_twitch_ids ||= auth_providers
+                             .where(provider: "twitch")
+                             .pluck(:provider_id)
+                             .to_set
+  end
 end

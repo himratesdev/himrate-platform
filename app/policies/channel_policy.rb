@@ -114,6 +114,29 @@ class ChannelPolicy < ApplicationPolicy
     end
   end
 
+  # TASK-039 FR-012: Trends Tab historical access (7d/30d/60d/90d).
+  # Premium tracked / Business / Streamer own (через Twitch OAuth data exchange).
+  def view_trends_historical?
+    return false unless registered?
+
+    premium_access_for?(record) || streamer_on_channel?(record)
+  end
+
+  # TASK-039 FR-013: 365-day trends — Business tier only (включая team members).
+  # Premium tracked видит максимум 90d; стример не получает 365d на своём канале.
+  def view_365d_trends?
+    effective_business?
+  end
+
+  # TASK-039 FR-014: Peer comparison (M3 Stability + Trust Index ranking).
+  # PO clarification: Streamer на своём канале имеет полный доступ через data exchange.
+  # Тождественно view_trends_historical? — оставлено отдельным predicate per SRS §2.2.
+  def view_peer_comparison?
+    return false unless registered?
+
+    premium_access_for?(record) || streamer_on_channel?(record)
+  end
+
   # TASK-032 CR #7: Public query methods (no more policy.send(:private_method))
   def premium_access?
     premium_access_for?(record)
