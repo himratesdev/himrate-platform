@@ -52,13 +52,18 @@ class PartitionTrendsDailyAggregates < ActiveRecord::Migration[8.0]
     ActiveRecord::Base.transaction do
       start_partition = (Date.current.beginning_of_month - 3.months).strftime("%Y-%m-%d")
 
+      # p_default_table => false — migration #1 уже создала default partition
+      # (trends_daily_aggregates_default) при initial table setup. pg_partman 5.x
+      # create_parent по defaults пытается создать свою default ('already a partition'
+      # error). Passing false → pg_partman uses existing default partition.
       execute(<<~SQL)
         SELECT partman.create_parent(
           p_parent_table => 'public.trends_daily_aggregates',
           p_control => 'date',
           p_interval => '1 month',
           p_premake => 4,
-          p_start_partition => '#{start_partition}'
+          p_start_partition => '#{start_partition}',
+          p_default_table => false
         );
       SQL
 
