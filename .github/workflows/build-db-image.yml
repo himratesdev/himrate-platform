@@ -74,7 +74,7 @@ jobs:
 
       - name: Build and push Postgres + pg_partman image
         id: build
-        uses: docker/build-push-action@v6.9.0
+        uses: docker/build-push-action@v7.1.0
         with:
           context: ./db
           file: ./db/Dockerfile
