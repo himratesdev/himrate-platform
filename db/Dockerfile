@@ -1,39 +1,45 @@
 # TASK-039 ADR §4.2: Custom Postgres image с pg_partman extension
 # для native monthly partitioning (trends_daily_aggregates).
 #
-# Base: postgres:16 (official, Debian bookworm). +postgresql-16-partman
-# устанавливается из официального PostgreSQL APT repo который уже настроен
-# в postgres:16 image (apt.postgresql.org).
+# Tag convention: ghcr.io/himratesdev/himrate-postgres:16-partman-v{N}.
+# При любом изменении этого Dockerfile:
+#   1. Bump версию здесь (VERSION below) + в build-db-image.yml + config/deploy.yml
+#   2. Commit → CI builds new image с новым tag
+#   3. Coordinated kamal accessory reboot db -d <dest>
+# Explicit versioning предотвращает mutable tag drift (CR SF-1).
 #
-# Image: ghcr.io/himratesdev/himrate-postgres:16-partman
+# Image: ghcr.io/himratesdev/himrate-postgres:16-partman-v1
 # Build: .github/workflows/build-db-image.yml (on push to main, db/** changes)
 # Deploy: config/deploy.yml accessories.db.image
 #
-# Совместимость данных: postgres:16 base → same PGDATA format как official
+# Совместимость данных: postgres:16.x base → same PGDATA format как official
 # postgres:16. Volume himrate_pgdata mountable без миграции данных.
 
-FROM postgres:16
+# Pinned minor version (CR N-2). Bump aligned с postgres:16 security patches.
+FROM postgres:16.4
+
+# OCI standard labels — links image с GitHub repo + searchable metadata (CR N-6).
+LABEL org.opencontainers.image.source="https://github.com/himratesdev/himrate-platform"
+LABEL org.opencontainers.image.description="PostgreSQL 16.4 с pg_partman extension для TASK-039 Trends Tab native partitioning"
+LABEL org.opencontainers.image.licenses="Proprietary"
+LABEL org.opencontainers.image.vendor="HimRate"
+LABEL org.opencontainers.image.version="16-partman-v1"
 
 # Install pg_partman from PostgreSQL APT repo (postgresql-16-partman package).
-# Current stable: 4.7.x (supports native PG partitioning per ADR §4.2).
-# Future version bump: если потребуется pg_partman 5.x, обновить этот Dockerfile +
-# rebuild + coordinated reboot через runbook (docs/runbooks/pg_partman_recovery.md).
+# Current stable в Debian bookworm: 4.7.x (supports native PG partitioning per ADR §4.2).
+# pg_partman НЕ требует shared_preload_libraries (мы используем Sidekiq cron для
+# run_maintenance вместо partman_bgw background worker — см. ADR §4.2 Phase B).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends postgresql-16-partman \
  && rm -rf /var/lib/apt/lists/*
 
-# Verify extension files installed — build FAILS если package не поставил control file.
-# Prevents silent image build без pg_partman (costly-to-debug prod breakage).
+# Build-time verification: extension control файл присутствует.
+# Build FAILS если apt package broken — prevents silent "ghost" image без partman.
 RUN test -f /usr/share/postgresql/16/extension/pg_partman.control \
  || (echo "ERROR: pg_partman.control not found — extension files missing" && exit 1)
-
-# Extension создаётся в DB при первом запуске через автоматический init script
-# (/docker-entrypoint-initdb.d). Для existing DB после image switch — manual:
-#   CREATE SCHEMA IF NOT EXISTS partman;
-#   CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman;
-# См. docs/runbooks/pg_partman_recovery.md для полной procedure.
 
 # Idempotent extension init для fresh DB (production redeploys / test environments).
 # Не срабатывает если DB already initialized — postgres:16 entrypoint исполняет
 # *.sql из /docker-entrypoint-initdb.d только при initial PGDATA creation.
+# Для existing staging/prod DB — manual execution per runbook §1.
 COPY init-pg-partman.sql /docker-entrypoint-initdb.d/01-pg-partman.sql

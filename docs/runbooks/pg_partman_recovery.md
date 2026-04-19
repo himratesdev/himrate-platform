@@ -42,8 +42,14 @@ docker exec himrate-db psql -U himrate -d himrate_staging -c \
 
 **Если image ещё не собран (pre-merge PR #79):**
 
-На managed DB / облачных провайдерах — через админ-консоль (shared_preload_libraries),
-через apt-get install postgresql-16-partman внутри контейнера (НЕ рекомендуется — нестабильно без rebuild image).
+На managed DB / облачных провайдерах (AWS RDS / GCP Cloud SQL) — через админ-консоль,
+где pg_partman доступен как managed extension. Для self-hosted без custom image —
+временно `apt-get install postgresql-16-partman` внутри running контейнера (НЕ рекомендуется:
+не сохраняется между reboots, нестабильно, требует rebuild image для долгосрочного использования).
+
+**Примечание:** pg_partman НЕ требует `shared_preload_libraries` — в отличие от pg_cron,
+pg_partman это обычное extension. В HimRate мы используем Sidekiq cron для
+`partman.run_maintenance` (ADR §4.2 Phase B) вместо `partman_bgw` background worker.
 
 Проверка версии: `pg_partman >= 4.7` для native partitioning support.
 

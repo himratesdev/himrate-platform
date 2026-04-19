@@ -1,0 +1,11 @@
+# CR SF-2: Build context для db/ образа должен включать ТОЛЬКО файлы нужные
+# для FROM+COPY layers. Остальное (60+ Rails migrations, seeds.rb, schema artifacts)
+# не COPY'ится в image, но если в context — шлётся на Docker daemon на каждом build,
+# что замедляет GHA runner time и жжёт cache.
+
+# Ignore всё по умолчанию
+*
+
+# Whitelist: только то что COPY'ится или FROM-resolves
+!Dockerfile
+!init-pg-partman.sql
