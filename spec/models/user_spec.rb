@@ -22,13 +22,13 @@ RSpec.describe User, type: :model do
 
     it "returns Set of twitch provider_ids" do
       create(:auth_provider, user: user, provider: "twitch", provider_id: "tw_42")
-      expect(user.streamer_twitch_ids).to eq(Set.new(["tw_42"]))
+      expect(user.streamer_twitch_ids).to eq(Set.new([ "tw_42" ]))
     end
 
     it "excludes non-twitch providers" do
       create(:auth_provider, user: user, provider: "twitch", provider_id: "tw_42")
       create(:auth_provider, user: user, provider: "google", provider_id: "g_99")
-      expect(user.streamer_twitch_ids).to eq(Set.new(["tw_42"]))
+      expect(user.streamer_twitch_ids).to eq(Set.new([ "tw_42" ]))
     end
 
     it "returns empty Set when no twitch provider" do
