@@ -104,30 +104,22 @@ jobs:
             ConnectTimeout 30
           SSH_CONFIG
           chmod 600 ~/.ssh/config
-      # Kamal reads secrets через `.kamal/secrets-common` + `.kamal/secrets.<destination>`
-      # files — они evaluated как shell scripts, pulling values из env vars.
-      # Мы передаём все secrets через env block ниже (not writing .kamal/secrets.staging).
-      # Benefits: unified с local deploy pattern (один источник для всех env vars
-      # → см. docs/runbooks/kamal_local_deploy.md), secrets не trailing в filesystem
-      # после run, нет risk commit .kamal/secrets.* accidentally.
-      - name: Deploy to staging
+      # Validate required secrets fail-fast ДО kamal invocation.
+      # Предотвращает silent empty-value deploy: если какой-то secret не set
+      # в repo, kamal получит пустое значение → app crash в runtime или broken
+      # feature. Здесь явный список — при добавлении нового secret нужно
+      # одновременно update env.secret в deploy.yml И этот check.
+      - name: Validate required secrets
         env:
-          # KAMAL_REGISTRY_PASSWORD: automatic workflow credential с `packages: write`
-          # scope (declared в permissions block выше). Ephemeral, auto-rotated per run.
-          # Production deploy uses dedicated PAT (см. deploy-production job).
-          KAMAL_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
           RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
-          REDIS_URL: redis://himrate-redis:6379/1
+          STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
-          TWITCH_REDIRECT_URI: https://staging.himrate.com/api/v1/auth/twitch/callback
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_REDIRECT_URI: https://staging.himrate.com/api/v1/auth/google/callback
           ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
           ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
@@ -135,8 +127,68 @@ jobs:
           FLIPPER_UI_USER: ${{ secrets.FLIPPER_UI_USER }}
           ALLOWED_EXTENSION_ID: ${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
-          EVENTSUB_WEBHOOK_URL: https://staging.himrate.com
-        run: kamal setup -d staging
+        run: |
+          set -euo pipefail
+          MISSING=()
+          for var in RAILS_MASTER_KEY POSTGRES_PASSWORD STAGING_DATABASE_URL \
+                     JWT_SECRET SECRET_KEY_BASE \
+                     TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET \
+                     GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+                     ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY \
+                     ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY \
+                     ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT \
+                     FLIPPER_UI_PASSWORD FLIPPER_UI_USER \
+                     ALLOWED_EXTENSION_ID TWITCH_WEBHOOK_SECRET; do
+            [ -z "${!var:-}" ] && MISSING+=("$var")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required repo secrets:"
+            printf '::error::  • %s\n' "${MISSING[@]}"
+            exit 1
+          fi
+          echo "✓ All 16 required secrets present"
+      # File-write approach для Kamal secrets. Эмпирически проверено что
+      # Kamal 2.11 корректно работает только с `.kamal/secrets.<destination>`
+      # файлом (env-block alone — broken docker login на ghcr, incident
+      # 2026-04-19 PR #87/88 merge deploys). File sourced first, env vars
+      # set properly, затем kamal runs docker commands.
+      - name: Write Kamal secrets
+        run: |
+          cat > .kamal/secrets.staging <<SECRETS
+          KAMAL_REGISTRY_PASSWORD=${{ secrets.GITHUB_TOKEN }}
+          RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}
+          REDIS_URL=redis://himrate-redis:6379/1
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}
+          TWITCH_CLIENT_ID=${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET=${{ secrets.TWITCH_CLIENT_SECRET }}
+          TWITCH_REDIRECT_URI=https://staging.himrate.com/api/v1/auth/twitch/callback
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URI=https://staging.himrate.com/api/v1/auth/google/callback
+          ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
+          ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
+          ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
+          FLIPPER_UI_PASSWORD=${{ secrets.FLIPPER_UI_PASSWORD }}
+          FLIPPER_UI_USER=${{ secrets.FLIPPER_UI_USER }}
+          ALLOWED_EXTENSION_ID=${{ secrets.ALLOWED_EXTENSION_ID }}
+          TWITCH_WEBHOOK_SECRET=${{ secrets.TWITCH_WEBHOOK_SECRET }}
+          EVENTSUB_WEBHOOK_URL=https://staging.himrate.com
+          SECRETS
+      # kamal setup vs kamal deploy: выбран setup как idempotent full-boot
+      # (app + proxy + accessories). Safe на subsequent runs (Kamal skips
+      # healthy components). Немного heavier than kamal deploy ~30s на health
+      # checks — acceptable cost для единого mental model entry point.
+      #
+      # Defense-in-depth: trap EXIT гарантирует cleanup .kamal/secrets.staging
+      # после step exit (success OR failure). Runner ephemeral всё равно, но
+      # снижает окно exposure если CI logs или cache checkpoints capture files.
+      - name: Deploy to staging
+        run: |
+          trap 'rm -f .kamal/secrets.staging' EXIT
+          kamal setup -d staging
 
   # === Verify Staging Deploy — after deploy-staging ===
   verify-staging:
@@ -185,35 +237,18 @@ jobs:
             ConnectTimeout 30
           SSH_CONFIG
           chmod 600 ~/.ssh/config
-      # Mirror deploy-staging env block structure для unified mental model.
-      # Production-specific deltas:
-      #   • URLs: api.himrate.com (subdomain для backend, himrate.com = landing)
-      #   • DATABASE_URL: inline constructed from POSTGRES_PASSWORD (single source
-      #     of truth — не создаём отдельный PRODUCTION_DATABASE_URL secret)
-      #   • REDIS_URL: DB index /0 (staging /1 — logical separation on same Redis)
-      #   • KAMAL_REGISTRY_PASSWORD: dedicated PAT (repo secret), не ephemeral
-      #     GITHUB_TOKEN — production deploy requires explicit, audit-visible
-      #     credential с controlled rotation
-      #   • EVENTSUB_WEBHOOK_URL: api.himrate.com (EventSub subscriptions будут
-      #     создаваться manually на первом release как часть launch runbook)
-      - name: Deploy to production
+      # Fail-fast validation ДО kamal invocation (symmetric со staging).
+      - name: Validate required secrets
         env:
           KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
           RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-          # ⚠️ POSTGRES_PASSWORD ДОЛЖЕН быть URL-safe (hex charset). Generate через
-          # `openssl rand -hex 32`, НЕ `-base64 32` (base64 содержит +/= которые
-          # ломают URI parsing). Same constraint applies для STAGING_DATABASE_URL secret.
-          DATABASE_URL: postgres://himrate:${{ secrets.POSTGRES_PASSWORD }}@himrate-db:5432/himrate_production
-          REDIS_URL: redis://himrate-redis:6379/0
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
-          TWITCH_REDIRECT_URI: https://api.himrate.com/api/v1/auth/twitch/callback
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
-          GOOGLE_REDIRECT_URI: https://api.himrate.com/api/v1/auth/google/callback
           ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
           ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
@@ -221,11 +256,77 @@ jobs:
           FLIPPER_UI_USER: ${{ secrets.FLIPPER_UI_USER }}
           ALLOWED_EXTENSION_ID: ${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
-          EVENTSUB_WEBHOOK_URL: https://api.himrate.com
-        # kamal setup (vs kamal deploy): idempotent full boot — app + proxy +
-        # accessories. Безопасен на subsequent runs (Kamal skips healthy components).
-        # Немного тяжелее kamal deploy (~30s дополнительно на accessory health checks),
-        # но gives консистентный entry point: один command для first v*.* и для
-        # subsequent releases. Future optimization: split first-time setup в manual
-        # workflow, auto releases use kamal deploy (lighter).
-        run: kamal setup -d production
+        run: |
+          set -euo pipefail
+          MISSING=()
+          for var in KAMAL_REGISTRY_PASSWORD RAILS_MASTER_KEY POSTGRES_PASSWORD \
+                     JWT_SECRET SECRET_KEY_BASE \
+                     TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET \
+                     GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
+                     ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY \
+                     ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY \
+                     ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT \
+                     FLIPPER_UI_PASSWORD FLIPPER_UI_USER \
+                     ALLOWED_EXTENSION_ID TWITCH_WEBHOOK_SECRET; do
+            [ -z "${!var:-}" ] && MISSING+=("$var")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required repo secrets для production deploy:"
+            printf '::error::  • %s\n' "${MISSING[@]}"
+            exit 1
+          fi
+          echo "✓ All 16 required secrets present"
+      # W-1 fix: URL-encode POSTGRES_PASSWORD перед DATABASE_URL construction.
+      # Python urllib.parse.quote обрабатывает ЛЮБОЙ password (base64 with +/=,
+      # special chars, пробелы) — no format constraint на operator. Writes
+      # constructed URL в GITHUB_ENV → доступен в последующих steps.
+      - name: Construct DATABASE_URL (URL-encoded password)
+        env:
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+        run: |
+          set -euo pipefail
+          ENCODED=$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["POSTGRES_PASSWORD"], safe=""))')
+          echo "::add-mask::$ENCODED"
+          echo "DATABASE_URL=postgres://himrate:${ENCODED}@himrate-db:5432/himrate_production" >> "$GITHUB_ENV"
+      # Mirror deploy-staging file-write pattern. Production-specific deltas:
+      #   • URLs: api.himrate.com (subdomain для backend, himrate.com = landing)
+      #   • DATABASE_URL: URL-encoded от POSTGRES_PASSWORD (constructed above)
+      #   • REDIS_URL: DB index /0 (staging /1 — logical separation same Redis)
+      #   • KAMAL_REGISTRY_PASSWORD: dedicated PAT (repo secret) вместо ephemeral
+      #     GITHUB_TOKEN — production requires audit-visible credential с
+      #     controlled rotation (см. docs/runbooks/kamal_local_deploy.md)
+      #   • EVENTSUB_WEBHOOK_URL: api.himrate.com (EventSub subscriptions setup
+      #     manually на первом release per launch runbook)
+      - name: Write Kamal secrets
+        run: |
+          cat > .kamal/secrets.production <<SECRETS
+          KAMAL_REGISTRY_PASSWORD=${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          DATABASE_URL=${DATABASE_URL}
+          REDIS_URL=redis://himrate-redis:6379/0
+          JWT_SECRET=${{ secrets.JWT_SECRET }}
+          SECRET_KEY_BASE=${{ secrets.SECRET_KEY_BASE }}
+          TWITCH_CLIENT_ID=${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET=${{ secrets.TWITCH_CLIENT_SECRET }}
+          TWITCH_REDIRECT_URI=https://api.himrate.com/api/v1/auth/twitch/callback
+          GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URI=https://api.himrate.com/api/v1/auth/google/callback
+          ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
+          ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
+          ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
+          FLIPPER_UI_PASSWORD=${{ secrets.FLIPPER_UI_PASSWORD }}
+          FLIPPER_UI_USER=${{ secrets.FLIPPER_UI_USER }}
+          ALLOWED_EXTENSION_ID=${{ secrets.ALLOWED_EXTENSION_ID }}
+          TWITCH_WEBHOOK_SECRET=${{ secrets.TWITCH_WEBHOOK_SECRET }}
+          EVENTSUB_WEBHOOK_URL=https://api.himrate.com
+          SECRETS
+      # kamal setup: idempotent full-boot (see staging decision comment выше).
+      # Future optimization (when prod becomes real traffic): split first-time
+      # manual workflow_dispatch setup, tag releases use kamal deploy (lighter).
+      # Trap EXIT cleanup для defense-in-depth (see staging).
+      - name: Deploy to production
+        run: |
+          trap 'rm -f .kamal/secrets.production' EXIT
+          kamal setup -d production

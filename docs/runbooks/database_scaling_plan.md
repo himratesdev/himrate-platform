@@ -38,13 +38,15 @@
 
 | Provider | Pros | Cons | ~$/mo |
 |---|---|---|---|
-| **Supabase** | Built-in connection pooler, auth, realtime — complementary to нашей инфре. Row-level security. PostgreSQL-native. Free tier до 500MB. | Vendor lock-in на extra features (auth, realtime) — нам не нужны, используем только DB. Shared compute на cheap plans. | $25-500+ |
-| **Neon** | Serverless scaling, branching (per-PR prod-like DBs), compute scales to zero. PostgreSQL-native без lock-in. | Cold start latency 1-2s (mitigated connection pooler). Russia-friendly billing? проверить. | $19-500+ |
-| **Amazon RDS** | Enterprise-grade, multi-AZ, read replicas out-of-box, point-in-time recovery. | Expensive baseline ($30-50 minimum), Russia billing problematic, AWS lock-in. | $50-500+ |
-| **DigitalOcean Managed DB** | Simple pricing, multi-region, automatic backups. | Less ecosystem than RDS. | $15-500+ |
-| **Yandex Cloud Managed Postgres** | Russian-friendly billing, local datacenters low latency для RU users. | Less ecosystem, some features lag AWS/GCP. | ₽1500-20000+ |
+| **Neon** | Serverless scaling, branching (per-PR prod-like DBs), compute scales to zero. PostgreSQL-native без lock-in. Supports custom extensions (pg_partman via support request). EU regions available (Frankfurt, Amsterdam). | Cold start latency 1-2s (mitigated connection pooler). | $19-500+ |
+| **Supabase** | Built-in connection pooler, auth, realtime — complementary to нашей инфре. Row-level security. PostgreSQL-native. Free tier до 500MB. | Vendor lock-in на extra features (auth, realtime) — нам не нужны, используем только DB. Shared compute на cheap plans. Fixed extension allowlist (pg_partman требует проверки через support). | $25-500+ |
+| **Hetzner Cloud Managed** | EU datacenters (Falkenstein/Nuremberg), low latency для VPS в Lithuania. Simple EUR pricing. | Younger offering, less mature than RDS. | €20-200+ |
+| **DigitalOcean Managed DB** | Simple pricing, multi-region, automatic backups. Frankfurt DC near VPS. | Less ecosystem than RDS. Extension allowlist. | $15-500+ |
+| **Amazon RDS (eu-central-1)** | Enterprise-grade, multi-AZ, read replicas out-of-box, point-in-time recovery. Frankfurt region низкой latency. | Expensive baseline ($30-50 minimum), AWS lock-in, complexity. | $50-500+ |
 
-**Recommendation для первой миграции:** Neon или Supabase для simplicity + branching. Если Russia billing проблема — Yandex Cloud.
+**Исключён из списка:** Yandex Cloud Managed Postgres. Причины: (a) billing restrictions post-2022 — Lithuania entity не может reliably оплачивать, international cards отклоняются; (b) pg_partman НЕ в default extension allowlist, custom extensions требуют support ticket без SLA; (c) pricing RUB-denominated + exchange rate volatility. Technical fit secondary — billing blocker decisive.
+
+**Recommendation для первой миграции:** Neon (primary) или Hetzner Cloud Managed (если хотим максимально EU-local data residency). Оба поддерживают pg_partman + PostgreSQL-native без vendor lock-in.
 
 ### Redis
 
@@ -75,7 +77,52 @@
    - Health check + smoke test
 5. **Keep VPS Postgres running неделю** для rollback option, затем shutdown db accessory, освободив resources для prod web/job containers.
 
-**pg_partman на managed Postgres:** Проверить что provider supports `shared_preload_libraries` config OR community extension install. Neon supports custom extensions (request through support). Supabase — ограниченный список. RDS — поддерживает через parameter groups. Yandex Cloud — нужно проверить.
+**pg_partman на managed Postgres:** Проверить что provider supports `shared_preload_libraries` config OR community extension install. Neon supports custom extensions (request through support). Supabase — ограниченный список (проверять через support). RDS — поддерживает через parameter groups. Hetzner — PostgreSQL-native extension install (need docs check).
+
+## Rollback procedure (если cutover failed)
+
+**Trigger:** health checks fail после cutover, smoke test detects broken behavior, replication lag stuck, managed DB unavailable, etc.
+
+Rollback steps (в порядке execution):
+
+1. **IMMEDIATE — Stop app на managed DB**
+   ```bash
+   kamal app stop -d production
+   ```
+   Prevents further writes к managed, которые не будут replicated обратно.
+
+2. **Revert DATABASE_URL к VPS Postgres**
+   - **Если DATABASE_URL constructed inline в `ci.yml` (текущая архитектура):** revert commit который switched `Construct DATABASE_URL` step на managed-DB URL. Force-push hotfix tag чтобы триггер deploy-production.
+   - **Если `PRODUCTION_DATABASE_URL` secret используется (future managed-DB architecture):** GitHub repo Settings → Secrets → `PRODUCTION_DATABASE_URL` → Update value к VPS URL: `postgres://himrate:<URL_ENCODED_POSTGRES_PASSWORD>@himrate-db:5432/himrate_production`. Заметь: POSTGRES_PASSWORD должен быть URL-encoded — используй тот же Python `urllib.parse.quote` подход что в ci.yml, или `jq -rR @uri` one-liner.
+   - **НЕ путать с** `KAMAL_REGISTRY_PASSWORD` — это registry auth PAT, не DB URL, ротация другая (см. `docs/runbooks/kamal_local_deploy.md`).
+
+3. **Redeploy c old DATABASE_URL**
+   ```bash
+   kamal redeploy -d production
+   ```
+   Rails containers подхватят старую DATABASE_URL, VPS Postgres up-and-healthy (ещё не shutdown per §5).
+
+4. **Data reconciliation** (если managed DB получила записи во время cutover):
+   - `pg_dump` managed DB only-data delta между cutover time и now
+   - `psql` на VPS DB — apply delta через manual SQL review
+   - ИЛИ accept data loss за cutover window (если short, low-write)
+
+5. **Root cause analysis**
+   - Why cutover failed? (connectivity, extension, replication lag, perm issues)
+   - Fix root cause ДО второй попытки migration
+   - Schedule second attempt с improved procedure
+
+6. **Leave VPS Postgres running** до успешного cutover (не shutdown preemptively).
+
+**Rollback acceptable time window:** Должен быть completed в 30 минут после cutover detection. Longer = больше data loss risk на managed side. Maintenance window должен include rollback buffer: actual cutover time × 2.
+
+**Pre-cutover checklist (reduces rollback probability):**
+- [ ] Dry-run migration на staging-like environment
+- [ ] Verify pg_partman extension work post-restore (`SELECT * FROM partman.parent;`)
+- [ ] Test application health endpoints на managed DB (manual run с DATABASE_URL override)
+- [ ] Confirm SSL cert validity (managed DB обычно требует sslmode=verify-full)
+- [ ] Backup VPS DB snapshot перед cutover (extra safety net)
+- [ ] Team on-call available во время maintenance window
 
 ## Staging остаётся на VPS
 
