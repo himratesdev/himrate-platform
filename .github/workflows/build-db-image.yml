@@ -7,6 +7,7 @@ on:
       - 'db/Dockerfile'
       - 'db/init-pg-partman.sql'
       - 'db/.dockerignore'
+      - 'config/deploy.yml' # tag bump triggers rebuild (single source)
       - '.github/workflows/build-db-image.yml'
   workflow_dispatch: # manual trigger для rebuilds
 
@@ -15,12 +16,6 @@ permissions:
   packages: write
   security-events: write # trivy SARIF upload в GitHub Security tab
 
-env:
-  # Versioned tag — bump при любом intentional изменении db/Dockerfile (CR SF-1).
-  # Matches LABEL version в Dockerfile + image reference в config/deploy.yml.
-  # Drift validated в assertion step ниже (W-3 PG).
-  IMAGE_TAG: 16-partman-v1
-
 jobs:
   build-db-image:
     runs-on: ubuntu-latest
@@ -28,27 +23,44 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
-      # W-3 PG: Validate image tag sync в 3 местах до build — fail early
-      # если bump version забыт в одном из файлов. Assertions simple grep.
-      # N-2 CR iter 2: deploy.yml pattern matches YAML directive (не comments).
-      - name: Verify image tag drift (Dockerfile LABEL + deploy.yml + workflow env)
+      # Extract image tag из config/deploy.yml — SINGLE SOURCE OF TRUTH.
+      # deploy.yml accessories.db.image — authoritative version reference.
+      # Dockerfile LABEL получает tag через --build-arg IMAGE_VERSION (below).
+      # Image pushed с тем же tag. Result: zero drift possible.
+      #
+      # PG W-2 revised: pinned mikefarah/yq@v4.44.3 action (not runner default).
+      # Rationale: ubuntu-latest pre-installs yq, но GHA может удалить binary
+      # в будущих images → silent breakage. Pinned action = supply-chain locked,
+      # reproducible builds, immune to runner image changes.
+      - name: Read image reference from deploy.yml via pinned yq
+        id: read_image
+        uses: mikefarah/yq@v4.44.3
+        with:
+          cmd: yq '.accessories.db.image' config/deploy.yml
+
+      - name: Extract tag portion and validate
+        id: image_tag
         run: |
           set -euo pipefail
-          WORKFLOW_TAG="${IMAGE_TAG}"
-          LABEL_TAG=$(grep 'LABEL org.opencontainers.image.version' db/Dockerfile \
-                     | sed -E 's/.*version="([^"]+)".*/\1/')
-          DEPLOY_TAG=$(grep -E '^\s*image:\s*ghcr.io/himratesdev/himrate-postgres:' config/deploy.yml \
-                      | sed -E 's/.*himrate-postgres:([^ ]+).*/\1/')
 
-          echo "Workflow IMAGE_TAG: $WORKFLOW_TAG"
-          echo "Dockerfile LABEL:   $LABEL_TAG"
-          echo "deploy.yml image:   $DEPLOY_TAG"
-
-          if [ "$WORKFLOW_TAG" != "$LABEL_TAG" ] || [ "$WORKFLOW_TAG" != "$DEPLOY_TAG" ]; then
-            echo "::error::Image tag drift detected — versions не совпадают"
+          IMAGE="${{ steps.read_image.outputs.result }}"
+          if [ -z "$IMAGE" ] || [ "$IMAGE" = "null" ]; then
+            echo "::error::accessories.db.image не найден в config/deploy.yml"
             exit 1
           fi
-          echo "✓ All image tags synchronized: $WORKFLOW_TAG"
+
+          # Bash parameter expansion — extract substring после last ':'
+          # (handles ghcr.io/org/repo:tag correctly even if registry имеет ':').
+          TAG="${IMAGE##*:}"
+          if [ -z "$TAG" ] || [ "$TAG" = "$IMAGE" ]; then
+            echo "::error::Image reference без tag: $IMAGE"
+            echo "::error::Expected format: ghcr.io/himratesdev/himrate-postgres:<TAG>"
+            exit 1
+          fi
+
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "✓ Image: $IMAGE"
+          echo "✓ Tag:   $TAG"
 
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3.3.0
@@ -67,21 +79,23 @@ jobs:
           context: ./db
           file: ./db/Dockerfile
           push: true
-          tags: ghcr.io/himratesdev/himrate-postgres:${{ env.IMAGE_TAG }}
+          tags: ghcr.io/himratesdev/himrate-postgres:${{ steps.image_tag.outputs.tag }}
+          # build-arg feeds Dockerfile LABEL version → no drift possible.
+          build-args: |
+            IMAGE_VERSION=${{ steps.image_tag.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
 
-      # CR N-5 + W-5 PG: CVE scan через trivy. Non-blocking (exit-code: 0) —
-      # upstream postgres base могут содержать CVEs вне нашего контроля.
-      # SARIF upload в GitHub Security tab → автоматические email alerts + GitHub weekly digest.
-      # Pin @v0.35.0 (verified via gh api trivy-action/tags). Предыдущая попытка @0.28.0
-      # упала т.к. trivy-action использует v-prefix в tags (@v0.28.0 существует, @0.28.0 — нет).
-      # Dependabot github-actions ecosystem auto-updates этот pin (MF-1 fix CR iter 2).
+      # CR N-5 + W-5 PG: CVE scan through trivy. Non-blocking (exit-code 0) —
+      # upstream postgres base может содержать CVEs вне нашего контроля.
+      # SARIF upload в GitHub Security tab → weekly digest emails + новые
+      # finding notifications via GitHub built-in.
+      # Pin @v0.35.0 (verified via gh api trivy-action/tags).
       - name: Scan image for CVEs (report-only)
         uses: aquasecurity/trivy-action@v0.35.0
         with:
-          image-ref: ghcr.io/himratesdev/himrate-postgres:${{ env.IMAGE_TAG }}
+          image-ref: ghcr.io/himratesdev/himrate-postgres:${{ steps.image_tag.outputs.tag }}
           format: sarif
           output: trivy-results.sarif
           severity: CRITICAL,HIGH

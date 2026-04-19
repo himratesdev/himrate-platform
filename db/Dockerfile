@@ -1,36 +1,38 @@
 # TASK-039 ADR §4.2: Custom Postgres image с pg_partman extension
 # для native monthly partitioning (trends_daily_aggregates).
 #
-# Tag convention: ghcr.io/himratesdev/himrate-postgres:16-partman-v{N}.
-# При любом изменении этого Dockerfile bump version в 3 местах consistently:
-#   1. `FROM postgres:N.N` (если PG minor bump ниже в этом файле)
-#   2. `LABEL org.opencontainers.image.version="..."` ниже в этом файле
-#   3. `IMAGE_TAG` env в .github/workflows/build-db-image.yml
-#   4. `accessories.db.image` tag в config/deploy.yml
-# После bump: commit → CI builds new image → coordinated kamal accessory reboot.
-# Explicit versioning предотвращает mutable tag drift (CR SF-1).
+# Base: postgres:16 (official, Debian bookworm). +postgresql-16-partman
+# устанавливается из PostgreSQL APT repo (apt.postgresql.org).
 #
-# Image: ghcr.io/himratesdev/himrate-postgres:16-partman-v1
-# Build: .github/workflows/build-db-image.yml (on push to main, db/** changes)
-# Deploy: config/deploy.yml accessories.db.image
+# Image: ghcr.io/himratesdev/himrate-postgres:${IMAGE_VERSION}
 #
-# Совместимость данных: postgres:16.x base → same PGDATA format как official
-# postgres:16. Volume himrate_pgdata mountable без миграции данных.
+# **Single source of truth для version: config/deploy.yml**
+#   accessories.db.image: ghcr.io/himratesdev/himrate-postgres:<TAG>
+# При bump: изменить ТОЛЬКО deploy.yml — build workflow читает оттуда +
+# passes via --build-arg IMAGE_VERSION. Dockerfile LABEL получает value от
+# build arg → sync guaranteed by design (no drift possible, no grep parsing).
+#
+# Build: .github/workflows/build-db-image.yml (on push to main,
+# db/** or config/deploy.yml changes).
+# Local build example:
+#   docker build --build-arg IMAGE_VERSION=test-local -t himrate-postgres:test db/
+# Deploy: kamal accessory reboot db -d <dest> — volume persistent,
+# данные сохраняются через reboot.
+#
+# Layer ordering optimized для cache efficiency (CR N-1): expensive apt install
+# перед variable ARG/LABEL layers → version bump invalidates only last few
+# trivial layers (LABEL), apt install layer stays cached (~2 min saved/build).
 
-# Pinned minor version (CR N-2). Bump aligned с postgres:16 security patches.
+# Minor version pinned для security patching control. Dependabot docker
+# ecosystem (.github/dependabot.yml) auto-PR на postgres:16.x bumps.
 FROM postgres:16.4
 
-# OCI standard labels — links image с GitHub repo + searchable metadata (CR N-6).
-LABEL org.opencontainers.image.source="https://github.com/himratesdev/himrate-platform"
-LABEL org.opencontainers.image.description="PostgreSQL 16.4 с pg_partman extension для TASK-039 Trends Tab native partitioning"
-LABEL org.opencontainers.image.licenses="Proprietary"
-LABEL org.opencontainers.image.vendor="HimRate"
-LABEL org.opencontainers.image.version="16-partman-v1"
-
+# === Stable layers (cached across version bumps) ===
+#
 # Install pg_partman from PostgreSQL APT repo (postgresql-16-partman package).
-# Current stable в Debian bookworm: 4.7.x (supports native PG partitioning per ADR §4.2).
-# pg_partman НЕ требует shared_preload_libraries (мы используем Sidekiq cron для
-# run_maintenance вместо partman_bgw background worker — см. ADR §4.2 Phase B).
+# Current stable в Debian bookworm: 4.7.x (supports native PG partitioning per
+# ADR §4.2). pg_partman НЕ требует shared_preload_libraries — используем Sidekiq
+# cron для partman.run_maintenance (ADR §4.2 Phase B).
 RUN apt-get update \
  && apt-get install -y --no-install-recommends postgresql-16-partman \
  && rm -rf /var/lib/apt/lists/*
@@ -45,3 +47,23 @@ RUN test -f /usr/share/postgresql/16/extension/pg_partman.control \
 # *.sql из /docker-entrypoint-initdb.d только при initial PGDATA creation.
 # Для existing staging/prod DB — manual execution per runbook §1.
 COPY init-pg-partman.sql /docker-entrypoint-initdb.d/01-pg-partman.sql
+
+# === Variable layers (invalidated on version bump) ===
+#
+# IMAGE_VERSION — forced from --build-arg (no default). CI must provide
+# value, extracted from deploy.yml. Prevents silent build без корректной
+# version metadata → fail fast если workflow не passes --build-arg.
+ARG IMAGE_VERSION
+
+# Validate что IMAGE_VERSION non-empty (--build-arg provided).
+# Fails loudly если someone runs `docker build db/` без build-arg.
+RUN [ -n "$IMAGE_VERSION" ] \
+ || (echo "ERROR: IMAGE_VERSION build arg required — pass via --build-arg IMAGE_VERSION=..." && exit 1)
+
+# OCI standard labels — links image с GitHub repo + searchable metadata.
+# version получает значение от build arg (single source = deploy.yml).
+LABEL org.opencontainers.image.source="https://github.com/himratesdev/himrate-platform"
+LABEL org.opencontainers.image.description="PostgreSQL 16.4 с pg_partman extension для TASK-039 Trends Tab native partitioning"
+LABEL org.opencontainers.image.licenses="Proprietary"
+LABEL org.opencontainers.image.vendor="HimRate"
+LABEL org.opencontainers.image.version="${IMAGE_VERSION}"
