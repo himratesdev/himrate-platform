@@ -14,31 +14,21 @@
 #
 # Build: .github/workflows/build-db-image.yml (on push to main,
 # db/** or config/deploy.yml changes).
+# Local build example:
+#   docker build --build-arg IMAGE_VERSION=test-local -t himrate-postgres:test db/
 # Deploy: kamal accessory reboot db -d <dest> — volume persistent,
 # данные сохраняются через reboot.
+#
+# Layer ordering optimized для cache efficiency (CR N-1): expensive apt install
+# перед variable ARG/LABEL layers → version bump invalidates only last few
+# trivial layers (LABEL), apt install layer stays cached (~2 min saved/build).
 
 # Minor version pinned для security patching control. Dependabot docker
 # ecosystem (.github/dependabot.yml) auto-PR на postgres:16.x bumps.
 FROM postgres:16.4
 
-# IMAGE_VERSION — forced from --build-arg (no default). CI must provide
-# value, extracted from deploy.yml. Prevents silent build без корректной
-# version metadata → fail fast если workflow не passes --build-arg.
-ARG IMAGE_VERSION
-
-# Validate что IMAGE_VERSION non-empty (--build-arg provided).
-# RUN с ARG reference fails если unset (строковое compare).
-RUN [ -n "$IMAGE_VERSION" ] \
- || (echo "ERROR: IMAGE_VERSION build arg required — pass via --build-arg" && exit 1)
-
-# OCI standard labels — links image с GitHub repo + searchable metadata.
-# version получает значение от build arg (single source = deploy.yml).
-LABEL org.opencontainers.image.source="https://github.com/himratesdev/himrate-platform"
-LABEL org.opencontainers.image.description="PostgreSQL 16.4 с pg_partman extension для TASK-039 Trends Tab native partitioning"
-LABEL org.opencontainers.image.licenses="Proprietary"
-LABEL org.opencontainers.image.vendor="HimRate"
-LABEL org.opencontainers.image.version="${IMAGE_VERSION}"
-
+# === Stable layers (cached across version bumps) ===
+#
 # Install pg_partman from PostgreSQL APT repo (postgresql-16-partman package).
 # Current stable в Debian bookworm: 4.7.x (supports native PG partitioning per
 # ADR §4.2). pg_partman НЕ требует shared_preload_libraries — используем Sidekiq
@@ -57,3 +47,23 @@ RUN test -f /usr/share/postgresql/16/extension/pg_partman.control \
 # *.sql из /docker-entrypoint-initdb.d только при initial PGDATA creation.
 # Для existing staging/prod DB — manual execution per runbook §1.
 COPY init-pg-partman.sql /docker-entrypoint-initdb.d/01-pg-partman.sql
+
+# === Variable layers (invalidated on version bump) ===
+#
+# IMAGE_VERSION — forced from --build-arg (no default). CI must provide
+# value, extracted from deploy.yml. Prevents silent build без корректной
+# version metadata → fail fast если workflow не passes --build-arg.
+ARG IMAGE_VERSION
+
+# Validate что IMAGE_VERSION non-empty (--build-arg provided).
+# Fails loudly если someone runs `docker build db/` без build-arg.
+RUN [ -n "$IMAGE_VERSION" ] \
+ || (echo "ERROR: IMAGE_VERSION build arg required — pass via --build-arg IMAGE_VERSION=..." && exit 1)
+
+# OCI standard labels — links image с GitHub repo + searchable metadata.
+# version получает значение от build arg (single source = deploy.yml).
+LABEL org.opencontainers.image.source="https://github.com/himratesdev/himrate-platform"
+LABEL org.opencontainers.image.description="PostgreSQL 16.4 с pg_partman extension для TASK-039 Trends Tab native partitioning"
+LABEL org.opencontainers.image.licenses="Proprietary"
+LABEL org.opencontainers.image.vendor="HimRate"
+LABEL org.opencontainers.image.version="${IMAGE_VERSION}"

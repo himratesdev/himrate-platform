@@ -32,7 +32,11 @@ jobs:
         id: image_tag
         run: |
           set -euo pipefail
+          # | head -1 — defensive: если deploy.yml когда-нибудь получит
+          # accessory override с second matching line, не формируем multiline output
+          # (GITHUB_OUTPUT требует heredoc для multiline — фикс для future-proof) (CR N-2).
           TAG=$(grep -E '^\s*image:\s*ghcr.io/himratesdev/himrate-postgres:' config/deploy.yml \
+                | head -1 \
                 | sed -E 's/.*himrate-postgres:([^ ]+).*/\1/')
           if [ -z "$TAG" ]; then
             echo "::error::Failed to extract image tag from config/deploy.yml"
