@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload Trivy scan results to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3.27.0
+        uses: github/codeql-action/upload-sarif@v4.35.2
         with:
           sarif_file: trivy-results.sarif
           category: postgres-db-image
