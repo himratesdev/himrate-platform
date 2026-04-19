@@ -135,7 +135,7 @@ jobs:
           FLIPPER_UI_USER: ${{ secrets.FLIPPER_UI_USER }}
           ALLOWED_EXTENSION_ID: ${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
-          EVENTSUB_WEBHOOK_URL: ${{ secrets.EVENTSUB_WEBHOOK_URL }}
+          EVENTSUB_WEBHOOK_URL: https://staging.himrate.com
         run: kamal setup -d staging
 
   # === Verify Staging Deploy — after deploy-staging ===
@@ -162,16 +162,70 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: production
+    permissions:
+      # Registry auth через dedicated PAT (secrets.KAMAL_REGISTRY_PASSWORD), НЕ
+      # через workflow GITHUB_TOKEN → packages scope здесь не нужен. Staging
+      # job contrast: staging использует GITHUB_TOKEN для pull → ему packages: write.
+      contents: read
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1
       - run: gem install kamal
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host 194.135.85.159
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ServerAliveInterval 15
+            ServerAliveCountMax 10
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+      # Mirror deploy-staging env block structure для unified mental model.
+      # Production-specific deltas:
+      #   • URLs: api.himrate.com (subdomain для backend, himrate.com = landing)
+      #   • DATABASE_URL: inline constructed from POSTGRES_PASSWORD (single source
+      #     of truth — не создаём отдельный PRODUCTION_DATABASE_URL secret)
+      #   • REDIS_URL: DB index /0 (staging /1 — logical separation on same Redis)
+      #   • KAMAL_REGISTRY_PASSWORD: dedicated PAT (repo secret), не ephemeral
+      #     GITHUB_TOKEN — production deploy requires explicit, audit-visible
+      #     credential с controlled rotation
+      #   • EVENTSUB_WEBHOOK_URL: api.himrate.com (EventSub subscriptions будут
+      #     создаваться manually на первом release как часть launch runbook)
       - name: Deploy to production
         env:
           KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        run: |
-          mkdir -p ~/.ssh
-          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          kamal deploy -d production
+          RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          # ⚠️ POSTGRES_PASSWORD ДОЛЖЕН быть URL-safe (hex charset). Generate через
+          # `openssl rand -hex 32`, НЕ `-base64 32` (base64 содержит +/= которые
+          # ломают URI parsing). Same constraint applies для STAGING_DATABASE_URL secret.
+          DATABASE_URL: postgres://himrate:${{ secrets.POSTGRES_PASSWORD }}@himrate-db:5432/himrate_production
+          REDIS_URL: redis://himrate-redis:6379/0
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          TWITCH_REDIRECT_URI: https://api.himrate.com/api/v1/auth/twitch/callback
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          GOOGLE_REDIRECT_URI: https://api.himrate.com/api/v1/auth/google/callback
+          ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
+          ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
+          ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
+          FLIPPER_UI_PASSWORD: ${{ secrets.FLIPPER_UI_PASSWORD }}
+          FLIPPER_UI_USER: ${{ secrets.FLIPPER_UI_USER }}
+          ALLOWED_EXTENSION_ID: ${{ secrets.ALLOWED_EXTENSION_ID }}
+          TWITCH_WEBHOOK_SECRET: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
+          EVENTSUB_WEBHOOK_URL: https://api.himrate.com
+        # kamal setup (vs kamal deploy): idempotent full boot — app + proxy +
+        # accessories. Безопасен на subsequent runs (Kamal skips healthy components).
+        # Немного тяжелее kamal deploy (~30s дополнительно на accessory health checks),
+        # но gives консистентный entry point: один command для first v*.* и для
+        # subsequent releases. Future optimization: split first-time setup в manual
+        # workflow, auto releases use kamal deploy (lighter).
+        run: kamal setup -d production
