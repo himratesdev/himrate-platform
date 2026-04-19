@@ -17,13 +17,33 @@ SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_partman';
 - **Пусто** → extension не установлен → миграция #5 raise в production (правильное поведение).
 - **Возвращает row** → extension установлен, миграция продолжит выполнение.
 
-### Установка (только DBA с superuser правами)
+### Установка
 
-```sql
--- На managed DB (AWS RDS / GCP Cloud SQL) — через админ-консоль параметра shared_preload_libraries
--- На self-hosted (Hetzner / Time4VPS):
-CREATE EXTENSION pg_partman SCHEMA partman;
+Extension files уже установлены в Docker image `ghcr.io/himratesdev/himrate-postgres:16-partman` (см. `db/Dockerfile`). Нужно только создать extension в целевой DB.
+
+**Для fresh DB (новый environment):** автоматически через `/docker-entrypoint-initdb.d/01-pg-partman.sql` (выполняется при initial PGDATA creation).
+
+**Для existing DB (staging/prod после image switch):**
+
+```bash
+# 1. Pull/reboot accessory с новым image:
+kamal accessory reboot db -d staging  # или production
+
+# 2. Подключиться к DB контейнеру и создать extension:
+docker exec himrate-db psql -U himrate -d himrate_staging -c \
+  "CREATE SCHEMA IF NOT EXISTS partman; \
+   CREATE EXTENSION IF NOT EXISTS pg_partman SCHEMA partman;"
+
+# 3. Verify:
+docker exec himrate-db psql -U himrate -d himrate_staging -c \
+  "SELECT extname, extversion FROM pg_extension WHERE extname = 'pg_partman';"
+# Expected: строка с pg_partman + версия (4.7.x или 5.x)
 ```
+
+**Если image ещё не собран (pre-merge PR #79):**
+
+На managed DB / облачных провайдерах — через админ-консоль (shared_preload_libraries),
+через apt-get install postgresql-16-partman внутри контейнера (НЕ рекомендуется — нестабильно без rebuild image).
 
 Проверка версии: `pg_partman >= 4.7` для native partitioning support.
 
