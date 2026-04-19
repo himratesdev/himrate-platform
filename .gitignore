@@ -33,3 +33,8 @@
 # Ignore key files for decrypting credentials and more.
 /config/*.key
 
+# Kamal destination-specific secrets (must never be committed).
+# Only `.kamal/secrets-common` (env-var-referencing stub) is tracked.
+/.kamal/secrets
+/.kamal/secrets.*
+
