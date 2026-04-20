@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe TrustIndex::BonusAcceleratorCalculator do
+  include_context "rehab bonus config"
+
   let(:channel) { create(:channel) }
   let(:applied_time) { 10.days.ago }
   let(:active_event) do
@@ -12,21 +14,6 @@ RSpec.describe TrustIndex::BonusAcceleratorCalculator do
       applied_at: applied_time,
       required_clean_streams: 15
     )
-  end
-
-  # rehab_bonus_* configs seeded by migration #6 в production. Test env loads
-  # structure.sql (без data) → seed manually per spec pattern (matches HS engine_spec).
-  before do
-    {
-      "rehab_bonus_pts_max" => 15,
-      "rehab_bonus_per_qualifying_stream" => 1,
-      "rehab_bonus_percentile_threshold" => 80,
-      "rehab_bonus_acceleration_factor" => 0.2
-    }.each do |param, value|
-      SignalConfiguration.find_or_create_by!(
-        signal_type: "trust_index", category: "rehabilitation_bonus", param_name: param
-      ) { |c| c.param_value = value }
-    end
   end
 
   # Helper создаёт post-penalty stream с TIH row + optional snapshot percentiles.
@@ -67,20 +54,24 @@ RSpec.describe TrustIndex::BonusAcceleratorCalculator do
     end
 
     # TC-038: 5 clean streams, percentiles below 80 → bonus = 0
-    it "TC-038: percentiles below threshold (80) → bonus_pts_earned = 0" do
+    # CR N-2: percentile_threshold_below message — clean streams exist но percentiles ниже
+    it "TC-038: percentiles below threshold (80) → bonus=0, percentile_threshold_below message" do
       5.times { |i| create_clean_stream(eng_pct: 70, eng_cons_pct: 75, days_after: i + 1) }
 
       result = described_class.call(channel, active_event)
       expect(result[:bonus_pts_earned]).to eq(0)
       expect(result[:qualifying_signals]).to be_nil
-      expect(result[:bonus_description_ru]).to include("Пока нет qualifying")
-      expect(result[:bonus_description_en]).to include("No qualifying")
+      expect(result[:bonus_description_ru]).to include("ниже порога 80")
+      expect(result[:bonus_description_en]).to include("below threshold 80")
     end
 
-    it "no clean streams → bonus_pts_earned = 0, qualifying_signals = nil" do
+    # CR N-2: no_qualifying message — никаких clean streams (vs threshold_below message)
+    it "no clean streams → bonus=0, no_qualifying message" do
       result = described_class.call(channel, active_event)
       expect(result[:bonus_pts_earned]).to eq(0)
       expect(result[:qualifying_signals]).to be_nil
+      expect(result[:bonus_description_ru]).to include("Пока нет qualifying")
+      expect(result[:bonus_description_en]).to include("No qualifying streams")
     end
 
     it "skips streams без snapshots (NULL percentiles → не qualifying)" do

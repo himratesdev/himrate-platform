@@ -9,7 +9,8 @@ module TrustIndex
     # TASK-039 FR-047: SignalConfiguration acceleration_factor (default 0.2 → 20%
     # max boost from full bonus). Build-for-years — admin tunable, не hardcoded.
     SIGNAL_TYPE = "trust_index"
-    CONFIG_CATEGORY = "rehabilitation_bonus"
+    BONUS_CONFIG_CATEGORY = "rehabilitation_bonus"
+    REHAB_CONFIG_CATEGORY = "rehabilitation"
 
     def self.call(channel)
       active_event = RehabilitationPenaltyEvent.latest_active_for(channel.id)
@@ -38,12 +39,19 @@ module TrustIndex
 
     # FR-047: effective_clean = clean_streams + (bonus_pts_earned / bonus_max) × required × acceleration_factor
     # progress_pct (raw) preserved для backwards compat — this is parallel field.
+    #
+    # CR SF-1: bonus_max=0 (admin deactivation) → fall back на raw progress.
+    # Без этой ветки UI показывал бы 0% effective когда bonus mechanism disabled,
+    # хотя реальный progress (clean_streams/required) идёт normally.
     def self.compute_effective_progress(clean_streams, required, bonus)
+      return 0 if required.zero?
+
+      raw_progress = ((clean_streams.to_f / required) * 100).round.clamp(0, 100)
       bonus_max = bonus[:bonus_pts_max].to_f
-      return 0 if bonus_max.zero? || required.zero?
+      return raw_progress if bonus_max.zero? # bonus disabled → no acceleration, raw progress only
 
       acceleration_factor = SignalConfiguration.value_for(
-        SIGNAL_TYPE, CONFIG_CATEGORY, "rehab_bonus_acceleration_factor"
+        SIGNAL_TYPE, BONUS_CONFIG_CATEGORY, "rehab_bonus_acceleration_factor"
       ).to_f
 
       bonus_ratio = bonus[:bonus_pts_earned].to_f / bonus_max
@@ -55,6 +63,9 @@ module TrustIndex
     # M6 fix: filter by stream.started_at > applied_at (not TI.calculated_at).
     # Otherwise, post-penalty TI re-computations of pre-penalty streams
     # (e.g. after backfill/reprocess) would count as "clean streams".
+    #
+    # CR N-3: clean_stream_ti_threshold reads from SignalConfiguration (shared
+    # с BonusAcceleratorCalculator) для consistent "clean stream" definition.
     def self.count_clean_streams_since(channel, since)
       clean_stream_ids = Stream
         .where(channel_id: channel.id)
@@ -63,9 +74,13 @@ module TrustIndex
 
       return 0 if clean_stream_ids.empty?
 
+      threshold = SignalConfiguration.value_for(
+        SIGNAL_TYPE, REHAB_CONFIG_CATEGORY, "clean_stream_ti_threshold"
+      ).to_f
+
       TrustIndexHistory
         .where(channel_id: channel.id, stream_id: clean_stream_ids)
-        .where("trust_index_score >= ?", 50)
+        .where("trust_index_score >= ?", threshold)
         .distinct
         .count(:stream_id)
     end

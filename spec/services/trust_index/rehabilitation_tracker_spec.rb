@@ -3,22 +3,9 @@
 require "rails_helper"
 
 RSpec.describe TrustIndex::RehabilitationTracker do
-  let(:channel) { create(:channel) }
+  include_context "rehab bonus config"
 
-  # TASK-039 Phase A3b: rehab_bonus_* configs seeded by migration #6 в production.
-  # Test env loads structure.sql (без data) → seed manually per spec pattern.
-  before do
-    {
-      "rehab_bonus_pts_max" => 15,
-      "rehab_bonus_per_qualifying_stream" => 1,
-      "rehab_bonus_percentile_threshold" => 80,
-      "rehab_bonus_acceleration_factor" => 0.2
-    }.each do |param, value|
-      SignalConfiguration.find_or_create_by!(
-        signal_type: "trust_index", category: "rehabilitation_bonus", param_name: param
-      ) { |c| c.param_value = value }
-    end
-  end
+  let(:channel) { create(:channel) }
 
   describe ".call" do
     it "returns active: false when no penalty events" do
@@ -151,6 +138,33 @@ RSpec.describe TrustIndex::RehabilitationTracker do
         result = described_class.call(channel)
         expect(result[:bonus][:bonus_pts_earned]).to eq(0)
         expect(result[:effective_progress_pct]).to eq(result[:progress_pct])
+      end
+
+      # CR SF-1: bonus_max=0 (admin deactivation) → effective falls back на raw progress
+      # вместо 0, чтобы UI не показывал "0% прогресса" для users с реальным реабилитированием.
+      it "SF-1: when bonus_max=0 (deactivated) → effective_progress_pct falls back на raw" do
+        # Override pts_max → 0 (admin disabled bonus mechanism)
+        SignalConfiguration.where(
+          signal_type: "trust_index", category: "rehabilitation_bonus",
+          param_name: "rehab_bonus_pts_max"
+        ).update_all(param_value: 0)
+
+        # 3 clean streams (raw progress = 20%)
+        3.times do |i|
+          stream_time = applied_time + (i + 1).days
+          stream = create(:stream, channel: channel,
+                                   started_at: stream_time, ended_at: stream_time + 1.hour)
+          create(:trust_index_history,
+                 channel: channel, stream: stream,
+                 trust_index_score: 70, erv_percent: 70, ccv: 100, confidence: 0.85,
+                 classification: "needs_review", cold_start_status: "full",
+                 signal_breakdown: {},
+                 calculated_at: stream_time + 1.hour)
+        end
+
+        result = described_class.call(channel)
+        expect(result[:progress_pct]).to eq(20) # 3/15 = 20%
+        expect(result[:effective_progress_pct]).to eq(result[:progress_pct]) # not 0
       end
     end
   end
