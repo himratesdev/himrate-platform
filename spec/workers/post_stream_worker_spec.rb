@@ -27,6 +27,7 @@ RSpec.describe PostStreamWorker do
     allow(StreamerReputationRefreshWorker).to receive(:perform_async)
     allow(StreamExpiringWorker).to receive(:perform_at)
     allow(Trends::QualifyingPercentileSnapshotWorker).to receive(:perform_in)
+    allow(Trends::AggregationWorker).to receive(:perform_async)
   end
 
   describe "#perform" do
@@ -64,6 +65,14 @@ RSpec.describe PostStreamWorker do
 
       expect(Trends::QualifyingPercentileSnapshotWorker).to have_received(:perform_in)
         .with(2.minutes, stream.id)
+    end
+
+    # TASK-039 FR-018: PostStreamWorker enqueues daily aggregation
+    it "enqueues Trends::AggregationWorker для stream's date" do
+      described_class.new.perform(stream.id)
+
+      expect(Trends::AggregationWorker).to have_received(:perform_async)
+        .with(channel.id, stream.started_at.to_date.iso8601)
     end
 
     it "schedules stream_expiring worker at ended_at + 17h" do
