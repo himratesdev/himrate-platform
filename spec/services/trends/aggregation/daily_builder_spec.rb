@@ -117,6 +117,74 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
       end
     end
 
+    context "Phase B3 deferred fields" do
+      before do
+        SignalConfiguration.upsert_all([
+          { signal_type: "trends", category: "discovery", param_name: "channel_age_max_days", param_value: 60, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "discovery", param_name: "min_data_points", param_value: 7, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "discovery", param_name: "logistic_r2_organic_min", param_value: 0.7, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "discovery", param_name: "step_r2_burst_min", param_value: 0.9, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "discovery", param_name: "burst_window_days_max", param_value: 3, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "discovery", param_name: "burst_jump_min", param_value: 1000, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "coupling", param_name: "rolling_window_days", param_value: 30, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "coupling", param_name: "healthy_r_min", param_value: 0.7, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "coupling", param_name: "weakening_r_min", param_value: 0.3, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "coupling", param_name: "min_history_days", param_value: 7, created_at: Time.current, updated_at: Time.current },
+          { signal_type: "trends", category: "best_worst", param_name: "min_streams_required", param_value: 3, created_at: Time.current, updated_at: Time.current }
+        ], unique_by: %i[signal_type category param_name], on_duplicate: :skip)
+      end
+
+      it "sets tier_change_on_day=true when HsTierChangeEvent exists на date" do
+        create(:hs_tier_change_event, channel: channel, occurred_at: target_date.beginning_of_day + 5.hours,
+          event_type: "tier_change", from_tier: "trusted", to_tier: "needs_review")
+        described_class.call(channel.id, target_date)
+
+        tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
+        expect(tda.tier_change_on_day).to be true
+      end
+
+      it "leaves tier_change_on_day=false когда нет events" do
+        described_class.call(channel.id, target_date)
+        tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
+
+        expect(tda.tier_change_on_day).to be false
+      end
+
+      it "marks is_best_stream_day when highest TI in 90d lookback" do
+        best_stream = create(:stream, channel: channel,
+          started_at: target_date.beginning_of_day + 2.hours,
+          avg_ccv: 500, peak_ccv: 800)
+        create(:trust_index_history, channel: channel, stream: best_stream,
+          trust_index_score: 95, classification: "trusted",
+          calculated_at: target_date.beginning_of_day + 3.hours)
+
+        # Other streams lower TI, earlier dates
+        2.times do |i|
+          earlier = create(:stream, channel: channel,
+            started_at: target_date - (i + 3).days, avg_ccv: 100, peak_ccv: 200)
+          create(:trust_index_history, channel: channel, stream: earlier,
+            trust_index_score: 60 + i, classification: "needs_review",
+            calculated_at: target_date - (i + 3).days + 3.hours)
+        end
+
+        described_class.call(channel.id, target_date)
+        tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
+
+        expect(tda.is_best_stream_day).to be true
+      end
+
+      it "swallows deferred errors so core upsert still succeeds" do
+        # Force DiscoveryPhaseDetector to raise
+        allow(Trends::Analysis::DiscoveryPhaseDetector).to receive(:call).and_raise(StandardError.new("boom"))
+
+        expect(Rails.logger).to receive(:warn).with(/DailyBuilder.*boom/)
+
+        expect {
+          described_class.call(channel.id, target_date)
+        }.to change(TrendsDailyAggregate, :count).by(1)
+      end
+    end
+
     context "excludes streams/TIH из других дат" do
       before do
         # Stream на target_date

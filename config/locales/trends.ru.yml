@@ -1,0 +1,81 @@
+ru:
+  trends:
+    direction:
+      rising: Растёт
+      declining: Снижается
+      flat: Стабильно
+    confidence:
+      high: Высокая
+      medium: Средняя
+      low: Низкая
+    reliability:
+      high: Высокая
+      medium: Средняя
+      low: Низкая
+      disclaimer_low: Точность прогноза низкая — интерпретируйте с осторожностью.
+    explanation:
+      rising_with_improvements: "%{metric} вырос на %{delta} за счёт %{top_signals}."
+      declining_with_degradations: "%{metric} снизился на %{delta} из-за %{top_signals}."
+      rising_generic: "%{metric} растёт (%{delta} за период)."
+      declining_generic: "%{metric} снижается (%{delta} за период)."
+      flat: "%{metric} стабильный за период."
+    discovery:
+      status:
+        organic: Органический рост
+        anomalous_burst: Подозрительный скачок (+%{jump} за %{window}д)
+        missing: Нет выраженного роста
+        not_applicable: Канал старше окна discovery
+        insufficient_data: Мало снимков подписчиков
+    coupling:
+      health:
+        healthy: Здоровая (r≥%{threshold})
+        weakening: Ослабевает
+        decoupled: Расхождение — возможна накрутка
+    anomaly_frequency:
+      verdict:
+        elevated: Аномалии участились на %{delta}%
+        reduced: Аномалии реже на %{delta}%
+        normal: Уровень аномалий обычный
+        insufficient_baseline: Недостаточно данных базовой линии
+    insights:
+      title: Динамика за период
+      priority:
+        p0: Критично
+        p1: Важно
+        p2: Заметно
+      action:
+        view_components: Открыть компоненты
+        view_anomaly: Открыть аномалию
+        view_rehabilitation: Открыть план восстановления
+        view_tier_change: Открыть смену тира
+      message:
+        ti_drop: "TI упал на %{delta} pts — %{top_degradation} лидирует"
+        tier_change: "Тир сменился %{from}→%{to} — %{date}"
+        rehabilitation_progress: "Восстановление %{clean}/%{required} (+%{bonus} бонус)"
+        improvement: "%{metric} вырос на %{delta} — %{top_improvement}"
+        anomaly_spike: "Аномалии +%{delta}% к базовой линии"
+        flat: Заметных изменений не обнаружено
+    best_stream:
+      title: Лучший стрим
+    worst_stream:
+      title: Худший стрим
+    tier_changes:
+      count:
+        zero: Смен тира нет
+        one: "1 смена тира"
+        few: "%{count} смены тира"
+        many: "%{count} смен тира"
+        other: "%{count} смен тира"
+    patterns:
+      weekday:
+        title: Разрез по дням недели
+        best: "Лучший день %{day} (TI %{ti})"
+      category:
+        title: Разрез по категориям
+        top: "Лучшая категория %{name} (+%{delta} к базовой линии)"
+        single: "Канал в основном стримит %{name}"
+    forecast:
+      title: Прогноз
+      range: "%{value} (%{lower}..%{upper})"
+      horizon_7d: На 7 дней
+      horizon_30d: На 30 дней
