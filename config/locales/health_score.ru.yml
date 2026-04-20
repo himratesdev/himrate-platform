@@ -33,6 +33,11 @@ ru:
     rehabilitation:
       title: План реабилитации
       progress: "%{clean_streams}/%{required} чистых стримов"
+      bonus:
+        label: Бонус ускорения
+        description: "+%{bonus_pts_earned} баллов за качественный engagement (%{eng_pct} перцентиль) и стабильность (%{eng_cons_pct} перцентиль)"
+        no_qualifying: Пока нет qualifying стримов для бонуса
+        percentile_threshold_below: Перцентили ниже порога 80 — бонус не начислен
     warning:
       component_low: Низкий балл — см. рекомендации ниже
     badge:

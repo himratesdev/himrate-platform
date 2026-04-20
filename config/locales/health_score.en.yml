@@ -33,6 +33,11 @@ en:
     rehabilitation:
       title: Rehabilitation plan
       progress: "%{clean_streams}/%{required} clean streams"
+      bonus:
+        label: Acceleration bonus
+        description: "+%{bonus_pts_earned} points for quality engagement (%{eng_pct} percentile) and consistency (%{eng_cons_pct} percentile)"
+        no_qualifying: No qualifying streams for bonus yet
+        percentile_threshold_below: Percentiles below threshold 80 — no bonus awarded
     warning:
       component_low: Low score — see recommendations below
     badge:
