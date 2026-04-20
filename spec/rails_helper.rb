@@ -21,6 +21,10 @@ end
 # when RecommendationTemplate already exists (skipping the conditional load).
 require Rails.root.join("db/seeds/health_score.rb")
 
+# TASK-039 Phase A3b CR N-4: shared_contexts loader. Additional support files
+# can live here (factories shared across multiple specs, common setups, etc.).
+Dir[Rails.root.join("spec/support/**/*.rb")].each { |f| require f }
+
 Shoulda::Matchers.configure do |config|
   config.integrate do |with|
     with.test_framework :rspec
