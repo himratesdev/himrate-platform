@@ -14,6 +14,21 @@ RSpec.describe TrustIndex::BonusAcceleratorCalculator do
     )
   end
 
+  # rehab_bonus_* configs seeded by migration #6 в production. Test env loads
+  # structure.sql (без data) → seed manually per spec pattern (matches HS engine_spec).
+  before do
+    {
+      "rehab_bonus_pts_max" => 15,
+      "rehab_bonus_per_qualifying_stream" => 1,
+      "rehab_bonus_percentile_threshold" => 80,
+      "rehab_bonus_acceleration_factor" => 0.2
+    }.each do |param, value|
+      SignalConfiguration.find_or_create_by!(
+        signal_type: "trust_index", category: "rehabilitation_bonus", param_name: param
+      ) { |c| c.param_value = value }
+    end
+  end
+
   # Helper создаёт post-penalty stream с TIH row + optional snapshot percentiles.
   def create_clean_stream(eng_pct: nil, eng_cons_pct: nil, ti: 70, days_after: 1)
     stream_time = applied_time + days_after.days

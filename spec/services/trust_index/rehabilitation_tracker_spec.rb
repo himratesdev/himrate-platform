@@ -5,6 +5,21 @@ require "rails_helper"
 RSpec.describe TrustIndex::RehabilitationTracker do
   let(:channel) { create(:channel) }
 
+  # TASK-039 Phase A3b: rehab_bonus_* configs seeded by migration #6 в production.
+  # Test env loads structure.sql (без data) → seed manually per spec pattern.
+  before do
+    {
+      "rehab_bonus_pts_max" => 15,
+      "rehab_bonus_per_qualifying_stream" => 1,
+      "rehab_bonus_percentile_threshold" => 80,
+      "rehab_bonus_acceleration_factor" => 0.2
+    }.each do |param, value|
+      SignalConfiguration.find_or_create_by!(
+        signal_type: "trust_index", category: "rehabilitation_bonus", param_name: param
+      ) { |c| c.param_value = value }
+    end
+  end
+
   describe ".call" do
     it "returns active: false when no penalty events" do
       result = described_class.call(channel)
