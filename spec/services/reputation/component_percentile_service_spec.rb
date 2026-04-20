@@ -54,7 +54,10 @@ RSpec.describe Reputation::ComponentPercentileService, type: :service do
         result = described_class.new(channel).call("default")
         expect(result).to be_a(Hash)
         expect(result.keys).to match_array(%i[growth_pattern follower_quality engagement_consistency pattern_history])
-        expect(result[:engagement_consistency]).to be > 90.0
+        # Math: 5 peers + 1 test channel = 6 total. count_below excludes self →
+        # max possible percentile с 5 peers = 5/6 ≈ 83.3%. Channel scores
+        # (90/85/80/75) выше всех peers (50-50.4) → expects max percentile.
+        expect(result[:engagement_consistency]).to be > 80.0
       end
     end
 
