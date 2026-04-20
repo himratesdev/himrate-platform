@@ -7,6 +7,13 @@ RSpec.describe Trends::Attribution::RaidBotAdapter do
   let(:stream) { create(:stream, channel: channel) }
   let(:anomaly) { create(:anomaly, stream: stream) }
 
+  before do
+    SignalConfiguration.find_or_create_by!(
+      signal_type: "trust_index", category: "raid_attribution",
+      param_name: "raid_bot_fallback_confidence"
+    ) { |c| c.param_value = 0.8 }
+  end
+
   describe ".call" do
     context "no RaidAttribution" do
       it "returns nil" do

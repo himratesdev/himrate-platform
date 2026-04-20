@@ -13,7 +13,8 @@
 module Trends
   module Attribution
     class RaidOrganicAdapter < BaseAdapter
-      ORGANIC_CONFIDENCE = 0.8
+      SIGNAL_TYPE = "trust_index"
+      CONFIG_CATEGORY = "raid_attribution"
 
       protected
 
@@ -26,7 +27,7 @@ module Trends
 
         {
           source: "raid_organic",
-          confidence: ORGANIC_CONFIDENCE,
+          confidence: organic_confidence,
           raw_source_data: {
             raid_attribution_id: raid.id,
             source_channel_id: raid.source_channel_id,
@@ -34,6 +35,15 @@ module Trends
             raid_timestamp: raid.timestamp.iso8601
           }
         }
+      end
+
+      private
+
+      # PG O-1: admin tunable — default 0.8 reflects matching certainty.
+      def organic_confidence
+        @organic_confidence ||= SignalConfiguration.value_for(
+          SIGNAL_TYPE, CONFIG_CATEGORY, "raid_organic_default_confidence"
+        ).to_f
       end
     end
   end

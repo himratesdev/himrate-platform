@@ -10,7 +10,14 @@ RSpec.describe Trends::Attribution::Pipeline do
   # Seed minimal AttributionSource rows (Phase A1 migration seeds their на staging/prod,
   # test env loads structure.sql без data).
   # CR N-1: 1:1 source-adapter mapping — RaidOrganicAdapter + RaidBotAdapter separate classes.
+  # PG O-1: raid_attribution SignalConfigurations seeded (mirrors migration 20260420100005).
   before do
+    %w[raid_organic_default_confidence raid_bot_fallback_confidence].each do |param|
+      SignalConfiguration.find_or_create_by!(
+        signal_type: "trust_index", category: "raid_attribution", param_name: param
+      ) { |c| c.param_value = 0.8 }
+    end
+
     AttributionSource.find_or_create_by!(source: "raid_organic") do |s|
       s.enabled = true
       s.priority = 10

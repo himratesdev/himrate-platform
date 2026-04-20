@@ -11,7 +11,8 @@
 module Trends
   module Attribution
     class RaidBotAdapter < BaseAdapter
-      FALLBACK_CONFIDENCE = 0.8
+      SIGNAL_TYPE = "trust_index"
+      CONFIG_CATEGORY = "raid_attribution"
 
       protected
 
@@ -22,7 +23,7 @@ module Trends
           .first
         return nil if raid.nil?
 
-        confidence = (raid.bot_score&.to_f || FALLBACK_CONFIDENCE).clamp(0.0, 1.0)
+        confidence = (raid.bot_score&.to_f || fallback_confidence).clamp(0.0, 1.0)
 
         {
           source: "raid_bot",
@@ -35,6 +36,16 @@ module Trends
             raid_timestamp: raid.timestamp.iso8601
           }
         }
+      end
+
+      private
+
+      # PG O-1: admin tunable fallback when RaidAttribution.bot_score = NULL
+      # (legacy data or bot_detection failure).
+      def fallback_confidence
+        @fallback_confidence ||= SignalConfiguration.value_for(
+          SIGNAL_TYPE, CONFIG_CATEGORY, "raid_bot_fallback_confidence"
+        ).to_f
       end
     end
   end
