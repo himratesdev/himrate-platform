@@ -77,4 +77,17 @@ RSpec.describe SignalComputeWorker do
     expect(Rails.logger).to receive(:info).with(/SignalComputeWorker: stream.*TI=/)
     worker.perform(stream.id)
   end
+
+  # TASK-039 FR-019: enqueue Trends::AnomalyAttributionWorker per created anomaly ID
+  it "enqueues Trends::AnomalyAttributionWorker за каждую созданную anomaly" do
+    anomaly_ids = [ SecureRandom.uuid, SecureRandom.uuid ]
+    allow(TrustIndex::Signals::AnomalyAlerter).to receive(:check).and_return(anomaly_ids)
+    allow(Trends::AnomalyAttributionWorker).to receive(:perform_async)
+
+    worker.perform(stream.id)
+
+    anomaly_ids.each do |id|
+      expect(Trends::AnomalyAttributionWorker).to have_received(:perform_async).with(id)
+    end
+  end
 end

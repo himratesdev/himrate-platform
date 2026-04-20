@@ -56,4 +56,47 @@ namespace :trends do
 
     puts "Done: #{enqueued} jobs enqueued. Monitor Sidekiq для completion."
   end
+
+  # FR-019 backfill: re-process attributions для existing anomalies без них.
+  # Enqueues Trends::AnomalyAttributionWorker per anomaly. Idempotent — Pipeline
+  # UPSERTs (не создаёт duplicates). Useful после adding new adapter OR
+  # correcting stale attributions.
+  #
+  # Usage:
+  #   rake trends:reprocess_attributions                              # all missing
+  #   rake trends:reprocess_attributions[2026-01-01]                  # since date
+  #   rake trends:reprocess_attributions[2026-01-01,2026-04-01]       # range
+  #   rake trends:reprocess_attributions[,,true]                      # dry-run preview
+  desc "Re-process attribution pipeline для existing anomalies (idempotent UPSERT)"
+  task :reprocess_attributions, %i[since until dry_run] => :environment do |_t, args|
+    since_date = args[:since].present? ? Date.parse(args[:since]).beginning_of_day : nil
+    until_date = args[:until].present? ? Date.parse(args[:until]).end_of_day : Time.current
+    dry_run = ActiveModel::Type::Boolean.new.cast(args[:dry_run])
+
+    scope = Anomaly.all
+    scope = scope.where(timestamp: since_date..until_date) if since_date
+    scope = scope.where(timestamp: ..until_date) unless since_date
+
+    total = scope.count
+
+    if dry_run
+      puts "[DRY-RUN] Would re-process #{total} anomalies. Sample IDs (first 10):"
+      scope.limit(10).pluck(:id).each { |id| puts "  - #{id}" }
+      puts "[DRY-RUN] Re-run без 3rd arg для actual enqueue."
+      next
+    end
+
+    puts "Re-processing attributions для #{total} anomalies..."
+    processed = 0
+    enqueued = 0
+
+    scope.find_each(batch_size: 500) do |anomaly|
+      Trends::AnomalyAttributionWorker.perform_async(anomaly.id)
+      enqueued += 1
+      processed += 1
+      puts "  ... #{processed}/#{total} enqueued" if (processed % 1000).zero?
+    end
+
+    puts "Done: #{enqueued} jobs enqueued."
+  end
 end

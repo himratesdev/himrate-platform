@@ -53,7 +53,10 @@ class SignalComputeWorker
     # FR-004: Full pipeline
     signal_results = TrustIndex::Signals::Registry.compute_all(context)
     interaction_output = TrustIndex::Signals::InteractionMatrix.apply(signal_results)
-    TrustIndex::Signals::AnomalyAlerter.check(stream, interaction_output[:results])
+    # TASK-039 FR-019: enqueue attribution pipeline для каждой созданной anomaly.
+    # AnomalyAlerter returns Array anomaly IDs (newly created, после dedup).
+    anomaly_ids = TrustIndex::Signals::AnomalyAlerter.check(stream, interaction_output[:results])
+    anomaly_ids.each { |id| Trends::AnomalyAttributionWorker.perform_async(id) }
 
     result = TrustIndex::Engine.new.compute(
       signal_results: interaction_output[:results],
