@@ -13,13 +13,13 @@ RSpec.describe Trends::AggregationWorker, type: :worker do
       described_class.new.perform(channel.id, date.to_s)
     end
 
-    it "skips when lock is busy (concurrent worker)" do
-      # Force try_advisory_xact_lock → false через select_value stub.
-      allow(ActiveRecord::Base.connection).to receive(:select_value).and_call_original
-      allow(ActiveRecord::Base.connection).to receive(:select_value)
-        .with(/pg_try_advisory_xact_lock/).and_return(false)
+    # CR N-2: stub behavior-focused method вместо brittle SQL regex
+    it "re-enqueues с 30s delay when lock busy" do
+      allow_any_instance_of(described_class).to receive(:try_advisory_lock).and_return(false)
 
       expect(Trends::Aggregation::DailyBuilder).not_to receive(:call)
+      expect(described_class).to receive(:perform_in).with(30.seconds, channel.id, date.to_s)
+
       expect { described_class.new.perform(channel.id, date.to_s) }.not_to raise_error
     end
 

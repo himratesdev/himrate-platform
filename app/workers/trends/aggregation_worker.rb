@@ -30,9 +30,16 @@ module Trends
 
       ActiveRecord::Base.transaction do
         unless try_advisory_lock(lock_key)
+          # CR N-1: re-enqueue с delay вместо silent skip. Scenario: Worker1
+          # читает TIH snapshot → работает → Worker2 tries lock (busy) → skip.
+          # Если Stream B's TIH committed между Worker1's read и commit, Worker1
+          # её не увидит. Re-enqueue через 30s гарантирует re-aggregation
+          # с fresh snapshot (Worker1 к тому моменту complete, lock released).
+          # Sidekiq retry (3 attempts) handles если worker still running после 30s.
+          self.class.perform_in(30.seconds, channel_id, date_str)
           Rails.logger.info(
-            "Trends::AggregationWorker: skipped channel=#{channel_id} date=#{date_str} " \
-            "(lock held by another worker)"
+            "Trends::AggregationWorker: lock busy для channel=#{channel_id} date=#{date_str} " \
+            "— re-enqueued с 30s delay"
           )
           return
         end
