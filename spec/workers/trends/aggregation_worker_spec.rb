@@ -40,7 +40,7 @@ RSpec.describe Trends::AggregationWorker, type: :worker do
     end
 
     it "uses queue :signals с retry 3" do
-      expect(described_class.sidekiq_options["queue"]).to eq("signals")
+      expect(described_class.sidekiq_options["queue"]).to eq(:signals)
       expect(described_class.sidekiq_options["retry"]).to eq(3)
     end
   end
