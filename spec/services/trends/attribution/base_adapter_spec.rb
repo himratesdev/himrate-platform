@@ -6,9 +6,9 @@ RSpec.describe Trends::Attribution::BaseAdapter do
   let(:anomaly) { double("Anomaly", id: "test-id") }
 
   describe ".call" do
-    it "raises NotImplementedError для base class (subclasses must override)" do
+    it "raises ImplementationRequired для base class (subclasses must override)" do
       expect { described_class.call(anomaly) }.to raise_error(
-        described_class::NotImplementedError, /must implement/
+        described_class::ImplementationRequired, /must implement/
       )
     end
 

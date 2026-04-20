@@ -62,19 +62,27 @@ module Trends
         nil
       end
 
+      # CR N-2: atomic UPSERT через AnomalyAttribution.upsert — race-safe
+      # через PG ON CONFLICT, вместо find_or_initialize_by+save! TOCTOU.
+      # Concurrent workers (backfill rake + new anomaly arrival) safe.
       def upsert_attribution(data)
-        attribution = AnomalyAttribution.find_or_initialize_by(
-          anomaly_id: @anomaly.id,
-          source: data[:source]
+        now = Time.current
+        AnomalyAttribution.upsert(
+          {
+            anomaly_id: @anomaly.id,
+            source: data[:source],
+            confidence: data[:confidence],
+            raw_source_data: data[:raw_source_data],
+            attributed_at: now,
+            created_at: now,
+            updated_at: now
+          },
+          unique_by: %i[anomaly_id source]
         )
-        attribution.confidence = data[:confidence]
-        attribution.raw_source_data = data[:raw_source_data]
-        attribution.attributed_at = Time.current
-        attribution.save!
-        attribution
-      rescue ActiveRecord::RecordInvalid => e
+        AnomalyAttribution.find_by(anomaly_id: @anomaly.id, source: data[:source])
+      rescue ActiveRecord::RecordInvalid, ActiveRecord::StatementInvalid => e
         Rails.logger.warn(
-          "Trends::Attribution::Pipeline: attribution validation failed anomaly=#{@anomaly.id} " \
+          "Trends::Attribution::Pipeline: attribution upsert failed anomaly=#{@anomaly.id} " \
           "source=#{data[:source]}: #{e.message}"
         )
         nil

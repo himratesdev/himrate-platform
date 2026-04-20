@@ -9,18 +9,19 @@ RSpec.describe Trends::Attribution::Pipeline do
 
   # Seed minimal AttributionSource rows (Phase A1 migration seeds their на staging/prod,
   # test env loads structure.sql без data).
+  # CR N-1: 1:1 source-adapter mapping — RaidOrganicAdapter + RaidBotAdapter separate classes.
   before do
     AttributionSource.find_or_create_by!(source: "raid_organic") do |s|
       s.enabled = true
       s.priority = 10
-      s.adapter_class_name = "Trends::Attribution::RaidAdapter"
+      s.adapter_class_name = "Trends::Attribution::RaidOrganicAdapter"
       s.display_label_en = "Organic raid"
       s.display_label_ru = "Органический рейд"
     end
     AttributionSource.find_or_create_by!(source: "raid_bot") do |s|
       s.enabled = true
       s.priority = 11
-      s.adapter_class_name = "Trends::Attribution::RaidAdapter"
+      s.adapter_class_name = "Trends::Attribution::RaidBotAdapter"
       s.display_label_en = "Bot raid"
       s.display_label_ru = "Бот-рейд"
     end
@@ -46,20 +47,29 @@ RSpec.describe Trends::Attribution::Pipeline do
       end
     end
 
-    context "when Raid matches" do
+    context "when bot raid matches" do
       before do
         create(:raid_attribution, stream: stream, is_bot_raid: true, bot_score: 0.9)
       end
 
-      it "creates multiple attributions (raid_bot + unattributed fallback)" do
-        # RaidAdapter matched dважды (для raid_organic и raid_bot sources —
-        # оба share RaidAdapter class, но возвращают source из is_bot_raid).
-        # После Pipeline: UNIQUE anomaly_id+source — raid_bot created once,
-        # raid_organic overwritten (latest upsert), unattributed создан.
-        # Фактически result: 2 unique sources saved (raid_bot + unattributed).
-        results = described_class.call(anomaly)
+      # 1:1 mapping: only RaidBotAdapter matches bot raid. RaidOrganicAdapter filter
+      # returns nil (is_bot_raid=false required). Unattributed catch-all always.
+      it "creates raid_bot + unattributed attributions" do
+        described_class.call(anomaly)
         sources = AnomalyAttribution.where(anomaly_id: anomaly.id).pluck(:source)
-        expect(sources).to include("raid_bot", "unattributed")
+        expect(sources).to contain_exactly("raid_bot", "unattributed")
+      end
+    end
+
+    context "when organic raid matches" do
+      before do
+        create(:raid_attribution, stream: stream, is_bot_raid: false)
+      end
+
+      it "creates raid_organic + unattributed attributions" do
+        described_class.call(anomaly)
+        sources = AnomalyAttribution.where(anomaly_id: anomaly.id).pluck(:source)
+        expect(sources).to contain_exactly("raid_organic", "unattributed")
       end
     end
 
@@ -75,8 +85,7 @@ RSpec.describe Trends::Attribution::Pipeline do
 
     context "adapter raises exception" do
       before do
-        # Break RaidAdapter temporarily
-        allow(Trends::Attribution::RaidAdapter).to receive(:call).and_raise(StandardError, "boom")
+        allow(Trends::Attribution::RaidBotAdapter).to receive(:call).and_raise(StandardError, "boom")
       end
 
       it "continues pipeline, logs error, doesn't crash" do

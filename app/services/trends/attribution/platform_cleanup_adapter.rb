@@ -33,10 +33,13 @@ module Trends
           .first
         return nil if latest_snapshot.nil?
 
-        # Previous day snapshot для delta compute
+        # Previous day snapshot для delta compute. CR N-3: bounded 48h window
+        # prevents stale comparisons на sparse snapshot data (dormant channel,
+        # monitor outage) — без bound, prev_snapshot мог быть неделю назад →
+        # false positive drops.
         previous_snapshot = FollowerSnapshot
           .where(channel_id: channel_id)
-          .where("timestamp < ?", latest_snapshot.timestamp)
+          .where(timestamp: (latest_snapshot.timestamp - 48.hours)...latest_snapshot.timestamp)
           .order(timestamp: :desc)
           .first
         return nil if previous_snapshot.nil?

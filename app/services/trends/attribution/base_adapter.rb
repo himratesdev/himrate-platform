@@ -20,7 +20,8 @@
 module Trends
   module Attribution
     class BaseAdapter
-      class NotImplementedError < StandardError; end
+      # CR N-5: custom error name (не shadowing Ruby builtin NotImplementedError < ScriptError).
+      class ImplementationRequired < StandardError; end
 
       def self.call(anomaly)
         new.call(anomaly)
@@ -39,7 +40,7 @@ module Trends
       # Abstract — subclasses must implement.
       # Return Hash { source:, confidence:, raw_source_data: } or nil (no match).
       def build_attribution(_anomaly)
-        raise NotImplementedError,
+        raise ImplementationRequired,
           "#{self.class.name} must implement #build_attribution(anomaly)"
       end
 
