@@ -68,6 +68,12 @@ class PostStreamWorker
       # complete (typically <30s) — snapshot reads fresh latest values.
       Trends::QualifyingPercentileSnapshotWorker.perform_in(2.minutes, stream.id)
 
+      # TASK-039 FR-018: daily aggregation refresh для stream's date.
+      # pg_advisory_lock в AggregationWorker защищает от concurrent runs
+      # (same channel+date re-triggered при stream part merges, EventSub re-deliveries).
+      stream_date = stream.started_at&.to_date&.iso8601
+      Trends::AggregationWorker.perform_async(stream.channel_id, stream_date) if stream_date
+
       duration_ms = ((Time.current - started_at) * 1000).to_i
       Rails.logger.info(
         "PostStreamWorker: stream #{stream_id} — " \
