@@ -55,9 +55,10 @@ RSpec.describe Trends::QualifyingPercentileSnapshotWorker, type: :worker do
       expect { described_class.new.perform(SecureRandom.uuid) }.not_to raise_error
     end
 
-    it "no-ops если TIH для stream не найден" do
+    it "raises TihNotReady если TIH для stream не найден (Sidekiq retry triggered)" do
       orphan_stream = create(:stream, channel: channel)
-      expect { described_class.new.perform(orphan_stream.id) }.not_to raise_error
+      expect { described_class.new.perform(orphan_stream.id) }
+        .to raise_error(described_class::TihNotReady, /race с post-stream compute/)
     end
   end
 end

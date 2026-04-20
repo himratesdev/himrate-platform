@@ -5,6 +5,11 @@ require "rails_helper"
 RSpec.describe Reputation::ComponentPercentileService, type: :service do
   let(:channel) { create(:channel) }
 
+  # CR N-3: stub MIN_CHANNELS чтобы fixture setup был 5 records вместо 100 —
+  # service correctness не зависит от threshold magnitude (formula identical).
+  # Production constant (100) verified via existing Reputation::PercentileService specs.
+  before { stub_const("#{described_class}::MIN_CHANNELS", 5) }
+
   describe "#call" do
     context "when channel has no reputation record" do
       it "returns nil" do
@@ -32,8 +37,9 @@ RSpec.describe Reputation::ComponentPercentileService, type: :service do
           engagement_consistency_score: 80.0,
           pattern_history_score: 75.0)
 
-        # Seed 100 peer channels with lower scores → channel должен быть высоко в percentile
-        100.times do |i|
+        # Seed 5 peer channels с lower scores (MIN_CHANNELS stubbed to 5 для speed).
+        # Channel под test должен быть высоко в percentile (его scores 90/85/80/75 vs peers 50-50.5).
+        5.times do |i|
           peer_channel = create(:channel, twitch_id: "peer_#{i}", login: "peer_#{i}")
           create(:streamer_reputation,
             channel: peer_channel,
@@ -56,7 +62,7 @@ RSpec.describe Reputation::ComponentPercentileService, type: :service do
       before do
         create(:streamer_reputation, channel: channel, engagement_consistency_score: nil)
 
-        100.times do |i|
+        5.times do |i|
           peer_channel = create(:channel, twitch_id: "peer_#{i}", login: "peer_#{i}")
           create(:streamer_reputation, channel: peer_channel,
                  engagement_consistency_score: 50.0 + (i * 0.1))

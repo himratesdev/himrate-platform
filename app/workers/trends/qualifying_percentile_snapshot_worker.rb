@@ -26,16 +26,24 @@ module Trends
     include Sidekiq::Job
     sidekiq_options queue: :post_stream, retry: 3
 
+    # Custom error для retry-on-race-condition (vs silent no-op для legitimate skips).
+    class TihNotReady < StandardError; end
+
     def perform(stream_id)
       stream = Stream.find_by(id: stream_id)
-      return unless stream
+      return unless stream # legitimate skip — stream удалён
 
       tih = TrustIndexHistory
         .for_channel(stream.channel_id)
         .where(stream_id: stream.id)
         .order(calculated_at: :desc)
         .first
-      return unless tih
+
+      # CR N-1: TIH должна существовать после run_final_compute в PostStreamWorker.
+      # Если absent на 2-min mark — race condition (HS/Reputation refresh slow или
+      # final compute failed). Raise → Sidekiq retry 3 attempts (15s/30s/75s backoff,
+      # ~2 min retry window). Backfill rake catches остатки если все retries fail.
+      raise TihNotReady, "TIH не найдена для stream #{stream.id} (race с post-stream compute)" unless tih
 
       category_key = Hs::CategoryMapper.map(stream.game_name)
       channel = stream.channel
