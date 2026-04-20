@@ -63,6 +63,11 @@ class PostStreamWorker
       # FR-012: Streamer Rating refresh
       StreamerRatingRefreshWorker.perform_async(stream.channel_id)
 
+      # TASK-039 FR-046 foundation: snapshot qualifying percentiles в TIH.
+      # Delay 2 минуты гарантирует что HS + Reputation refreshes выше успели
+      # complete (typically <30s) — snapshot reads fresh latest values.
+      Trends::QualifyingPercentileSnapshotWorker.perform_in(2.minutes, stream.id)
+
       duration_ms = ((Time.current - started_at) * 1000).to_i
       Rails.logger.info(
         "PostStreamWorker: stream #{stream_id} — " \

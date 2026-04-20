@@ -24,7 +24,9 @@ RSpec.describe PostStreamWorker do
     allow(PostStreamNotificationService).to receive(:broadcast_stream_ended)
     allow(HealthScoreRefreshWorker).to receive(:perform_async)
     allow(StreamerRatingRefreshWorker).to receive(:perform_async)
+    allow(StreamerReputationRefreshWorker).to receive(:perform_async)
     allow(StreamExpiringWorker).to receive(:perform_at)
+    allow(Trends::QualifyingPercentileSnapshotWorker).to receive(:perform_in)
   end
 
   describe "#perform" do
@@ -53,6 +55,15 @@ RSpec.describe PostStreamWorker do
 
       expect(HealthScoreRefreshWorker).to have_received(:perform_async).with(channel.id)
       expect(StreamerRatingRefreshWorker).to have_received(:perform_async).with(channel.id)
+    end
+
+    # TASK-039 FR-046 foundation: PostStreamWorker enqueues snapshot worker
+    # с 2-минутной задержкой (HS + Reputation refreshes должны complete first)
+    it "schedules QualifyingPercentileSnapshotWorker with 2-minute delay" do
+      described_class.new.perform(stream.id)
+
+      expect(Trends::QualifyingPercentileSnapshotWorker).to have_received(:perform_in)
+        .with(2.minutes, stream.id)
     end
 
     it "schedules stream_expiring worker at ended_at + 17h" do
