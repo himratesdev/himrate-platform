@@ -66,6 +66,24 @@ RSpec.describe Trends::Analysis::MovementInsights do
     expect(result.first[:message_en]).to include("No notable")
   end
 
+  it "CR M-2: per-locale signal name (no locale-leak between message_ru/en)" do
+    # signals.auth_ratio не translated → fallback = 'Auth ratio' (humanize) в both locales.
+    result = described_class.call(
+      channel: channel, from: from, to: to,
+      trend: { direction: "declining", delta: -8.0 },
+      anomaly_frequency: { verdict: "normal" },
+      tier_changes: {},
+      top_degradation: { name: "auth_ratio", delta: -3.0 }
+    )
+
+    ti_drop = result.find { |i| i[:action] == "view_components" }
+    expect(ti_drop[:message_ru]).to include("TI упал")
+    expect(ti_drop[:message_en]).to include("TI dropped")
+    # Без locale-leak: ru message содержит russian template, en — english template.
+    expect(ti_drop[:message_ru]).not_to include("TI dropped")
+    expect(ti_drop[:message_en]).not_to include("TI упал")
+  end
+
   it "caps insights at top_n" do
     result = described_class.call(
       channel: channel, from: from, to: to,

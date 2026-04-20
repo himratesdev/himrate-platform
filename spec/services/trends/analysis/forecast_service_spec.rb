@@ -37,7 +37,7 @@ RSpec.describe Trends::Analysis::ForecastService do
     expect(%w[low medium high]).to include(result[:reliability])
   end
 
-  it "clamps forecast value into [0, 100]" do
+  it "clamps forecast value into [0, 100] and raises saturated flag (CR N-3)" do
     # Strong upward drift that would exceed 100 at forecast horizon
     points = (0..19).map { |i| [ i.to_f, 80.0 + i * 1.5 ] }
     result = described_class.call(points)
@@ -45,5 +45,13 @@ RSpec.describe Trends::Analysis::ForecastService do
     expect(result[:forecast_30d][:value]).to be <= 100.0
     expect(result[:forecast_30d][:lower]).to be <= 100.0
     expect(result[:forecast_30d][:upper]).to be <= 100.0
+    expect(result[:forecast_30d][:saturated]).to be true
+  end
+
+  it "saturated=false в normal range" do
+    points = (0..19).map { |i| [ i.to_f, 50.0 + i * 0.1 ] }
+    result = described_class.call(points)
+
+    expect(result[:forecast_7d][:saturated]).to be false
   end
 end

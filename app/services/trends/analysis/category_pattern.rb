@@ -95,14 +95,20 @@ module Trends
           .sort_by { |c| -c[:streams_count] }
       end
 
+      # CR S-2: baseline ДОЛЖЕН исключать сам канал — self-comparison даёт
+      # delta ≈ 0 для monopolist channel в niche категории. Cache keyed и по
+      # channel_id тоже, т.к. baseline per-channel (exclude self) teraz varies.
       def category_baseline(name)
-        # Cache keyed by digest to avoid Memcached key-length / character issues with game names.
-        key = "trends:category_baseline:#{Digest::SHA1.hexdigest(name)}:v1"
+        # Digest name + channel_id to avoid Memcached key-length / charset issues.
+        digest = Digest::SHA1.hexdigest("#{@channel.id}:#{name}")
+        key = "trends:category_baseline:excl:#{digest}:v2"
         Rails.cache.fetch(key, expires_in: BASELINE_CACHE_TTL) do
           since = BASELINE_WINDOW_DAYS.days.ago.to_date
-          # jsonb_exists wraps the PG `?` operator as a function — safe from Rails
+          # jsonb_exists wraps PG `?` operator as function — safe from Rails
           # placeholder parser confusion (see CR note on string-operator collision).
+          # where.not(channel_id) исключает self из глобальной baseline per CR S-2.
           scope = TrendsDailyAggregate
+            .where.not(channel_id: @channel.id)
             .where("date >= ?", since)
             .where("jsonb_exists(categories, ?)", name)
             .where.not(ti_avg: nil)

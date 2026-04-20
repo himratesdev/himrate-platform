@@ -97,12 +97,20 @@ module Trends
       end
 
       def ti_drop_insight(_cfg)
-        top_name = @top_degradation ? humanize(@top_degradation[:name]) : "components"
+        # CR M-2: per-locale humanize чтобы избежать locale-leak.
+        # Было: один top_name вычислялся через I18n.t без locale (использовал I18n.locale)
+        # и попадал и в message_ru, и в message_en → русскому юзеру показывался английский
+        # текст в message_en и наоборот.
+        name = @top_degradation&.dig(:name)
+        top_ru = name ? humanize(name, :ru) : I18n.t("trends.insights.components_fallback", locale: :ru, default: "компоненты")
+        top_en = name ? humanize(name, :en) : I18n.t("trends.insights.components_fallback", locale: :en, default: "components")
+        abs_delta = @trend[:delta].to_f.abs.round(1)
+
         {
           priority: "P0",
           icon: "🔴",
-          message_ru: I18n.t("trends.insights.message.ti_drop", locale: :ru, delta: @trend[:delta].to_f.abs.round(1), top_degradation: top_name),
-          message_en: I18n.t("trends.insights.message.ti_drop", locale: :en, delta: @trend[:delta].to_f.abs.round(1), top_degradation: top_name),
+          message_ru: I18n.t("trends.insights.message.ti_drop", locale: :ru, delta: abs_delta, top_degradation: top_ru),
+          message_en: I18n.t("trends.insights.message.ti_drop", locale: :en, delta: abs_delta, top_degradation: top_en),
           action: ACTION_VIEW_COMPONENTS,
           recency_score: 100
         }
@@ -154,15 +162,20 @@ module Trends
       end
 
       def improvement_insight
-        metric = "Trust Index"
-        top_name = humanize(@top_improvement[:name])
+        # Metric label itself локализован (v2.2 future — сейчас консистентен с ExplanationBuilder default).
+        metric_ru = I18n.t("trends.insights.metric.trust_index", locale: :ru, default: "Trust Index")
+        metric_en = I18n.t("trends.insights.metric.trust_index", locale: :en, default: "Trust Index")
+        top_ru = humanize(@top_improvement[:name], :ru)
+        top_en = humanize(@top_improvement[:name], :en)
+        delta = @trend[:delta].to_f.round(1)
+
         {
           priority: "P2",
           icon: "🟢",
           message_ru: I18n.t("trends.insights.message.improvement", locale: :ru,
-            metric: metric, delta: @trend[:delta].to_f.round(1), top_improvement: top_name),
+            metric: metric_ru, delta: delta, top_improvement: top_ru),
           message_en: I18n.t("trends.insights.message.improvement", locale: :en,
-            metric: metric, delta: @trend[:delta].to_f.round(1), top_improvement: top_name),
+            metric: metric_en, delta: delta, top_improvement: top_en),
           action: ACTION_VIEW_COMPONENTS,
           recency_score: 50
         }
@@ -190,8 +203,10 @@ module Trends
         [ 100 - days.to_i, 0 ].max
       end
 
-      def humanize(name)
-        I18n.t("signals.#{name}", default: name.to_s.humanize)
+      # CR M-2: accepts locale → per-locale i18n lookup. Fallback = humanized
+      # identifier (English-ish) when no signals.* translation exists.
+      def humanize(name, locale)
+        I18n.t("signals.#{name}", locale: locale, default: name.to_s.humanize)
       end
     end
   end

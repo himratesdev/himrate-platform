@@ -32,10 +32,18 @@ module Trends
         series = follower_daily_series
         return result("insufficient_data", nil, "Too few follower snapshots", cfg) if series.size < cfg[:min_points]
 
-        burst = detect_burst(series, cfg)
-        return result("anomalous_burst", burst[:score], "Rapid follower jump detected", cfg.merge(burst)) if burst[:classified]
-
+        # CR M-1: fit BOTH step function and logistic curve, pick best by R².
+        # Step-function classification requires (a) strong step R² ≥ burst_r2 cfg
+        # AND (b) rapid jump (within burst_window_days) AND (c) minimum jump_size.
+        # Raw jump_size alone is insufficient — SRS §2.10 FR-029 explicitly
+        # specifies R²-based model comparison.
+        step = fit_step(series, cfg)
         organic = fit_logistic(series, cfg)
+
+        if step[:classified] && step[:r_squared] >= organic[:r_squared]
+          return result("anomalous_burst", step[:r_squared], "Rapid follower jump detected", cfg.merge(step))
+        end
+
         return result("organic", organic[:r_squared], "Smooth growth curve", cfg.merge(organic)) if organic[:r_squared] >= cfg[:organic_r2]
 
         result("missing", organic[:r_squared], "No clear growth pattern", cfg.merge(organic))
@@ -71,29 +79,52 @@ module Trends
           .map.with_index { |(_, val), idx| [ idx.to_f, val.to_f ] }
       end
 
-      # Burst = any window ≤ burst_window_days в котором delta ≥ burst_jump_min.
-      # Simple step-detection: peek rolling deltas.
-      def detect_burst(series, cfg)
-        return { classified: false, score: 0.0 } if series.size < cfg[:burst_window] + 1
+      # CR M-1: Step function (Heaviside) fit с R². Tries each interior split point
+      # as t0, computes piecewise-constant model f(t) = a for t<t0, b for t≥t0.
+      # Best R² determines anomalous_burst classification per SRS §2.10 FR-029:
+      #   - R² ≥ step_r2_burst_min (config)
+      #   - AND burst_window ≤ burst_window_days_max (rapid jump, not gradual shift)
+      #   - AND jump_size ≥ burst_jump_min (minimum magnitude threshold)
+      def fit_step(series, cfg)
+        return { classified: false, r_squared: 0.0 } if series.size < 3
 
-        max_jump = 0.0
-        max_jump_start = nil
-        (0..series.size - cfg[:burst_window] - 1).each do |i|
-          delta = series[i + cfg[:burst_window]][1] - series[i][1]
-          if delta > max_jump
-            max_jump = delta
-            max_jump_start = i
+        ys = series.map { |_, y| y.to_f }
+        mean = ys.sum / ys.size
+        ss_tot = ys.sum { |y| (y - mean)**2 }
+
+        # All-equal sequence → degenerate (no meaningful step). Return 0 R².
+        return { classified: false, r_squared: 0.0 } if ss_tot.zero?
+
+        best = { r_squared: 0.0, split_idx: nil, jump_size: 0.0 }
+
+        (1...series.size).each do |split|
+          left = ys[0...split]
+          right = ys[split..]
+          left_mean = left.sum / left.size
+          right_mean = right.sum / right.size
+          ss_res = left.sum { |y| (y - left_mean)**2 } + right.sum { |y| (y - right_mean)**2 }
+          r2 = 1.0 - ss_res / ss_tot
+
+          if r2 > best[:r_squared]
+            best = {
+              r_squared: r2,
+              split_idx: split,
+              jump_size: (right_mean - left_mean).round(0),
+              window_days: series[split][0] - series[split - 1][0]
+            }
           end
         end
 
-        classified = max_jump >= cfg[:burst_jump]
-        score = max_jump / (cfg[:burst_jump] * 2.0) # normalized 0..1 (capped)
+        classified = best[:r_squared] >= cfg[:burst_r2] &&
+                     best[:jump_size].abs >= cfg[:burst_jump] &&
+                     (best[:window_days] || 0) <= cfg[:burst_window]
 
         {
           classified: classified,
-          score: score.clamp(0.0, 1.0).round(3),
-          jump_size: max_jump.round(0),
-          jump_window_start_idx: max_jump_start
+          r_squared: best[:r_squared].clamp(0.0, 1.0).round(4),
+          jump_size: best[:jump_size],
+          split_idx: best[:split_idx],
+          window_days: best[:window_days]
         }
       end
 

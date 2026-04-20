@@ -70,9 +70,10 @@ module Trends
             []
           end
 
+        # CR N-2: separator одинаковый для обоих locale — упростили тернарник.
         signals
           .map { |s| "#{localize_signal_name(s[:name], locale)} (#{format_signed(s[:delta])})" }
-          .join(locale == :ru ? ", " : ", ")
+          .join(", ")
       end
 
       def localize_signal_name(name, locale)

@@ -173,15 +173,51 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         expect(tda.is_best_stream_day).to be true
       end
 
-      it "swallows deferred errors so core upsert still succeeds" do
-        # Force DiscoveryPhaseDetector to raise
+      it "CR S-1: per-field isolation — failure в discovery НЕ теряет tier_change" do
+        # Create tier_change event, let tier_change_on_day succeed
+        create(:hs_tier_change_event, channel: channel, occurred_at: target_date.beginning_of_day + 5.hours,
+          event_type: "tier_change", from_tier: "trusted", to_tier: "needs_review")
+
+        # Channel young enough to invoke DiscoveryPhaseDetector; force it to raise
+        channel.update!(created_at: 10.days.ago)
         allow(Trends::Analysis::DiscoveryPhaseDetector).to receive(:call).and_raise(StandardError.new("boom"))
 
-        expect(Rails.logger).to receive(:warn).with(/DailyBuilder.*boom/)
+        expect(Rails.logger).to receive(:warn).with(/DailyBuilder.*discovery_phase_score.*boom/)
+        expect(Rails.error).to receive(:report).with(
+          instance_of(StandardError),
+          hash_including(context: hash_including(field: "discovery_phase_score"), handled: true)
+        )
 
-        expect {
-          described_class.call(channel.id, target_date)
-        }.to change(TrendsDailyAggregate, :count).by(1)
+        described_class.call(channel.id, target_date)
+
+        tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
+        # tier_change_on_day успешно вычислился, хотя discovery упал
+        expect(tda.tier_change_on_day).to be true
+        expect(tda.discovery_phase_score).to be_nil
+      end
+
+      it "CR S-3: skip DiscoveryPhaseDetector когда channel age > max_age" do
+        channel.update!(created_at: 90.days.ago) # past 60d window
+
+        expect(Trends::Analysis::DiscoveryPhaseDetector).not_to receive(:call)
+
+        described_class.call(channel.id, target_date)
+
+        tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
+        expect(tda.discovery_phase_score).to be_nil
+      end
+
+      it "CR S-3: skip DiscoveryPhaseDetector когда score already persisted" do
+        channel.update!(created_at: 10.days.ago)
+        create(:trends_daily_aggregate, channel: channel, date: target_date,
+          discovery_phase_score: 0.82, ti_avg: 75, erv_avg_percent: 80)
+
+        expect(Trends::Analysis::DiscoveryPhaseDetector).not_to receive(:call)
+
+        described_class.call(channel.id, target_date)
+
+        tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
+        expect(tda.discovery_phase_score.to_f).to eq(0.82)
       end
     end
 

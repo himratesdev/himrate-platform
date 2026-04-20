@@ -50,11 +50,21 @@ module Trends
       private
 
       # Clamp value/lower/upper to [0, 100] — TI/ERV domain. Preserves round(2) precision.
+      # CR N-3: saturated flag сигналит UI что forecast уткнулся в domain boundary
+      # (forecast_7d.value=100 AND forecast_30d.value=100 — одинаковая точка).
+      # UI показывает disclaimer / "cap reached" badge вместо misleading "no growth".
       def clamp_band(band)
+        raw_value = band[:value]
+        raw_lower = band[:lower]
+        raw_upper = band[:upper]
+        clamped_value = raw_value.clamp(0.0, 100.0).round(2)
+
         {
-          value: band[:value].clamp(0.0, 100.0).round(2),
-          lower: band[:lower].clamp(0.0, 100.0).round(2),
-          upper: band[:upper].clamp(0.0, 100.0).round(2)
+          value: clamped_value,
+          lower: raw_lower.clamp(0.0, 100.0).round(2),
+          upper: raw_upper.clamp(0.0, 100.0).round(2),
+          saturated: raw_value > 100.0 || raw_value < 0.0 ||
+                     raw_upper > 100.0 || raw_lower < 0.0
         }
       end
 

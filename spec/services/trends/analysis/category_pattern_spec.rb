@@ -46,7 +46,7 @@ RSpec.describe Trends::Analysis::CategoryPattern do
     expect(result[:single_category]).to be true
   end
 
-  it "computes deltas against baseline" do
+  it "computes deltas against baseline (CR S-2: exclude self from baseline)" do
     other_channel = create(:channel)
     create(:trends_daily_aggregate, channel: other_channel, date: 5.days.ago.to_date,
       categories: { "Fortnite" => 1 }, ti_avg: 70.0, erv_avg_percent: 75.0)
@@ -56,6 +56,19 @@ RSpec.describe Trends::Analysis::CategoryPattern do
     result = described_class.call(channel: channel, from: from, to: to)
 
     row = result[:categories].find { |c| c[:name] == "Fortnite" }
-    expect(row[:vs_baseline_ti_delta]).to be_within(0.01).of(7.5) # channel 85 vs baseline avg (70+85)/2=77.5
+    # Baseline excludes self → avg только у other_channel = 70. delta = 85 - 70 = 15.
+    expect(row[:vs_baseline_ti_delta]).to be_within(0.01).of(15.0)
+    expect(row[:vs_baseline_erv_delta]).to be_within(0.01).of(15.0)
+  end
+
+  it "baseline nil when no other channels в категории" do
+    create(:trends_daily_aggregate, channel: channel, date: 2.days.ago.to_date,
+      categories: { "NicheGame" => 1 }, ti_avg: 85.0, erv_avg_percent: 90.0)
+
+    result = described_class.call(channel: channel, from: from, to: to)
+
+    row = result[:categories].find { |c| c[:name] == "NicheGame" }
+    expect(row[:vs_baseline_ti_delta]).to be_nil
+    expect(row[:vs_baseline_erv_delta]).to be_nil
   end
 end

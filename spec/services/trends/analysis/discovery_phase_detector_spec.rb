@@ -34,9 +34,9 @@ RSpec.describe Trends::Analysis::DiscoveryPhaseDetector do
     expect(result[:status]).to eq("insufficient_data")
   end
 
-  it "detects anomalous_burst on sudden large jump" do
+  it "detects anomalous_burst via step-fit R² when sharp jump present" do
     channel.update!(created_at: 14.days.ago)
-    # Flat 1000 followers for 7 days, then jump to 5000 next day
+    # Flat 1000 followers for 7 days, then jump to 5000 next day — exact step function
     (0..6).each do |i|
       create(:follower_snapshot, channel: channel, timestamp: (14 - i).days.ago, followers_count: 1000)
     end
@@ -46,7 +46,24 @@ RSpec.describe Trends::Analysis::DiscoveryPhaseDetector do
 
     result = described_class.call(channel)
 
-    expect(%w[anomalous_burst organic missing]).to include(result[:status])
+    # Perfect step fits с R²=1.0 для step, logistic R² для такого data тоже near 1.0
+    # — step wins by tie (step_r2 >= organic_r2), plus window_days=1 ≤ 3, plus
+    # jump_size=4000 ≥ burst_jump_min=1000 → classified as anomalous_burst.
+    expect(result[:status]).to eq("anomalous_burst")
+    expect(result[:context][:r_squared]).to be >= 0.9
+    expect(result[:context][:jump_size]).to be >= 1000
+  end
+
+  it "does NOT classify anomalous_burst когда step R² слабый (gradual growth)" do
+    channel.update!(created_at: 14.days.ago)
+    # Smooth linear growth — step fit будет weaker than logistic/linear
+    (0..13).each do |i|
+      create(:follower_snapshot, channel: channel, timestamp: (14 - i).days.ago, followers_count: 1000 + i * 300)
+    end
+
+    result = described_class.call(channel)
+
+    expect(result[:status]).not_to eq("anomalous_burst")
   end
 
   it "classifies organic when logistic fit is strong" do
