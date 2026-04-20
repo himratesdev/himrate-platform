@@ -54,8 +54,9 @@ RSpec.describe TrustIndex::BonusAcceleratorCalculator do
     end
 
     # TC-038: 5 clean streams, percentiles below 80 → bonus = 0
-    # CR N-2: percentile_threshold_below message — clean streams exist но percentiles ниже
-    it "TC-038: percentiles below threshold (80) → bonus=0, percentile_threshold_below message" do
+    # CR N-2: percentile_threshold_below message — clean streams exist но percentiles ниже.
+    # PG W-1: threshold value interpolated через SignalConfiguration (admin tunable).
+    it "TC-038: percentiles below threshold → bonus=0, percentile_threshold_below message с interpolated threshold" do
       5.times { |i| create_clean_stream(eng_pct: 70, eng_cons_pct: 75, days_after: i + 1) }
 
       result = described_class.call(channel, active_event)
@@ -63,6 +64,20 @@ RSpec.describe TrustIndex::BonusAcceleratorCalculator do
       expect(result[:qualifying_signals]).to be_nil
       expect(result[:bonus_description_ru]).to include("ниже порога 80")
       expect(result[:bonus_description_en]).to include("below threshold 80")
+    end
+
+    # PG W-1 verification: admin изменяет threshold → message reflects новое значение.
+    it "PG W-1: admin меняет threshold → message interpolates new value" do
+      SignalConfiguration.where(
+        signal_type: "trust_index", category: "rehabilitation_bonus",
+        param_name: "rehab_bonus_percentile_threshold"
+      ).update_all(param_value: 75)
+
+      5.times { |i| create_clean_stream(eng_pct: 70, eng_cons_pct: 70, days_after: i + 1) }
+
+      result = described_class.call(channel, active_event)
+      expect(result[:bonus_description_ru]).to include("ниже порога 75")
+      expect(result[:bonus_description_en]).to include("below threshold 75")
     end
 
     # CR N-2: no_qualifying message — никаких clean streams (vs threshold_below message)

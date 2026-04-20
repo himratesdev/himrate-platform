@@ -114,8 +114,14 @@ module TrustIndex
           eng_cons_pct: summary[:engagement_consistency_percentile].to_i
         )
       elsif any_clean_streams_post_penalty?
-        # Clean streams existed но percentiles ниже threshold → guidance
-        I18n.t("hs.rehabilitation.bonus.percentile_threshold_below", locale: locale)
+        # Clean streams existed но percentiles ниже threshold → guidance.
+        # PG W-1: threshold interpolated через SignalConfiguration value (admin tunable —
+        # message не врёт если admin меняет threshold с 80 на другое value).
+        I18n.t(
+          "hs.rehabilitation.bonus.percentile_threshold_below",
+          locale: locale,
+          threshold: percentile_threshold.to_i
+        )
       else
         # Совсем нет post-penalty clean streams
         I18n.t("hs.rehabilitation.bonus.no_qualifying", locale: locale)
