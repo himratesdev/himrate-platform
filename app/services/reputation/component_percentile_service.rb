@@ -72,18 +72,22 @@ module Reputation
         .order(:channel_id, calculated_at: :desc)
 
       base = StreamerReputation.from("(#{reputation_subq.to_sql}) AS latest_rep")
-      filter_by_category(base, category_key, "latest_rep.channel_id").count
+      base = filter_by_category(base, category_key) unless category_default?(category_key)
+      base.count
     end
 
     # Single UNION query: one row per component с count_below.
     # Mirrors Hs::ComponentPercentileService pattern exactly для consistency.
+    # Все interpolations контролируемые: comp ∈ COMPONENTS hardcoded constant,
+    # value/channel_id sanitized via .to_f и connection.quote.
     def count_channels_below(category_key, current_values)
+      category_filter = category_default?(category_key) ? "" : category_filter_sql(category_key)
+
       parts = COMPONENTS.filter_map do |comp|
         value = current_values[comp.to_sym]
         next nil if value.nil?
 
         col = "#{comp}_score"
-        category_filter = category_filter_sql(category_key, "latest_rep.channel_id")
 
         <<~SQL.squish
           SELECT '#{comp}' AS component, COUNT(*) AS cnt
@@ -106,21 +110,21 @@ module Reputation
       result.rows.to_h { |r| [ r[0], r[1].to_i ] }
     end
 
-    # Category filter via streams.game_name (Reputation domain не хранит category
-    # на StreamerReputation row — вычисляется через streams join, как в
-    # Reputation::PercentileService FR-024).
-    def filter_by_category(scope, category_key, channel_id_column)
-      return scope if category_key.blank? || category_key == "default"
-
-      channel_ids = channel_ids_for_category(category_key)
-      scope.where("#{channel_id_column} IN (?)", channel_ids)
+    def category_default?(category_key)
+      category_key.blank? || category_key == "default"
     end
 
-    def category_filter_sql(category_key, channel_id_column)
-      return "" if category_key.blank? || category_key == "default"
+    # Category filter via Stream → HealthScore join. AR-compiled WHERE c parameterized
+    # bind values (no string interpolation в WHERE clause).
+    def filter_by_category(scope, category_key)
+      scope.where(channel_id: channel_ids_for_category(category_key))
+    end
 
+    # Hardcoded column reference "latest_rep.channel_id" в SQL (не interpolated parameter)
+    # — Brakeman-safe, channel_ids_for_category возвращает sanitized SQL fragment.
+    def category_filter_sql(category_key)
       ids_sql = channel_ids_for_category_sql(category_key)
-      "AND #{channel_id_column} IN (#{ids_sql})"
+      "AND latest_rep.channel_id IN (#{ids_sql})"
     end
 
     def channel_ids_for_category(category_key)

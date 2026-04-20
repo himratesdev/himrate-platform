@@ -9,6 +9,9 @@ RSpec.describe Trends::QualifyingPercentileSnapshotWorker, type: :worker do
 
   describe "#perform" do
     before do
+      # Stub CategoryMapper чтобы не depend on HealthScoreSeeds в test env
+      # (rails_helper не loads seeds; production категория дополняется через миграцию #9).
+      allow(Hs::CategoryMapper).to receive(:map).with("Just Chatting").and_return("just_chatting")
       allow(Hs::ComponentPercentileService).to receive_message_chain(:new, :call)
         .and_return({ engagement: 85.5, ti: 70.0, stability: 60.0, growth: 50.0, consistency: 55.0 })
       allow(Reputation::ComponentPercentileService).to receive_message_chain(:new, :call)
