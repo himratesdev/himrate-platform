@@ -62,6 +62,13 @@ Rails.application.routes.draw do
         # TASK-032 FR-005: ERV
         resource :erv, only: :show, controller: "erv"
 
+        # TASK-039 Phase C1: Trends API endpoints (M1 ERV / M2 TI / M4 Anomalies / M5 Components / M6 Rehabilitation)
+        get "trends/erv", to: "channels/trends#erv"
+        get "trends/trust_index", to: "channels/trends#trust_index"
+        get "trends/anomalies", to: "channels/trends#anomalies"
+        get "trends/components", to: "channels/trends#components"
+        get "trends/rehabilitation", to: "channels/trends#rehabilitation"
+
         # TASK-031: Track/untrack channel
         post "track", to: "channels#track"
         delete "track", to: "channels#untrack"
