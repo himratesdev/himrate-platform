@@ -67,11 +67,11 @@ module Trends
       end
 
       # CR N-1: минимум points для trend compute читается из SignalConfiguration.
-      # Консистентно с TrendCalculator внутренней логикой (которая возвращает nil-shape
-      # при <2 points) — external guard здесь для fast-path skip (экономит LinearRegression call).
+      # Консистентно с TrendCalculator внутренней логикой (возвращает nil-shape при
+      # <2 points) — external guard здесь для fast-path skip (экономит LinearRegression call).
+      # Value cached per-request через Current.signal_config (Phase B3 W-3) — повторные
+      # вызовы в одном request O(1) hash lookup.
       def min_points_for_trend
-        SignalConfiguration.value_for("trends", "trend", "confidence_medium_r2") # triggers cache warm
-        # Minimum 3 points для naively-fit линии + R². Хранится отдельно чтобы admin мог tune.
         SignalConfiguration.value_for("trends", "trend", "min_points_for_trend").to_i
       rescue SignalConfiguration::ConfigurationMissing
         3 # fallback до следующего seed migration (graceful degradation).
