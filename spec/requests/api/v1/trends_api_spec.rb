@@ -278,6 +278,47 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
 
       expect(response.parsed_body.dig("data", "pagination", "per_page")).to eq(200)
     end
+
+    it "CR PG W-3: attributed_only filter reflected в total (SQL-level, не in-memory)" do
+      # AnomalyAttribution валидирует source_is_known через AttributionSource lookup.
+      # Seed канонические rows до создания attributions.
+      # adapter_class_name required by model validations.
+      [
+        [ "raid_organic", "Trends::Attribution::RaidOrganicAdapter" ],
+        [ "unattributed", "Trends::Attribution::UnattributedFallback" ]
+      ].each do |src, adapter|
+        AttributionSource.find_or_create_by!(source: src) do |r|
+          r.enabled = true
+          r.priority = 10
+          r.display_label_en = src.humanize
+          r.display_label_ru = src.humanize
+          r.adapter_class_name = adapter
+        end
+      end
+
+      # Remove 75 anomalies from before block — set up clean state: 3 unattributed + 2 attributed.
+      Anomaly.delete_all
+      stream = Stream.where(channel: channel).first
+      3.times do |i|
+        a = create(:anomaly, stream: stream, timestamp: (i + 1).hours.ago, confidence: 0.8)
+        create(:anomaly_attribution, anomaly: a, source: "unattributed", confidence: 0.5)
+      end
+      2.times do |i|
+        a = create(:anomaly, stream: stream, timestamp: (i + 4).hours.ago, confidence: 0.8)
+        create(:anomaly_attribution, anomaly: a, source: "raid_organic", confidence: 0.85)
+      end
+
+      # Without filter: total=5
+      get "/api/v1/channels/#{channel.id}/trends/anomalies?period=30d", headers: headers_premium
+      expect(response.parsed_body.dig("data", "total")).to eq(5)
+
+      # With attributed_only filter: total=2 (только raid_organic анонкилы)
+      # Invalidate cache чтобы 2nd request не захватил cached payload первого call'а.
+      Trends::Cache::Invalidator.call(channel.id)
+      get "/api/v1/channels/#{channel.id}/trends/anomalies?period=30d&attributed_only=true", headers: headers_premium
+      expect(response.parsed_body.dig("data", "total")).to eq(2)
+      expect(response.parsed_body.dig("data", "anomalies").size).to eq(2)
+    end
   end
 
   describe "CR N-4: cache hit integration" do

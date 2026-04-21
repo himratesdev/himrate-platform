@@ -25,7 +25,15 @@ module Trends
   REDIS_POOL_SIZE = ENV.fetch("TRENDS_REDIS_POOL_SIZE", 25).to_i
   REDIS_POOL_TIMEOUT = ENV.fetch("TRENDS_REDIS_POOL_TIMEOUT", 5).to_i
 
+  # CR PG W-1: fail-fast в production когда REDIS_URL не выставлен. Dev/test
+  # fallback preserved для local docker-compose setup. Match pattern из routes.rb
+  # (FLIPPER_UI_PASSWORD guard).
   RedisPool = ConnectionPool.new(size: REDIS_POOL_SIZE, timeout: REDIS_POOL_TIMEOUT) do
-    Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/0"))
+    url = ENV.fetch("REDIS_URL") do
+      raise "REDIS_URL env var is required in production" if Rails.env.production?
+
+      "redis://localhost:6379/0"
+    end
+    Redis.new(url: url)
   end
 end

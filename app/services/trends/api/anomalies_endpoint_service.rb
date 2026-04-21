@@ -52,14 +52,13 @@ module Trends
 
       private
 
-      # CR S-1: paginated + bounded. Total counted БЕЗ attributed filter post-count
-      # (filter applied в-памяти после pagination), поэтому total — база до client filter.
-      # attributed_only filter работает на текущей странице только — это compromise между
-      # simplicity и exactness. Для точного total под filter необходим SQL JOIN с attributions
-      # count — избыточная сложность для C1 (filter используется ~5% запросов).
+      # CR S-1: paginated + bounded. CR PG W-3: attributed filter применяется в SQL
+      # (subquery EXISTS), чтобы total + total_pages + has_next отражали filtered
+      # count accurately. Избегаем JOIN duplicates через subquery pattern.
       def build_anomaly_list(from_ts, to_ts)
         scope = base_scope(from_ts, to_ts)
         scope = filter_by_severity(scope) if @severity
+        scope = filter_attributed_sql(scope) if @attributed_only
 
         total = scope.count
         total_pages = [ (total.to_f / @per_page).ceil, 1 ].max
@@ -70,8 +69,6 @@ module Trends
           .limit(@per_page)
           .offset((@page - 1) * @per_page)
           .to_a
-
-        paged = filter_attributed(paged) if @attributed_only
 
         {
           rows: paged.map { |anomaly| row_for(anomaly) },
@@ -105,11 +102,16 @@ module Trends
         end
       end
 
-      def filter_attributed(rows)
-        rows.reject do |anomaly|
-          attributions = anomaly.anomaly_attributions
-          attributions.empty? || attributions.all? { |a| a.source == "unattributed" }
-        end
+      # CR PG W-3: SQL-level filter — anomaly включается если EXISTS хотя бы одна
+      # attribution с source != 'unattributed'. Subquery избегает JOIN row duplication
+      # (anomaly с N attributions не умножается на N в результате).
+      #
+      # Семантически тождественно старому in-memory filter_attributed (removed): anomaly
+      # без attributions OR со ВСЕМИ unattributed = not shown.
+      # Reuse AnomalyAttribution.attributed scope (source != 'unattributed').
+      # Subquery → zero JOIN duplication (anomaly с N attributions → 1 row в результате).
+      def filter_attributed_sql(scope)
+        scope.where(id: AnomalyAttribution.attributed.select(:anomaly_id))
       end
 
       def row_for(anomaly)
