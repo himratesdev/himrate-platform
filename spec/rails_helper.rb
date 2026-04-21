@@ -47,5 +47,8 @@ RSpec.configure do |config|
   config.before(:each) do
     Flipper.features.each(&:remove)
     FlipperDefaults::ALL_FLAGS.each { |flag| Flipper.enable(flag) }
+    # CR W-3: isolate Current.signal_config between specs — каждый example
+    # стартует с чистым кэшем SignalConfiguration lookups (request/job scoping).
+    ActiveSupport::CurrentAttributes.clear_all
   end
 end

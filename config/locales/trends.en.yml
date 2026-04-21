@@ -1,0 +1,79 @@
+en:
+  trends:
+    direction:
+      rising: Rising
+      declining: Declining
+      flat: Flat
+    confidence:
+      high: High
+      medium: Medium
+      low: Low
+    reliability:
+      high: High
+      medium: Medium
+      low: Low
+      disclaimer_low: Forecast reliability is low — view with caution.
+    explanation:
+      rising_with_improvements: "%{metric} up %{delta} driven by %{top_signals}."
+      declining_with_degradations: "%{metric} down %{delta} due to %{top_signals}."
+      rising_generic: "%{metric} trending up (%{delta} over period)."
+      declining_generic: "%{metric} trending down (%{delta} over period)."
+      flat: "%{metric} stable over the period."
+    discovery:
+      status:
+        organic: Organic growth curve
+        anomalous_burst: Suspicious burst (+%{jump} in %{window}d)
+        missing: No clear growth
+        not_applicable: Channel older than discovery window
+        insufficient_data: Not enough follower snapshots
+    coupling:
+      health:
+        healthy: Healthy (r≥%{threshold})
+        weakening: Weakening
+        decoupled: Decoupled — possible viewbotting
+    anomaly_frequency:
+      verdict:
+        elevated: Anomalies elevated by %{delta}%
+        reduced: Anomalies reduced by %{delta}%
+        normal: Anomaly rate normal
+        insufficient_baseline: Baseline data insufficient
+    insights:
+      title: Recent movement
+      priority:
+        p0: Critical
+        p1: Important
+        p2: Notable
+      action:
+        view_components: View components
+        view_anomaly: View anomaly
+        view_rehabilitation: View recovery plan
+        view_tier_change: View tier change
+      message:
+        ti_drop: "TI dropped %{delta} pts — %{top_degradation} leading decline"
+        tier_change: "Tier changed %{from}→%{to} on %{date}"
+        rehabilitation_progress: "Recovery progress %{clean}/%{required} (+%{bonus} bonus)"
+        improvement: "%{metric} up %{delta} — %{top_improvement}"
+        anomaly_spike: "Anomalies up %{delta}% vs baseline"
+        flat: No notable movement this period
+    best_stream:
+      title: Best stream
+    worst_stream:
+      title: Lowest stream
+    tier_changes:
+      count:
+        zero: No tier changes
+        one: "1 tier change"
+        other: "%{count} tier changes"
+    patterns:
+      weekday:
+        title: Weekday pattern
+        best: "Best day %{day} (TI %{ti})"
+      category:
+        title: Category pattern
+        top: "Best category %{name} (+%{delta} vs baseline)"
+        single: Channel operates mostly in %{name}
+    forecast:
+      title: Forecast
+      range: "%{value} (%{lower}..%{upper})"
+      horizon_7d: 7-day forecast
+      horizon_30d: 30-day forecast
