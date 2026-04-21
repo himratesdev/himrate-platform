@@ -15,12 +15,16 @@
 module Trends
   module Analysis
     class FollowerCcvCouplingTimeline
-      def self.call(channel:, from:, to:)
-        new(channel: channel, from: from, to: to).call
+      # CR W-2: Accept channel OR channel_id — avoids unnecessary Channel.find_by
+      # в callers у которых есть только id (AggregationWorker → DailyBuilder).
+      def self.call(channel: nil, channel_id: nil, from:, to:)
+        new(channel: channel, channel_id: channel_id, from: from, to: to).call
       end
 
-      def initialize(channel:, from:, to:)
-        @channel = channel
+      def initialize(channel:, channel_id:, from:, to:)
+        @channel_id = channel&.id || channel_id
+        raise ArgumentError, "channel or channel_id required" if @channel_id.nil?
+
         @from = from
         @to = to
       end
@@ -57,7 +61,7 @@ module Trends
       # Latest follower count per day (channel-level, source: follower_snapshots).
       def follower_daily_series(from, to)
         FollowerSnapshot
-          .where(channel_id: @channel.id)
+          .where(channel_id: @channel_id)
           .where(timestamp: from.beginning_of_day..to.end_of_day)
           .pluck(Arel.sql("DATE(timestamp)"), :followers_count)
           .group_by(&:first)
@@ -66,7 +70,7 @@ module Trends
 
       def ccv_daily_series(from, to)
         TrendsDailyAggregate
-          .where(channel_id: @channel.id, date: from..to)
+          .where(channel_id: @channel_id, date: from..to)
           .where.not(ccv_avg: nil)
           .pluck(:date, :ccv_avg)
           .to_h

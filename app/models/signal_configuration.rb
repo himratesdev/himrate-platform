@@ -16,13 +16,23 @@ class SignalConfiguration < ApplicationRecord
   }
 
   # Fetch a single param value. Raises if not found (seed data is mandatory).
+  #
+  # CR W-3: Request/job-scoped memoization через Current.signal_config для
+  # избежания N lookups амплификации. 30-50 SignalConfiguration reads per
+  # Trends endpoint compress в ~10-15 unique DB reads + memoized hits. Cache
+  # auto-resets на конец request/job (ActiveSupport::CurrentAttributes),
+  # поэтому admin DB update видна на следующем запросе/job — без manual invalidation.
   def self.value_for(signal_type, category, param_name)
+    Current.signal_config ||= {}
+    key = [ signal_type, category, param_name ]
+    return Current.signal_config[key] if Current.signal_config.key?(key)
+
     record = find_by(signal_type: signal_type, category: category, param_name: param_name)
     record ||= find_by(signal_type: signal_type, category: "default", param_name: param_name)
 
     raise ConfigurationMissing, "Missing config: #{signal_type}/#{category}/#{param_name}" unless record
 
-    record.param_value
+    Current.signal_config[key] = record.param_value
   end
 
   # Fetch all params for a signal+category as a Hash.

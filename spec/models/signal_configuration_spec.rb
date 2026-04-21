@@ -39,6 +39,41 @@ RSpec.describe SignalConfiguration do
     end
   end
 
+  describe ".value_for CR W-3 request-scoped cache" do
+    before do
+      SignalConfiguration.create!(signal_type: "cache_test", category: "c", param_name: "x", param_value: 42)
+    end
+
+    it "caches subsequent lookups в Current (admin DB update не видна до end of request/job)" do
+      expect(described_class.value_for("cache_test", "c", "x")).to eq(42)
+
+      SignalConfiguration.where(signal_type: "cache_test", category: "c", param_name: "x").update_all(param_value: 99)
+
+      expect(described_class.value_for("cache_test", "c", "x")).to eq(42)
+    end
+
+    it "refreshes cache after Current.reset (next request/job boundary)" do
+      described_class.value_for("cache_test", "c", "x")
+      SignalConfiguration.where(signal_type: "cache_test", category: "c", param_name: "x").update_all(param_value: 99)
+
+      ActiveSupport::CurrentAttributes.clear_all
+
+      expect(described_class.value_for("cache_test", "c", "x")).to eq(99)
+    end
+
+    it "cache per-key (разные params изолированы)" do
+      SignalConfiguration.create!(signal_type: "cache_test", category: "c", param_name: "y", param_value: 100)
+
+      expect(described_class.value_for("cache_test", "c", "x")).to eq(42)
+      expect(described_class.value_for("cache_test", "c", "y")).to eq(100)
+    end
+
+    it "missing key raises каждый раз (не caches nil)" do
+      expect { described_class.value_for("nil_key", "c", "nope") }.to raise_error(SignalConfiguration::ConfigurationMissing)
+      expect { described_class.value_for("nil_key", "c", "nope") }.to raise_error(SignalConfiguration::ConfigurationMissing)
+    end
+  end
+
   describe ".params_for" do
     before do
       SignalConfiguration.create!(signal_type: "auth_ratio", category: "default", param_name: "expected_min", param_value: 0.65)

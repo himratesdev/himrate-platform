@@ -196,6 +196,27 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         expect(tda.discovery_phase_score).to be_nil
       end
 
+      it "CR W-1: emits trends.daily_builder.deferred_failed notification on per-field failure" do
+        channel.update!(created_at: 10.days.ago)
+        allow(Trends::Analysis::DiscoveryPhaseDetector).to receive(:call).and_raise(StandardError.new("boom"))
+
+        captured = []
+        subscription = ActiveSupport::Notifications.subscribe("trends.daily_builder.deferred_failed") do |*args|
+          captured << ActiveSupport::Notifications::Event.new(*args)
+        end
+
+        begin
+          described_class.call(channel.id, target_date)
+        ensure
+          ActiveSupport::Notifications.unsubscribe(subscription)
+        end
+
+        expect(captured.size).to eq(1)
+        expect(captured.first.payload[:field]).to eq("discovery_phase_score")
+        expect(captured.first.payload[:channel_id]).to eq(channel.id)
+        expect(captured.first.payload[:error_class]).to eq("StandardError")
+      end
+
       it "CR S-3: skip DiscoveryPhaseDetector когда channel age > max_age" do
         channel.update!(created_at: 90.days.ago) # past 60d window
 

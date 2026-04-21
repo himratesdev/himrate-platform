@@ -135,23 +135,32 @@ module Trends
       # Runs after core UPSERT. Per-field isolation: каждый compute_* обёрнут
       # в with_isolation — failure в одном поле не rollback'ит уже вычисленные.
       # Partial updates применяются через единый update_all (один SQL, partition-safe).
-      # Monitoring: Rails.error.report → Sentry/rollbar subscribers + Rails.logger.warn
-      # для local visibility. Alert counter trends.daily_builder.deferred_failed
-      # для SRS §10 monitoring rule.
+      #
+      # Observability (CR S-4 + W-1):
+      #   - Rails.error.report → Sentry/Rollbar subscribers (per-env configured)
+      #   - ActiveSupport::Notifications.instrument → explicit counter event для
+      #     StatsD/Prometheus subscribers (SRS §10 alert
+      #     "trends.daily_builder.deferred_failed > 5/h")
+      #   - Rails.logger.warn → local/dev visibility
+      #
+      # Channel loading (CR W-2):
+      #   - tier_change_on_day?/coupling/best_worst используют @channel_id напрямую
+      #     через refactored Finder/Timeline services — Channel.find_by не нужен
+      #   - DiscoveryPhaseDetector требует Channel object (created_at + id) — грузится
+      #     LAZY, только когда оба gate'а пройдены (age check + existing score check)
+      #   - Пустой канал (orphan channel_id) → services возвращают safe defaults
+      #     (empty scope queries, insufficient_data) без crash'а
 
       def populate_deferred_fields
-        channel = Channel.find_by(id: @channel_id)
-        return unless channel
-
         updates = {}
         with_isolation(:tier_change_on_day) { updates[:tier_change_on_day] = tier_change_on_day? }
-        with_isolation(:follower_ccv_coupling_r) { updates[:follower_ccv_coupling_r] = compute_coupling_r(channel) }
+        with_isolation(:follower_ccv_coupling_r) { updates[:follower_ccv_coupling_r] = compute_coupling_r }
         with_isolation(:discovery_phase_score) do
-          score = compute_discovery_score(channel)
+          score = compute_discovery_score
           updates[:discovery_phase_score] = score unless score.nil?
         end
         with_isolation(:best_worst) do
-          bw = compute_best_worst(channel)
+          bw = compute_best_worst
           updates[:is_best_stream_day] = bw[:is_best]
           updates[:is_worst_stream_day] = bw[:is_worst]
         end
@@ -161,16 +170,22 @@ module Trends
         TrendsDailyAggregate.where(channel_id: @channel_id, date: @date).update_all(updates)
       end
 
-      # CR S-1 + S-4: per-field error isolation + proper observability.
-      # Rails.error.report routes to Sentry/Rollbar/etc. subscribers (configured
-      # per environment). Rails.logger.warn для dev/test visibility. Both paths
-      # ensure trends.daily_builder.deferred_failed counter incremented (SRS §10
-      # alert rule ">5/h").
+      # CR S-1 + S-4 + W-1: per-field error isolation + proper observability.
+      # Rails.error.report routes to Sentry/Rollbar subscribers.
+      # ActiveSupport::Notifications emits structured event (StatsD/Prometheus
+      # subscribers attach counter +1 per event). Logger.warn для local visibility.
       def with_isolation(field_label)
         yield
       rescue StandardError => e
         Rails.logger.warn("[DailyBuilder] deferred field #{field_label} failed for channel=#{@channel_id} date=#{@date}: #{e.class} #{e.message}")
         Rails.error.report(e, context: { service: "Trends::Aggregation::DailyBuilder", channel_id: @channel_id, date: @date.to_s, field: field_label.to_s }, handled: true)
+        ActiveSupport::Notifications.instrument(
+          "trends.daily_builder.deferred_failed",
+          channel_id: @channel_id,
+          date: @date.to_s,
+          field: field_label.to_s,
+          error_class: e.class.name
+        )
       end
 
       def tier_change_on_day?
@@ -181,38 +196,42 @@ module Trends
           .exists?
       end
 
-      def compute_coupling_r(channel)
+      def compute_coupling_r
         # CR N-1: single-day query → timeline always has ≤1 element, .first достаточно.
+        # CR W-2: channel_id прямое использование — без Channel.find_by.
         result = Trends::Analysis::FollowerCcvCouplingTimeline.call(
-          channel: channel, from: @date, to: @date
+          channel_id: @channel_id, from: @date, to: @date
         )
         result[:timeline].first&.dig(:r)
       end
 
-      # CR S-3: skip recompute когда канал past discovery window ИЛИ score уже
-      # persisted. DiscoveryPhaseDetector — expensive (FollowerSnapshot full scan +
-      # logistic linearization + step-fit). При 100k каналов × 60 дней discovery = 6M
-      # compute'ов/night — недопустимо. Idempotent: existing score preserved between runs.
-      def compute_discovery_score(channel)
-        return nil if channel.created_at.nil?
+      # CR S-3 + W-2: Lightweight gate via pick(:created_at) (one column, no AR
+      # allocation). DiscoveryPhaseDetector (expensive) runs только когда оба
+      # gate'а пройдены. Channel object загружается лениво только в compute path.
+      #
+      # S-3 скипы: канал past discovery window (age > max_age) ИЛИ score уже
+      # persisted. Идемпотентно, существующий score preserved между runs.
+      def compute_discovery_score
+        created_at = Channel.where(id: @channel_id).pick(:created_at)
+        return nil if created_at.nil?
 
         max_age_days = SignalConfiguration.value_for("trends", "discovery", "channel_age_max_days").to_i
-        channel_age_days = ((Time.current - channel.created_at) / 1.day).to_i
+        channel_age_days = ((Time.current - created_at) / 1.day).to_i
         return nil if channel_age_days > max_age_days
 
-        # Skip recompute если значение уже сохранено (idempotence, TDA уже upsert'нут
-        # core_upsert'ом но existing discovery_phase_score не перезаписан — он не в
-        # build_attributes). Если prior run computed it → keep. Null → compute now.
         existing = TrendsDailyAggregate.where(channel_id: @channel_id, date: @date).pick(:discovery_phase_score)
         return existing unless existing.nil?
 
-        result = Trends::Analysis::DiscoveryPhaseDetector.call(channel)
-        result[:score]
+        # Lazy Channel load — только на compute path, после всех gate'ов.
+        channel = Channel.find_by(id: @channel_id)
+        return nil unless channel
+
+        Trends::Analysis::DiscoveryPhaseDetector.call(channel)[:score]
       end
 
-      def compute_best_worst(channel)
+      def compute_best_worst
         result = Trends::Analysis::BestWorstStreamFinder.call(
-          channel: channel,
+          channel_id: @channel_id,
           from: (@date - BEST_WORST_LOOKBACK_DAYS.days).beginning_of_day,
           to: @date.end_of_day
         )

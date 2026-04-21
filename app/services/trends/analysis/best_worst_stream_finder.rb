@@ -14,12 +14,16 @@
 module Trends
   module Analysis
     class BestWorstStreamFinder
-      def self.call(channel:, from:, to:)
-        new(channel: channel, from: from, to: to).call
+      # CR W-2: Accept channel OR channel_id — avoids unnecessary Channel.find_by
+      # в callers which have only id (AggregationWorker → DailyBuilder).
+      def self.call(channel: nil, channel_id: nil, from:, to:)
+        new(channel: channel, channel_id: channel_id, from: from, to: to).call
       end
 
-      def initialize(channel:, from:, to:)
-        @channel = channel
+      def initialize(channel:, channel_id:, from:, to:)
+        @channel_id = channel&.id || channel_id
+        raise ArgumentError, "channel or channel_id required" if @channel_id.nil?
+
         @from = from
         @to = to
       end
@@ -28,7 +32,7 @@ module Trends
         min_streams = SignalConfiguration.value_for("trends", "best_worst", "min_streams_required").to_i
 
         scope = TrustIndexHistory
-          .for_channel(@channel.id)
+          .for_channel(@channel_id)
           .where(calculated_at: @from..@to)
           .where.not(trust_index_score: nil)
           .where.not(stream_id: nil)
