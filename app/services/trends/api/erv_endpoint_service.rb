@@ -12,7 +12,8 @@
 module Trends
   module Api
     class ErvEndpointService < BaseEndpointService
-      MIN_STREAMS_FOR_TREND = 3
+      # CR N-1: threshold из SignalConfiguration через base#min_points_for_trend.
+      # No magic number.
 
       def call
         points = build_points
@@ -141,21 +142,14 @@ module Trends
       end
 
       def compute_trend(points)
-        return empty_trend if points.size < MIN_STREAMS_FOR_TREND
+        return empty_trend(n_points: points.size) if points.size < min_points_for_trend
 
         series = points.each_with_index.map { |p, i| [ i.to_f, p[:erv_percent] ] }
         Trends::Analysis::TrendCalculator.call(series)
       end
 
-      def empty_trend
-        {
-          direction: nil, slope_per_day: nil, delta: nil,
-          r_squared: nil, confidence: nil, start_value: nil, end_value: nil, n_points: 0
-        }
-      end
-
       def compute_forecast(points)
-        return nil if points.size < 14
+        return nil if points.size < min_points_for_forecast
 
         series = points.each_with_index.map { |p, i| [ i.to_f, p[:erv_percent] ] }
         Trends::Analysis::ForecastService.call(series)

@@ -11,6 +11,7 @@ RSpec.describe Trends::Api::ErvEndpointService do
       { signal_type: "trends", category: "trend", param_name: "direction_declining_slope_max", param_value: -0.1, created_at: Time.current, updated_at: Time.current },
       { signal_type: "trends", category: "trend", param_name: "confidence_high_r2", param_value: 0.7, created_at: Time.current, updated_at: Time.current },
       { signal_type: "trends", category: "trend", param_name: "confidence_medium_r2", param_value: 0.4, created_at: Time.current, updated_at: Time.current },
+      { signal_type: "trends", category: "trend", param_name: "min_points_for_trend", param_value: 3, created_at: Time.current, updated_at: Time.current },
       { signal_type: "trends", category: "forecast", param_name: "min_points_for_forecast", param_value: 14, created_at: Time.current, updated_at: Time.current },
       { signal_type: "trends", category: "forecast", param_name: "horizon_days_short", param_value: 7, created_at: Time.current, updated_at: Time.current },
       { signal_type: "trends", category: "forecast", param_name: "horizon_days_long", param_value: 30, created_at: Time.current, updated_at: Time.current },

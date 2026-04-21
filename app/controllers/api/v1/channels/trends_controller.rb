@@ -18,7 +18,7 @@ module Api
         before_action :authenticate_user!
         before_action :set_channel
         before_action :authorize_trends
-        before_action :check_365d_access
+        before_action :authorize_365d_if_requested
 
         rescue_from Trends::Api::BaseEndpointService::InvalidPeriod,
           Trends::Api::BaseEndpointService::InvalidGranularity,
@@ -28,7 +28,8 @@ module Api
         def erv
           render_cached("erv") do
             Trends::Api::ErvEndpointService.new(
-              channel: @channel, period: params[:period], granularity: params[:granularity]
+              channel: @channel, period: params[:period], granularity: params[:granularity],
+              user: current_user
             ).call
           end
         end
@@ -37,26 +38,30 @@ module Api
         def trust_index
           render_cached("trust_index") do
             Trends::Api::TrustIndexEndpointService.new(
-              channel: @channel, period: params[:period], granularity: params[:granularity]
+              channel: @channel, period: params[:period], granularity: params[:granularity],
+              user: current_user
             ).call
           end
         end
 
         # GET /api/v1/channels/:channel_id/trends/anomalies
         def anomalies
-          render_cached("anomalies") do
+          render_cached("anomalies", extra_key: "p#{params[:page] || 1}_pp#{params[:per_page] || 50}") do
             Trends::Api::AnomaliesEndpointService.new(
               channel: @channel, period: params[:period],
-              severity: params[:severity], attributed_only: params[:attributed_only]
+              severity: params[:severity], attributed_only: params[:attributed_only],
+              page: params[:page], per_page: params[:per_page],
+              user: current_user
             ).call
           end
         end
 
         # GET /api/v1/channels/:channel_id/trends/components
         def components
-          render_cached("components") do
+          render_cached("components", extra_key: "g#{params[:group] || 'all'}") do
             Trends::Api::ComponentsEndpointService.new(
-              channel: @channel, period: params[:period], group: params[:group]
+              channel: @channel, period: params[:period], group: params[:group],
+              user: current_user
             ).call
           end
         end
@@ -65,7 +70,8 @@ module Api
         def rehabilitation
           render_cached("rehabilitation") do
             Trends::Api::RehabilitationEndpointService.new(
-              channel: @channel, period: params[:period] || "30d"
+              channel: @channel, period: params[:period] || "30d",
+              user: current_user
             ).call
           end
         end
@@ -77,20 +83,23 @@ module Api
         end
 
         # FR-013: 365d tier-gated — Business only.
-        def check_365d_access
+        # CR M-2 + N-3: unified structured 403 через Pundit rescue_from (BaseController
+        # resolve_error_code → "TRENDS_BUSINESS_REQUIRED" → structured error+CTA).
+        def authorize_365d_if_requested
           return unless params[:period] == "365d"
 
-          policy = ChannelPolicy.new(current_user, @channel)
-          render json: { error: "business_required", message: I18n.t("pundit.business_required", default: "Business subscription required for 365d") }, status: :forbidden unless policy.view_365d_trends?
+          authorize @channel, :view_365d_trends?
         end
 
-        def render_cached(endpoint)
+        def render_cached(endpoint, extra_key: nil)
           period = params[:period] || Trends::Api::BaseEndpointService::DEFAULT_PERIOD
           granularity = params[:granularity] || "daily"
 
-          key = Trends::Cache::KeyBuilder.call(
+          base_key = Trends::Cache::KeyBuilder.call(
             channel_id: @channel.id, endpoint: endpoint, period: period, granularity: granularity
           )
+          # extra_key — для эндпоинтов с query-params-variant cache (pagination, group filter).
+          key = extra_key ? "#{base_key}:#{extra_key}" : base_key
 
           ttl = Trends::Cache::KeyBuilder.ttl_for(period)
           race_ttl = Trends::Cache::KeyBuilder.race_condition_ttl_for(period)

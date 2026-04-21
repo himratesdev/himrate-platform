@@ -23,12 +23,13 @@ module Trends
       end
 
       def call
-        store = ::Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/0"))
         key = Trends::Cache::KeyBuilder.new(
           channel_id: @channel_id, endpoint: "_", period: "_", granularity: "_"
         ).epoch_key
 
-        new_epoch = store.incr(key)
+        # CR M-1: pooled connection через Trends::RedisPool. Избегаем TCP churn
+        # и file descriptor exhaustion при high-traffic post-stream bursts.
+        new_epoch = Trends::RedisPool.with { |redis| redis.incr(key) }
 
         ActiveSupport::Notifications.instrument(
           "trends.cache.invalidated",
@@ -45,8 +46,6 @@ module Trends
         )
         Rails.logger.warn("[Trends::Cache::Invalidator] channel=#{@channel_id} failed: #{e.class} #{e.message}")
         nil
-      ensure
-        store&.close
       end
     end
   end

@@ -19,6 +19,7 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
       [ "trends", "trend", "direction_declining_slope_max", -0.1 ],
       [ "trends", "trend", "confidence_high_r2", 0.7 ],
       [ "trends", "trend", "confidence_medium_r2", 0.4 ],
+      [ "trends", "trend", "min_points_for_trend", 3 ],
       [ "trends", "forecast", "min_points_for_forecast", 14 ],
       [ "trends", "forecast", "horizon_days_short", 7 ],
       [ "trends", "forecast", "horizon_days_long", 30 ],
@@ -111,14 +112,18 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
       expect(response).to have_http_status(:bad_request)
     end
 
-    it "returns 403 business_required для Premium + 365d" do
+    it "CR M-2: 365d для Premium → structured 403 через Pundit pipeline" do
       create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
       create(:subscription, user: user_premium, tier: "premium", is_active: true)
 
       get "/api/v1/channels/#{channel.id}/trends/erv?period=365d", headers: headers_premium
 
       expect(response).to have_http_status(:forbidden)
-      expect(response.parsed_body["error"]).to eq("business_required")
+      body = response.parsed_body["error"]
+      expect(body).to be_a(Hash)
+      expect(body["code"]).to eq("TRENDS_BUSINESS_REQUIRED")
+      expect(body["message"]).to be_present
+      expect(body["cta"]).to include("action" => "upgrade", "label" => be_present)
     end
 
     it "grants 365d доступ для Business" do
@@ -223,6 +228,90 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
 
       get "/api/v1/channels/#{channel.id}/trends/erv?period=30d", headers: auth_headers(streamer)
       expect(response).to have_http_status(:ok)
+      # CR S-3: access_level reflects true tier (streamer), не hardcoded "premium".
+      expect(response.parsed_body.dig("meta", "access_level")).to eq("streamer")
+    end
+
+    it "CR S-3: Business user видит access_level=business" do
+      create(:subscription, user: user_business, tier: "business", is_active: true)
+
+      get "/api/v1/channels/#{channel.id}/trends/erv?period=30d", headers: headers_business
+      expect(response.parsed_body.dig("meta", "access_level")).to eq("business")
+    end
+
+    it "CR S-3: Premium tracked видит access_level=premium" do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+
+      get "/api/v1/channels/#{channel.id}/trends/erv?period=30d", headers: headers_premium
+      expect(response.parsed_body.dig("meta", "access_level")).to eq("premium")
+    end
+  end
+
+  describe "CR S-1: Anomalies pagination" do
+    before do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+      stream = create(:stream, channel: channel)
+      75.times { |i| create(:anomaly, stream: stream, timestamp: (i + 1).hours.ago, confidence: 0.8) }
+    end
+
+    it "применяет default per_page=50 + paginates" do
+      get "/api/v1/channels/#{channel.id}/trends/anomalies?period=30d", headers: headers_premium
+
+      data = response.parsed_body["data"]
+      expect(data["anomalies"].size).to eq(50)
+      expect(data["pagination"]).to include("page" => 1, "per_page" => 50, "total_pages" => 2, "has_next" => true)
+      expect(data["total"]).to eq(75)
+    end
+
+    it "support custom per_page + page" do
+      get "/api/v1/channels/#{channel.id}/trends/anomalies?period=30d&per_page=10&page=2", headers: headers_premium
+
+      data = response.parsed_body["data"]
+      expect(data["anomalies"].size).to eq(10)
+      expect(data["pagination"]).to include("page" => 2, "per_page" => 10)
+    end
+
+    it "caps per_page at MAX_PER_PAGE=200" do
+      get "/api/v1/channels/#{channel.id}/trends/anomalies?period=30d&per_page=500", headers: headers_premium
+
+      expect(response.parsed_body.dig("data", "pagination", "per_page")).to eq(200)
+    end
+  end
+
+  describe "CR N-4: cache hit integration" do
+    before do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+      5.times { |i| create(:trends_daily_aggregate, channel: channel, date: (i + 1).days.ago.to_date, erv_avg_percent: 75, ti_avg: 70, ccv_avg: 500) }
+    end
+
+    it "2-я идентичный запрос не инвокает endpoint service" do
+      allow(Trends::Api::ErvEndpointService).to receive(:new).and_call_original
+
+      get "/api/v1/channels/#{channel.id}/trends/erv?period=30d", headers: headers_premium
+      expect(response).to have_http_status(:ok)
+
+      get "/api/v1/channels/#{channel.id}/trends/erv?period=30d", headers: headers_premium
+      expect(response).to have_http_status(:ok)
+
+      # 2nd call = cache hit, service не вызывается второй раз.
+      expect(Trends::Api::ErvEndpointService).to have_received(:new).once
+    end
+
+    it "cache invalidated после Invalidator bumps epoch" do
+      allow(Trends::Api::ErvEndpointService).to receive(:new).and_call_original
+
+      get "/api/v1/channels/#{channel.id}/trends/erv?period=30d", headers: headers_premium
+
+      # Simulate post-stream cache invalidation
+      Trends::Cache::Invalidator.call(channel.id)
+
+      get "/api/v1/channels/#{channel.id}/trends/erv?period=30d", headers: headers_premium
+
+      # Epoch bumped → new key → service вызван снова.
+      expect(Trends::Api::ErvEndpointService).to have_received(:new).twice
     end
   end
 

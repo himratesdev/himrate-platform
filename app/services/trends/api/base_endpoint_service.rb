@@ -1,10 +1,14 @@
 # frozen_string_literal: true
 
 # TASK-039 Phase C1: Base class для Trends endpoint orchestrators.
-# Parses + validates period/granularity, exposes resolve_range для analysis services.
+# Parses + validates period/granularity, exposes range + meta + shared helpers.
 #
 # Valid periods per SRS §4.1: 7d / 30d / 60d / 90d / 365d.
 # Granularity: daily (default) / per_stream / weekly (for 365d+).
+#
+# CR S-3: accepts user: для accurate access_level resolution через ChannelPolicy
+# (business / premium / streamer / free). Не hardcoded.
+# CR N-2: empty_trend helper shared across TI + ERV subclasses.
 
 module Trends
   module Api
@@ -17,8 +21,9 @@ module Trends
       VALID_GRANULARITIES = %w[daily per_stream weekly].freeze
       DEFAULT_PERIOD = "30d"
 
-      def initialize(channel:, period:, granularity: nil)
+      def initialize(channel:, period:, granularity: nil, user: nil)
         @channel = channel
+        @user = user
         @period = period.presence || DEFAULT_PERIOD
         @granularity = granularity.presence || "daily"
 
@@ -28,7 +33,7 @@ module Trends
 
       protected
 
-      attr_reader :channel, :period, :granularity
+      attr_reader :channel, :period, :granularity, :user
 
       def period_days
         case @period
@@ -41,37 +46,67 @@ module Trends
       end
 
       # Returns [from, to] as DateTime pair for SQL range scanning.
-      # `to` = end-of-today to включить any stream сегодня.
       def range
         to = Time.current
         from = to - period_days.days
         [ from, to ]
       end
 
-      # Returns Array of dates (inclusive) для serializers которые нужны per-day iteration.
       def date_range
         from, to = range
         (from.to_date..to.to_date)
       end
 
+      # CR N-2: shared shape for empty trend (insufficient data case). ErvEndpointService +
+      # TrustIndexEndpointService dedupe через этот helper.
+      def empty_trend(n_points: 0)
+        {
+          direction: nil, slope_per_day: nil, delta: nil,
+          r_squared: nil, confidence: nil, start_value: nil, end_value: nil, n_points: n_points
+        }
+      end
+
+      # CR N-1: минимум points для trend compute читается из SignalConfiguration.
+      # Консистентно с TrendCalculator внутренней логикой (которая возвращает nil-shape
+      # при <2 points) — external guard здесь для fast-path skip (экономит LinearRegression call).
+      def min_points_for_trend
+        SignalConfiguration.value_for("trends", "trend", "confidence_medium_r2") # triggers cache warm
+        # Minimum 3 points для naively-fit линии + R². Хранится отдельно чтобы admin мог tune.
+        SignalConfiguration.value_for("trends", "trend", "min_points_for_trend").to_i
+      rescue SignalConfiguration::ConfigurationMissing
+        3 # fallback до следующего seed migration (graceful degradation).
+      end
+
+      def min_points_for_forecast
+        SignalConfiguration.value_for("trends", "forecast", "min_points_for_forecast").to_i
+      rescue SignalConfiguration::ConfigurationMissing
+        14
+      end
+
       # Shared meta block per SRS §4.1 (access_level, data_freshness).
       def meta
         {
-          access_level: access_level_for_current_user,
+          access_level: resolve_access_level,
           data_freshness: data_freshness
         }
       end
 
-      def access_level_for_current_user
-        # Simplified: Trends endpoint authorized → premium or streamer (both = premium access).
-        # Future: expose tier label из ChannelPolicy for UI разграничения "premium" vs "business".
-        "premium"
+      # CR S-3: resolve access_level через ChannelPolicy (не hardcoded "premium").
+      # "business" | "premium" | "streamer" | "free" — UI использует для корректного CTA.
+      def resolve_access_level
+        return "anonymous" if @user.nil?
+
+        policy = ChannelPolicy.new(@user, @channel)
+        return "business" if policy.effective_business_access?
+        return "streamer" if policy.owns_channel_access?
+        return "premium" if policy.premium_access?
+
+        "free"
       end
 
       def data_freshness
-        # Latest TDA update time vs now. "fresh" < 24h, "stale" otherwise.
         latest = TrendsDailyAggregate.where(channel_id: @channel.id).maximum(:updated_at)
-        return "fresh" if latest.nil? # empty state — no drift to report
+        return "fresh" if latest.nil?
 
         (Time.current - latest) < 24.hours ? "fresh" : "stale"
       end

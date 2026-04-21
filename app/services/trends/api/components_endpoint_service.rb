@@ -20,8 +20,8 @@ module Trends
 
       REPUTATION_COMPONENTS = %w[growth_rate follower_quality engagement_consistency].freeze
 
-      def initialize(channel:, period:, granularity: nil, group: nil)
-        super(channel: channel, period: period, granularity: granularity)
+      def initialize(channel:, period:, granularity: nil, group: nil, user: nil)
+        super(channel: channel, period: period, granularity: granularity, user: user)
         @group = group
       end
 
@@ -66,10 +66,13 @@ module Trends
       end
 
       def build_points(from_ts, to_ts)
+        # CR S-2: explicit jsonb filter. Rails `where.not(jsonb_col: [nil, {}])` может
+        # сгенерировать AR casting inconsistencies (Hash → jsonb literal); для empty
+        # jsonb объектов надёжный тест через PG operator != '{}'::jsonb.
         TrustIndexHistory
           .for_channel(channel.id)
           .where(calculated_at: from_ts..to_ts)
-          .where.not(signal_breakdown: [ nil, {} ])
+          .where("signal_breakdown IS NOT NULL AND signal_breakdown <> '{}'::jsonb")
           .order(:calculated_at)
           .pluck(:calculated_at, :trust_index_score, :signal_breakdown)
           .map { |ts, ti, breakdown| point_for(ts, ti, breakdown) }

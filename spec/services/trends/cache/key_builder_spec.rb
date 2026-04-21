@@ -30,6 +30,26 @@ RSpec.describe Trends::Cache::KeyBuilder do
     end
   end
 
+  describe "#current_epoch (CR M-1 pooled connection)" do
+    it "reads epoch через Trends::RedisPool (no Redis.new)" do
+      redis_double = instance_double(Redis)
+      expect(Trends::RedisPool).to receive(:with).and_yield(redis_double)
+      expect(redis_double).to receive(:get).with("trends:epoch:#{channel_id}").and_return("42")
+
+      epoch = described_class.new(channel_id: channel_id, endpoint: "erv", period: "30d", granularity: "daily").current_epoch
+      expect(epoch).to eq(42)
+    end
+
+    it "returns 0 когда epoch key не существует" do
+      redis_double = instance_double(Redis)
+      allow(Trends::RedisPool).to receive(:with).and_yield(redis_double)
+      allow(redis_double).to receive(:get).and_return(nil)
+
+      epoch = described_class.new(channel_id: channel_id, endpoint: "erv", period: "30d", granularity: "daily").current_epoch
+      expect(epoch).to eq(0)
+    end
+  end
+
   describe ".ttl_for" do
     it "returns 30m для 7d/30d" do
       expect(described_class.ttl_for("7d")).to eq(30.minutes)

@@ -9,6 +9,9 @@ module Trends
       def call
         points = build_points
         from_ts, to_ts = range
+        # CR S-4: compute trend ONCE, pass explicitly в build_explanation — memoization
+        # pattern с `return inside begin` ненадёжен. Local var — clean + explicit.
+        trend = compute_trend(points)
 
         {
           data: {
@@ -19,9 +22,9 @@ module Trends
             to: to_ts.iso8601,
             points: points,
             summary: build_summary(points),
-            trend: compute_trend(points),
+            trend: trend,
             forecast: compute_forecast(points),
-            trend_explanation: build_explanation(compute_trend(points)),
+            trend_explanation: build_explanation(trend),
             tier_changes: Trends::Analysis::TierChangeCounter.call(channel: channel, from: from_ts, to: to_ts),
             anomaly_markers: build_anomaly_markers(from_ts, to_ts)
           },
@@ -109,23 +112,14 @@ module Trends
       end
 
       def compute_trend(points)
-        @trend ||= begin
-          return empty_trend if points.size < 3
+        return empty_trend(n_points: points.size) if points.size < min_points_for_trend
 
-          series = points.each_with_index.map { |p, i| [ i.to_f, p[:ti] ] }
-          Trends::Analysis::TrendCalculator.call(series)
-        end
-      end
-
-      def empty_trend
-        {
-          direction: nil, slope_per_day: nil, delta: nil,
-          r_squared: nil, confidence: nil, start_value: nil, end_value: nil, n_points: 0
-        }
+        series = points.each_with_index.map { |p, i| [ i.to_f, p[:ti] ] }
+        Trends::Analysis::TrendCalculator.call(series)
       end
 
       def compute_forecast(points)
-        return nil if points.size < 14
+        return nil if points.size < min_points_for_forecast
 
         series = points.each_with_index.map { |p, i| [ i.to_f, p[:ti] ] }
         Trends::Analysis::ForecastService.call(series)

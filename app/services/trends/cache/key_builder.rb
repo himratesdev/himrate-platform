@@ -33,13 +33,15 @@ module Trends
       end
 
       # Current invalidation epoch for channel (0 if never invalidated).
-      # Stored в Redis напрямую (не Rails.cache) чтобы выдерживать cache clear без
-      # потери invalidation counter.
+      # Stored в Redis напрямую (не Rails.cache) чтобы выдерживать Rails.cache clear
+      # без потери invalidation counter (epoch = durable, Rails.cache body = ephemeral).
+      #
+      # CR M-1: pooled connection через Trends::RedisPool. Zero TCP churn per request
+      # (100k+ каналов scale). Pool timeout 5s — graceful под Redis latency spikes.
       def current_epoch
-        store = ::Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/0"))
-        (store.get(epoch_key) || 0).to_i
-      ensure
-        store&.close
+        Trends::RedisPool.with do |redis|
+          (redis.get(epoch_key) || 0).to_i
+        end
       end
 
       def epoch_key

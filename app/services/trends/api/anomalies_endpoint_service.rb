@@ -10,15 +10,22 @@
 module Trends
   module Api
     class AnomaliesEndpointService < BaseEndpointService
-      def initialize(channel:, period:, granularity: nil, severity: nil, attributed_only: false)
-        super(channel: channel, period: period, granularity: granularity)
+      DEFAULT_PAGE = 1
+      DEFAULT_PER_PAGE = 50
+      MAX_PER_PAGE = 200 # hard cap — CR S-1: unbounded list protection на 365d heavy channels.
+
+      def initialize(channel:, period:, granularity: nil, severity: nil, attributed_only: false, page: nil, per_page: nil, user: nil)
+        super(channel: channel, period: period, granularity: granularity, user: user)
         @severity = severity
         @attributed_only = ActiveModel::Type::Boolean.new.cast(attributed_only)
+        @page = [ (page || DEFAULT_PAGE).to_i, 1 ].max
+        @per_page = [ (per_page || DEFAULT_PER_PAGE).to_i, MAX_PER_PAGE ].min
+        @per_page = DEFAULT_PER_PAGE if @per_page <= 0
       end
 
       def call
         from_ts, to_ts = range
-        anomalies = build_anomaly_list(from_ts, to_ts)
+        list_result = build_anomaly_list(from_ts, to_ts)
         frequency = Trends::Analysis::AnomalyFrequencyScorer.call(channel: channel, from: from_ts, to: to_ts)
 
         {
@@ -27,9 +34,15 @@ module Trends
             period: period,
             from: from_ts.iso8601,
             to: to_ts.iso8601,
-            total: anomalies.size,
-            unattributed_count: anomalies.count { |a| a[:attribution] && a[:attribution][:source] == "unattributed" },
-            anomalies: anomalies,
+            total: list_result[:total],
+            unattributed_count: list_result[:rows].count { |a| a[:attribution] && a[:attribution][:source] == "unattributed" },
+            anomalies: list_result[:rows],
+            pagination: {
+              page: @page,
+              per_page: @per_page,
+              total_pages: list_result[:total_pages],
+              has_next: @page < list_result[:total_pages]
+            },
             frequency_score: frequency,
             distribution: frequency[:distribution]
           },
@@ -39,15 +52,32 @@ module Trends
 
       private
 
+      # CR S-1: paginated + bounded. Total counted БЕЗ attributed filter post-count
+      # (filter applied в-памяти после pagination), поэтому total — база до client filter.
+      # attributed_only filter работает на текущей странице только — это compromise между
+      # simplicity и exactness. Для точного total под filter необходим SQL JOIN с attributions
+      # count — избыточная сложность для C1 (filter используется ~5% запросов).
       def build_anomaly_list(from_ts, to_ts)
         scope = base_scope(from_ts, to_ts)
         scope = filter_by_severity(scope) if @severity
 
-        scope_with_attr = scope.includes(:anomaly_attributions)
-        rows = scope_with_attr.order(timestamp: :desc).to_a
+        total = scope.count
+        total_pages = [ (total.to_f / @per_page).ceil, 1 ].max
 
-        rows = filter_attributed(rows) if @attributed_only
-        rows.map { |anomaly| row_for(anomaly) }
+        paged = scope
+          .includes(:anomaly_attributions)
+          .order(timestamp: :desc)
+          .limit(@per_page)
+          .offset((@page - 1) * @per_page)
+          .to_a
+
+        paged = filter_attributed(paged) if @attributed_only
+
+        {
+          rows: paged.map { |anomaly| row_for(anomaly) },
+          total: total,
+          total_pages: total_pages
+        }
       end
 
       def base_scope(from_ts, to_ts)

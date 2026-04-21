@@ -5,15 +5,14 @@ require "rails_helper"
 RSpec.describe Trends::Cache::Invalidator do
   let(:channel_id) { "00000000-0000-0000-0000-000000000001" }
 
-  describe ".call" do
+  describe ".call (CR M-1 pooled connection)" do
     let(:redis_double) { instance_double(Redis) }
 
     before do
-      allow(Redis).to receive(:new).and_return(redis_double)
-      allow(redis_double).to receive(:close)
+      allow(Trends::RedisPool).to receive(:with).and_yield(redis_double)
     end
 
-    it "increments per-channel epoch в Redis" do
+    it "increments per-channel epoch через pool" do
       allow(redis_double).to receive(:incr).with("trends:epoch:#{channel_id}").and_return(1)
 
       result = described_class.call(channel_id)
