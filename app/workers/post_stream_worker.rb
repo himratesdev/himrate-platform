@@ -74,6 +74,12 @@ class PostStreamWorker
       stream_date = stream.started_at&.to_date&.iso8601
       Trends::AggregationWorker.perform_async(stream.channel_id, stream_date) if stream_date
 
+      # TASK-039 FR-036: Invalidate Trends API cache для этого канала.
+      # O(1) INCR epoch в Redis → все cached responses этого канала становятся stale
+      # при следующем request. Graceful degradation если Redis fails (cache самоинвалидируется
+      # по TTL 30m-24h, error reported via Rails.error.report).
+      Trends::Cache::Invalidator.call(stream.channel_id)
+
       duration_ms = ((Time.current - started_at) * 1000).to_i
       Rails.logger.info(
         "PostStreamWorker: stream #{stream_id} — " \

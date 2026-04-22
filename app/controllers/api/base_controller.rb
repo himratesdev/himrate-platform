@@ -125,6 +125,7 @@ module Api
         case query
         when "destroy?" then "CHANNEL_NOT_TRACKED"
         when "view_report?" then "POST_STREAM_WINDOW_EXPIRED"
+        when "view_365d_trends?" then "TRENDS_BUSINESS_REQUIRED"
         else "SUBSCRIPTION_REQUIRED"
         end
       else
@@ -134,7 +135,7 @@ module Api
 
     def resolve_cta(code)
       case code
-      when "COMPARE_UNAVAILABLE", "BOT_CHAIN_UNAVAILABLE"
+      when "COMPARE_UNAVAILABLE", "BOT_CHAIN_UNAVAILABLE", "TRENDS_BUSINESS_REQUIRED"
         { action: "upgrade", label: I18n.t("pundit.cta.business_upgrade") }
       else
         { action: "subscribe", label: I18n.t("pundit.cta.start_tracking") }
