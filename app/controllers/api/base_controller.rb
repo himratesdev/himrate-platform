@@ -126,6 +126,7 @@ module Api
         when "destroy?" then "CHANNEL_NOT_TRACKED"
         when "view_report?" then "POST_STREAM_WINDOW_EXPIRED"
         when "view_365d_trends?" then "TRENDS_BUSINESS_REQUIRED"
+        when "view_peer_comparison?" then "TRENDS_PEER_COMPARISON_REQUIRED"
         else "SUBSCRIPTION_REQUIRED"
         end
       else

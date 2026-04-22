@@ -68,6 +68,12 @@ Rails.application.routes.draw do
         get "trends/anomalies", to: "channels/trends#anomalies"
         get "trends/components", to: "channels/trends#components"
         get "trends/rehabilitation", to: "channels/trends#rehabilitation"
+        # TASK-039 Phase C2: Analytics endpoints (M3 Stability / M11 Peer / M12 Categories / M13 Weekday / Insights)
+        get "trends/stability", to: "channels/trends#stability"
+        get "trends/comparison", to: "channels/trends#comparison"
+        get "trends/categories", to: "channels/trends#categories"
+        get "trends/patterns/weekday", to: "channels/trends#weekday_patterns"
+        get "trends/insights", to: "channels/trends#insights"
 
         # TASK-031: Track/untrack channel
         post "track", to: "channels#track"

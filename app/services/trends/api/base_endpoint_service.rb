@@ -110,6 +110,12 @@ module Trends
 
         (Time.current - latest) < 24.hours ? "fresh" : "stale"
       end
+
+      # CR N-2: shared latest stream category lookup — used by Stability + Comparison
+      # для peer_comparison scoping.
+      def latest_category_for_channel
+        @channel.streams.where.not(game_name: nil).order(started_at: :desc).pick(:game_name)
+      end
     end
   end
 end

@@ -79,3 +79,20 @@ ru:
       range: "%{value} (%{lower}..%{upper})"
       horizon_7d: На 7 дней
       horizon_30d: На 30 дней
+    comparison:
+      verdict: "TI %{ti} в категории %{category}"
+    categories:
+      verdict:
+        best_with_delta: "Лучший TI в %{name} (+%{delta})"
+        top_with_delta: "Топ-категория %{name} (%{delta} к baseline)"
+        top_no_delta: "Топ-категория: %{name}"
+    weekday:
+      accusative:
+        mon: понедельник
+        tue: вторник
+        wed: среду
+        thu: четверг
+        fri: пятницу
+        sat: субботу
+        sun: воскресенье
+      insight: "Лучшие стримы в %{day} (TI %{ti})"

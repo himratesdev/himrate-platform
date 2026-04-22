@@ -77,3 +77,20 @@ en:
       range: "%{value} (%{lower}..%{upper})"
       horizon_7d: 7-day forecast
       horizon_30d: 30-day forecast
+    comparison:
+      verdict: "TI %{ti} in %{category}"
+    categories:
+      verdict:
+        best_with_delta: "Best TI in %{name} (+%{delta})"
+        top_with_delta: "Top category %{name} (%{delta} vs baseline)"
+        top_no_delta: "Top category: %{name}"
+    weekday:
+      accusative:
+        mon: Monday
+        tue: Tuesday
+        wed: Wednesday
+        thu: Thursday
+        fri: Friday
+        sat: Saturday
+        sun: Sunday
+      insight: "Best streams on %{day} (TI %{ti})"
