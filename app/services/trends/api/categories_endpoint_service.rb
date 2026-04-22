@@ -28,6 +28,7 @@ module Trends
 
       private
 
+      # CR S-4: i18n templates через locale files (не string interpolation).
       def build_verdict(result)
         top = result[:top_category]
         return { verdict_en: nil, verdict_ru: nil } if top.nil?
@@ -35,22 +36,20 @@ module Trends
         top_row = result[:categories].find { |c| c[:name] == top }
         delta = top_row&.dig(:vs_baseline_ti_delta)
 
-        if delta&.positive?
-          {
-            verdict_en: "Best TI in #{top} (+#{delta})",
-            verdict_ru: "Лучший TI в #{top} (+#{delta})"
-          }
-        elsif delta
-          {
-            verdict_en: "Top category #{top} (#{delta} vs baseline)",
-            verdict_ru: "Топ-категория #{top} (#{delta} к baseline)"
-          }
-        else
-          {
-            verdict_en: "Top category: #{top}",
-            verdict_ru: "Топ-категория: #{top}"
-          }
-        end
+        key =
+          if delta&.positive?
+            "best_with_delta"
+          elsif delta
+            "top_with_delta"
+          else
+            "top_no_delta"
+          end
+
+        interp = { name: top, delta: delta }
+        {
+          verdict_en: I18n.t("trends.categories.verdict.#{key}", locale: :en, **interp),
+          verdict_ru: I18n.t("trends.categories.verdict.#{key}", locale: :ru, **interp)
+        }
       end
     end
   end

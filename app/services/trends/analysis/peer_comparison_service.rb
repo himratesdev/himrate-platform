@@ -147,13 +147,14 @@ module Trends
         result.round(2)
       end
 
+      # CR S-4: i18n templates (не string interpolation) — extensible для new locales.
       def build_verdict(channel_data, _peers)
         ti = channel_data[:ti_avg]
         return { verdict_en: nil, verdict_ru: nil } if ti.nil?
 
         {
-          verdict_en: "TI #{ti} in #{@category}",
-          verdict_ru: "TI #{ti} в категории #{@category}"
+          verdict_en: I18n.t("trends.comparison.verdict", locale: :en, ti: ti, category: @category),
+          verdict_ru: I18n.t("trends.comparison.verdict", locale: :ru, ti: ti, category: @category)
         }
       end
     end

@@ -13,6 +13,7 @@ ru:
       grace_expired: "Период продления истёк. Оформите подписку заново"
       team_membership_revoked: "Вы удалены из команды. Доступ ограничен вашим тарифом"
       trends_business_required: "Годовая история трендов доступна в Business — $99/мес"
+      trends_peer_comparison_required: "Сравнение с коллегами доступно в Premium или Business — $9.99/мес за канал"
     cta:
       start_tracking: "Start Tracking — $9.99/мес"
       view_analytics: "Посмотреть полную аналитику"

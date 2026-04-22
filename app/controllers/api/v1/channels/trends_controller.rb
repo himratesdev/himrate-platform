@@ -165,8 +165,8 @@ module Api
           # extra_key — для эндпоинтов с query-params-variant cache (pagination, group filter).
           key = extra_key ? "#{base_key}:#{extra_key}" : base_key
 
-          ttl = Trends::Cache::KeyBuilder.ttl_for(period)
-          race_ttl = Trends::Cache::KeyBuilder.race_condition_ttl_for(period)
+          ttl = Trends::Cache::KeyBuilder.ttl_for(period, endpoint: endpoint)
+          race_ttl = Trends::Cache::KeyBuilder.race_condition_ttl_for(period, endpoint: endpoint)
 
           payload = Rails.cache.fetch(key, expires_in: ttl, race_condition_ttl: race_ttl) do
             yield

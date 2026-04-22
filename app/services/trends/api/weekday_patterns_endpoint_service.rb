@@ -8,12 +8,7 @@
 module Trends
   module Api
     class WeekdayPatternsEndpointService < BaseEndpointService
-      WEEKDAY_LABELS = {
-        mon: { ru: "понедельник", en: "Monday" }, tue: { ru: "вторник", en: "Tuesday" },
-        wed: { ru: "среду", en: "Wednesday" }, thu: { ru: "четверг", en: "Thursday" },
-        fri: { ru: "пятницу", en: "Friday" }, sat: { ru: "субботу", en: "Saturday" },
-        sun: { ru: "воскресенье", en: "Sunday" }
-      }.freeze
+      # CR N-1: weekday labels (RU accusative case) moved в locale files (trends.{en,ru}.yml).
 
       def call
         from_ts, to_ts = range
@@ -44,10 +39,10 @@ module Trends
         best = patterns.select { |_, v| v[:ti_avg] }.max_by { |_, v| v[:ti_avg] }
         return nil if best.nil?
 
-        day_label = WEEKDAY_LABELS.dig(best[0], locale) || best[0].to_s
+        day_label = I18n.t("trends.weekday.accusative.#{best[0]}", locale: locale, default: best[0].to_s)
         ti = best[1][:ti_avg]
 
-        locale == :ru ? "Лучшие стримы в #{day_label} (TI #{ti})" : "Best streams on #{day_label} (TI #{ti})"
+        I18n.t("trends.weekday.insight", locale: locale, day: day_label, ti: ti)
       end
     end
   end

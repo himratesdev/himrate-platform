@@ -72,20 +72,23 @@ RSpec.describe Trends::Analysis::PeerComparisonService do
       expect(result[:percentiles][:stability][:p50]).to eq(0.9)
     end
 
-    it "caches result (same call twice не re-computes)" do
+    it "caches result (2nd call skips compute entirely)" do
       3.times do |_|
         peer = create(:channel)
         create(:trends_daily_aggregate, channel: peer, date: 3.days.ago.to_date,
           categories: { category => 1 }, ti_avg: 70, erv_avg_percent: 80, ti_std: 4)
       end
 
-      allow(TrendsDailyAggregate).to receive(:where).and_call_original
+      # CR N-3: explicit cache verification — spy на private #compute вместо weak
+      # where-count assertion, которая ломается при future refactors.
+      service = described_class.new(channel: channel, category: category, period: "30d")
+      allow(service).to receive(:compute).and_call_original
 
-      described_class.call(channel: channel, category: category, period: "30d")
-      described_class.call(channel: channel, category: category, period: "30d")
+      service.call
+      service.call
 
-      # Второй вызов cache hit — scope.where не трогается повторно.
-      expect(TrendsDailyAggregate).to have_received(:where).at_most(:twice)
+      # Second call = cache hit, compute не вызывается второй раз.
+      expect(service).to have_received(:compute).once
     end
   end
 end

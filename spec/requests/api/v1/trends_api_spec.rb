@@ -266,19 +266,23 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
       expect(data).to include("cv", "ti_mean", "ti_std")
     end
 
-    it "Business-only peer_comparison flag" do
+    it "Premium/Business/Streamer access to peer_comparison (FR-014)" do
       create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
       create(:subscription, user: user_premium, tier: "premium", is_active: true)
 
       get "/api/v1/channels/#{channel.id}/trends/stability?period=30d&include_peer_comparison=true", headers: headers_premium
 
-      # Premium uses view_peer_comparison? → Premium premium_access_for? granted (FR-014) → 200
       expect(response).to have_http_status(:ok)
     end
 
-    it "Free user with peer_comparison → 403" do
+    it "Free user with peer_comparison → 403 (first gate view_trends_historical? blocks)" do
       get "/api/v1/channels/#{channel.id}/trends/stability?period=30d&include_peer_comparison=true", headers: headers_free
+
       expect(response).to have_http_status(:forbidden)
+      # Free blocks на view_trends_historical? (первый before_action) → SUBSCRIPTION_REQUIRED.
+      # TRENDS_PEER_COMPARISON_REQUIRED код зарезервирован на случай divergence policies в будущем
+      # (когда view_peer_comparison? станет stricter чем view_trends_historical?).
+      expect(response.parsed_body.dig("error", "code")).to eq("SUBSCRIPTION_REQUIRED")
     end
   end
 

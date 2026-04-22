@@ -29,7 +29,7 @@ module Trends
         min_streams = SignalConfiguration.value_for("trends", "stability", "min_streams_required").to_i
         if aggregates[:streams_count] < min_streams
           return {
-            data: insufficient_payload(from_ts, to_ts, aggregates, min_streams),
+            data: insufficient_payload(from_ts, to_ts, aggregates, min_streams, reason: "streams_below_min"),
             meta: meta
           }
         end
@@ -37,6 +37,17 @@ module Trends
         stable_min = SignalConfiguration.value_for("trends", "stability", "stable_min_score").to_f
         moderate_min = SignalConfiguration.value_for("trends", "stability", "moderate_min_score").to_f
         score = compute_score(aggregates[:ti_avg], aggregates[:ti_std])
+
+        # CR S-3: edge case — ti_avg=0 (fraudulent channel all-zero) проходит streams guard,
+        # но compute_score returns nil (division by zero). Treat as insufficient_data
+        # consistently instead of mixed {score: nil, insufficient_data: false} payload.
+        if score.nil?
+          return {
+            data: insufficient_payload(from_ts, to_ts, aggregates, min_streams, reason: "ti_avg_zero_or_null"),
+            meta: meta
+          }
+        end
+
         label = classify_score(score, stable_min, moderate_min)
 
         payload = {
@@ -102,7 +113,7 @@ module Trends
         "volatile"
       end
 
-      def insufficient_payload(from_ts, to_ts, aggregates, min_streams)
+      def insufficient_payload(from_ts, to_ts, aggregates, min_streams, reason:)
         {
           channel_id: channel.id,
           period: period,
@@ -115,13 +126,13 @@ module Trends
           ti_std: aggregates[:ti_std],
           streams_count: aggregates[:streams_count],
           insufficient_data: true,
+          reason: reason,
           min_streams_required: min_streams
         }
       end
 
-      # Latest category из stream history (для peer_comparison scoping).
       def latest_category
-        channel.streams.where.not(game_name: nil).order(started_at: :desc).pick(:game_name)
+        latest_category_for_channel
       end
     end
   end

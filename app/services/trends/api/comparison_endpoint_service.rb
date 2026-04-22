@@ -15,7 +15,8 @@ module Trends
     class ComparisonEndpointService < BaseEndpointService
       def initialize(channel:, period:, granularity: nil, category: nil, user: nil)
         super(channel: channel, period: period, granularity: granularity, user: user)
-        @category = category.presence || resolve_default_category
+        # CR N-2: reuse BaseEndpointService#latest_category_for_channel (dedup со Stability).
+        @category = category.presence || latest_category_for_channel
       end
 
       def call
@@ -40,6 +41,12 @@ module Trends
           channel: channel, category: @category, period: period
         )
 
+        # CR N-6: normalize insufficient_data shape — always include reason
+        # regardless of which branch (no_category_history vs insufficient_peers).
+        if peer[:insufficient_data]
+          peer = peer.merge(reason: "insufficient_peers")
+        end
+
         {
           data: {
             channel_id: channel.id,
@@ -50,12 +57,6 @@ module Trends
           },
           meta: meta
         }
-      end
-
-      private
-
-      def resolve_default_category
-        channel.streams.where.not(game_name: nil).order(started_at: :desc).pick(:game_name)
       end
     end
   end
