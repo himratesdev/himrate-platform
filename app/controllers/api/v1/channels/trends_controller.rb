@@ -19,6 +19,7 @@ module Api
         before_action :set_channel
         before_action :authorize_trends
         before_action :authorize_365d_if_requested
+        before_action :authorize_peer_if_requested, only: %i[stability comparison]
 
         rescue_from Trends::Api::BaseEndpointService::InvalidPeriod,
           Trends::Api::BaseEndpointService::InvalidGranularity,
@@ -76,6 +77,58 @@ module Api
           end
         end
 
+        # GET /api/v1/channels/:channel_id/trends/stability (FR-003, M3)
+        def stability
+          render_cached("stability", extra_key: "peer#{params[:include_peer_comparison] ? 1 : 0}") do
+            Trends::Api::StabilityEndpointService.new(
+              channel: @channel, period: params[:period],
+              include_peer_comparison: params[:include_peer_comparison],
+              user: current_user
+            ).call
+          end
+        end
+
+        # GET /api/v1/channels/:channel_id/trends/comparison (FR-007, M11)
+        def comparison
+          render_cached("comparison", extra_key: "c#{params[:category] || 'auto'}") do
+            Trends::Api::ComparisonEndpointService.new(
+              channel: @channel, period: params[:period],
+              category: params[:category],
+              user: current_user
+            ).call
+          end
+        end
+
+        # GET /api/v1/channels/:channel_id/trends/categories (FR-008, M12 v2.0)
+        def categories
+          render_cached("categories") do
+            Trends::Api::CategoriesEndpointService.new(
+              channel: @channel, period: params[:period],
+              user: current_user
+            ).call
+          end
+        end
+
+        # GET /api/v1/channels/:channel_id/trends/patterns/weekday (FR-009, M13 v2.0)
+        def weekday_patterns
+          render_cached("weekday_patterns") do
+            Trends::Api::WeekdayPatternsEndpointService.new(
+              channel: @channel, period: params[:period],
+              user: current_user
+            ).call
+          end
+        end
+
+        # GET /api/v1/channels/:channel_id/trends/insights (FR-010 v2.0)
+        def insights
+          render_cached("insights") do
+            Trends::Api::InsightsEndpointService.new(
+              channel: @channel, period: params[:period],
+              user: current_user
+            ).call
+          end
+        end
+
         private
 
         def authorize_trends
@@ -89,6 +142,17 @@ module Api
           return unless params[:period] == "365d"
 
           authorize @channel, :view_365d_trends?
+        end
+
+        # FR-014: Peer comparison — view_peer_comparison? (Premium / Business / Streamer OAuth).
+        # Для stability endpoint активируется только если include_peer_comparison=true.
+        # Для comparison endpoint — всегда (SRS US-016).
+        def authorize_peer_if_requested
+          requires_peer = action_name == "comparison" ||
+                          (action_name == "stability" && ActiveModel::Type::Boolean.new.cast(params[:include_peer_comparison]))
+          return unless requires_peer
+
+          authorize @channel, :view_peer_comparison?
         end
 
         def render_cached(endpoint, extra_key: nil)

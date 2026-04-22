@@ -20,6 +20,16 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
       [ "trends", "trend", "confidence_high_r2", 0.7 ],
       [ "trends", "trend", "confidence_medium_r2", 0.4 ],
       [ "trends", "trend", "min_points_for_trend", 3 ],
+      [ "trends", "stability", "stable_min_score", 0.85 ],
+      [ "trends", "stability", "moderate_min_score", 0.65 ],
+      [ "trends", "stability", "min_streams_required", 3 ],
+      [ "trends", "peer_comparison", "min_category_channels", 3 ],
+      [ "trends", "peer_comparison", "cache_ttl_minutes", 15 ],
+      [ "trends", "patterns", "weekday_pattern_min_days", 7 ],
+      [ "trends", "patterns", "category_single_threshold_pct", 95 ],
+      [ "trends", "insights", "top_n_count", 3 ],
+      [ "trends", "insights", "p0_ti_delta_min_pts", 5.0 ],
+      [ "trends", "insights", "p1_tier_change_recency_days", 30 ],
       [ "trends", "forecast", "min_points_for_forecast", 14 ],
       [ "trends", "forecast", "horizon_days_short", 7 ],
       [ "trends", "forecast", "horizon_days_long", 30 ],
@@ -218,6 +228,157 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
       expect(data).to include("channel_id")
       # tracker output shape — rehabilitation_active key присутствует
       expect(data.keys).to include("rehabilitation_active").or include("active")
+    end
+  end
+
+  describe "GET /api/v1/channels/:id/trends/stability (FR-003)" do
+    let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/stability?period=30d" }
+
+    include_examples "requires authentication"
+    include_examples "blocks Free user"
+    include_examples "grants Premium tracked access"
+
+    it "insufficient_data когда streams < min_streams_required" do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+
+      get endpoint_path, headers: headers_premium
+
+      expect(response).to have_http_status(:ok)
+      data = response.parsed_body["data"]
+      expect(data["insufficient_data"]).to be true
+      expect(data["label"]).to eq("insufficient_data")
+    end
+
+    it "computes score + label stable/moderate/volatile" do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+      5.times do |i|
+        create(:trends_daily_aggregate, channel: channel, date: (i + 1).days.ago.to_date,
+          ti_avg: 80, ti_std: 2, streams_count: 2)
+      end
+
+      get endpoint_path, headers: headers_premium
+
+      data = response.parsed_body["data"]
+      expect(data["score"]).to be > 0.9
+      expect(data["label"]).to eq("stable")
+      expect(data).to include("cv", "ti_mean", "ti_std")
+    end
+
+    it "Business-only peer_comparison flag" do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+
+      get "/api/v1/channels/#{channel.id}/trends/stability?period=30d&include_peer_comparison=true", headers: headers_premium
+
+      # Premium uses view_peer_comparison? → Premium premium_access_for? granted (FR-014) → 200
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "Free user with peer_comparison → 403" do
+      get "/api/v1/channels/#{channel.id}/trends/stability?period=30d&include_peer_comparison=true", headers: headers_free
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
+  describe "GET /api/v1/channels/:id/trends/comparison (FR-007)" do
+    let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/comparison?period=30d" }
+
+    include_examples "requires authentication"
+    include_examples "blocks Free user"
+    include_examples "grants Premium tracked access"
+
+    it "returns insufficient_data without category history" do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+
+      get endpoint_path, headers: headers_premium
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("data", "insufficient_data")).to be true
+    end
+
+    it "computes peer percentiles when enough peers exist" do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+      create(:stream, channel: channel, game_name: "Just Chatting")
+      4.times do |_|
+        peer = create(:channel)
+        create(:trends_daily_aggregate, channel: peer, date: 5.days.ago.to_date,
+          categories: { "Just Chatting" => 1 }, ti_avg: 70, erv_avg_percent: 80, ti_std: 4)
+      end
+      create(:trends_daily_aggregate, channel: channel, date: 3.days.ago.to_date,
+        categories: { "Just Chatting" => 1 }, ti_avg: 85, erv_avg_percent: 90, ti_std: 3)
+
+      get endpoint_path, headers: headers_premium
+
+      data = response.parsed_body["data"]
+      expect(data["sample_size"]).to eq(4)
+      expect(data["category"]).to eq("Just Chatting")
+      expect(data).to include("percentiles", "channel_values")
+    end
+  end
+
+  describe "GET /api/v1/channels/:id/trends/categories (FR-008 v2.0)" do
+    let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/categories?period=30d" }
+
+    include_examples "requires authentication"
+    include_examples "blocks Free user"
+    include_examples "grants Premium tracked access"
+
+    it "returns verdict + categories breakdown" do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+      create(:trends_daily_aggregate, channel: channel, date: 2.days.ago.to_date,
+        categories: { "Just Chatting" => 3 }, ti_avg: 80, erv_avg_percent: 85)
+
+      get endpoint_path, headers: headers_premium
+
+      data = response.parsed_body["data"]
+      expect(data).to include("categories", "top_category", "verdict")
+    end
+  end
+
+  describe "GET /api/v1/channels/:id/trends/patterns/weekday (FR-009 v2.0)" do
+    let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/patterns/weekday?period=30d" }
+
+    include_examples "requires authentication"
+    include_examples "blocks Free user"
+    include_examples "grants Premium tracked access"
+
+    it "returns insight_ru/en когда enough days" do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+      14.times do |i|
+        date = (i + 1).days.ago.to_date
+        create(:trends_daily_aggregate, channel: channel, date: date,
+          ti_avg: 70 + date.wday * 2, erv_avg_percent: 80, streams_count: 1)
+      end
+
+      get endpoint_path, headers: headers_premium
+
+      data = response.parsed_body["data"]
+      expect(data).to include("weekday_patterns", "insight_ru", "insight_en")
+    end
+  end
+
+  describe "GET /api/v1/channels/:id/trends/insights (FR-010 v2.0)" do
+    let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/insights?period=30d" }
+
+    include_examples "requires authentication"
+    include_examples "blocks Free user"
+    include_examples "grants Premium tracked access"
+
+    it "returns insights array (flat fallback без notable changes)" do
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+
+      get endpoint_path, headers: headers_premium
+
+      data = response.parsed_body["data"]
+      expect(data["insights"]).to be_an(Array)
+      expect(data["insights"].first).to include("priority", "message_ru", "message_en")
     end
   end
 
