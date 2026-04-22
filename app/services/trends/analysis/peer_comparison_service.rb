@@ -13,6 +13,20 @@
 #   - В period window (default 30d) per channel → latest avg per channel
 #
 # Stability computed через `1 - ti_std/ti_avg` формула (BR-008).
+#
+# Scale considerations (tested up to 100k channels):
+#   - GIN index idx_tda_categories_gin (migration 20260422100002) indexes
+#     jsonb_exists() — queries O(log N) instead of sequential scan
+#   - Rails.cache 15m TTL amortizes compute across request burst
+#   - race_condition_ttl 60s prevents thundering herd at cache expire
+#
+# Если observed p95 > 3s sustained at category queries (monitor через
+# Prometheus trends.peer_comparison.compute_duration_p95), upgrade path:
+#   - Materialized view `trends_category_peer_aggregates_mv` с per-category,
+#     per-period precomputed percentiles
+#   - Nightly refresh через Sidekiq cron (matches TrendsAggregationWorker cadence)
+#   - Service reads from MV instead of live TDA scan
+#   - Cache_ttl_minutes в SignalConfiguration → 60 (hourly refresh signal)
 
 module Trends
   module Analysis
