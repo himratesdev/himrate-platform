@@ -51,6 +51,15 @@ module Trends
           { channel: channel, stats: stats }
         end
 
+        # 3-tier observability (build-for-years):
+        #   1. Rails.logger — persistent audit в log/{env}.log (grep'aемо по timestamp)
+        #   2. Notifications — subscribers Sentry/StatsD/Prometheus (metrics + alerts)
+        #   3. Rake-task puts → operator terminal UX (rake только)
+        Rails.logger.info(
+          "[Trends::VisualQa::DataSeeder] seed COMPLETED " \
+          "channel_id=#{result[:channel].id} login=#{@login} " \
+          "profile=#{@profile} stats=#{result[:stats].to_json}"
+        )
         ActiveSupport::Notifications.instrument(
           "trends.visual_qa.seed_completed",
           channel_id: result[:channel].id, login: @login, profile: @profile, stats: result[:stats]
@@ -72,6 +81,10 @@ module Trends
         stats = ChannelSeeder.teardown_channel(channel: channel)
         seed_record.destroy!
 
+        Rails.logger.info(
+          "[Trends::VisualQa::DataSeeder] clear COMPLETED " \
+          "channel_id=#{channel.id} login=#{@login} stats=#{stats.to_json}"
+        )
         ActiveSupport::Notifications.instrument(
           "trends.visual_qa.clear_completed",
           channel_id: channel.id, login: @login, stats: stats
