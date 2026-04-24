@@ -79,6 +79,10 @@ module Trends
             s.adapter_class_name = adapter
           end
         end
+        # Defensive: bust known_sources cache even if creation path skipped
+        # AR after_commit (e.g. transactional test fixtures where outer rollback
+        # suppresses callbacks). AnomalyAttribution validation reads this cache.
+        Rails.cache.delete(AttributionSource::CACHE_KEY)
       end
     end
   end
