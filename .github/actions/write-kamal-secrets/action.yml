@@ -1,0 +1,118 @@
+name: Write Kamal Secrets
+description: |
+  Writes .kamal/secrets.{destination} file с всеми required env vars для Kamal
+  operations (app exec, deploy, setup). Single source of truth для secrets list —
+  устраняет drift между workflows (deploy-staging, visual-qa-seed, etc).
+
+  Secrets passed via `inputs.*` чтобы каждый workflow явно указывал какие secrets
+  он использует (zero hidden dependencies, CR N-3 fix).
+
+  Cleanup обеспечивается через отдельный step `if: always()` в caller workflow
+  (не trap EXIT — тот ненадёжен при early-crash). Chmod 600 applied post-write
+  для hygiene (S-1).
+
+inputs:
+  destination:
+    description: "Kamal destination (staging | production)"
+    required: true
+  rails_master_key:
+    required: true
+  postgres_password:
+    required: true
+  database_url:
+    required: true
+  redis_url:
+    required: true
+  jwt_secret:
+    required: true
+  secret_key_base:
+    required: true
+  twitch_client_id:
+    required: true
+  twitch_client_secret:
+    required: true
+  twitch_redirect_uri:
+    required: true
+  google_client_id:
+    required: true
+  google_client_secret:
+    required: true
+  google_redirect_uri:
+    required: true
+  active_record_encryption_primary_key:
+    required: true
+  active_record_encryption_deterministic_key:
+    required: true
+  active_record_encryption_key_derivation_salt:
+    required: true
+  flipper_ui_password:
+    required: true
+  flipper_ui_user:
+    required: true
+  allowed_extension_id:
+    required: true
+  twitch_webhook_secret:
+    required: true
+  eventsub_webhook_url:
+    required: true
+  kamal_registry_password:
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Write Kamal secrets file
+      shell: bash
+      env:
+        DESTINATION: ${{ inputs.destination }}
+        KAMAL_REGISTRY_PASSWORD: ${{ inputs.kamal_registry_password }}
+        RAILS_MASTER_KEY: ${{ inputs.rails_master_key }}
+        POSTGRES_PASSWORD: ${{ inputs.postgres_password }}
+        DATABASE_URL: ${{ inputs.database_url }}
+        REDIS_URL: ${{ inputs.redis_url }}
+        JWT_SECRET: ${{ inputs.jwt_secret }}
+        SECRET_KEY_BASE: ${{ inputs.secret_key_base }}
+        TWITCH_CLIENT_ID: ${{ inputs.twitch_client_id }}
+        TWITCH_CLIENT_SECRET: ${{ inputs.twitch_client_secret }}
+        TWITCH_REDIRECT_URI: ${{ inputs.twitch_redirect_uri }}
+        GOOGLE_CLIENT_ID: ${{ inputs.google_client_id }}
+        GOOGLE_CLIENT_SECRET: ${{ inputs.google_client_secret }}
+        GOOGLE_REDIRECT_URI: ${{ inputs.google_redirect_uri }}
+        ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${{ inputs.active_record_encryption_primary_key }}
+        ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${{ inputs.active_record_encryption_deterministic_key }}
+        ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${{ inputs.active_record_encryption_key_derivation_salt }}
+        FLIPPER_UI_PASSWORD: ${{ inputs.flipper_ui_password }}
+        FLIPPER_UI_USER: ${{ inputs.flipper_ui_user }}
+        ALLOWED_EXTENSION_ID: ${{ inputs.allowed_extension_id }}
+        TWITCH_WEBHOOK_SECRET: ${{ inputs.twitch_webhook_secret }}
+        EVENTSUB_WEBHOOK_URL: ${{ inputs.eventsub_webhook_url }}
+      run: |
+        set -euo pipefail
+        mkdir -p .kamal
+        FILE=".kamal/secrets.${DESTINATION}"
+        # Use printf чтобы избежать heredoc variable expansion issues в composite action.
+        {
+          printf 'KAMAL_REGISTRY_PASSWORD=%s\n' "$KAMAL_REGISTRY_PASSWORD"
+          printf 'RAILS_MASTER_KEY=%s\n' "$RAILS_MASTER_KEY"
+          printf 'POSTGRES_PASSWORD=%s\n' "$POSTGRES_PASSWORD"
+          printf 'DATABASE_URL=%s\n' "$DATABASE_URL"
+          printf 'REDIS_URL=%s\n' "$REDIS_URL"
+          printf 'JWT_SECRET=%s\n' "$JWT_SECRET"
+          printf 'SECRET_KEY_BASE=%s\n' "$SECRET_KEY_BASE"
+          printf 'TWITCH_CLIENT_ID=%s\n' "$TWITCH_CLIENT_ID"
+          printf 'TWITCH_CLIENT_SECRET=%s\n' "$TWITCH_CLIENT_SECRET"
+          printf 'TWITCH_REDIRECT_URI=%s\n' "$TWITCH_REDIRECT_URI"
+          printf 'GOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID"
+          printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET"
+          printf 'GOOGLE_REDIRECT_URI=%s\n' "$GOOGLE_REDIRECT_URI"
+          printf 'ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=%s\n' "$ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY"
+          printf 'ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=%s\n' "$ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY"
+          printf 'ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=%s\n' "$ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT"
+          printf 'FLIPPER_UI_PASSWORD=%s\n' "$FLIPPER_UI_PASSWORD"
+          printf 'FLIPPER_UI_USER=%s\n' "$FLIPPER_UI_USER"
+          printf 'ALLOWED_EXTENSION_ID=%s\n' "$ALLOWED_EXTENSION_ID"
+          printf 'TWITCH_WEBHOOK_SECRET=%s\n' "$TWITCH_WEBHOOK_SECRET"
+          printf 'EVENTSUB_WEBHOOK_URL=%s\n' "$EVENTSUB_WEBHOOK_URL"
+        } > "$FILE"
+        chmod 600 "$FILE"
+        echo "::notice::Kamal secrets written to $FILE (mode 0600)"

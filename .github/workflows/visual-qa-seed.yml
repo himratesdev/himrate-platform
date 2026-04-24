@@ -1,0 +1,178 @@
+# TASK-039: Visual QA synthetic data seeding workflow.
+# Invokes trends:visual_qa:{seed,clear,status} rake task на staging app container
+# через `kamal app exec -d staging`. Zero PAT exchange с локалкой — CI uses
+# существующий KAMAL_REGISTRY_PASSWORD из repo secrets.
+#
+# Staging-only: destination hardcoded, production path невозможен. Additional belt:
+# Rails.env.production? guard в DataSeeder raises если кто-то попытается override.
+#
+# Security notes (CR iter1):
+#   - M-1: все inputs passed via env (не inline ${{ ... }} в bash) → command
+#     injection proof
+#   - S-1: secrets cleanup через `if: always()` step (не trap в step body) +
+#     chmod 600 post-write
+#   - S-2: login regex ^vqa_test_[a-zA-Z0-9_]{1,64}$ — alphanumeric suffix only,
+#     length capped
+#   - N-1: concurrency lock per-login (prevents race на одном channel)
+#   - N-3: shared composite action .github/actions/write-kamal-secrets
+
+name: Visual QA Seed
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Rake action (seed / clear / status)"
+        required: true
+        default: "seed"
+        type: choice
+        options:
+          - seed
+          - clear
+          - status
+      login:
+        description: "Channel login (must start with 'vqa_test_', alphanumeric suffix)"
+        required: true
+        type: string
+        default: "vqa_test_premium_01"
+      profile:
+        description: "Seed profile (used for 'seed' action only)"
+        required: false
+        default: "premium_tracked"
+        type: choice
+        options:
+          - premium_tracked
+          - streamer_with_rehab
+          - cold_start
+
+concurrency:
+  group: visual-qa-seed-${{ github.event.inputs.login }}
+  cancel-in-progress: false
+
+jobs:
+  visual-qa-seed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      packages: read
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - run: gem install kamal
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          printf '%s' "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<'SSH_CONFIG'
+          Host 194.135.85.159
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ServerAliveInterval 15
+            ServerAliveCountMax 10
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      # CR M-1/S-2: input validated via ENV (не inline) + strict regex preventing
+      # shell metacharacters в suffix. Duplicates app-level guard, belt-and-suspenders.
+      - name: Validate input login prefix
+        env:
+          LOGIN_INPUT: ${{ github.event.inputs.login }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$LOGIN_INPUT" =~ ^vqa_test_[a-zA-Z0-9_]{1,64}$ ]]; then
+            echo "::error::Invalid login. Must match ^vqa_test_[a-zA-Z0-9_]{1,64}$"
+            echo "::error::Got: '$LOGIN_INPUT'"
+            exit 1
+          fi
+          echo "::notice::Login validated"
+
+      # CR M-1/N-2: audit via env (safe) + timestamp + run URL для traceability.
+      - name: Audit invocation
+        env:
+          ACTION: ${{ github.event.inputs.action }}
+          LOGIN: ${{ github.event.inputs.login }}
+          PROFILE: ${{ github.event.inputs.profile }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          printf '=== Visual QA Seed invocation ===\n'
+          printf 'Timestamp:   %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          printf 'Actor:       %s\n' "$ACTOR"
+          printf 'Destination: staging\n'
+          printf 'Action:      %s\n' "$ACTION"
+          printf 'Login:       %s\n' "$LOGIN"
+          printf 'Profile:     %s\n' "$PROFILE"
+          printf 'Commit:      %s\n' "$COMMIT"
+          printf 'Run URL:     %s\n' "$RUN_URL"
+          printf '=== End audit header ===\n'
+
+      # CR N-3: shared composite action — single source of truth для Kamal
+      # secrets list. Устраняет drift между workflows (deploy-staging + visual-qa-seed).
+      - name: Write Kamal secrets
+        uses: ./.github/actions/write-kamal-secrets
+        with:
+          destination: staging
+          kamal_registry_password: ${{ secrets.GITHUB_TOKEN }}
+          rails_master_key: ${{ secrets.RAILS_MASTER_KEY }}
+          postgres_password: ${{ secrets.POSTGRES_PASSWORD }}
+          database_url: ${{ secrets.STAGING_DATABASE_URL }}
+          redis_url: "redis://himrate-redis:6379/1"
+          jwt_secret: ${{ secrets.JWT_SECRET }}
+          secret_key_base: ${{ secrets.SECRET_KEY_BASE }}
+          twitch_client_id: ${{ secrets.TWITCH_CLIENT_ID }}
+          twitch_client_secret: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          twitch_redirect_uri: "https://staging.himrate.com/api/v1/auth/twitch/callback"
+          google_client_id: ${{ secrets.GOOGLE_CLIENT_ID }}
+          google_client_secret: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          google_redirect_uri: "https://staging.himrate.com/api/v1/auth/google/callback"
+          active_record_encryption_primary_key: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
+          active_record_encryption_deterministic_key: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
+          active_record_encryption_key_derivation_salt: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
+          flipper_ui_password: ${{ secrets.FLIPPER_UI_PASSWORD }}
+          flipper_ui_user: ${{ secrets.FLIPPER_UI_USER }}
+          allowed_extension_id: ${{ secrets.ALLOWED_EXTENSION_ID }}
+          twitch_webhook_secret: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
+          eventsub_webhook_url: "https://staging.himrate.com"
+
+      # CR M-1: все inputs passed via env — bash видит substituted values, не re-evaluated.
+      - name: Run rake task
+        env:
+          ACTION: ${{ github.event.inputs.action }}
+          LOGIN: ${{ github.event.inputs.login }}
+          PROFILE: ${{ github.event.inputs.profile }}
+        run: |
+          set -euo pipefail
+
+          case "$ACTION" in
+            seed)
+              RAKE_ARG="trends:visual_qa:seed[${LOGIN},${PROFILE}]"
+              ;;
+            clear|status)
+              RAKE_ARG="trends:visual_qa:${ACTION}[${LOGIN}]"
+              ;;
+            *)
+              echo "::error::Unsupported action: $ACTION"
+              exit 1
+              ;;
+          esac
+
+          echo "::notice::Executing: bin/rails '$RAKE_ARG' on staging"
+          kamal app exec -d staging --reuse "bin/rails '$RAKE_ARG'"
+
+      # CR S-1: independent cleanup step с if: always() — fires regardless of
+      # prior step success. Более надёжно чем trap EXIT в step body (trap
+      # зарегистрирован только если step 6 начался, не covers early crashes).
+      - name: Cleanup Kamal secrets
+        if: always()
+        run: rm -f .kamal/secrets.staging
