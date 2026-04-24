@@ -40,17 +40,22 @@ module Trends
         guard_against_production!
         raise SeedError, "Unknown profile '#{@profile}'" unless PROFILES.include?(@profile)
 
-        channel = ChannelSeeder.ensure_channel(login: @login)
-        stats = ActiveRecord::Base.transaction do
-          run_profile(channel)
+        # CR S-1: wrap entire chain в single transaction — atomic success или
+        # full rollback. Partial seed failure больше не leaves orphan Channel
+        # или missing VisualQaChannelSeed row (было possible если run_profile
+        # или upsert_seed_metadata raised вне transaction).
+        result = ActiveRecord::Base.transaction do
+          channel = ChannelSeeder.ensure_channel(login: @login)
+          stats = run_profile(channel)
+          upsert_seed_metadata(channel, stats)
+          { channel: channel, stats: stats }
         end
 
-        upsert_seed_metadata(channel, stats)
         ActiveSupport::Notifications.instrument(
           "trends.visual_qa.seed_completed",
-          channel_id: channel.id, login: @login, profile: @profile, stats: stats
+          channel_id: result[:channel].id, login: @login, profile: @profile, stats: result[:stats]
         )
-        { channel: channel, stats: stats }
+        result
       end
 
       def clear
@@ -75,6 +80,12 @@ module Trends
       end
 
       def status
+        # CR N-2: consistency с seed/clear — refuse production, enforce login prefix.
+        # status — read-only, но same safety belts (prevent accidental analytics
+        # leak для real channels запрошенных mistake.
+        guard_against_production!
+        ChannelSeeder.validate_login!(@login)
+
         channel = Channel.find_by(login: @login)
         return { seeded: false, reason: "channel_not_found" } unless channel
 
@@ -111,13 +122,20 @@ module Trends
       end
 
       # Profile: Premium user tracking сторонний channel с full Trends UI visible.
-      # 30 days streams → TDA + TIH + anomalies + tier_changes. NO rehab.
+      # 30 days streams → TDA + TIH + anomalies + tier_changes + follower snapshots +
+      # anomaly attributions. NO rehab.
+      #
+      # CR N-3: FollowerSnapshot + AnomalyAttribution seeded для complete M4/M5 coverage.
+      # Without them discovery_phase_score / follower_ccv_coupling_r остаются null,
+      # M4 attribution field fallback на 'unattributed'. Full UI verification impossible.
       def seed_premium_tracked(channel)
         ChannelSeeder.ensure_premium_user_tracking(channel: channel)
         streams = StreamHistorySeeder.seed(channel: channel, days: 30)
+        follower_snapshots = FollowerSnapshotSeeder.seed(channel: channel, days: 30)
         tih = TihHistorySeeder.seed(channel: channel, streams: streams)
         tda = TdaAggregateSeeder.seed(channel: channel, streams: streams)
         anomalies = AnomalyEventSeeder.seed(channel: channel, streams: streams, count: 3)
+        attributions = AnomalyAttributionSeeder.seed(anomalies: anomalies)
         tier_changes = TierChangeSeeder.seed(channel: channel, streams: streams, count: 2)
 
         {
@@ -125,6 +143,8 @@ module Trends
           tih: tih.size,
           tda: tda.size,
           anomalies: anomalies.size,
+          anomaly_attributions: attributions.size,
+          follower_snapshots: follower_snapshots.size,
           tier_changes: tier_changes.size,
           rehab_events: 0
         }
@@ -134,6 +154,7 @@ module Trends
       def seed_streamer_with_rehab(channel)
         ChannelSeeder.ensure_streamer_oauth(channel: channel)
         streams = StreamHistorySeeder.seed(channel: channel, days: 30)
+        follower_snapshots = FollowerSnapshotSeeder.seed(channel: channel, days: 30)
         tih = TihHistorySeeder.seed(channel: channel, streams: streams)
         tda = TdaAggregateSeeder.seed(channel: channel, streams: streams)
         tier_changes = TierChangeSeeder.seed(channel: channel, streams: streams, count: 1)
@@ -144,6 +165,8 @@ module Trends
           tih: tih.size,
           tda: tda.size,
           anomalies: 0,
+          anomaly_attributions: 0,
+          follower_snapshots: follower_snapshots.size,
           tier_changes: tier_changes.size,
           rehab_events: rehab.size
         }
@@ -156,7 +179,8 @@ module Trends
 
         {
           streams: streams.size,
-          tih: 0, tda: 0, anomalies: 0, tier_changes: 0, rehab_events: 0
+          tih: 0, tda: 0, anomalies: 0, anomaly_attributions: 0,
+          follower_snapshots: 0, tier_changes: 0, rehab_events: 0
         }
       end
 
@@ -175,6 +199,9 @@ module Trends
           tih: TrustIndexHistory.for_channel(channel.id).count,
           tda: TrendsDailyAggregate.where(channel_id: channel.id).count,
           anomalies: Anomaly.joins(:stream).where(streams: { channel_id: channel.id }).count,
+          anomaly_attributions: AnomalyAttribution.joins(anomaly: :stream)
+            .where(streams: { channel_id: channel.id }).count,
+          follower_snapshots: FollowerSnapshot.where(channel_id: channel.id).count,
           tier_changes: HsTierChangeEvent.for_channel(channel.id).count,
           rehab_events: RehabilitationPenaltyEvent.where(channel_id: channel.id).count
         }

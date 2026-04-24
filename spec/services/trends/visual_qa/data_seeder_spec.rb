@@ -54,12 +54,28 @@ RSpec.describe Trends::VisualQa::DataSeeder do
       expect(stats[:tih]).to eq(30)
       expect(stats[:tda]).to be > 0
       expect(stats[:anomalies]).to eq(3)
+      # CR N-3: anomaly_attributions + follower_snapshots в stats.
+      expect(stats[:anomaly_attributions]).to be >= 3 # at minimum unattributed fallback per anomaly
+      expect(stats[:follower_snapshots]).to eq(30)
       expect(stats[:tier_changes]).to eq(2)
       expect(stats[:rehab_events]).to eq(0)
 
       seed_record = VisualQaChannelSeed.find_by(channel_id: channel.id)
       expect(seed_record.seed_profile).to eq("premium_tracked")
       expect(seed_record.schema_version).to eq(1)
+    end
+
+    it "CR S-1: full transaction rollback когда run_profile fails" do
+      # Force TihHistorySeeder to raise mid-chain.
+      allow(Trends::VisualQa::TihHistorySeeder).to receive(:seed).and_raise(StandardError.new("boom"))
+
+      expect { described_class.seed(login: login, profile: "premium_tracked") }
+        .to raise_error(StandardError, "boom")
+
+      # Verify: Channel + VisualQaChannelSeed + Streams rolled back — no orphans.
+      expect(Channel.find_by(login: login)).to be_nil
+      expect(VisualQaChannelSeed.count).to eq(0)
+      expect(Stream.count).to eq(0)
     end
 
     it "creates streamer_with_rehab profile с rehab event" do
@@ -142,6 +158,37 @@ RSpec.describe Trends::VisualQa::DataSeeder do
       result = described_class.clear(login: "vqa_test_nonexistent")
       expect(result[:cleared]).to be false
       expect(result[:reason]).to eq("channel_not_found")
+    end
+
+    # CR N-5: status coverage
+    describe ".status" do
+      it "refuses invalid login prefix (consistent с seed/clear)" do
+        expect { described_class.new(login: "real_channel", profile: nil).status }
+          .to raise_error(Trends::VisualQa::ChannelSeeder::InvalidLogin)
+      end
+
+      it "refuses в production env" do
+        allow(Rails).to receive(:env).and_return(ActiveSupport::StringInquirer.new("production"))
+        expect { described_class.new(login: "vqa_test_status_x", profile: nil).status }
+          .to raise_error(Trends::VisualQa::DataSeeder::ProductionGuardTripped)
+      end
+
+      it "returns channel_not_found когда no match" do
+        result = described_class.new(login: "vqa_test_status_missing", profile: nil).status
+        expect(result[:seeded]).to be false
+        expect(result[:reason]).to eq("channel_not_found")
+      end
+
+      it "returns seeded metadata + live_counts after seed" do
+        described_class.seed(login: login, profile: "premium_tracked")
+        result = described_class.new(login: login, profile: nil).status
+
+        expect(result[:seeded]).to be true
+        expect(result[:profile]).to eq("premium_tracked")
+        expect(result[:schema_version]).to eq(1)
+        expect(result[:live_counts]).to include(:streams, :tih, :tda, :anomalies, :anomaly_attributions, :follower_snapshots, :tier_changes, :rehab_events)
+        expect(result[:live_counts][:streams]).to eq(30)
+      end
     end
 
     it "refuses to clear non-VQA-seeded channels (safety)" do
