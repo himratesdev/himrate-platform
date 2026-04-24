@@ -96,4 +96,26 @@ RSpec.describe Trends::Analysis::MovementInsights do
 
     expect(result.size).to be <= 3
   end
+
+  # TASK-039 Phase E1 SRS §10 alert: trends.movement_insights.duration_p95 > 500ms.
+  it "emits trends.movement_insights.completed event с duration + top_priority" do
+    events = []
+    sub = ActiveSupport::Notifications.subscribe("trends.movement_insights.completed") { |_, _, _, _, p| events << p }
+
+    described_class.call(
+      channel: channel, from: from, to: to,
+      trend: { direction: "declining", delta: -8.0 },
+      anomaly_frequency: { verdict: "normal" },
+      tier_changes: {},
+      top_degradation: { name: "auth_ratio", delta: -3.0 }
+    )
+
+    expect(events.size).to eq(1)
+    expect(events.first[:channel_id]).to eq(channel.id)
+    expect(events.first[:insights_count]).to be >= 1
+    expect(events.first[:top_priority]).to eq("P0")
+    expect(events.first[:duration_ms]).to be > 0
+  ensure
+    ActiveSupport::Notifications.unsubscribe(sub) if sub
+  end
 end

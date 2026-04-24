@@ -23,5 +23,41 @@ RSpec.describe Trends::AnomalyAttributionWorker, type: :worker do
       expect(described_class.sidekiq_options["queue"]).to eq(:signals)
       expect(described_class.sidekiq_options["retry"]).to eq(3)
     end
+
+    # TASK-039 Phase E1 SRS §10: monitoring events.
+    describe "instrumentation" do
+      it "emits trends.anomaly_attribution_worker.completed на успешный run" do
+        allow(Trends::Attribution::Pipeline).to receive(:call).with(anomaly).and_return([])
+
+        events = []
+        sub = ActiveSupport::Notifications.subscribe("trends.anomaly_attribution_worker.completed") do |_, _, _, _, payload|
+          events << payload
+        end
+
+        described_class.new.perform(anomaly.id)
+
+        expect(events.size).to eq(1)
+        expect(events.first[:anomaly_id]).to eq(anomaly.id)
+        expect(events.first[:attributions_count]).to eq(0)
+        expect(events.first[:duration_ms]).to be > 0
+      ensure
+        ActiveSupport::Notifications.unsubscribe(sub) if sub
+      end
+
+      it "emits trends.anomaly_attribution_worker.failed + re-raises" do
+        allow(Trends::Attribution::Pipeline).to receive(:call).and_raise(StandardError.new("pipeline boom"))
+
+        failed_events = []
+        sub = ActiveSupport::Notifications.subscribe("trends.anomaly_attribution_worker.failed") do |_, _, _, _, p|
+          failed_events << p
+        end
+
+        expect { described_class.new.perform(anomaly.id) }.to raise_error(StandardError, "pipeline boom")
+        expect(failed_events.size).to eq(1)
+        expect(failed_events.first[:error_class]).to eq("StandardError")
+      ensure
+        ActiveSupport::Notifications.unsubscribe(sub) if sub
+      end
+    end
   end
 end

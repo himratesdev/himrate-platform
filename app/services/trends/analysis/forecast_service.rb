@@ -37,11 +37,21 @@ module Trends
         r2_medium = SignalConfiguration.value_for("trends", "forecast", "reliability_medium_r2").to_f
 
         last_x = @points.last[0].to_f
+        reliability = classify_reliability(fit.r_squared, r2_high, r2_medium)
+
+        # SRS §10: emit reliability classification для trends.forecast.reliability_low_rate
+        # alert — высокий rate "low" у many channels signals broader data quality issue.
+        ActiveSupport::Notifications.instrument(
+          "trends.forecast.classified",
+          reliability: reliability,
+          r_squared: fit.r_squared,
+          points_count: @points.size
+        )
 
         {
           forecast_7d: clamp_band(fit.confidence_band(last_x + horizon_short, Z_95)),
           forecast_30d: clamp_band(fit.confidence_band(last_x + horizon_long, Z_95)),
-          reliability: classify_reliability(fit.r_squared, r2_high, r2_medium),
+          reliability: reliability,
           r_squared: fit.r_squared,
           slope_per_day: fit.slope.round(4)
         }

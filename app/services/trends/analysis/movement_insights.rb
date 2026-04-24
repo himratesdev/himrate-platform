@@ -48,6 +48,10 @@ module Trends
       end
 
       def call
+        # SRS §10 alert trends.movement_insights.duration_p95 > 500ms.
+        # Subscribers (StatsD/Prometheus) attach за кадром.
+        start_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
         cfg = load_config
         candidates = []
 
@@ -59,8 +63,18 @@ module Trends
 
         ranked = candidates.compact.sort_by { |i| [ priority_weight(i[:priority]), -(i[:recency_score] || 0) ] }
         insights = ranked.first(cfg[:top_n])
+        result = insights.empty? ? [ flat_insight ] : insights
 
-        insights.empty? ? [ flat_insight ] : insights
+        duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_monotonic) * 1000).round(2)
+        ActiveSupport::Notifications.instrument(
+          "trends.movement_insights.completed",
+          channel_id: @channel&.id,
+          insights_count: result.size,
+          top_priority: result.first&.dig(:priority),
+          duration_ms: duration_ms
+        )
+
+        result
       end
 
       private

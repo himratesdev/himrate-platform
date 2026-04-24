@@ -96,4 +96,22 @@ RSpec.describe "Flipper Feature Flags" do
       expect(source).not_to include("PUNDIT_ENABLED")
     end
   end
+
+  # TASK-039 FR-040: hook flags — зарегистрированы, но НЕ enabled by default.
+  describe "hook flags (registered but disabled)" do
+    FlipperDefaults::HOOK_FLAGS.each_key do |flag|
+      it "#{flag} is registered" do
+        # Flipper.features returns Feature objects; names are symbols.
+        expect(Flipper.features.map(&:name)).to include(flag)
+      end
+
+      it "#{flag} is NOT enabled by default" do
+        expect(Flipper.enabled?(flag)).to be false
+      end
+    end
+
+    it "trends_pdf_export hook is present with TASK reference" do
+      expect(FlipperDefaults::HOOK_FLAGS[:trends_pdf_export]).to match(/TASK-\d+/)
+    end
+  end
 end

@@ -17,6 +17,10 @@ module Trends
     sidekiq_options queue: :signals, retry: 3
 
     def perform(anomaly_id)
+      # SRS §10: emit duration + failure events для anomaly_attribution_worker.*
+      # alerts. Subscribers (StatsD/Prometheus/Sentry) attach за кадром.
+      start_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
       anomaly = Anomaly.find_by(id: anomaly_id)
       unless anomaly
         Rails.logger.warn("Trends::AnomalyAttributionWorker: anomaly #{anomaly_id} not found")
@@ -28,6 +32,21 @@ module Trends
         "Trends::AnomalyAttributionWorker: anomaly=#{anomaly_id} " \
         "attributions=#{results.size} sources=#{results.map(&:source).join(',')}"
       )
+
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_monotonic) * 1000).round(2)
+      ActiveSupport::Notifications.instrument(
+        "trends.anomaly_attribution_worker.completed",
+        anomaly_id: anomaly_id,
+        attributions_count: results.size,
+        duration_ms: duration_ms
+      )
+    rescue StandardError => e
+      ActiveSupport::Notifications.instrument(
+        "trends.anomaly_attribution_worker.failed",
+        anomaly_id: anomaly_id,
+        error_class: e.class.name
+      )
+      raise
     end
   end
 end

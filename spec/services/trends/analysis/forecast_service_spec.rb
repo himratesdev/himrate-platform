@@ -54,4 +54,30 @@ RSpec.describe Trends::Analysis::ForecastService do
 
     expect(result[:forecast_7d][:saturated]).to be false
   end
+
+  # TASK-039 Phase E1 SRS §10: reliability classification instrumentation.
+  it "emits trends.forecast.classified event с reliability + r_squared" do
+    points = (0..19).map { |i| [ i.to_f, 70.0 + i * 0.7 ] }
+
+    events = []
+    sub = ActiveSupport::Notifications.subscribe("trends.forecast.classified") { |_, _, _, _, p| events << p }
+    described_class.call(points)
+
+    expect(events.size).to eq(1)
+    expect(%w[high medium low]).to include(events.first[:reliability])
+    expect(events.first[:r_squared]).to be_a(Numeric)
+    expect(events.first[:points_count]).to eq(20)
+  ensure
+    ActiveSupport::Notifications.unsubscribe(sub) if sub
+  end
+
+  it "не emits event когда ниже min_points (early return)" do
+    events = []
+    sub = ActiveSupport::Notifications.subscribe("trends.forecast.classified") { |_, _, _, _, p| events << p }
+    described_class.call([ [ 0, 70 ] ])
+
+    expect(events).to be_empty
+  ensure
+    ActiveSupport::Notifications.unsubscribe(sub) if sub
+  end
 end

@@ -78,6 +78,13 @@ module FlipperDefaults
     signal_compute
     hs_recommendations
   ].freeze
+
+  # Hooks for upcoming features: flag зарегистрирован, но оставлен OFF до момента
+  # когда feature ready. Включение через admin UI или Flipper.enable без нового deploy.
+  # Каждая запись = namespaced :flag => "TASK-XXX reference" для traceability.
+  HOOK_FLAGS = {
+    trends_pdf_export: "TASK-078" # FR-040: PDF export из Trends Tab, добавляется отдельным PR
+  }.freeze
 end
 
 # On every boot: ensure all flags exist and are enabled.
@@ -87,4 +94,11 @@ end
 FlipperDefaults::ALL_FLAGS.each do |flag|
   Flipper.add(flag)
   Flipper.enable(flag)
+end
+
+# Hook flags: только add — НЕ enable. Оставляем OFF until feature ships.
+# Идемпотентно: повторный boot не меняет текущее state (Flipper.add = no-op если уже
+# существует, существующий enabled/disabled state preserved).
+FlipperDefaults::HOOK_FLAGS.each_key do |flag|
+  Flipper.add(flag)
 end

@@ -28,6 +28,11 @@ module Trends
       date_str = date.to_s
       lock_key = hashtext_lock_key("trends_aggregation:#{channel_id}:#{date_str}")
 
+      # SRS §10: emit duration + failure events для trends_aggregation_worker.*
+      # alerts. Subscribers (StatsD/Prometheus/Sentry) attach за кадром.
+      start_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      lock_contested = false
+
       ActiveRecord::Base.transaction do
         unless try_advisory_lock(lock_key)
           # CR N-1: re-enqueue с delay вместо silent skip. Scenario: Worker1
@@ -41,6 +46,7 @@ module Trends
             "Trends::AggregationWorker: lock busy для channel=#{channel_id} date=#{date_str} " \
             "— re-enqueued с 30s delay"
           )
+          lock_contested = true
           return
         end
 
@@ -50,6 +56,23 @@ module Trends
           "Trends::AggregationWorker: aggregated channel=#{channel_id} date=#{date_str}"
         )
       end
+    rescue StandardError => e
+      ActiveSupport::Notifications.instrument(
+        "trends.aggregation_worker.failed",
+        channel_id: channel_id,
+        date: date_str,
+        error_class: e.class.name
+      )
+      raise
+    ensure
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_monotonic) * 1000).round(2)
+      ActiveSupport::Notifications.instrument(
+        "trends.aggregation_worker.completed",
+        channel_id: channel_id,
+        date: date_str,
+        duration_ms: duration_ms,
+        lock_contested: lock_contested
+      )
     end
 
     private
