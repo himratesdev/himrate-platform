@@ -25,12 +25,16 @@ module Trends
     sidekiq_options queue: :signals, retry: 3
 
     def perform(channel_id, date)
+      # PG-iter1 cosmetic: start_monotonic первой строкой — гарантирует что
+      # ensure-block duration_ms всегда defined (consistent с
+      # AnomalyAttributionWorker, защищает от theoretical hashtext failure
+      # masking original error через nil arithmetic в ensure).
+      start_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       date_str = date.to_s
       lock_key = hashtext_lock_key("trends_aggregation:#{channel_id}:#{date_str}")
 
       # SRS §10: emit duration + failure events для trends_aggregation_worker.*
       # alerts. Subscribers (StatsD/Prometheus/Sentry) attach за кадром.
-      start_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       lock_contested = false
 
       ActiveRecord::Base.transaction do
