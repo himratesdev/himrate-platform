@@ -66,12 +66,22 @@ module Trends
         result = insights.empty? ? [ flat_insight ] : insights
 
         duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_monotonic) * 1000).round(2)
+        # CR N-4: input signals summary в payload — для debug p95>500ms outliers
+        # operator видит reconstructed state без повторного query.
         ActiveSupport::Notifications.instrument(
           "trends.movement_insights.completed",
           channel_id: @channel&.id,
           insights_count: result.size,
           top_priority: result.first&.dig(:priority),
-          duration_ms: duration_ms
+          duration_ms: duration_ms,
+          input_signals: {
+            trend_direction: @trend[:direction],
+            trend_delta: @trend[:delta],
+            anomaly_verdict: @anomaly_frequency[:verdict],
+            anomaly_delta_percent: @anomaly_frequency[:delta_percent],
+            tier_change_present: !@tier_changes[:latest].nil?,
+            rehabilitation_active: rehabilitation_active?
+          }
         )
 
         result

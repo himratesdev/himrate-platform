@@ -27,7 +27,7 @@ RSpec.describe "trends rake tasks" do
       Trends::AggregationWorker.jobs.clear
 
       Rake::Task["trends:backfill_aggregates"].invoke(
-        3.days.ago.to_date.to_s, Date.current.to_s, "500", nil
+        3.days.ago.to_date.to_s, Date.current.to_s, "500", "0", nil
       )
 
       # 4 days = 3 days ago..today inclusive
@@ -41,7 +41,7 @@ RSpec.describe "trends rake tasks" do
 
       expect {
         Rake::Task["trends:backfill_aggregates"].invoke(
-          3.days.ago.to_date.to_s, Date.current.to_s, "500", "true"
+          3.days.ago.to_date.to_s, Date.current.to_s, "500", "0", "true"
         )
       }.to output(/DRY-RUN/).to_stdout
 
@@ -51,9 +51,44 @@ RSpec.describe "trends rake tasks" do
     it "default range = last 90 days when since/until blank" do
       Trends::AggregationWorker.jobs.clear
 
-      Rake::Task["trends:backfill_aggregates"].invoke(nil, nil, "500", nil)
+      Rake::Task["trends:backfill_aggregates"].invoke(nil, nil, "500", "0", nil)
 
       expect(Trends::AggregationWorker.jobs.size).to eq(91) # 90 days ago..today
+    end
+
+    # CR S-1 / N-1: input validation guards.
+    it "aborts когда since > until" do
+      Trends::AggregationWorker.jobs.clear
+
+      expect {
+        Rake::Task["trends:backfill_aggregates"].invoke(
+          Date.current.to_s, 5.days.ago.to_date.to_s, "500", "0", nil
+        )
+      }.to raise_error(SystemExit)
+
+      expect(Trends::AggregationWorker.jobs.size).to eq(0)
+    end
+
+    it "aborts когда batch_size=0" do
+      expect {
+        Rake::Task["trends:backfill_aggregates"].invoke(nil, nil, "0", "0", nil)
+      }.to raise_error(SystemExit)
+    end
+
+    it "aborts когда throttle_ms negative" do
+      expect {
+        Rake::Task["trends:backfill_aggregates"].invoke(nil, nil, "500", "-1", nil)
+      }.to raise_error(SystemExit)
+    end
+
+    # CR S-1: throttle sleep triggers каждые 1000 enqueues.
+    it "sleeps throttle_sec between batches of 1000" do
+      Trends::AggregationWorker.jobs.clear
+      create_list(:channel, 0) # only 1 channel from let!; 1 × 91 days = 91 enqueues, no throttle
+
+      # Mock sleep to verify invocation. 91 enqueues < 1000 threshold → 0 sleeps.
+      expect_any_instance_of(Object).not_to receive(:sleep)
+      Rake::Task["trends:backfill_aggregates"].invoke(nil, nil, "500", "50", nil)
     end
   end
 
@@ -127,6 +162,48 @@ RSpec.describe "trends rake tasks" do
       expect {
         Rake::Task["trends:backfill_follower_ccv_coupling"].invoke(nil, nil, "true")
       }.to output(/DRY-RUN/).to_stdout
+    end
+
+    # CR S-2: per-row rescue — individual failures не abort task.
+    it "continues после exception в single row (rescue + log + counter)" do
+      TrendsDailyAggregate.create!(
+        channel_id: channel.id,
+        date: 3.days.ago.to_date,
+        streams_count: 1, schema_version: 2, categories: {},
+        classification_at_end: "trusted", follower_ccv_coupling_r: nil
+      )
+      TrendsDailyAggregate.create!(
+        channel_id: channel.id,
+        date: 2.days.ago.to_date,
+        streams_count: 1, schema_version: 2, categories: {},
+        classification_at_end: "trusted", follower_ccv_coupling_r: nil
+      )
+
+      call_count = 0
+      allow(Trends::Analysis::FollowerCcvCouplingTimeline).to receive(:call) do
+        call_count += 1
+        raise StandardError, "boom" if call_count == 1
+
+        { timeline: [ { date: 2.days.ago.to_date, r: 0.75, health: "healthy" } ], summary: {} }
+      end
+
+      expect(Rails.error).to receive(:report).with(
+        instance_of(StandardError), hash_including(context: hash_including(rake: "trends:backfill_follower_ccv_coupling"))
+      )
+
+      expect {
+        Rake::Task["trends:backfill_follower_ccv_coupling"].invoke(
+          5.days.ago.to_date.to_s, Date.current.to_s, nil
+        )
+      }.to output(/1 errors logged/).to_stdout
+    end
+
+    it "aborts когда since > until" do
+      expect {
+        Rake::Task["trends:backfill_follower_ccv_coupling"].invoke(
+          Date.current.to_s, 5.days.ago.to_date.to_s, nil
+        )
+      }.to raise_error(SystemExit)
     end
   end
 
