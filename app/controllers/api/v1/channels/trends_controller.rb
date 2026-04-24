@@ -168,9 +168,28 @@ module Api
           ttl = Trends::Cache::KeyBuilder.ttl_for(period, endpoint: endpoint)
           race_ttl = Trends::Cache::KeyBuilder.race_condition_ttl_for(period, endpoint: endpoint)
 
+          # FR-045 / SRS §10: monitoring surface для trends.api.*. Emit duration
+          # (для p95 alert) + cache hit/miss (для hit_rate). Subscribers (Sentry/
+          # StatsD/Prometheus) attach за кадром, этот код signalling only.
+          cache_hit = true
+          start_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+
           payload = Rails.cache.fetch(key, expires_in: ttl, race_condition_ttl: race_ttl) do
+            cache_hit = false
             yield
           end
+
+          duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_monotonic) * 1000).round(2)
+
+          ActiveSupport::Notifications.instrument(
+            "trends.api.request",
+            endpoint: endpoint,
+            period: period,
+            granularity: granularity,
+            channel_id: @channel.id,
+            cache_hit: cache_hit,
+            duration_ms: duration_ms
+          )
 
           response.set_header("X-Data-Freshness", payload.dig(:meta, :data_freshness).to_s)
           render json: payload

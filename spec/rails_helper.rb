@@ -47,6 +47,9 @@ RSpec.configure do |config|
   config.before(:each) do
     Flipper.features.each(&:remove)
     FlipperDefaults::ALL_FLAGS.each { |flag| Flipper.enable(flag) }
+    # TASK-039 FR-040: HOOK_FLAGS registered но НЕ enabled (matchит production
+    # initializer behavior — flag готов для future enable без code change).
+    FlipperDefaults::HOOK_FLAGS.each_key { |flag| Flipper.add(flag) }
     # CR W-3: isolate Current.signal_config between specs — каждый example
     # стартует с чистым кэшем SignalConfiguration lookups (request/job scoping).
     ActiveSupport::CurrentAttributes.clear_all

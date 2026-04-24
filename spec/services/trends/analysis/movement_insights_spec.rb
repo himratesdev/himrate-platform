@@ -96,4 +96,38 @@ RSpec.describe Trends::Analysis::MovementInsights do
 
     expect(result.size).to be <= 3
   end
+
+  # TASK-039 Phase E1 SRS §10 alert: trends.movement_insights.duration_p95 > 500ms.
+  # CR N-4: payload включает input_signals для p95 outlier debug.
+  it "emits trends.movement_insights.completed event с duration + top_priority + input_signals" do
+    events = []
+    sub = ActiveSupport::Notifications.subscribe("trends.movement_insights.completed") { |_, _, _, _, p| events << p }
+
+    described_class.call(
+      channel: channel, from: from, to: to,
+      trend: { direction: "declining", delta: -8.0 },
+      anomaly_frequency: { verdict: "elevated", delta_percent: 75 },
+      tier_changes: { latest: { from_tier: "trusted", to_tier: "needs_review", occurred_at: 5.days.ago } },
+      rehabilitation: { rehabilitation_active: true, progress: {}, bonus: {} },
+      top_degradation: { name: "auth_ratio", delta: -3.0 }
+    )
+
+    expect(events.size).to eq(1)
+    payload = events.first
+    expect(payload[:channel_id]).to eq(channel.id)
+    expect(payload[:insights_count]).to be >= 1
+    expect(payload[:top_priority]).to eq("P0")
+    expect(payload[:duration_ms]).to be > 0
+
+    expect(payload[:input_signals]).to include(
+      trend_direction: "declining",
+      trend_delta: -8.0,
+      anomaly_verdict: "elevated",
+      anomaly_delta_percent: 75,
+      tier_change_present: true,
+      rehabilitation_active: true
+    )
+  ensure
+    ActiveSupport::Notifications.unsubscribe(sub) if sub
+  end
 end

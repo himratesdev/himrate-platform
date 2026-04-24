@@ -25,8 +25,17 @@ module Trends
     sidekiq_options queue: :signals, retry: 3
 
     def perform(channel_id, date)
+      # PG-iter1 cosmetic: start_monotonic первой строкой — гарантирует что
+      # ensure-block duration_ms всегда defined (consistent с
+      # AnomalyAttributionWorker, защищает от theoretical hashtext failure
+      # masking original error через nil arithmetic в ensure).
+      start_monotonic = Process.clock_gettime(Process::CLOCK_MONOTONIC)
       date_str = date.to_s
       lock_key = hashtext_lock_key("trends_aggregation:#{channel_id}:#{date_str}")
+
+      # SRS §10: emit duration + failure events для trends_aggregation_worker.*
+      # alerts. Subscribers (StatsD/Prometheus/Sentry) attach за кадром.
+      lock_contested = false
 
       ActiveRecord::Base.transaction do
         unless try_advisory_lock(lock_key)
@@ -41,6 +50,7 @@ module Trends
             "Trends::AggregationWorker: lock busy для channel=#{channel_id} date=#{date_str} " \
             "— re-enqueued с 30s delay"
           )
+          lock_contested = true
           return
         end
 
@@ -50,6 +60,23 @@ module Trends
           "Trends::AggregationWorker: aggregated channel=#{channel_id} date=#{date_str}"
         )
       end
+    rescue StandardError => e
+      ActiveSupport::Notifications.instrument(
+        "trends.aggregation_worker.failed",
+        channel_id: channel_id,
+        date: date_str,
+        error_class: e.class.name
+      )
+      raise
+    ensure
+      duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_monotonic) * 1000).round(2)
+      ActiveSupport::Notifications.instrument(
+        "trends.aggregation_worker.completed",
+        channel_id: channel_id,
+        date: date_str,
+        duration_ms: duration_ms,
+        lock_contested: lock_contested
+      )
     end
 
     private
