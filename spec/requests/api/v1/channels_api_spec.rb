@@ -70,8 +70,10 @@ RSpec.describe "Channels API", type: :request do
   end
 
   describe "GET /api/v1/channels" do
+    let(:user_sub) { create(:subscription, user: user, is_active: true) }
+
     it "returns tracked channels for authenticated user" do
-      TrackedChannel.create!(user: user, channel: channel, tracking_enabled: true, added_at: Time.current)
+      create(:tracked_channel, user: user, channel: channel, subscription: user_sub, tracking_enabled: true)
       get "/api/v1/channels", headers: headers
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body["data"].size).to eq(1)
@@ -90,9 +92,10 @@ RSpec.describe "Channels API", type: :request do
     end
 
     it "supports pagination" do
+      sub = create(:subscription, user: user, is_active: true)
       3.times do |i|
         ch = Channel.create!(twitch_id: "pag#{i}", login: "pag#{i}", display_name: "Pag#{i}")
-        TrackedChannel.create!(user: user, channel: ch, tracking_enabled: true, added_at: Time.current)
+        create(:tracked_channel, user: user, channel: ch, subscription: sub, tracking_enabled: true)
       end
       get "/api/v1/channels", params: { page: 1, per_page: 2 }, headers: headers
       expect(response.parsed_body["data"].size).to eq(2)
@@ -102,10 +105,31 @@ RSpec.describe "Channels API", type: :request do
   end
 
   describe "POST /api/v1/channels/:id/track" do
-    it "creates tracked channel for premium user" do
-      post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
+    # BUG-012: track auto-creates Subscription если user не имеет active.
+    # TC.subscription_id NOT NULL invariant satisfied via controller helper.
+    it "creates tracked channel for premium user (auto-creates Subscription)" do
+      expect {
+        post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
+      }.to change(Subscription, :count).by(1)
+        .and change(TrackedChannel, :count).by(1)
+
       expect(response).to have_http_status(:created)
-      expect(TrackedChannel.exists?(user: premium_user, channel: channel)).to be true
+      tc = TrackedChannel.find_by(user: premium_user, channel: channel)
+      expect(tc).to be_present
+      expect(tc.subscription_id).to eq(Subscription.where(user: premium_user, is_active: true).first.id)
+    end
+
+    it "reuses existing active Subscription when tracking second channel" do
+      sub = create(:subscription, user: premium_user, is_active: true)
+      another_channel = Channel.create!(twitch_id: "ch2", login: "another", display_name: "Another")
+
+      expect {
+        post "/api/v1/channels/#{another_channel.id}/track", headers: premium_headers
+      }.to change(TrackedChannel, :count).by(1)
+        .and change(Subscription, :count).by(0)
+
+      tc = TrackedChannel.find_by(user: premium_user, channel: another_channel)
+      expect(tc.subscription_id).to eq(sub.id)
     end
 
     it "returns 403 for free user" do
@@ -114,7 +138,8 @@ RSpec.describe "Channels API", type: :request do
     end
 
     it "returns 409 when already tracked" do
-      TrackedChannel.create!(user: premium_user, channel: channel, tracking_enabled: true, added_at: Time.current)
+      sub = create(:subscription, user: premium_user, is_active: true)
+      create(:tracked_channel, user: premium_user, channel: channel, subscription: sub, tracking_enabled: true)
       post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
       expect(response).to have_http_status(:conflict)
     end
@@ -122,8 +147,8 @@ RSpec.describe "Channels API", type: :request do
 
   describe "DELETE /api/v1/channels/:id/track" do
     it "disables tracking (soft delete, preserves record)" do
-      sub = Subscription.create!(user: user, tier: "premium", is_active: true, started_at: Time.current)
-      TrackedChannel.create!(user: user, channel: channel, tracking_enabled: true, added_at: Time.current, subscription: sub)
+      sub = create(:subscription, user: user, is_active: true)
+      create(:tracked_channel, user: user, channel: channel, subscription: sub, tracking_enabled: true)
 
       delete "/api/v1/channels/#{channel.id}/track", headers: headers
       expect(response).to have_http_status(:ok)
@@ -139,8 +164,8 @@ RSpec.describe "Channels API", type: :request do
     end
 
     it "re-tracking after untrack re-enables record" do
-      sub = Subscription.create!(user: premium_user, tier: "premium", is_active: true, started_at: Time.current)
-      tc = TrackedChannel.create!(user: premium_user, channel: channel, tracking_enabled: false, added_at: 1.week.ago, subscription: sub)
+      sub = create(:subscription, user: premium_user, is_active: true)
+      tc = create(:tracked_channel, user: premium_user, channel: channel, subscription: sub, tracking_enabled: false, added_at: 1.week.ago)
 
       post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
       expect(response).to have_http_status(:created)

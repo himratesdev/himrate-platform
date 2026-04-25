@@ -44,6 +44,13 @@ module Api
       end
 
       # FR-004: POST /api/v1/channels/:id/track — start tracking
+      #
+      # BUG-012: TrackedChannel ДОЛЖЕН ссылаться на Subscription через subscription_id —
+      # ChannelPolicy#channel_tracked? делает INNER JOIN. NOT NULL constraint
+      # (migration 20260425100002) enforces invariant. Controller now ensures
+      # active Subscription exists для current_user (auto-create если missing —
+      # actual billing integration handled через payment provider webhooks separately;
+      # auto-creation покрывает manual API-driven tracking).
       def track
         channel = Channel.find(params[:channel_id] || params[:id])
         authorize channel, :track?
@@ -56,11 +63,13 @@ module Api
           return
         end
 
+        sub = ensure_active_subscription_for(current_user)
+
         if existing
-          # Re-enable previously disabled tracking
-          existing.update!(tracking_enabled: true, added_at: Time.current)
+          # Re-enable previously disabled tracking; relink subscription if absent.
+          existing.update!(tracking_enabled: true, added_at: Time.current, subscription: sub)
         else
-          TrackedChannel.create!(user: current_user, channel: channel, tracking_enabled: true, added_at: Time.current)
+          TrackedChannel.create!(user: current_user, channel: channel, tracking_enabled: true, added_at: Time.current, subscription: sub)
         end
         channel.update!(is_monitored: true) unless channel.is_monitored
 
@@ -148,6 +157,23 @@ module Api
       end
 
       private
+
+      # BUG-012: returns active premium/business Subscription для user, creates если none.
+      # Real billing integration (payment provider) creates Subscriptions out-of-band;
+      # this auto-create покрывает API-driven tracking flow + ensures TC.subscription_id
+      # invariant satisfied.
+      def ensure_active_subscription_for(user)
+        existing = user.subscriptions.where(is_active: true).first
+        return existing if existing
+
+        Subscription.create!(
+          user: user,
+          tier: user.tier,
+          plan_type: "per_channel",
+          is_active: true,
+          started_at: Time.current
+        )
+      end
 
       # W1 fix: single aggregate query instead of 3 separate (count + avg + max)
       def stream_stats(completed_streams, channel)
