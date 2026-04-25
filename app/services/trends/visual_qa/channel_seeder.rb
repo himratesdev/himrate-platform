@@ -22,10 +22,17 @@ module Trends
         Digest::SHA1.hexdigest(channel.id)[0, 16]
       end
 
+      # BUG-012: atomic via create_or_find_by! (Rails 7+ pattern).
+      # Implementation: INSERT с unique constraint на channels.login → если row
+      # уже existed, ловит ActiveRecord::RecordNotUnique → SELECT existing.
+      # Race-safe против concurrent VQA workflow runs (find_or_create_by был
+      # SELECT-then-INSERT non-atomic → duplicates на parallel paths).
+      # Migration 20260425100002 enforces unique index без которого create_or_find_by
+      # degraded в same race-prone behavior.
       def self.ensure_channel(login:)
         validate_login!(login)
 
-        Channel.find_or_create_by!(login: login) do |c|
+        Channel.create_or_find_by!(login: login) do |c|
           c.twitch_id = "vqa_twitch_#{SecureRandom.hex(6)}"
           c.display_name = login.sub(LOGIN_PREFIX, "").capitalize
           c.broadcaster_type = "affiliate"

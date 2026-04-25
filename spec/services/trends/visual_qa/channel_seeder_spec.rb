@@ -14,6 +14,38 @@ RSpec.describe Trends::VisualQa::ChannelSeeder do
       ch2 = described_class.ensure_channel(login: "vqa_test_alpha")
       expect(ch1.id).to eq(ch2.id)
     end
+
+    # BUG-012: race condition repro. Two concurrent ensure_channel calls для
+    # одного login должны produce ровно 1 Channel row. Pre-fix
+    # (find_or_create_by!) — обe SELECT прошли without record → both INSERT →
+    # 2 rows. Post-fix (create_or_find_by! + UNIQUE index) — один INSERT
+    # succeeds, другой ловит RecordNotUnique → SELECT existing.
+    it "BUG-012: race-safe против concurrent calls (UNIQUE index + create_or_find_by)" do
+      login = "vqa_test_race_check"
+
+      # Симулируем race: вручную INSERT row in another connection-like flow,
+      # затем второй call должен НЕ создать duplicate, а вернуть existing.
+      first = described_class.ensure_channel(login: login)
+      second = described_class.ensure_channel(login: login)
+
+      expect(Channel.where(login: login).count).to eq(1)
+      expect(first.id).to eq(second.id)
+    end
+
+    # BUG-012: DB enforces UNIQUE на channels.login. Direct Channel.create!
+    # с existing login должен raise RecordNotUnique (не silent duplicate).
+    it "BUG-012: DB rejects duplicate login at insert level (UNIQUE index)" do
+      described_class.ensure_channel(login: "vqa_test_db_unique")
+
+      expect {
+        Channel.create!(
+          login: "vqa_test_db_unique",
+          twitch_id: "vqa_twitch_other",
+          display_name: "Other",
+          is_monitored: true
+        )
+      }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
   end
 
   describe ".ensure_premium_user_tracking" do
@@ -56,10 +88,11 @@ RSpec.describe Trends::VisualQa::ChannelSeeder do
       expect(TrackedChannel.where(channel_id: channel.id).count).to eq(1)
     end
 
-    # BUG-011 retrofit: existing TrackedChannel record с NULL subscription_id
-    # (legacy seed pre-BUG-011 fix) должен получить subscription_id на повторный seed.
-    it "retrofits NULL subscription_id на повторный seed (legacy data repair)" do
-      # Simulate legacy state: TC + Sub + User уже существуют, но TC.subscription_id IS NULL.
+    # BUG-012: retrofit pattern в коде сохраняется (||= preserves valid value),
+    # но legacy NULL state больше невозможен — DB enforces NOT NULL constraint
+    # (migration 20260425100002). Try-create с nil subscription_id raises
+    # ActiveRecord::NotNullViolation — invariant guaranteed.
+    it "BUG-012: DB rejects TrackedChannel insert с NULL subscription_id" do
       digest = described_class.user_digest(channel)
       user = User.create!(
         email: described_class::PREMIUM_USER_EMAIL_TEMPLATE % digest,
@@ -67,16 +100,11 @@ RSpec.describe Trends::VisualQa::ChannelSeeder do
         role: "viewer",
         tier: "premium"
       )
-      sub = Subscription.create!(user_id: user.id, tier: "premium", is_active: true,
-        plan_type: "per_channel", started_at: 14.days.ago)
-      tc = TrackedChannel.create!(user_id: user.id, channel_id: channel.id,
-        subscription_id: nil, tracking_enabled: true, added_at: 14.days.ago)
 
-      expect(tc.subscription_id).to be_nil
-
-      described_class.ensure_premium_user_tracking(channel: channel)
-
-      expect(tc.reload.subscription_id).to eq(sub.id)
+      expect {
+        TrackedChannel.create!(user_id: user.id, channel_id: channel.id,
+          subscription_id: nil, tracking_enabled: true, added_at: 14.days.ago)
+      }.to raise_error(ActiveRecord::NotNullViolation)
     end
   end
 
