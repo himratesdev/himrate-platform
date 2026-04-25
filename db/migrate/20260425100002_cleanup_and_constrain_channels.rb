@@ -27,9 +27,9 @@ class CleanupAndConstrainChannels < ActiveRecord::Migration[8.0]
   private
 
   def cleanup_orphan_tracked_channels
-    deleted = ActiveRecord::Base.connection.execute(
-      "DELETE FROM tracked_channels WHERE subscription_id IS NULL"
-    ).cmd_tuples
+    # CR PG-iter1: AR delete_all returns count cleanly (vs raw connection.execute
+    # cmd_tuples). No FK cascade нужен — TC has no dependents.
+    deleted = TrackedChannel.where(subscription_id: nil).delete_all
     say "Deleted #{deleted} orphan TrackedChannel rows (NULL subscription_id)"
   end
 

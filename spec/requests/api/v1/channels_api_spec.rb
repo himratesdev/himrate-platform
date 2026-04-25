@@ -141,13 +141,15 @@ RSpec.describe "Channels API", type: :request do
       expect(tc.subscription_id).to eq(sub.id)
     end
 
-    # CR N-4: production safety — flag OFF + missing Subscription → 500/BillingNotConfigured
-    # вместо silent auto-create. Forces billing webhook integration.
-    it "raises BillingNotConfigured when flag OFF + no existing Subscription (production safety)" do
+    # CR N-4 + PG-iter1: production safety — flag OFF + missing Subscription
+    # → 402 Payment Required (BillingNotConfigured rescued в class header).
+    # Loud machine-readable signal — frontend может surface user-friendly retry,
+    # operator catches in Sentry via Rails.error.report.
+    it "returns 402 Payment Required when flag OFF + no existing Subscription (production safety)" do
       # Flag НЕ enabled (HOOK_FLAGS default OFF), no pre-existing Subscription.
-      expect {
-        post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
-      }.to raise_error(Api::V1::ChannelsController::BillingNotConfigured)
+      post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
+      expect(response).to have_http_status(:payment_required)
+      expect(response.parsed_body["error"]).to eq("BILLING_NOT_CONFIGURED")
     end
 
     it "returns 403 for free user" do

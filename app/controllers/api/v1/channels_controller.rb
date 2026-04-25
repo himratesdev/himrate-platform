@@ -10,6 +10,19 @@ module Api
       before_action :authenticate_user!, except: :show
       before_action :authenticate_user_optional!, only: :show
 
+      # CR PG-iter1: surface BillingNotConfigured как 402 Payment Required
+      # (matches doc comment intent). Loud signal к operator, machine-readable
+      # status code для frontend retry/fallback logic. Sentry catches via
+      # ApplicationController error reporting independently.
+      rescue_from "Api::V1::ChannelsController::BillingNotConfigured" do |e|
+        Rails.error.report(e, context: { controller: "channels", action: action_name }, handled: true)
+        render json: {
+          error: "BILLING_NOT_CONFIGURED",
+          message: I18n.t("channels.errors.billing_not_configured",
+            default: "Subscription billing is not yet configured. Contact support.")
+        }, status: :payment_required
+      end
+
       # FR-003/010: GET /api/v1/channels — tracked channels list (paginated)
       def index
         authorize Channel
@@ -170,7 +183,7 @@ module Api
       # (registered as HOOK_FLAG, default OFF) controls whether controller auto-creates
       # Subscription. Dev/staging: enable flag для seamless API-driven testing.
       # Production: flag remains OFF — pre-existing Subscription required (created by
-      # payment provider webhook), иначе 402 Payment Required.
+      # payment provider webhook), иначе 402 Payment Required (rescue_from в class header).
       class BillingNotConfigured < StandardError; end
 
       def ensure_active_subscription_for(user)
