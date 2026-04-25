@@ -2,11 +2,17 @@
 
 require "rails_helper"
 
-# Rack::Attack uses Rails.cache for throttle tracking.
+# Rack::Attack uses Rails.cache for throttle tracking. Bucket key includes
+# Time.now / period_seconds — when burst spans bucket boundary, counter resets
+# и spec фейлит (BUG-013). Frozen time блок гарантирует все sequential
+# requests в одном bucket — deterministic.
+#
 # In test, cache is :null_store by default — throttles don't fire.
 # We enable :memory_store for these tests.
 
 RSpec.describe "Rack::Attack rate limiting", type: :request do
+  include ActiveSupport::Testing::TimeHelpers
+
   before do
     Rack::Attack.cache.store = ActiveSupport::Cache::MemoryStore.new
     Rack::Attack.reset!
@@ -17,6 +23,8 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
   end
 
   describe "admin brute force (5/min)" do
+    around { |ex| freeze_time { ex.run } }
+
     it "blocks after 5 requests" do
       5.times { get "/admin/flipper", headers: { "REMOTE_ADDR" => "1.2.3.4" } }
       get "/admin/flipper", headers: { "REMOTE_ADDR" => "1.2.3.4" }
@@ -28,6 +36,8 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
   end
 
   describe "auth brute force (10/min)" do
+    around { |ex| freeze_time { ex.run } }
+
     it "blocks after 10 requests" do
       # Use refresh endpoint (doesn't need Twitch ENV vars)
       10.times { post "/api/v1/auth/refresh", headers: { "REMOTE_ADDR" => "2.3.4.5" } }
@@ -38,6 +48,8 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
   end
 
   describe "general API (60/min)" do
+    around { |ex| freeze_time { ex.run } }
+
     it "blocks after 60 requests" do
       60.times { get "/api/v1/channels", headers: { "REMOTE_ADDR" => "3.4.5.6" } }
       get "/api/v1/channels", headers: { "REMOTE_ADDR" => "3.4.5.6" }
@@ -47,6 +59,8 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
   end
 
   describe "OPTIONS preflight excluded" do
+    around { |ex| freeze_time { ex.run } }
+
     it "does not count OPTIONS toward throttle" do
       60.times do
         options "/api/v1/channels", headers: { "REMOTE_ADDR" => "4.5.6.7" }
@@ -58,6 +72,8 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
   end
 
   describe "Retry-After header" do
+    around { |ex| freeze_time { ex.run } }
+
     it "includes Retry-After in 429 response" do
       6.times { get "/admin/flipper", headers: { "REMOTE_ADDR" => "5.6.7.8" } }
 
