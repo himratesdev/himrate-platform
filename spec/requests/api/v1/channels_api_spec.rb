@@ -12,6 +12,10 @@ RSpec.describe "Channels API", type: :request do
   let(:premium_headers) { { "Authorization" => "Bearer #{premium_token}" } }
 
   before do
+    # rails_helper enables ALL_FLAGS by default (incl. pundit_authorization). Use
+    # call_original для других gates (e.g. BUG-012 billing_auto_subscription_creation
+    # — HOOK_FLAG, default OFF, individual specs enable as needed).
+    allow(Flipper).to receive(:enabled?).and_call_original
     allow(Flipper).to receive(:enabled?).with(:pundit_authorization).and_return(true)
   end
 
@@ -105,18 +109,23 @@ RSpec.describe "Channels API", type: :request do
   end
 
   describe "POST /api/v1/channels/:id/track" do
-    # BUG-012: track auto-creates Subscription если user не имеет active.
-    # TC.subscription_id NOT NULL invariant satisfied via controller helper.
-    it "creates tracked channel for premium user (auto-creates Subscription)" do
-      expect {
-        post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
-      }.to change(Subscription, :count).by(1)
-        .and change(TrackedChannel, :count).by(1)
+    # BUG-012 / CR N-4: auto-create Subscription gated Flipper flag
+    # billing_auto_subscription_creation. Tests которые depend на auto-create
+    # explicitly enable flag. Tests с pre-existing Subscription работают независимо.
+    context "with billing_auto_subscription_creation enabled" do
+      before { Flipper.enable(:billing_auto_subscription_creation) }
 
-      expect(response).to have_http_status(:created)
-      tc = TrackedChannel.find_by(user: premium_user, channel: channel)
-      expect(tc).to be_present
-      expect(tc.subscription_id).to eq(Subscription.where(user: premium_user, is_active: true).first.id)
+      it "creates tracked channel for premium user (auto-creates Subscription)" do
+        expect {
+          post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
+        }.to change(Subscription, :count).by(1)
+          .and change(TrackedChannel, :count).by(1)
+
+        expect(response).to have_http_status(:created)
+        tc = TrackedChannel.find_by(user: premium_user, channel: channel)
+        expect(tc).to be_present
+        expect(tc.subscription_id).to eq(Subscription.where(user: premium_user, is_active: true).first.id)
+      end
     end
 
     it "reuses existing active Subscription when tracking second channel" do
@@ -132,6 +141,15 @@ RSpec.describe "Channels API", type: :request do
       expect(tc.subscription_id).to eq(sub.id)
     end
 
+    # CR N-4: production safety — flag OFF + missing Subscription → 500/BillingNotConfigured
+    # вместо silent auto-create. Forces billing webhook integration.
+    it "raises BillingNotConfigured when flag OFF + no existing Subscription (production safety)" do
+      # Flag НЕ enabled (HOOK_FLAGS default OFF), no pre-existing Subscription.
+      expect {
+        post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
+      }.to raise_error(Api::V1::ChannelsController::BillingNotConfigured)
+    end
+
     it "returns 403 for free user" do
       post "/api/v1/channels/#{channel.id}/track", headers: headers
       expect(response).to have_http_status(:forbidden)
@@ -142,6 +160,15 @@ RSpec.describe "Channels API", type: :request do
       create(:tracked_channel, user: premium_user, channel: channel, subscription: sub, tracking_enabled: true)
       post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
       expect(response).to have_http_status(:conflict)
+    end
+
+    it "re-tracking with valid pre-existing Subscription works (no flag needed)" do
+      sub = create(:subscription, user: premium_user, is_active: true)
+      tc = create(:tracked_channel, user: premium_user, channel: channel, subscription: sub, tracking_enabled: false, added_at: 1.week.ago)
+
+      post "/api/v1/channels/#{channel.id}/track", headers: premium_headers
+      expect(response).to have_http_status(:created)
+      expect(tc.reload.tracking_enabled).to be true
     end
   end
 

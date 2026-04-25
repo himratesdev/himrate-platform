@@ -83,7 +83,10 @@ module FlipperDefaults
   # когда feature ready. Включение через admin UI или Flipper.enable без нового deploy.
   # Каждая запись = namespaced :flag => "TASK-XXX reference" для traceability.
   HOOK_FLAGS = {
-    trends_pdf_export: "TASK-078" # FR-040: PDF export из Trends Tab, добавляется отдельным PR
+    trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
+    billing_auto_subscription_creation: "BUG-012" # Dev/staging only: ChannelsController#track
+    # auto-creates Subscription if missing. Production: flag OFF — Subscription must pre-exist
+    # (payment provider webhook creates it). Prevents masking missing billing integration.
   }.freeze
 end
 

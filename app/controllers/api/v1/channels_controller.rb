@@ -63,15 +63,19 @@ module Api
           return
         end
 
-        sub = ensure_active_subscription_for(current_user)
+        # CR N-1: атомарный wrap — Subscription auto-create + TC link выполняются
+        # в одной transaction. Если TC.save fails (e.g. unexpected validation), orphan
+        # Subscription rolled back. Belt-and-suspenders.
+        ActiveRecord::Base.transaction do
+          sub = ensure_active_subscription_for(current_user)
 
-        if existing
-          # Re-enable previously disabled tracking; relink subscription if absent.
-          existing.update!(tracking_enabled: true, added_at: Time.current, subscription: sub)
-        else
-          TrackedChannel.create!(user: current_user, channel: channel, tracking_enabled: true, added_at: Time.current, subscription: sub)
+          if existing
+            existing.update!(tracking_enabled: true, added_at: Time.current, subscription: sub)
+          else
+            TrackedChannel.create!(user: current_user, channel: channel, tracking_enabled: true, added_at: Time.current, subscription: sub)
+          end
+          channel.update!(is_monitored: true) unless channel.is_monitored
         end
-        channel.update!(is_monitored: true) unless channel.is_monitored
 
         render json: { data: ChannelBlueprint.render_as_hash(channel, view: :headline, current_user: current_user) }, status: :created
       end
@@ -158,13 +162,26 @@ module Api
 
       private
 
-      # BUG-012: returns active premium/business Subscription для user, creates если none.
-      # Real billing integration (payment provider) creates Subscriptions out-of-band;
-      # this auto-create покрывает API-driven tracking flow + ensures TC.subscription_id
-      # invariant satisfied.
+      # BUG-012: returns active premium/business Subscription для user, creates
+      # если none AND билинг auto-create flag enabled.
+      #
+      # CR N-4: production launch checklist должен gate'ить /track endpoint behind
+      # billing webhook integration. Flipper hook flag billing_auto_subscription_creation
+      # (registered as HOOK_FLAG, default OFF) controls whether controller auto-creates
+      # Subscription. Dev/staging: enable flag для seamless API-driven testing.
+      # Production: flag remains OFF — pre-existing Subscription required (created by
+      # payment provider webhook), иначе 402 Payment Required.
+      class BillingNotConfigured < StandardError; end
+
       def ensure_active_subscription_for(user)
         existing = user.subscriptions.where(is_active: true).first
         return existing if existing
+
+        unless Flipper.enabled?(:billing_auto_subscription_creation)
+          raise BillingNotConfigured,
+            "User #{user.id} has no active Subscription — billing webhook not received. " \
+            "Auto-creation disabled (enable Flipper :billing_auto_subscription_creation для dev/staging)."
+        end
 
         Subscription.create!(
           user: user,
