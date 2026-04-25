@@ -36,6 +36,16 @@ module Trends
 
       # Ensures premium user tracking этого канала. Creates User (tier='premium')
       # + Subscription (premium active) + TrackedChannel link. Idempotent.
+      #
+      # BUG-011: TrackedChannel.subscription_id ДОЛЖЕН ссылаться на Subscription —
+      # ChannelPolicy#channel_tracked? делает INNER JOIN на subscriptions через
+      # tracked_channels.subscription_id. NULL → channel_tracked? = false → 403
+      # SUBSCRIPTION_REQUIRED для всех Trends endpoints с seeded JWT.
+      #
+      # Retrofit pattern (find_or_initialize + ||= + save!) handles обе cases:
+      #   - new record: subscription_id assigned at create
+      #   - existing record с NULL subscription_id (legacy seed pre-BUG-011 fix):
+      #     retrofitted на повторный seed call. Idempotent — non-NULL value preserved.
       def self.ensure_premium_user_tracking(channel:)
         digest = user_digest(channel)
         user = User.find_or_create_by!(email: PREMIUM_USER_EMAIL_TEMPLATE % digest) do |u|
@@ -44,15 +54,16 @@ module Trends
           u.tier = "premium"
         end
 
-        Subscription.find_or_create_by!(user_id: user.id, tier: "premium", is_active: true) do |s|
+        sub = Subscription.find_or_create_by!(user_id: user.id, tier: "premium", is_active: true) do |s|
           s.plan_type = "per_channel"
           s.started_at = 14.days.ago
         end
 
-        TrackedChannel.find_or_create_by!(user_id: user.id, channel_id: channel.id) do |tc|
-          tc.tracking_enabled = true
-          tc.added_at = 14.days.ago
-        end
+        tc = TrackedChannel.find_or_initialize_by(user_id: user.id, channel_id: channel.id)
+        tc.subscription_id ||= sub.id
+        tc.tracking_enabled = true
+        tc.added_at ||= 14.days.ago
+        tc.save!
 
         user
       end
