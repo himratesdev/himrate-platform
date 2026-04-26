@@ -140,7 +140,8 @@ accessories:
     directories:
       # Docker socket для service discovery (docker_sd_configs в promtail-config.yml).
       # Containers dir для actual log file reading.
-      - /var/run/docker.sock:/var/run/docker.sock
+      # Both :ro — Promtail только reads (list containers + tail logs), defense-in-depth.
+      - /var/run/docker.sock:/var/run/docker.sock:ro
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     options:
       privileged: true
