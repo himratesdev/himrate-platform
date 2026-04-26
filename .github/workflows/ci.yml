@@ -127,6 +127,15 @@ jobs:
           FLIPPER_UI_USER: ${{ secrets.FLIPPER_UI_USER }}
           ALLOWED_EXTENSION_ID: ${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
+          # BUG-010 PR1: Observability stack accessories secrets
+          TELEGRAM_OPS_BOT_TOKEN: ${{ secrets.TELEGRAM_OPS_BOT_TOKEN }}
+          TELEGRAM_CRITICAL_CHAT_ID: ${{ secrets.TELEGRAM_CRITICAL_CHAT_ID }}
+          TELEGRAM_OPS_CHAT_ID: ${{ secrets.TELEGRAM_OPS_CHAT_ID }}
+          TELEGRAM_INFO_CHAT_ID: ${{ secrets.TELEGRAM_INFO_CHAT_ID }}
+          GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GRAFANA_OIDC_CLIENT_ID: ${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
+          GRAFANA_OIDC_CLIENT_SECRET: ${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           MISSING=()
@@ -138,7 +147,11 @@ jobs:
                      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY \
                      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT \
                      FLIPPER_UI_PASSWORD FLIPPER_UI_USER \
-                     ALLOWED_EXTENSION_ID TWITCH_WEBHOOK_SECRET; do
+                     ALLOWED_EXTENSION_ID TWITCH_WEBHOOK_SECRET \
+                     TELEGRAM_OPS_BOT_TOKEN TELEGRAM_CRITICAL_CHAT_ID \
+                     TELEGRAM_OPS_CHAT_ID TELEGRAM_INFO_CHAT_ID \
+                     GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD \
+                     GRAFANA_OIDC_CLIENT_ID GRAFANA_OIDC_CLIENT_SECRET; do
             [ -z "${!var:-}" ] && MISSING+=("$var")
           done
           if [ ${#MISSING[@]} -gt 0 ]; then
@@ -146,7 +159,7 @@ jobs:
             printf '::error::  • %s\n' "${MISSING[@]}"
             exit 1
           fi
-          echo "✓ All 16 required secrets present"
+          echo "✓ All 24 required secrets present"
       # File-write approach для Kamal secrets. Эмпирически проверено что
       # Kamal 2.11 корректно работает только с `.kamal/secrets.<destination>`
       # файлом (env-block alone — broken docker login на ghcr, incident
@@ -176,6 +189,15 @@ jobs:
           ALLOWED_EXTENSION_ID=${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET=${{ secrets.TWITCH_WEBHOOK_SECRET }}
           EVENTSUB_WEBHOOK_URL=https://staging.himrate.com
+          # BUG-010 PR1: Observability stack accessories secrets
+          TELEGRAM_OPS_BOT_TOKEN=${{ secrets.TELEGRAM_OPS_BOT_TOKEN }}
+          TELEGRAM_CRITICAL_CHAT_ID=${{ secrets.TELEGRAM_CRITICAL_CHAT_ID }}
+          TELEGRAM_OPS_CHAT_ID=${{ secrets.TELEGRAM_OPS_CHAT_ID }}
+          TELEGRAM_INFO_CHAT_ID=${{ secrets.TELEGRAM_INFO_CHAT_ID }}
+          GRAFANA_ADMIN_USER=${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GRAFANA_OIDC_CLIENT_ID=${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
+          GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
           SECRETS
       # kamal setup vs kamal deploy: выбран setup как idempotent full-boot
       # (app + proxy + accessories). Safe на subsequent runs (Kamal skips
@@ -256,6 +278,15 @@ jobs:
           FLIPPER_UI_USER: ${{ secrets.FLIPPER_UI_USER }}
           ALLOWED_EXTENSION_ID: ${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
+          # BUG-010 PR1: Observability stack accessories secrets
+          TELEGRAM_OPS_BOT_TOKEN: ${{ secrets.TELEGRAM_OPS_BOT_TOKEN }}
+          TELEGRAM_CRITICAL_CHAT_ID: ${{ secrets.TELEGRAM_CRITICAL_CHAT_ID }}
+          TELEGRAM_OPS_CHAT_ID: ${{ secrets.TELEGRAM_OPS_CHAT_ID }}
+          TELEGRAM_INFO_CHAT_ID: ${{ secrets.TELEGRAM_INFO_CHAT_ID }}
+          GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GRAFANA_OIDC_CLIENT_ID: ${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
+          GRAFANA_OIDC_CLIENT_SECRET: ${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           MISSING=()
@@ -267,7 +298,11 @@ jobs:
                      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY \
                      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT \
                      FLIPPER_UI_PASSWORD FLIPPER_UI_USER \
-                     ALLOWED_EXTENSION_ID TWITCH_WEBHOOK_SECRET; do
+                     ALLOWED_EXTENSION_ID TWITCH_WEBHOOK_SECRET \
+                     TELEGRAM_OPS_BOT_TOKEN TELEGRAM_CRITICAL_CHAT_ID \
+                     TELEGRAM_OPS_CHAT_ID TELEGRAM_INFO_CHAT_ID \
+                     GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD \
+                     GRAFANA_OIDC_CLIENT_ID GRAFANA_OIDC_CLIENT_SECRET; do
             [ -z "${!var:-}" ] && MISSING+=("$var")
           done
           if [ ${#MISSING[@]} -gt 0 ]; then
@@ -275,7 +310,7 @@ jobs:
             printf '::error::  • %s\n' "${MISSING[@]}"
             exit 1
           fi
-          echo "✓ All 16 required secrets present"
+          echo "✓ All 24 required secrets present"
       # W-1 fix: URL-encode POSTGRES_PASSWORD перед DATABASE_URL construction.
       # Python urllib.parse.quote обрабатывает ЛЮБОЙ password (base64 with +/=,
       # special chars, пробелы) — no format constraint на operator. Writes
@@ -321,6 +356,15 @@ jobs:
           ALLOWED_EXTENSION_ID=${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET=${{ secrets.TWITCH_WEBHOOK_SECRET }}
           EVENTSUB_WEBHOOK_URL=https://api.himrate.com
+          # BUG-010 PR1: Observability stack accessories secrets
+          TELEGRAM_OPS_BOT_TOKEN=${{ secrets.TELEGRAM_OPS_BOT_TOKEN }}
+          TELEGRAM_CRITICAL_CHAT_ID=${{ secrets.TELEGRAM_CRITICAL_CHAT_ID }}
+          TELEGRAM_OPS_CHAT_ID=${{ secrets.TELEGRAM_OPS_CHAT_ID }}
+          TELEGRAM_INFO_CHAT_ID=${{ secrets.TELEGRAM_INFO_CHAT_ID }}
+          GRAFANA_ADMIN_USER=${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GRAFANA_OIDC_CLIENT_ID=${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
+          GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
           SECRETS
       # kamal setup: idempotent full-boot (see staging decision comment выше).
       # Future optimization (when prod becomes real traffic): split first-time
