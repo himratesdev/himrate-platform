@@ -1,0 +1,65 @@
+# BUG-010 PR1: Promtail config — ships Docker container logs to Loki.
+# Privileged container access to /var/lib/docker/containers (read-only).
+# Includes redaction patterns per ADR DEC-19 to prevent accidental secret leakage.
+
+server:
+  http_listen_port: 9080
+  grpc_listen_port: 0
+  log_level: info
+
+positions:
+  filename: /tmp/positions.yaml
+
+clients:
+  - url: http://loki:3100/loki/api/v1/push
+    batchwait: 1s
+    batchsize: 1048576
+
+scrape_configs:
+  - job_name: docker-containers
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 30s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: container
+      - source_labels: ['__meta_docker_container_log_stream']
+        target_label: stream
+      - source_labels: ['__meta_docker_container_label_service']
+        target_label: service
+    pipeline_stages:
+      # Parse JSON if present (Rails structured logs)
+      - match:
+          selector: '{stream="stdout"}'
+          stages:
+            - regex:
+                expression: '^(?P<timestamp>\S+) (?P<level>\S+) (?P<msg>.*)$'
+            - labels:
+                level:
+
+      # === Redaction patterns (ADR DEC-19) ===
+      # Mask Bearer tokens
+      - replace:
+          expression: '(Bearer )([\w\-\.]{20,})'
+          replace: '$1[REDACTED]'
+
+      # Mask password params in URLs and bodies
+      - replace:
+          expression: '(password=)([^\s&]+)'
+          replace: '$1[REDACTED]'
+
+      # Mask GitHub PATs
+      - replace:
+          expression: '(github_pat_[\w]{36,})'
+          replace: '[REDACTED_GH_PAT]'
+
+      # Mask Telegram bot tokens (format: <bot_id>:<token>)
+      - replace:
+          expression: '(\d{9,11}:[A-Za-z0-9_\-]{30,})'
+          replace: '[REDACTED_TG_TOKEN]'
+
+      # Mask AWS access keys (format: AKIA + 16 chars)
+      - replace:
+          expression: '(AKIA[0-9A-Z]{16})'
+          replace: '[REDACTED_AWS_KEY]'

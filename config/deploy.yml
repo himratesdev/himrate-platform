@@ -29,6 +29,9 @@ servers:
 proxy:
   ssl: true
   host: himrate.com
+  hosts:
+    - himrate.com
+    - grafana.himrate.com
 
 registry:
   server: ghcr.io
@@ -62,7 +65,8 @@ env:
     RAILS_SERVE_STATIC_FILES: true
     WEB_CONCURRENCY: 2
 
-# Accessories: PostgreSQL + Redis on the same VPS
+# Accessories: PostgreSQL + Redis + observability stack on the same VPS
+# BUG-010 PR1: +grafana, prometheus, loki, promtail, alertmanager, prometheus-pushgateway
 accessories:
   db:
     # TASK-039 ADR §4.2: custom image с pg_partman extension (built in CI).
@@ -90,6 +94,97 @@ accessories:
         REDIS_ARGS: "--appendonly yes"
     directories:
       - himrate_redis:/data
+  # === BUG-010 Observability Stack ===
+  prometheus:
+    image: prom/prometheus:v3.0.1
+    host: 194.135.85.159
+    port: "127.0.0.1:9090:9090"
+    cmd: --storage.tsdb.retention.time=90d --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles
+    directories:
+      - himrate_prometheus:/prometheus
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+  prometheus-pushgateway:
+    # Push gateway для workflow batch metrics (ephemeral GitHub Actions runners).
+    # ADR DEC-12: workflow steps push здесь, Prometheus scrapes для storage.
+    image: prom/pushgateway:v1.10.0
+    host: 194.135.85.159
+    port: "127.0.0.1:9091:9091"
+  loki:
+    # ADR DEC-15: filesystem boltdb-shipper backend pre-launch (S3 deferred к TASK-080).
+    image: grafana/loki:3.4.1
+    host: 194.135.85.159
+    port: "127.0.0.1:3100:3100"
+    cmd: -config.file=/etc/loki/loki-config.yml
+    directories:
+      - himrate_loki:/loki
+      - ./loki/loki-config.yml:/etc/loki/loki-config.yml
+  promtail:
+    # Ships Docker container logs к Loki. Privileged docker access required.
+    # ADR DEC-19: log redaction patterns в config (Bearer/password/PAT/Telegram tokens).
+    image: grafana/promtail:3.4.1
+    host: 194.135.85.159
+    cmd: -config.file=/etc/promtail/promtail-config.yml
+    directories:
+      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    options:
+      privileged: true
+  alertmanager:
+    # ADR FR-066/067: routing tree config — workflow + worker push к /api/v2/alerts here.
+    # Replaces direct Telegram POST. Falls back к direct Telegram если Alertmanager down (FR-073).
+    image: prom/alertmanager:v0.27.0
+    host: 194.135.85.159
+    port: "127.0.0.1:9093:9093"
+    cmd: --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager
+    env:
+      secret:
+        - TELEGRAM_OPS_BOT_TOKEN
+        - TELEGRAM_CRITICAL_CHAT_ID
+        - TELEGRAM_OPS_CHAT_ID
+        - TELEGRAM_INFO_CHAT_ID
+    directories:
+      - himrate_alertmanager:/alertmanager
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+  grafana:
+    # ADR FR-034..037, FR-075..082: SSO Google OIDC + basic auth fallback + provisioning.
+    # Web UI на grafana.himrate.com через kamal proxy SSL.
+    # 6 dashboards provisioned from grafana/dashboards/*.json (Drift Trend, Operations
+    # Frequency, MTTR, Accessory Health Overview, Logs Explorer, Cost Attribution).
+    image: grafana/grafana-oss:11.4.0
+    host: 194.135.85.159
+    port: "127.0.0.1:3000:3000"
+    env:
+      secret:
+        - GRAFANA_ADMIN_USER
+        - GRAFANA_ADMIN_PASSWORD
+        - GRAFANA_OIDC_CLIENT_ID
+        - GRAFANA_OIDC_CLIENT_SECRET
+      clear:
+        GF_SERVER_ROOT_URL: https://grafana.himrate.com
+        GF_SERVER_DOMAIN: grafana.himrate.com
+        GF_SECURITY_ADMIN_USER: $GRAFANA_ADMIN_USER
+        GF_SECURITY_ADMIN_PASSWORD: $GRAFANA_ADMIN_PASSWORD
+        # Google OIDC SSO (primary auth)
+        GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
+        GF_AUTH_GENERIC_OAUTH_NAME: Google
+        GF_AUTH_GENERIC_OAUTH_CLIENT_ID: $GRAFANA_OIDC_CLIENT_ID
+        GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: $GRAFANA_OIDC_CLIENT_SECRET
+        GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
+        GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://accounts.google.com/o/oauth2/v2/auth
+        GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://oauth2.googleapis.com/token
+        GF_AUTH_GENERIC_OAUTH_API_URL: https://openidconnect.googleapis.com/v1/userinfo
+        GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "false"
+        GF_AUTH_GENERIC_OAUTH_ALLOWED_DOMAINS: himrate.com
+        GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Admin'"
+        # Auto-create users on first OIDC login as Admin
+        GF_USERS_AUTO_ASSIGN_ORG_ROLE: Admin
+        # Basic auth rate limiting (FR-DEC-8)
+        GF_AUTH_BASIC_ENABLED: "true"
+    directories:
+      - himrate_grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
 
 volumes:
   - "himrate_storage:/rails/storage"

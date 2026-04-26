@@ -1,5 +1,14 @@
 # Kamal — локальный deploy / operations
 
+> ⚠️ **PREFERRED METHOD CHANGED (BUG-010 PR1):** Для accessory operations
+> используй CI workflow `accessory-ops.yml` вместо local kamal CLI. Workflow:
+> https://github.com/himratesdev/himrate-platform/actions/workflows/accessory-ops.yml
+>
+> Local kamal flow остаётся valid emergency fallback (если CI broken,
+> или time-critical operation needs immediate execution).
+>
+> See `docs/runbooks/accessory_ops.md` для CI workflow usage.
+
 ## Цель
 
 Документ объясняет как запускать `kamal` команды (`deploy`, `accessory reboot`,

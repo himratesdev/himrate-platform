@@ -1,0 +1,51 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "red", "value": 1}]}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"calcs": ["last"], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi", "sort": "none"}},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "accessory_drift_active", "legendFormat": "{{destination}}/{{accessory}}", "refId": "A"}],
+      "title": "Active Drift Events (1=open, 0=closed)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "thresholds"}, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "yellow", "value": 1800}, {"color": "red", "value": 7200}]}, "unit": "s"}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 8},
+      "id": 2,
+      "options": {"orientation": "auto", "reduceOptions": {"calcs": ["mean"], "fields": "", "values": false}, "showThresholdLabels": false, "showThresholdMarkers": true},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.50, sum(rate(accessory_drift_mttr_seconds_bucket[24h])) by (le))", "legendFormat": "MTTR p50", "refId": "A"}, {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.95, sum(rate(accessory_drift_mttr_seconds_bucket[24h])) by (le))", "legendFormat": "MTTR p95", "refId": "B"}],
+      "title": "Mean Time To Resolution (24h)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"color": {"mode": "palette-classic"}}, "overrides": []},
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+      "id": 3,
+      "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "pieType": "donut", "reduceOptions": {"calcs": ["sum"], "fields": "", "values": false}},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum by (accessory) (increase(accessory_drift_active[7d]))", "legendFormat": "{{accessory}}", "refId": "A"}],
+      "title": "Top Accessories by Drift Count (7d)",
+      "type": "piechart"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "tags": ["accessory-ops", "drift"],
+  "time": {"from": "now-24h", "to": "now"},
+  "timepicker": {},
+  "timezone": "",
+  "title": "Drift Trend",
+  "uid": "drift-trend",
+  "version": 1,
+  "weekStart": ""
+}

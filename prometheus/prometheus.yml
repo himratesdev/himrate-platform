@@ -1,0 +1,56 @@
+# BUG-010 PR1: Prometheus scrape config
+# Scrapes Rails app /metrics endpoint + accessory self-metrics.
+# Storage retention 90d (configured via --storage.tsdb.retention.time CLI flag).
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+  external_labels:
+    environment: production
+    project: himrate
+
+# AlertManager target (push gateway batch metrics from workflows reach Prometheus
+# via separate scrape of pushgateway).
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+
+# Rule files for Prometheus alerts (none initially — Alertmanager routing
+# handles workflow-pushed alerts directly).
+rule_files: []
+
+scrape_configs:
+  # Rails app /metrics endpoint (prometheus_exporter gem)
+  - job_name: rails-app
+    static_configs:
+      - targets: ['himrate-web:3000']
+    metrics_path: /metrics
+    scheme: http
+
+  # Push gateway: workflows push batch metrics here, Prometheus scrapes for storage
+  - job_name: pushgateway
+    honor_labels: true
+    static_configs:
+      - targets: ['prometheus-pushgateway:9091']
+
+  # Self-monitoring
+  - job_name: prometheus-self
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # Alertmanager metrics
+  - job_name: alertmanager
+    static_configs:
+      - targets: ['alertmanager:9093']
+
+  # Loki metrics
+  - job_name: loki
+    static_configs:
+      - targets: ['loki:3100']
+
+  # Grafana metrics
+  - job_name: grafana
+    static_configs:
+      - targets: ['grafana:3000']
