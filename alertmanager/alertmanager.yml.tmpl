@@ -1,6 +1,12 @@
-# BUG-010 PR1: Alertmanager routing config (ADR DEC-... per FR-067).
+# BUG-010 PR1: Alertmanager routing config TEMPLATE (ADR DEC-... per FR-067).
 # Routes alerts by `severity` label to Telegram channels (critical/ops/info).
 # Replaces direct workflow Telegram POST — workflow pushes to /api/v2/alerts here.
+#
+# CR M-1/M-2 fix: Alertmanager YAML doesn't expand env vars natively. Container
+# entrypoint (cmd in deploy.yml) substitutes __PLACEHOLDER__ markers via sed
+# before alertmanager starts. Template lives here с placeholders, runtime config
+# generated to /tmp/alertmanager.yml. Pattern: build-for-years (no Docker secrets
+# dependency, busybox sh+sed available in alertmanager image base).
 
 global:
   resolve_timeout: 5m
@@ -43,8 +49,8 @@ inhibit_rules:
 receivers:
   - name: telegram_critical
     telegram_configs:
-      - bot_token_file: /etc/alertmanager/secrets/telegram_bot_token
-        chat_id: ${TELEGRAM_CRITICAL_CHAT_ID}
+      - bot_token: __TG_BOT_TOKEN__
+        chat_id: __TG_CRITICAL_CHAT_ID__
         api_url: https://api.telegram.org
         parse_mode: HTML
         message: |
@@ -55,8 +61,8 @@ receivers:
 
   - name: telegram_ops
     telegram_configs:
-      - bot_token_file: /etc/alertmanager/secrets/telegram_bot_token
-        chat_id: ${TELEGRAM_OPS_CHAT_ID}
+      - bot_token: __TG_BOT_TOKEN__
+        chat_id: __TG_OPS_CHAT_ID__
         api_url: https://api.telegram.org
         parse_mode: HTML
         message: |
@@ -67,8 +73,8 @@ receivers:
 
   - name: telegram_info
     telegram_configs:
-      - bot_token_file: /etc/alertmanager/secrets/telegram_bot_token
-        chat_id: ${TELEGRAM_INFO_CHAT_ID}
+      - bot_token: __TG_BOT_TOKEN__
+        chat_id: __TG_INFO_CHAT_ID__
         api_url: https://api.telegram.org
         parse_mode: HTML
         message: |

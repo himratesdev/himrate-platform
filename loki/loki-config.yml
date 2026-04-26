@@ -22,6 +22,11 @@ common:
       store: inmemory
 
 schema_config:
+  # CR N-2: schema_config.configs[].from = первая дата schema applies.
+  # Future schema migrations append new entries (older configs preserved для historical
+  # query routing). Convention: never modify existing entry's `from` — append новую entry
+  # с `from` >= NOW(). Boltdb-shipper supports schema versions v12, v13. Document при
+  # schema upgrade.
   configs:
     - from: 2026-01-01
       store: boltdb-shipper

@@ -29,9 +29,14 @@ servers:
 proxy:
   ssl: true
   host: himrate.com
-  hosts:
-    - himrate.com
-    - grafana.himrate.com
+  # CR M-3 fix: kamal-proxy не routes per-host к разным backends, only single app
+  # backend (web role). Grafana subdomain handled separately:
+  # 1. Cloudflare proxy mode (orange cloud) на grafana.himrate.com DNS record
+  # 2. Cloudflare resolves grafana.himrate.com → CF anycast → origin 194.135.85.159:3000
+  # 3. Cloudflare Universal SSL terminates HTTPS automatically
+  # Origin port 3000 binding (0.0.0.0:3000 в grafana accessory below) accepts traffic
+  # from CF edge IPs. Auth (SSO/basic) protects endpoint.
+  # PO action item: enable proxy mode (orange cloud) для grafana DNS record в Cloudflare.
 
 registry:
   server: ghcr.io
@@ -103,12 +108,16 @@ accessories:
     directories:
       - himrate_prometheus:/prometheus
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    options:
+      memory: 1g  # CR S-3: ADR DEC-24 estimate
   prometheus-pushgateway:
     # Push gateway для workflow batch metrics (ephemeral GitHub Actions runners).
     # ADR DEC-12: workflow steps push здесь, Prometheus scrapes для storage.
     image: prom/pushgateway:v1.10.0
     host: 194.135.85.159
     port: "127.0.0.1:9091:9091"
+    options:
+      memory: 128m  # CR S-3
   loki:
     # ADR DEC-15: filesystem boltdb-shipper backend pre-launch (S3 deferred к TASK-080).
     image: grafana/loki:3.4.1
@@ -118,6 +127,8 @@ accessories:
     directories:
       - himrate_loki:/loki
       - ./loki/loki-config.yml:/etc/loki/loki-config.yml
+    options:
+      memory: 512m  # CR S-3
   promtail:
     # Ships Docker container logs к Loki. Privileged docker access required.
     # ADR DEC-19: log redaction patterns в config (Bearer/password/PAT/Telegram tokens).
@@ -130,13 +141,30 @@ accessories:
       - /var/run/docker.sock:/var/run/docker.sock:ro
     options:
       privileged: true
+      memory: 256m  # CR S-3
   alertmanager:
     # ADR FR-066/067: routing tree config — workflow + worker push к /api/v2/alerts here.
     # Replaces direct Telegram POST. Falls back к direct Telegram если Alertmanager down (FR-073).
+    #
+    # CR M-1/M-2 fix: Alertmanager YAML config doesn't expand env vars natively.
+    # cmd uses sh+sed (busybox в alertmanager image base) to substitute __PLACEHOLDER__
+    # markers с runtime env values, then exec alertmanager. Generated config to /tmp.
+    # Pattern: build-for-years, no Docker secrets dependency, no init container.
     image: prom/alertmanager:v0.27.0
     host: 194.135.85.159
     port: "127.0.0.1:9093:9093"
-    cmd: --config.file=/etc/alertmanager/alertmanager.yml --storage.path=/alertmanager
+    cmd:
+      - sh
+      - -c
+      - |
+        set -e
+        sed \
+          -e "s|__TG_BOT_TOKEN__|${TELEGRAM_OPS_BOT_TOKEN}|g" \
+          -e "s|__TG_CRITICAL_CHAT_ID__|${TELEGRAM_CRITICAL_CHAT_ID}|g" \
+          -e "s|__TG_OPS_CHAT_ID__|${TELEGRAM_OPS_CHAT_ID}|g" \
+          -e "s|__TG_INFO_CHAT_ID__|${TELEGRAM_INFO_CHAT_ID}|g" \
+          /etc/alertmanager/alertmanager.yml.tmpl > /tmp/alertmanager.yml
+        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
     env:
       secret:
         - TELEGRAM_OPS_BOT_TOKEN
@@ -145,7 +173,9 @@ accessories:
         - TELEGRAM_INFO_CHAT_ID
     directories:
       - himrate_alertmanager:/alertmanager
-      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml
+      - ./alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl
+    options:
+      memory: 256m  # CR S-3
   grafana:
     # ADR FR-034..037, FR-075..082: SSO Google OIDC + basic auth fallback + provisioning.
     # Web UI на grafana.himrate.com через kamal proxy SSL.
@@ -153,7 +183,10 @@ accessories:
     # Frequency, MTTR, Accessory Health Overview, Logs Explorer, Cost Attribution).
     image: grafana/grafana-oss:11.4.0
     host: 194.135.85.159
-    port: "127.0.0.1:3000:3000"
+    # CR M-3 fix: bind 0.0.0.0:3000 (was 127.0.0.1) — accessible через
+    # Cloudflare proxy mode (orange cloud) на grafana.himrate.com DNS.
+    # CF terminates SSL, routes к origin:3000. Auth (SSO/basic) protects endpoint.
+    port: "3000:3000"
     env:
       secret:
         - GRAFANA_ADMIN_USER
@@ -177,14 +210,21 @@ accessories:
         GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "false"
         GF_AUTH_GENERIC_OAUTH_ALLOWED_DOMAINS: himrate.com
         GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Admin'"
-        # Auto-create users on first OIDC login as Admin
+        # CR N-3: Auto-create users as Admin acceptable pre-launch (small team, single PO).
+        # Post-launch consider role granularity: Editor для regular team, Viewer для observers.
+        # Switch via GF_USERS_AUTO_ASSIGN_ORG_ROLE + per-user override через role mapping.
         GF_USERS_AUTO_ASSIGN_ORG_ROLE: Admin
-        # Basic auth rate limiting (FR-DEC-8)
+        # CR S-2: Auth rate limiting per ADR DEC-8 (Grafana built-in + Kamal proxy layer).
+        # 60 req/min на login endpoint defends against brute-force.
         GF_AUTH_BASIC_ENABLED: "true"
+        GF_AUTH_BRUTE_FORCE_LOGIN_PROTECTION_ENABLED: "true"
+        GF_AUTH_BRUTE_FORCE_LOGIN_PROTECTION_MAX_ATTEMPTS: "5"
     directories:
       - himrate_grafana:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
+    options:
+      memory: 512m  # CR S-3: ADR DEC-24 estimate
 
 volumes:
   - "himrate_storage:/rails/storage"

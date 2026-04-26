@@ -22,7 +22,11 @@ alerting:
 rule_files: []
 
 scrape_configs:
-  # Rails app /metrics endpoint (prometheus_exporter gem)
+  # Rails app /metrics endpoint (prometheus_exporter gem added in PR2).
+  # CR S-4 TODO: verify hostname `himrate-web` resolves в Kamal Docker network.
+  # Kamal containers may be named <service>-web-<index> (e.g. himrate-web-1).
+  # PR2 (prometheus_exporter integration) verifies actual hostname pattern;
+  # may need switch к docker_sd_configs matching org.kamal.role=web label.
   - job_name: rails-app
     static_configs:
       - targets: ['himrate-web:3000']

@@ -49,12 +49,17 @@ scrape_configs:
           expression: '(password=)([^\s&]+)'
           replace: '$1[REDACTED]'
 
-      # Mask GitHub PATs
+      # CR S-1 fix: redact both classic ghp_* и fine-grained github_pat_* PAT formats
+      - replace:
+          expression: '(ghp_[\w]{36,})'
+          replace: '[REDACTED_GH_PAT]'
       - replace:
           expression: '(github_pat_[\w]{36,})'
           replace: '[REDACTED_GH_PAT]'
 
-      # Mask Telegram bot tokens (format: <bot_id>:<token>)
+      # CR N-1: Telegram bot token regex \d{9,11} matches both legacy 9-digit
+      # bot_ids и newer 10-11 digit formats. Wider than ADR DEC-19 \d{10} —
+      # deliberate over-redaction acceptable (false positives rare для 9-digit + colon + 30+ char).
       - replace:
           expression: '(\d{9,11}:[A-Za-z0-9_\-]{30,})'
           replace: '[REDACTED_TG_TOKEN]'
