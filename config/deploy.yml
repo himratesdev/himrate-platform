@@ -109,9 +109,9 @@ accessories:
       - himrate_prometheus:/prometheus
     options:
       memory: 1g  # CR S-3: ADR DEC-24 estimate
-      # Run as root to write к named volume (Docker named volumes inherit root
-      # ownership, Prometheus default user nobody can't write). Pre-launch
-      # acceptable; future hardening: pre-chown volume or use UID matching.
+      # Container UID 0 — namespace-isolated, internal-only 127.0.0.1 binding
+      # mitigates exposure. Init-container pre-chown pattern для UID matching
+      # tracked в TASK-081.
       user: "0:0"
   prometheus-pushgateway:
     # Push gateway для workflow batch metrics (ephemeral GitHub Actions runners).
@@ -133,7 +133,9 @@ accessories:
       - himrate_loki:/loki
     options:
       memory: 512m  # CR S-3
-      # Volume permissions: Loki defaults к UID 10001, can't mkdir в named volume.
+      # Container UID 0 — namespace-isolated, internal-only binding. Loki
+      # default UID 10001 can't mkdir в named volume. UID matching tracked
+      # в TASK-081 (init-container pre-chown pattern).
       user: "0:0"
   promtail:
     # Ships Docker container logs к Loki via file-based discovery (no Docker socket).
@@ -184,7 +186,9 @@ accessories:
     options:
       memory: 256m  # CR S-3
       entrypoint: /usr/local/bin/entrypoint.sh
-      user: "0:0"  # Volume permissions (alertmanager defaults к nobody)
+      # Container UID 0 — namespace-isolated, internal-only binding. UID matching
+      # tracked в TASK-081 (init-container pre-chown pattern).
+      user: "0:0"
   grafana:
     # ADR FR-034..037, FR-075..082: SSO Google OIDC + basic auth fallback + provisioning.
     # Web UI на grafana.himrate.com через kamal proxy SSL.
@@ -242,7 +246,9 @@ accessories:
       - ./grafana/dashboards:/var/lib/grafana/dashboards
     options:
       memory: 512m  # CR S-3: ADR DEC-24 estimate
-      # Grafana defaults к UID 472, can't mkdir в named volume owned by root.
+      # Container UID 0 — namespace-isolated, internal-only 127.0.0.1 binding.
+      # Grafana default UID 472 can't mkdir в named volume. UID matching
+      # tracked в TASK-081 (init-container pre-chown pattern).
       user: "0:0"
 
 volumes:
