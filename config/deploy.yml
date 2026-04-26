@@ -130,7 +130,10 @@ accessories:
     options:
       memory: 512m  # CR S-3
   promtail:
-    # Ships Docker container logs к Loki. Privileged docker access required.
+    # Ships Docker container logs к Loki via file-based discovery (no Docker socket).
+    # Reads /var/lib/docker/containers/*/*-json.log глоб pattern, extracts container_id
+    # from path. Eliminates need для /var/run/docker.sock mount (Kamal's mkdir -p
+    # fails on existing socket file).
     # ADR DEC-19: log redaction patterns в config (Bearer/password/PAT/Telegram tokens).
     image: grafana/promtail:3.4.1
     host: 194.135.85.159
@@ -138,13 +141,10 @@ accessories:
     files:
       - promtail/promtail-config.yml:/etc/promtail/promtail-config.yml
     directories:
-      # Docker socket для service discovery (docker_sd_configs в promtail-config.yml).
-      # Containers dir для actual log file reading.
-      # Both :ro — Promtail только reads (list containers + tail logs), defense-in-depth.
-      - /var/run/docker.sock:/var/run/docker.sock:ro
+      # Read-only access к Docker container log files. Directory mount works
+      # с Kamal mkdir -p (idempotent on existing dir).
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
     options:
-      privileged: true
       memory: 256m  # CR S-3
   alertmanager:
     # ADR FR-066/067: routing tree config — workflow + worker push к /api/v2/alerts here.
