@@ -101,9 +101,12 @@ accessories:
     host: 194.135.85.159
     port: "127.0.0.1:9090:9090"
     cmd: --storage.tsdb.retention.time=90d --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles
+    # Deploy iter2 fix: Kamal `directories:` accepts только volumes/directory mounts.
+    # Single config files должны быть в `files:` block.
+    files:
+      - prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     directories:
       - himrate_prometheus:/prometheus
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
     options:
       memory: 1g  # CR S-3: ADR DEC-24 estimate
   prometheus-pushgateway:
@@ -120,9 +123,10 @@ accessories:
     host: 194.135.85.159
     port: "127.0.0.1:3100:3100"
     cmd: -config.file=/etc/loki/loki-config.yml
+    files:
+      - loki/loki-config.yml:/etc/loki/loki-config.yml
     directories:
       - himrate_loki:/loki
-      - ./loki/loki-config.yml:/etc/loki/loki-config.yml
     options:
       memory: 512m  # CR S-3
   promtail:
@@ -131,10 +135,13 @@ accessories:
     image: grafana/promtail:3.4.1
     host: 194.135.85.159
     cmd: -config.file=/etc/promtail/promtail-config.yml
+    files:
+      - promtail/promtail-config.yml:/etc/promtail/promtail-config.yml
     directories:
-      - ./promtail/promtail-config.yml:/etc/promtail/promtail-config.yml
+      # Docker socket для service discovery (docker_sd_configs в promtail-config.yml).
+      # Containers dir для actual log file reading.
+      - /var/run/docker.sock:/var/run/docker.sock
       - /var/lib/docker/containers:/var/lib/docker/containers:ro
-      - /var/run/docker.sock:/var/run/docker.sock:ro
     options:
       privileged: true
       memory: 256m  # CR S-3
@@ -159,10 +166,11 @@ accessories:
         - TELEGRAM_CRITICAL_CHAT_ID
         - TELEGRAM_OPS_CHAT_ID
         - TELEGRAM_INFO_CHAT_ID
+    files:
+      - alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl
+      - alertmanager/entrypoint.sh:/usr/local/bin/entrypoint.sh
     directories:
       - himrate_alertmanager:/alertmanager
-      - ./alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl
-      - ./alertmanager/entrypoint.sh:/usr/local/bin/entrypoint.sh
     options:
       memory: 256m  # CR S-3
   grafana:
