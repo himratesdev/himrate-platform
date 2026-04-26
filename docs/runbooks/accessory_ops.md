@@ -155,3 +155,5 @@ Health check после restart failed. Check logs:
 - `grafana_dashboards.md` — dashboard reference
 - `accessory_auto_remediation.md` — auto-trigger workflow при drift
 - `pg_partman_recovery.md` — postgres volume recovery
+
+<!-- BUG-010 PR1: trigger redeploy для accessory recreation после PR #115 user/entrypoint fixes -->
