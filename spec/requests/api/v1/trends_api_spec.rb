@@ -484,6 +484,58 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
       expect(response.parsed_body.dig("data", "total")).to eq(2)
       expect(response.parsed_body.dig("data", "anomalies").size).to eq(2)
     end
+
+    # BUG-015: row_for prefers non-unattributed source когда multiple attributions
+    # exist. Naive max_by(&:confidence) picked unattributed (1.0) over real source
+    # (0.85). Production pipeline emits только real OR unattributed, не оба — но
+    # build-for-years invariant: unattributed = LAST resort regardless of confidence.
+    it "BUG-015: prefers real attribution over unattributed когда оба прикреплены к anomaly" do
+      [
+        [ "raid_organic", "Trends::Attribution::RaidOrganicAdapter" ],
+        [ "platform_cleanup", "Trends::Attribution::PlatformCleanupAdapter" ],
+        [ "unattributed", "Trends::Attribution::UnattributedFallback" ]
+      ].each do |src, adapter|
+        AttributionSource.find_or_create_by!(source: src) do |r|
+          r.enabled = true
+          r.priority = 10
+          r.display_label_en = src.humanize
+          r.display_label_ru = src.humanize
+          r.adapter_class_name = adapter
+        end
+      end
+
+      Anomaly.delete_all
+      stream = Stream.where(channel: channel).first
+
+      # Anomaly с обеими attributions: unattributed (1.0) + real (0.85). Naive
+      # max_by picked unattributed; fix должен pick real.
+      anomaly_both = create(:anomaly, stream: stream, timestamp: 1.hour.ago, confidence: 0.8)
+      create(:anomaly_attribution, anomaly: anomaly_both, source: "unattributed", confidence: 1.0)
+      create(:anomaly_attribution, anomaly: anomaly_both, source: "raid_organic", confidence: 0.85)
+
+      # Anomaly только unattributed → должен показать unattributed (fallback path).
+      anomaly_only_unattr = create(:anomaly, stream: stream, timestamp: 2.hours.ago, confidence: 0.8)
+      create(:anomaly_attribution, anomaly: anomaly_only_unattr, source: "unattributed", confidence: 1.0)
+
+      # Anomaly с multiple real (raid_organic 0.85 + platform_cleanup 0.7) → highest non-unattributed.
+      anomaly_multi = create(:anomaly, stream: stream, timestamp: 3.hours.ago, confidence: 0.8)
+      create(:anomaly_attribution, anomaly: anomaly_multi, source: "raid_organic", confidence: 0.85)
+      create(:anomaly_attribution, anomaly: anomaly_multi, source: "platform_cleanup", confidence: 0.7)
+
+      Trends::Cache::Invalidator.call(channel.id)
+      get "/api/v1/channels/#{channel.id}/trends/anomalies?period=30d", headers: headers_premium
+
+      anomalies_by_id = response.parsed_body.dig("data", "anomalies").index_by { |a| a["anomaly_id"] }
+
+      # Both: should show real source, not unattributed
+      expect(anomalies_by_id[anomaly_both.id]["attribution"]["source"]).to eq("raid_organic")
+
+      # Only unattributed: fallback path
+      expect(anomalies_by_id[anomaly_only_unattr.id]["attribution"]["source"]).to eq("unattributed")
+
+      # Multi-real: highest confidence non-unattributed
+      expect(anomalies_by_id[anomaly_multi.id]["attribution"]["source"]).to eq("raid_organic")
+    end
   end
 
   describe "CR N-4: cache hit integration" do

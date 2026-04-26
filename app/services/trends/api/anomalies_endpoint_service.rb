@@ -115,7 +115,14 @@ module Trends
       end
 
       def row_for(anomaly)
-        highest_confidence_attribution = anomaly.anomaly_attributions.max_by { |a| a.confidence.to_f }
+        # BUG-015: prefer non-unattributed source когда multiple attributions exist.
+        # Naive max_by(&:confidence) picks unattributed (default 1.0) over real source
+        # (e.g., raid_organic 0.85). Production pipeline emits только real OR
+        # unattributed (not both), но naive logic surface bug если multi-source chain
+        # implemented в future. Build-for-years invariant: unattributed = LAST resort.
+        attributions = anomaly.anomaly_attributions
+        non_unattributed = attributions.reject { |a| a.source == "unattributed" }
+        best = (non_unattributed.presence || attributions).max_by { |a| a.confidence.to_f }
 
         {
           anomaly_id: anomaly.id,
@@ -126,7 +133,7 @@ module Trends
           confidence: anomaly.confidence&.to_f&.round(3),
           ccv_impact: anomaly.ccv_impact,
           details: anomaly.details,
-          attribution: highest_confidence_attribution ? attribution_hash(highest_confidence_attribution) : nil
+          attribution: best ? attribution_hash(best) : nil
         }
       end
 
