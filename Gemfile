@@ -19,7 +19,7 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Project uses Sidekiq 7 + Redis 7 instead (per CLAUDE.md architecture)
 
 # Auth
-gem "jwt", "~> 2.8"
+gem "jwt", "~> 3.1"
 gem "http", "~> 5.0"
 
 # Authorization
