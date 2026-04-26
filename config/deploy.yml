@@ -109,6 +109,10 @@ accessories:
       - himrate_prometheus:/prometheus
     options:
       memory: 1g  # CR S-3: ADR DEC-24 estimate
+      # Container UID 0 — namespace-isolated, internal-only 127.0.0.1 binding
+      # mitigates exposure. Init-container pre-chown pattern для UID matching
+      # tracked в TASK-081.
+      user: "0:0"
   prometheus-pushgateway:
     # Push gateway для workflow batch metrics (ephemeral GitHub Actions runners).
     # ADR DEC-12: workflow steps push здесь, Prometheus scrapes для storage.
@@ -129,6 +133,10 @@ accessories:
       - himrate_loki:/loki
     options:
       memory: 512m  # CR S-3
+      # Container UID 0 — namespace-isolated, internal-only binding. Loki
+      # default UID 10001 can't mkdir в named volume. UID matching tracked
+      # в TASK-081 (init-container pre-chown pattern).
+      user: "0:0"
   promtail:
     # Ships Docker container logs к Loki via file-based discovery (no Docker socket).
     # Reads /var/lib/docker/containers/*/*-json.log глоб pattern, extracts container_id
@@ -160,7 +168,10 @@ accessories:
     # Deploy iter1 fix: Kamal accessory cmd accepts string only (not array).
     # Script file mounted к /usr/local/bin/entrypoint.sh handles substitution +
     # alertmanager exec. Alpine sh runs script, env vars from `env: secret:` block.
-    cmd: /usr/local/bin/entrypoint.sh
+    # cmd removed — using options.entrypoint override instead. Reason: Kamal cmd
+    # translates к Docker CMD, which gets passed как arguments к Docker ENTRYPOINT
+    # (/bin/alertmanager). Result: alertmanager treats script path как flag, errors.
+    # Override ENTRYPOINT itself через options.entrypoint, then container runs script.
     env:
       secret:
         - TELEGRAM_OPS_BOT_TOKEN
@@ -174,6 +185,10 @@ accessories:
       - himrate_alertmanager:/alertmanager
     options:
       memory: 256m  # CR S-3
+      entrypoint: /usr/local/bin/entrypoint.sh
+      # Container UID 0 — namespace-isolated, internal-only binding. UID matching
+      # tracked в TASK-081 (init-container pre-chown pattern).
+      user: "0:0"
   grafana:
     # ADR FR-034..037, FR-075..082: SSO Google OIDC + basic auth fallback + provisioning.
     # Web UI на grafana.himrate.com через kamal proxy SSL.
@@ -231,6 +246,10 @@ accessories:
       - ./grafana/dashboards:/var/lib/grafana/dashboards
     options:
       memory: 512m  # CR S-3: ADR DEC-24 estimate
+      # Container UID 0 — namespace-isolated, internal-only 127.0.0.1 binding.
+      # Grafana default UID 472 can't mkdir в named volume. UID matching
+      # tracked в TASK-081 (init-container pre-chown pattern).
+      user: "0:0"
 
 volumes:
   - "himrate_storage:/rails/storage"
