@@ -1,0 +1,38 @@
+{
+  "annotations": {"list": []},
+  "editable": false,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s", "color": {"mode": "palette-classic"}}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 0},
+      "id": 1,
+      "options": {"legend": {"calcs": ["mean", "max"], "displayMode": "table", "placement": "right"}, "tooltip": {"mode": "multi"}},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.50, sum by (destination, accessory, le) (rate(accessory_drift_mttr_seconds_bucket[24h])))", "legendFormat": "{{destination}}/{{accessory}} p50", "refId": "A"}, {"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "histogram_quantile(0.95, sum by (destination, accessory, le) (rate(accessory_drift_mttr_seconds_bucket[24h])))", "legendFormat": "{{destination}}/{{accessory}} p95", "refId": "B"}],
+      "title": "MTTR p50/p95 per Accessory (24h)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {"type": "prometheus", "uid": "prometheus"},
+      "fieldConfig": {"defaults": {"unit": "s"}, "overrides": []},
+      "gridPos": {"h": 10, "w": 24, "x": 0, "y": 10},
+      "id": 2,
+      "options": {"bucketOffset": 0, "legend": {"calcs": [], "displayMode": "list", "placement": "bottom"}},
+      "targets": [{"datasource": {"type": "prometheus", "uid": "prometheus"}, "expr": "sum(rate(accessory_drift_mttr_seconds_bucket[7d])) by (le)", "format": "heatmap", "legendFormat": "{{le}}", "refId": "A"}],
+      "title": "MTTR Distribution (7d)",
+      "type": "histogram"
+    }
+  ],
+  "refresh": "1m",
+  "schemaVersion": 38,
+  "tags": ["accessory-ops", "mttr"],
+  "time": {"from": "now-7d", "to": "now"},
+  "timezone": "",
+  "title": "MTTR",
+  "uid": "mttr",
+  "version": 1
+}

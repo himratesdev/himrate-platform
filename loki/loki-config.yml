@@ -1,0 +1,78 @@
+# BUG-010 PR1: Loki single-instance config (boltdb-shipper, filesystem backend)
+# Pre-launch: filesystem storage, 30d retention. ADR DEC-15.
+# Post-launch scaling: switch to S3 backend (separate task).
+
+auth_enabled: false
+
+server:
+  http_listen_port: 3100
+  grpc_listen_port: 9096
+  log_level: info
+
+common:
+  instance_addr: 127.0.0.1
+  path_prefix: /loki
+  storage:
+    filesystem:
+      chunks_directory: /loki/chunks
+      rules_directory: /loki/rules
+  replication_factor: 1
+  ring:
+    kvstore:
+      store: inmemory
+
+schema_config:
+  # CR N-2: schema_config.configs[].from = первая дата schema applies.
+  # Future schema migrations append new entries (older configs preserved для historical
+  # query routing). Convention: never modify existing entry's `from` — append новую entry
+  # с `from` >= NOW(). Boltdb-shipper supports schema versions v12, v13. Document при
+  # schema upgrade.
+  configs:
+    - from: 2026-01-01
+      store: boltdb-shipper
+      object_store: filesystem
+      schema: v13
+      index:
+        prefix: index_
+        period: 24h
+
+storage_config:
+  boltdb_shipper:
+    active_index_directory: /loki/boltdb-shipper-active
+    cache_location: /loki/boltdb-shipper-cache
+    cache_ttl: 24h
+  filesystem:
+    directory: /loki/chunks
+
+limits_config:
+  retention_period: 720h  # 30 days
+  max_query_length: 721h
+  ingestion_rate_mb: 10
+  ingestion_burst_size_mb: 20
+  reject_old_samples: true
+  reject_old_samples_max_age: 168h
+
+compactor:
+  working_directory: /loki/compactor
+  compaction_interval: 10m
+  retention_enabled: true
+  retention_delete_delay: 2h
+  retention_delete_worker_count: 150
+  delete_request_store: filesystem
+
+query_range:
+  results_cache:
+    cache:
+      embedded_cache:
+        enabled: true
+        max_size_mb: 100
+
+ruler:
+  storage:
+    type: local
+    local:
+      directory: /loki/rules
+  rule_path: /loki/rules-temp
+  ring:
+    kvstore:
+      store: inmemory

@@ -1,0 +1,86 @@
+# BUG-010 PR1: Alertmanager routing config TEMPLATE (ADR DEC-... per FR-067).
+# Routes alerts by `severity` label to Telegram channels (critical/ops/info).
+# Replaces direct workflow Telegram POST — workflow pushes to /api/v2/alerts here.
+#
+# CR M-1/M-2 fix: Alertmanager YAML doesn't expand env vars natively. Container
+# entrypoint (cmd in deploy.yml) substitutes __PLACEHOLDER__ markers via sed
+# before alertmanager starts. Template lives here с placeholders, runtime config
+# generated to /tmp/alertmanager.yml. Pattern: build-for-years (no Docker secrets
+# dependency, busybox sh+sed available in alertmanager image base).
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: telegram_info
+  group_by: ['accessory', 'destination', 'event_type']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: telegram_critical
+      group_wait: 0s
+      repeat_interval: 1h
+    - matchers:
+        - severity = "warning"
+      receiver: telegram_ops
+      repeat_interval: 2h
+    - matchers:
+        - severity = "info"
+      receiver: telegram_info
+
+# Inhibit rules: suppress lower-severity alerts when same accessory
+# has critical issue (e.g., rollback_failed inhibits drift_open).
+inhibit_rules:
+  - source_matchers:
+      - event_type = "rollback_failed"
+    target_matchers:
+      - event_type = "drift_open"
+    equal: ['destination', 'accessory']
+
+  - source_matchers:
+      - event_type = "rollback_failed"
+    target_matchers:
+      - event_type = "health_fail"
+    equal: ['destination', 'accessory']
+
+receivers:
+  - name: telegram_critical
+    telegram_configs:
+      - bot_token: __TG_BOT_TOKEN__
+        chat_id: __TG_CRITICAL_CHAT_ID__
+        api_url: https://api.telegram.org
+        parse_mode: HTML
+        message: |
+          🔴 <b>CRITICAL</b>: {{ .CommonAnnotations.summary }}
+          {{ range .Alerts }}
+          • {{ .Annotations.description }}
+          {{ end }}
+
+  - name: telegram_ops
+    telegram_configs:
+      - bot_token: __TG_BOT_TOKEN__
+        chat_id: __TG_OPS_CHAT_ID__
+        api_url: https://api.telegram.org
+        parse_mode: HTML
+        message: |
+          ⚠️ {{ .CommonAnnotations.summary }}
+          {{ range .Alerts }}
+          • {{ .Annotations.description }}
+          {{ end }}
+
+  - name: telegram_info
+    telegram_configs:
+      - bot_token: __TG_BOT_TOKEN__
+        chat_id: __TG_INFO_CHAT_ID__
+        api_url: https://api.telegram.org
+        parse_mode: HTML
+        message: |
+          ℹ️ {{ .CommonAnnotations.summary }}
+          {{ range .Alerts }}
+          • {{ .Annotations.description }}
+          {{ end }}
+
+templates: []
