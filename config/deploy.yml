@@ -149,18 +149,10 @@ accessories:
     image: prom/alertmanager:v0.27.0
     host: 194.135.85.159
     port: "127.0.0.1:9093:9093"
-    cmd:
-      - sh
-      - -c
-      - |
-        set -e
-        sed \
-          -e "s|__TG_BOT_TOKEN__|${TELEGRAM_OPS_BOT_TOKEN}|g" \
-          -e "s|__TG_CRITICAL_CHAT_ID__|${TELEGRAM_CRITICAL_CHAT_ID}|g" \
-          -e "s|__TG_OPS_CHAT_ID__|${TELEGRAM_OPS_CHAT_ID}|g" \
-          -e "s|__TG_INFO_CHAT_ID__|${TELEGRAM_INFO_CHAT_ID}|g" \
-          /etc/alertmanager/alertmanager.yml.tmpl > /tmp/alertmanager.yml
-        exec /bin/alertmanager --config.file=/tmp/alertmanager.yml --storage.path=/alertmanager
+    # Deploy iter1 fix: Kamal accessory cmd accepts string only (not array).
+    # Script file mounted к /usr/local/bin/entrypoint.sh handles substitution +
+    # alertmanager exec. Alpine sh runs script, env vars from `env: secret:` block.
+    cmd: /usr/local/bin/entrypoint.sh
     env:
       secret:
         - TELEGRAM_OPS_BOT_TOKEN
@@ -170,6 +162,7 @@ accessories:
     directories:
       - himrate_alertmanager:/alertmanager
       - ./alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl
+      - ./alertmanager/entrypoint.sh:/usr/local/bin/entrypoint.sh
     options:
       memory: 256m  # CR S-3
   grafana:

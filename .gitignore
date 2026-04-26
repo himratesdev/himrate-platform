@@ -38,3 +38,4 @@
 /.kamal/secrets
 /.kamal/secrets.*
 
+db/structure.sql
