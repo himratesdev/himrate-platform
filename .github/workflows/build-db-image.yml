@@ -28,13 +28,13 @@ jobs:
       # Dockerfile LABEL получает tag через --build-arg IMAGE_VERSION (below).
       # Image pushed с тем же tag. Result: zero drift possible.
       #
-      # PG W-2 revised: pinned mikefarah/yq@v4.44.3 action (not runner default).
+      # PG W-2 revised: pinned mikefarah/yq@v4.53.2 action (not runner default).
       # Rationale: ubuntu-latest pre-installs yq, но GHA может удалить binary
       # в будущих images → silent breakage. Pinned action = supply-chain locked,
       # reproducible builds, immune to runner image changes.
       - name: Read image reference from deploy.yml via pinned yq
         id: read_image
-        uses: mikefarah/yq@v4.44.3
+        uses: mikefarah/yq@v4.53.2
         with:
           cmd: yq '.accessories.db.image' config/deploy.yml
 
