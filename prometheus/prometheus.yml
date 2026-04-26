@@ -22,16 +22,10 @@ alerting:
 rule_files: []
 
 scrape_configs:
-  # Rails app /metrics endpoint (prometheus_exporter gem added in PR2).
-  # CR S-4 TODO: verify hostname `himrate-web` resolves в Kamal Docker network.
-  # Kamal containers may be named <service>-web-<index> (e.g. himrate-web-1).
-  # PR2 (prometheus_exporter integration) verifies actual hostname pattern;
-  # may need switch к docker_sd_configs matching org.kamal.role=web label.
-  - job_name: rails-app
-    static_configs:
-      - targets: ['himrate-web:3000']
-    metrics_path: /metrics
-    scheme: http
+  # PG W-2 fix: rails-app scrape job removed. Application /metrics endpoint
+  # появится в PR2 через prometheus_exporter gem integration. Scrape config
+  # будет добавлен в том же PR2 with verified hostname pattern (likely
+  # docker_sd_configs matching org.kamal.role=web label).
 
   # Push gateway: workflows push batch metrics here, Prometheus scrapes for storage
   - job_name: pushgateway

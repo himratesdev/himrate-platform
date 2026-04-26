@@ -2,7 +2,24 @@
 
 ## Доступ
 
-URL: https://grafana.himrate.com
+### Pre-PR1 SSH tunnel (текущий метод)
+
+Grafana bound 127.0.0.1:3000 (internal-only) для security. Access via SSH tunnel:
+
+```bash
+ssh -L 3000:127.0.0.1:3000 root@194.135.85.159
+# В отдельном terminal:
+open http://localhost:3000
+```
+
+### Public access (future enhancement, post-PR1)
+
+Public access на `https://grafana.himrate.com` — separate task. Requires
+secure routing without exposing origin port. Recommended: Cloudflare Tunnel
+(cloudflared accessory) для secure origin exposure без public port binding.
+Setup: PO creates CF Tunnel в Zero Trust dashboard, генерит token, deploys
+cloudflared accessory с tunnel routing grafana.himrate.com → http://grafana:3000
+inside Docker network.
 
 ### Authentication
 

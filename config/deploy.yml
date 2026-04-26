@@ -29,14 +29,10 @@ servers:
 proxy:
   ssl: true
   host: himrate.com
-  # CR M-3 fix: kamal-proxy не routes per-host к разным backends, only single app
-  # backend (web role). Grafana subdomain handled separately:
-  # 1. Cloudflare proxy mode (orange cloud) на grafana.himrate.com DNS record
-  # 2. Cloudflare resolves grafana.himrate.com → CF anycast → origin 194.135.85.159:3000
-  # 3. Cloudflare Universal SSL terminates HTTPS automatically
-  # Origin port 3000 binding (0.0.0.0:3000 в grafana accessory below) accepts traffic
-  # from CF edge IPs. Auth (SSO/basic) protects endpoint.
-  # PO action item: enable proxy mode (orange cloud) для grafana DNS record в Cloudflare.
+  # CR M-3 + PG W-1: kamal-proxy не routes per-host к разным backends.
+  # Grafana subdomain access initially via SSH tunnel only (127.0.0.1:3000 binding
+  # на accessory). Public access (grafana.himrate.com) — separate setup через
+  # Cloudflare Tunnel (cloudflared accessory) post-PR1. См. accessory_ops.md.
 
 registry:
   server: ghcr.io
@@ -183,10 +179,18 @@ accessories:
     # Frequency, MTTR, Accessory Health Overview, Logs Explorer, Cost Attribution).
     image: grafana/grafana-oss:11.4.0
     host: 194.135.85.159
-    # CR M-3 fix: bind 0.0.0.0:3000 (was 127.0.0.1) — accessible через
-    # Cloudflare proxy mode (orange cloud) на grafana.himrate.com DNS.
-    # CF terminates SSL, routes к origin:3000. Auth (SSO/basic) protects endpoint.
-    port: "3000:3000"
+    # PG W-1 fix: bind 127.0.0.1:3000 (internal-only). Eliminates risk window
+    # between deploy и CF proxy setup (origin был bы accessible cleartext HTTP
+    # на :3000 anyone-from-internet до CF orange cloud activation).
+    #
+    # Pre-public-access: SSH tunnel для PO/team:
+    #   ssh -L 3000:127.0.0.1:3000 root@194.135.85.159
+    #   open http://localhost:3000
+    #
+    # Public access enable (post-PR1, separate decision): требует setup
+    # Cloudflare Tunnel (cloudflared accessory) для secure origin exposure
+    # без public port binding. Documented как future enhancement в runbook.
+    port: "127.0.0.1:3000:3000"
     env:
       secret:
         - GRAFANA_ADMIN_USER
