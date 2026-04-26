@@ -49,3 +49,17 @@
 # Ignore Docker-related files
 /.dockerignore
 /Dockerfile*
+
+# BUG-014: test infrastructure — never executed at runtime, ships only test
+# fixtures/factories patterns + bloats image. Specs run in CI before image build.
+/spec/
+/test/
+/coverage/
+
+# Documentation — never used at runtime
+/README.md
+/docs/
+
+# Linting config — never used at runtime (rubocop runs in CI)
+/.rubocop.yml
+/.rubocop_todo.yml
