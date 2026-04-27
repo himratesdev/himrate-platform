@@ -4,6 +4,10 @@
 # default: general tasks
 # notifications: email, Telegram, push
 # monitoring: periodic checks, cleanup
+# accessory_ops: BUG-010 PR2 — AccessoryDriftDetectorWorker, AutoRemediation triggers,
+#                CostAttribution aggregation (priority 2)
+# long_running: BUG-010 PR2 — MlOps trainer (>=10min runs), isolated to prevent worker
+#               starvation в default/signals queues (priority 1, low concurrency budget)
 
 :concurrency: <%= ENV.fetch("SIDEKIQ_CONCURRENCY", 5) %>
 
@@ -13,4 +17,6 @@
   - [post_stream, 3]
   - [default, 3]
   - [notifications, 2]
+  - [accessory_ops, 2]
   - [monitoring, 1]
+  - [long_running, 1]
