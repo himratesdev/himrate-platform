@@ -87,7 +87,7 @@ module AccessoryOps
       end
 
       def self.dispatch_workflow(destination:, accessory:, drift_event_id:)
-        token = ENV.fetch("AUTO_TRIGGER_GH_PAT")
+        token = ENV.fetch("GITHUB_AUTO_TRIGGER_PAT")
         uri = URI("https://#{GITHUB_API_HOST}/repos/#{REPO}/actions/workflows/#{WORKFLOW_FILE}/dispatches")
 
         body = {

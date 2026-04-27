@@ -63,13 +63,11 @@ class AccessoryDriftDetectorWorker
     severity = destination == "production" ? "warning" : "info"
     push_alert(event_type: "drift_open", severity: severity, drift_event: event)
 
-    if destination == "production" || destination == "staging"
-      AccessoryOps::AutoRemediation::TriggerService.call(
-        destination: destination,
-        accessory: accessory,
-        drift_event_id: event.id
-      )
-    end
+    AccessoryOps::AutoRemediation::TriggerService.call(
+      destination: destination,
+      accessory: accessory,
+      drift_event_id: event.id
+    )
   end
 
   def push_alert(event_type:, severity:, drift_event:)

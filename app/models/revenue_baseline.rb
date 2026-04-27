@@ -20,7 +20,11 @@ class RevenueBaseline < ApplicationRecord
   validates :daily_revenue_usd, numericality: { greater_than_or_equal_to: 0 }
   validate :period_end_after_period_start
 
-  scope :latest, -> { order(calculated_at: :desc).first }
+  def self.latest
+    # Class method (not scope) — scope auto-wraps lambda return в Relation,
+    # but caller (CostAttribution::DowntimeCostCalculator) ожидает single record.
+    order(calculated_at: :desc).first
+  end
 
   def weight_for(accessory)
     accessory_revenue_weights.fetch(accessory, DEFAULT_WEIGHTS.fetch(accessory, 0.0))
