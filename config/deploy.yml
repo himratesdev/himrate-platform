@@ -197,19 +197,12 @@ accessories:
     image: grafana/grafana-oss:11.4.0
     host: 194.135.85.159
     # PG W-1 fix: bind 127.0.0.1:3000 (internal-only). Eliminates risk window
-    # between deploy и CF proxy setup (origin был bы accessible cleartext HTTP
-    # на :3000 anyone-from-internet до CF orange cloud activation).
-    #
-    # Pre-public-access: SSH tunnel для PO/team:
-    #   ssh -L 3000:127.0.0.1:3000 root@194.135.85.159
-    #   open http://localhost:3000
-    #
-    # Public access enable (post-PR1, separate decision): требует setup
-    # Cloudflare Tunnel (cloudflared accessory) для secure origin exposure
-    # без public port binding. Documented как future enhancement в runbook.
+    # between deploy и CF proxy setup. Pre-public-access via SSH tunnel.
     port: "127.0.0.1:3000:3000"
     env:
       secret:
+        # Hotfix #7 (DV finding #5): Kamal `clear:` env block НЕ expand `$VAR`.
+        # Pass secrets как-is через `secret:` block, entrypoint.sh maps к GF_* names.
         - GRAFANA_ADMIN_USER
         - GRAFANA_ADMIN_PASSWORD
         - GRAFANA_OIDC_CLIENT_ID
@@ -217,13 +210,9 @@ accessories:
       clear:
         GF_SERVER_ROOT_URL: https://grafana.himrate.com
         GF_SERVER_DOMAIN: grafana.himrate.com
-        GF_SECURITY_ADMIN_USER: $GRAFANA_ADMIN_USER
-        GF_SECURITY_ADMIN_PASSWORD: $GRAFANA_ADMIN_PASSWORD
-        # Google OIDC SSO (primary auth)
+        # Google OIDC SSO settings (non-secret values)
         GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
         GF_AUTH_GENERIC_OAUTH_NAME: Google
-        GF_AUTH_GENERIC_OAUTH_CLIENT_ID: $GRAFANA_OIDC_CLIENT_ID
-        GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET: $GRAFANA_OIDC_CLIENT_SECRET
         GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
         GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://accounts.google.com/o/oauth2/v2/auth
         GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://oauth2.googleapis.com/token
@@ -231,25 +220,34 @@ accessories:
         GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "false"
         GF_AUTH_GENERIC_OAUTH_ALLOWED_DOMAINS: himrate.com
         GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Admin'"
-        # CR N-3: Auto-create users as Admin acceptable pre-launch (small team, single PO).
-        # Post-launch consider role granularity: Editor для regular team, Viewer для observers.
-        # Switch via GF_USERS_AUTO_ASSIGN_ORG_ROLE + per-user override через role mapping.
+        # CR N-3: Auto-create users as Admin acceptable pre-launch.
         GF_USERS_AUTO_ASSIGN_ORG_ROLE: Admin
-        # CR S-2: Auth rate limiting per ADR DEC-8 (Grafana built-in + Kamal proxy layer).
-        # 60 req/min на login endpoint defends against brute-force.
+        # CR S-2: Auth brute force protection (ADR DEC-8).
         GF_AUTH_BASIC_ENABLED: "true"
         GF_AUTH_BRUTE_FORCE_LOGIN_PROTECTION_ENABLED: "true"
         GF_AUTH_BRUTE_FORCE_LOGIN_PROTECTION_MAX_ATTEMPTS: "5"
+    files:
+      # Hotfix #7 (DV finding #7): Kamal `directories: ./grafana/provisioning` mount
+      # creates EMPTY dir (does NOT copy local content). Mount each provisioning file
+      # individually via `files:` block. Same для dashboard JSONs.
+      - grafana/entrypoint.sh:/usr/local/bin/grafana-entrypoint.sh
+      - grafana/provisioning/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+      - grafana/provisioning/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
+      - grafana/dashboards/drift_trend.json:/var/lib/grafana/dashboards/drift_trend.json
+      - grafana/dashboards/operations_frequency.json:/var/lib/grafana/dashboards/operations_frequency.json
+      - grafana/dashboards/mttr.json:/var/lib/grafana/dashboards/mttr.json
+      - grafana/dashboards/accessory_health_overview.json:/var/lib/grafana/dashboards/accessory_health_overview.json
+      - grafana/dashboards/logs_explorer.json:/var/lib/grafana/dashboards/logs_explorer.json
+      - grafana/dashboards/cost_attribution.json:/var/lib/grafana/dashboards/cost_attribution.json
     directories:
       - himrate_grafana:/var/lib/grafana
-      - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./grafana/dashboards:/var/lib/grafana/dashboards
     options:
       memory: 512m  # CR S-3: ADR DEC-24 estimate
       # Container UID 0 — namespace-isolated, internal-only 127.0.0.1 binding.
-      # Grafana default UID 472 can't mkdir в named volume. UID matching
-      # tracked в TASK-081 (init-container pre-chown pattern).
+      # UID matching tracked в TASK-081 (init-container pre-chown pattern).
       user: "0:0"
+      # Hotfix #7 (DV finding #5): entrypoint script maps GRAFANA_* secrets к GF_* env names.
+      entrypoint: /usr/local/bin/grafana-entrypoint.sh
 
 volumes:
   - "himrate_storage:/rails/storage"

@@ -16,7 +16,9 @@ positions:
   filename: /tmp/positions.yaml
 
 clients:
-  - url: http://loki:3100/loki/api/v1/push
+  # Hotfix #7 (DV finding): Kamal `kamal` network registers containers по full
+  # container name (himrate-loki). Short alias `loki` not registered.
+  - url: http://himrate-loki:3100/loki/api/v1/push
     batchwait: 1s
     batchsize: 1048576
 
