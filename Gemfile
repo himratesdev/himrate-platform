@@ -26,7 +26,7 @@ gem "http", "~> 5.0"
 gem "pundit", "~> 2.4"
 
 # Serialization
-gem "blueprinter", "~> 1.1"
+gem "blueprinter", "~> 1.3"
 
 # Feature flags
 gem "flipper", "~> 1.3"
