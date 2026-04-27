@@ -11,13 +11,16 @@ RSpec.describe "Static configuration" do
       )
     end
 
-    it "contains 6 queues" do
-      expect(config[:queues].size).to eq(6)
+    it "contains 8 queues" do
+      expect(config[:queues].size).to eq(8)
     end
 
     it "includes required queue names" do
       queue_names = config[:queues].map(&:first)
-      expect(queue_names).to include("signals", "chat", "post_stream", "default", "notifications", "monitoring")
+      expect(queue_names).to include(
+        "signals", "chat", "post_stream", "default", "notifications", "monitoring",
+        "accessory_ops", "long_running"
+      )
     end
 
     it "prioritizes signals queue highest" do
