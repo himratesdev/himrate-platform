@@ -70,11 +70,11 @@ module MlOps
     def self.run_python_trainer(payload:, version:)
       stdin_data = JSON.generate(payload)
       output_path = MODEL_DIR.join("drift_forecast_#{version}.bin")
-      command = ["python3", PYTHON_TRAINER.to_s, "--output", output_path.to_s]
+      command = [ "python3", PYTHON_TRAINER.to_s, "--output", output_path.to_s ]
       output, status = Open3.capture2e(*command, stdin_data: stdin_data)
-      [output, status.exitstatus]
+      [ output, status.exitstatus ]
     rescue Errno::ENOENT
-      ["python3 OR trainer script missing — see scripts/ml_ops/train_drift_forecast.py", 1]
+      [ "python3 OR trainer script missing — see scripts/ml_ops/train_drift_forecast.py", 1 ]
     end
 
     def self.parse_accuracy(output)

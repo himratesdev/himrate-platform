@@ -53,7 +53,7 @@ module MlOps
 
     def self.run_inference(model_path:, destination:, accessory:)
       stdin_data = JSON.generate(destination: destination, accessory: accessory, horizon_days: HORIZON_DAYS)
-      command = ["python3", PYTHON_INFERENCE.to_s, "--model", model_path]
+      command = [ "python3", PYTHON_INFERENCE.to_s, "--model", model_path ]
       output, status = Open3.capture2e(*command, stdin_data: stdin_data)
       return [] unless status.exitstatus.zero?
 

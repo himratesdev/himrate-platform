@@ -17,7 +17,7 @@ class CreateDriftForecastPredictions < ActiveRecord::Migration[8.0]
     end
 
     add_index :drift_forecast_predictions,
-              [:destination, :accessory, :predicted_drift_at],
+              [ :destination, :accessory, :predicted_drift_at ],
               name: "idx_predictions_lookup"
   end
 end

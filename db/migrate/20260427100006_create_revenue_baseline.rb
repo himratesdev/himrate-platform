@@ -15,7 +15,7 @@ class CreateRevenueBaseline < ActiveRecord::Migration[8.0]
       t.timestamps
     end
 
-    add_index :revenue_baselines, [:period_start, :period_end],
+    add_index :revenue_baselines, [ :period_start, :period_end ],
               name: "idx_revenue_baseline_period"
   end
 end

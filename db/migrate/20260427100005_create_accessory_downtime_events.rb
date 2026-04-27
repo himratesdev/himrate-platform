@@ -18,7 +18,7 @@ class CreateAccessoryDowntimeEvents < ActiveRecord::Migration[8.0]
     end
 
     add_index :accessory_downtime_events,
-              [:destination, :accessory, :started_at],
+              [ :destination, :accessory, :started_at ],
               order: { started_at: :desc },
               name: "idx_downtime_events_recent"
 

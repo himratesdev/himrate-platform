@@ -20,7 +20,7 @@ class CreateAccessoryDriftEvents < ActiveRecord::Migration[8.0]
 
     # Idempotency lookup: at most one open event per (destination, accessory).
     add_index :accessory_drift_events,
-              [:destination, :accessory],
+              [ :destination, :accessory ],
               unique: true,
               where: "status = 'open'",
               name: "idx_drift_events_open_unique"

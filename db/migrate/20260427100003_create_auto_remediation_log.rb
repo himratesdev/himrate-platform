@@ -20,7 +20,7 @@ class CreateAutoRemediationLog < ActiveRecord::Migration[8.0]
 
     # Cool-down + max-attempts query: (destination, accessory) ordered by triggered_at DESC
     add_index :auto_remediation_logs,
-              [:destination, :accessory, :triggered_at],
+              [ :destination, :accessory, :triggered_at ],
               order: { triggered_at: :desc },
               name: "idx_auto_remediation_recent"
 

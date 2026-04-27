@@ -11,10 +11,10 @@ require "net/http"
 class AlertmanagerNotifier
   ALERTMANAGER_URL = "http://himrate-alertmanager:9093/api/v2/alerts"
   PUSH_TIMEOUT_SECONDS = 5
-  RETRY_DELAYS = [2, 4, 8].freeze
+  RETRY_DELAYS = [ 2, 4, 8 ].freeze
 
   def self.push(labels:, annotations:)
-    payload = [{ labels: labels.transform_keys(&:to_s), annotations: annotations.transform_keys(&:to_s) }]
+    payload = [ { labels: labels.transform_keys(&:to_s), annotations: annotations.transform_keys(&:to_s) } ]
     json = JSON.generate(payload)
 
     RETRY_DELAYS.each_with_index do |delay, attempt|

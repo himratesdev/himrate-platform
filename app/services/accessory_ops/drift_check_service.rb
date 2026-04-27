@@ -21,24 +21,24 @@ module AccessoryOps
 
       state = if declared.nil? || runtime.nil? || declared != runtime
                 :mismatch
-              else
+      else
                 :match
-              end
+      end
 
       Result.new(drift_state: state, declared_image: declared, runtime_image: runtime)
     end
 
     def self.declared_image_for(accessory)
-      yaml = YAML.load_file(DEPLOY_YML, permitted_classes: [Symbol])
+      yaml = YAML.load_file(DEPLOY_YML, permitted_classes: [ Symbol ])
       yaml.dig("accessories", accessory, "image")
     end
 
     def self.runtime_image_for(destination:, accessory:)
       host = AccessoryHostsConfig.hosts_for(destination).first
       container = "himrate-#{accessory}"
-      command = ["ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new",
+      command = [ "ssh", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=accept-new",
                  "root@#{host}",
-                 %(docker inspect #{container} --format '{{.Config.Image}}')]
+                 %(docker inspect #{container} --format '{{.Config.Image}}') ]
       output, status = Open3.capture2e(*command)
       return nil unless status.exitstatus.zero?
 

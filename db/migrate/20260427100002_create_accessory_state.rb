@@ -16,7 +16,7 @@ class CreateAccessoryState < ActiveRecord::Migration[8.0]
       t.timestamps
     end
 
-    add_index :accessory_states, [:destination, :accessory], unique: true,
+    add_index :accessory_states, [ :destination, :accessory ], unique: true,
               name: "idx_accessory_states_unique"
   end
 end

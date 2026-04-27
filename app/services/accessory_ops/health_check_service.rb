@@ -57,13 +57,13 @@ module AccessoryOps
     end
 
     def self.ssh(host, remote_command)
-      ssh_command = ["ssh", "-o", "ConnectTimeout=#{TIMEOUT_SECONDS}",
+      ssh_command = [ "ssh", "-o", "ConnectTimeout=#{TIMEOUT_SECONDS}",
                      "-o", "StrictHostKeyChecking=accept-new",
-                     "root@#{host}", remote_command]
+                     "root@#{host}", remote_command ]
       output, status = Open3.capture2e(*ssh_command)
-      [output, status.exitstatus]
+      [ output, status.exitstatus ]
     rescue StandardError => e
-      ["#{e.class}: #{e.message}", 1]
+      [ "#{e.class}: #{e.message}", 1 ]
     end
     private_class_method :ssh
   end
