@@ -87,7 +87,9 @@ module AccessoryOps
       end
 
       def self.dispatch_workflow(destination:, accessory:, drift_event_id:)
-        token = ENV.fetch("GITHUB_AUTO_TRIGGER_PAT")
+        # ADR §7 corrigendum: rename отменён — GitHub Secrets policy запрещает
+        # `GITHUB_` prefix (HTTP 422). ADR §7 нужно update → `AUTO_TRIGGER_GH_PAT`.
+        token = ENV.fetch("AUTO_TRIGGER_GH_PAT")
         uri = URI("https://#{GITHUB_API_HOST}/repos/#{REPO}/actions/workflows/#{WORKFLOW_FILE}/dispatches")
 
         body = {

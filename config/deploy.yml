@@ -61,8 +61,9 @@ env:
     - ALLOWED_EXTENSION_ID
     - TWITCH_WEBHOOK_SECRET
     - EVENTSUB_WEBHOOK_URL
-    # BUG-010 PR2 (ADR DEC-3): fine-grained PAT для AutoRemediation::TriggerService → GitHub workflow_dispatch
-    - GITHUB_AUTO_TRIGGER_PAT
+    # BUG-010 PR2 (ADR DEC-3): fine-grained PAT для AutoRemediation::TriggerService → GitHub workflow_dispatch.
+    # Имя без `GITHUB_` prefix — зарезервирован GitHub Actions для secrets (HTTP 422). ADR §7 corrigendum.
+    - AUTO_TRIGGER_GH_PAT
   clear:
     RAILS_LOG_TO_STDOUT: true
     RAILS_SERVE_STATIC_FILES: true

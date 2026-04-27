@@ -137,7 +137,7 @@ jobs:
           GRAFANA_OIDC_CLIENT_ID: ${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
           GRAFANA_OIDC_CLIENT_SECRET: ${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
           # BUG-010 PR2 (ADR DEC-3): fine-grained PAT for auto-remediation workflow dispatch
-          GITHUB_AUTO_TRIGGER_PAT: ${{ secrets.GITHUB_AUTO_TRIGGER_PAT }}
+          AUTO_TRIGGER_GH_PAT: ${{ secrets.AUTO_TRIGGER_GH_PAT }}
         run: |
           set -euo pipefail
           MISSING=()
@@ -154,7 +154,7 @@ jobs:
                      TELEGRAM_OPS_CHAT_ID TELEGRAM_INFO_CHAT_ID \
                      GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD \
                      GRAFANA_OIDC_CLIENT_ID GRAFANA_OIDC_CLIENT_SECRET \
-                     GITHUB_AUTO_TRIGGER_PAT; do
+                     AUTO_TRIGGER_GH_PAT; do
             [ -z "${!var:-}" ] && MISSING+=("$var")
           done
           if [ ${#MISSING[@]} -gt 0 ]; then
@@ -201,7 +201,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GRAFANA_OIDC_CLIENT_ID=${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
           GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
-          GITHUB_AUTO_TRIGGER_PAT=${{ secrets.GITHUB_AUTO_TRIGGER_PAT }}
+          AUTO_TRIGGER_GH_PAT=${{ secrets.AUTO_TRIGGER_GH_PAT }}
           SECRETS
       # kamal setup vs kamal deploy: выбран setup как idempotent full-boot
       # (app + proxy + accessories). Safe на subsequent runs (Kamal skips
@@ -291,7 +291,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GRAFANA_OIDC_CLIENT_ID: ${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
           GRAFANA_OIDC_CLIENT_SECRET: ${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
-          GITHUB_AUTO_TRIGGER_PAT: ${{ secrets.GITHUB_AUTO_TRIGGER_PAT }}
+          AUTO_TRIGGER_GH_PAT: ${{ secrets.AUTO_TRIGGER_GH_PAT }}
         run: |
           set -euo pipefail
           MISSING=()
@@ -308,7 +308,7 @@ jobs:
                      TELEGRAM_OPS_CHAT_ID TELEGRAM_INFO_CHAT_ID \
                      GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD \
                      GRAFANA_OIDC_CLIENT_ID GRAFANA_OIDC_CLIENT_SECRET \
-                     GITHUB_AUTO_TRIGGER_PAT; do
+                     AUTO_TRIGGER_GH_PAT; do
             [ -z "${!var:-}" ] && MISSING+=("$var")
           done
           if [ ${#MISSING[@]} -gt 0 ]; then
@@ -371,7 +371,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GRAFANA_OIDC_CLIENT_ID=${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
           GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
-          GITHUB_AUTO_TRIGGER_PAT=${{ secrets.GITHUB_AUTO_TRIGGER_PAT }}
+          AUTO_TRIGGER_GH_PAT=${{ secrets.AUTO_TRIGGER_GH_PAT }}
           SECRETS
       # kamal setup: idempotent full-boot (see staging decision comment выше).
       # Future optimization (when prod becomes real traffic): split first-time

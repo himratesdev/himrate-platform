@@ -18,7 +18,7 @@ RSpec.describe AccessoryOps::AutoRemediation::TriggerService do
     Flipper.add(:accessory_auto_remediation)
     Flipper.enable(:accessory_auto_remediation)
     allow(ENV).to receive(:fetch).and_call_original
-    allow(ENV).to receive(:fetch).with("GITHUB_AUTO_TRIGGER_PAT").and_return("test_pat")
+    allow(ENV).to receive(:fetch).with("AUTO_TRIGGER_GH_PAT").and_return("test_pat")
   end
 
   describe "Flipper gate" do

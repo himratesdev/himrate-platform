@@ -81,7 +81,7 @@ Same as manual trigger (per `accessory_ops.md`):
 
 ### GitHub API rate-limit на trigger
 
-`AutoRemediation::TriggerService` uses `GITHUB_AUTO_TRIGGER_PAT` (fine-grained PAT, scope: actions:write на himrate-platform). Sidekiq retry с backoff handles transient errors.
+`AutoRemediation::TriggerService` uses `AUTO_TRIGGER_GH_PAT` (fine-grained PAT, scope: actions:write на himrate-platform). Sidekiq retry с backoff handles transient errors. Note: `GITHUB_` prefix зарезервирован GitHub Actions (HTTP 422 при попытке create secret).
 
 ### Sidekiq worker down при drift
 
