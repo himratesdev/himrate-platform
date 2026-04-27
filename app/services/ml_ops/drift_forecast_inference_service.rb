@@ -3,12 +3,16 @@
 # BUG-010 PR3 (FR-099/100, ADR DEC-13 corrigendum): heuristic inference (pure Ruby).
 # Daily cron via MlOps::DriftForecastInferenceWorker. For each pair с sufficient baseline:
 # predicts next drift = last_detected_at + mean_interval. Confidence based на sample_count.
-# Persists DriftForecastPrediction row если confidence >= MIN_CONFIDENCE.
+# Persists DriftForecastPrediction row если confidence >= min_for_persist.
+#
+# CR N-3: confidence thresholds DB-driven через SignalConfiguration (signal_type=
+# ml_drift_forecast, category=confidence). Admin tunable без code change.
 
 module MlOps
   class DriftForecastInferenceService
     HORIZON_DAYS = 30
-    MIN_CONFIDENCE = 0.6
+    SIGNAL_TYPE = "ml_drift_forecast"
+    CATEGORY = "confidence"
 
     Result = Struct.new(:status, :predictions_count, :pairs_skipped, keyword_init: true)
 
@@ -27,7 +31,7 @@ module MlOps
           pairs_skipped += 1
           next
         end
-        if prediction[:confidence] < MIN_CONFIDENCE
+        if prediction[:confidence] < min_confidence_for_persist
           pairs_skipped += 1
           next
         end
@@ -63,14 +67,18 @@ module MlOps
       }
     end
 
-    # Sample-size based confidence: 5..9 → 0.5; 10..29 → 0.7; 30+ → 0.85.
+    # Sample-size based confidence — thresholds DB-driven (SignalConfiguration).
     # Statistical interpretation: больше observations = tighter prediction interval.
     def self.compute_confidence(sample_count)
-      return 0.85 if sample_count >= 30
-      return 0.70 if sample_count >= 10
-      return 0.50 if sample_count >= 5
+      return SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "level_high") if sample_count >= SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "sample_threshold_high")
+      return SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "level_mid") if sample_count >= SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "sample_threshold_mid")
+      return SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "level_low") if sample_count >= SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "sample_threshold_low")
 
       0.0
+    end
+
+    def self.min_confidence_for_persist
+      SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "min_for_persist")
     end
 
     def self.within_horizon?(predicted_at)
@@ -90,6 +98,7 @@ module MlOps
       )
     end
 
-    private_class_method :build_prediction, :compute_confidence, :within_horizon?, :persist!
+    private_class_method :build_prediction, :compute_confidence, :min_confidence_for_persist,
+                         :within_horizon?, :persist!
   end
 end

@@ -20,6 +20,8 @@ end
 # Specs rely on it for seeding test data — require eagerly to avoid NameError
 # when RecommendationTemplate already exists (skipping the conditional load).
 require Rails.root.join("db/seeds/health_score.rb")
+# BUG-010 PR3: seeds для ML drift forecast confidence thresholds (SignalConfiguration rows)
+require Rails.root.join("db/seeds/ml_drift_forecast.rb")
 
 # TASK-039 Phase A3b CR N-4: shared_contexts loader. Additional support files
 # can live here (factories shared across multiple specs, common setups, etc.).

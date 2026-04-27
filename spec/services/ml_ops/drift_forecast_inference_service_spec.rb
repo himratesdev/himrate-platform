@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe MlOps::DriftForecastInferenceService do
+  before { MlDriftForecastSeeds.call }
+
   describe ".call" do
     context "когда нет baselines" do
       it "returns :ok с 0 predictions" do
