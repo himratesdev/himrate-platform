@@ -51,6 +51,9 @@ gem "sidekiq", "~> 7.0"
 gem "sidekiq-cron", "~> 2.0"
 gem "connection_pool", "~> 2.5"
 
+# BUG-010 PR2: Prometheus metrics endpoint /metrics для observability stack scrape.
+gem "prometheus_exporter", "~> 2.2"
+
 # RSpec for testing
 group :development, :test do
   gem "rspec-rails", "~> 7.0"
