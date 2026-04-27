@@ -264,8 +264,6 @@ GEM
       prettyprint
     prettyprint (0.2.0)
     prism (1.9.0)
-    prometheus_exporter (2.3.1)
-      webrick
     psych (5.3.1)
       date
       stringio
@@ -446,7 +444,6 @@ GEM
       addressable (>= 2.8.0)
       crack (>= 0.3.2)
       hashdiff (>= 0.4.0, < 2.0.0)
-    webrick (1.9.2)
     websocket (1.2.11)
     websocket-driver (0.8.0)
       base64
@@ -486,7 +483,6 @@ DEPENDENCIES
   jwt (~> 2.8)
   kamal
   pg (~> 1.1)
-  prometheus_exporter (~> 2.2)
   puma (>= 5.0)
   pundit (~> 2.4)
   pundit-matchers (~> 4.0)

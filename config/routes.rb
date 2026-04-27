@@ -10,11 +10,6 @@ Rails.application.routes.draw do
   # FR-003: Health endpoint with DB + Redis checks
   get "health" => "health#show"
 
-  # BUG-010 PR2 (FR-038/039): Prometheus metrics endpoint.
-  # Internal-only — Prometheus accessory scrapes via Docker network (himrate-web:3000/metrics).
-  # External access blocked by kamal proxy (only proxies / and /api/* paths).
-  mount PrometheusExporter::Server::WebServer.new(timeout: 5).app, at: "/metrics"
-
   # TASK-013: Flipper UI (admin-only, HTTP Basic Auth)
   flipper_app = Flipper::UI.app(Flipper) do |builder|
     builder.use Rack::Auth::Basic, "Flipper" do |user, password|

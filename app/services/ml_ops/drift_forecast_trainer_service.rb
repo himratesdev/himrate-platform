@@ -29,15 +29,16 @@ module MlOps
       end
 
       payload = build_training_dataset(events_count)
-      version = next_model_version
-      output, exit_status = run_python_trainer(payload: payload, version: version)
+      version_number = next_model_version
+      version_label = format("v%d", version_number)
+      output, exit_status = run_python_trainer(payload: payload, version_number: version_number)
 
       if exit_status.zero?
         accuracy = parse_accuracy(output)
         Rails.logger.info(
-          "MlOps::DriftForecastTrainerService: trained version=#{version} events=#{events_count} accuracy=#{accuracy}"
+          "MlOps::DriftForecastTrainerService: trained version=#{version_label} events=#{events_count} accuracy=#{accuracy}"
         )
-        Result.new(status: :trained, events_count: events_count, model_version: version, accuracy: accuracy)
+        Result.new(status: :trained, events_count: events_count, model_version: version_label, accuracy: accuracy)
       else
         Rails.logger.error("MlOps::DriftForecastTrainerService: training failed — #{output}")
         Result.new(status: :failed, events_count: events_count)
@@ -64,12 +65,15 @@ module MlOps
       existing = Dir.glob(File.join(MODEL_DIR, "drift_forecast_v*.bin")).map do |f|
         File.basename(f).match(/drift_forecast_v(\d+)\.bin/)&.captures&.first.to_i
       end
-      "v#{(existing.max || 0) + 1}"
+      Integer(existing.max || 0) + 1
     end
 
-    def self.run_python_trainer(payload:, version:)
+    def self.run_python_trainer(payload:, version_number:)
       stdin_data = JSON.generate(payload)
-      output_path = MODEL_DIR.join("drift_forecast_#{version}.bin")
+      # Integer coercion + format("%d") — defense-in-depth против command injection
+      # (next_model_version returns Integer, но enforce здесь explicitly для Brakeman static analysis).
+      filename = format("drift_forecast_v%d.bin", Integer(version_number))
+      output_path = MODEL_DIR.join(filename)
       command = [ "python3", PYTHON_TRAINER.to_s, "--output", output_path.to_s ]
       output, status = Open3.capture2e(*command, stdin_data: stdin_data)
       [ output, status.exitstatus ]
