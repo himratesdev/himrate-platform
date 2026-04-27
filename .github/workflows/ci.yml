@@ -136,6 +136,8 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GRAFANA_OIDC_CLIENT_ID: ${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
           GRAFANA_OIDC_CLIENT_SECRET: ${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
+          # BUG-010 PR2 (ADR DEC-3): fine-grained PAT for auto-remediation workflow dispatch
+          AUTO_TRIGGER_GH_PAT: ${{ secrets.AUTO_TRIGGER_GH_PAT }}
         run: |
           set -euo pipefail
           MISSING=()
@@ -151,7 +153,8 @@ jobs:
                      TELEGRAM_OPS_BOT_TOKEN TELEGRAM_CRITICAL_CHAT_ID \
                      TELEGRAM_OPS_CHAT_ID TELEGRAM_INFO_CHAT_ID \
                      GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD \
-                     GRAFANA_OIDC_CLIENT_ID GRAFANA_OIDC_CLIENT_SECRET; do
+                     GRAFANA_OIDC_CLIENT_ID GRAFANA_OIDC_CLIENT_SECRET \
+                     AUTO_TRIGGER_GH_PAT; do
             [ -z "${!var:-}" ] && MISSING+=("$var")
           done
           if [ ${#MISSING[@]} -gt 0 ]; then
@@ -159,7 +162,7 @@ jobs:
             printf '::error::  • %s\n' "${MISSING[@]}"
             exit 1
           fi
-          echo "✓ All 24 required secrets present"
+          echo "✓ All 25 required secrets present"
       # File-write approach для Kamal secrets. Эмпирически проверено что
       # Kamal 2.11 корректно работает только с `.kamal/secrets.<destination>`
       # файлом (env-block alone — broken docker login на ghcr, incident
@@ -198,6 +201,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GRAFANA_OIDC_CLIENT_ID=${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
           GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
+          AUTO_TRIGGER_GH_PAT=${{ secrets.AUTO_TRIGGER_GH_PAT }}
           SECRETS
       # kamal setup vs kamal deploy: выбран setup как idempotent full-boot
       # (app + proxy + accessories). Safe на subsequent runs (Kamal skips
@@ -287,6 +291,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GRAFANA_OIDC_CLIENT_ID: ${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
           GRAFANA_OIDC_CLIENT_SECRET: ${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
+          AUTO_TRIGGER_GH_PAT: ${{ secrets.AUTO_TRIGGER_GH_PAT }}
         run: |
           set -euo pipefail
           MISSING=()
@@ -302,7 +307,8 @@ jobs:
                      TELEGRAM_OPS_BOT_TOKEN TELEGRAM_CRITICAL_CHAT_ID \
                      TELEGRAM_OPS_CHAT_ID TELEGRAM_INFO_CHAT_ID \
                      GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD \
-                     GRAFANA_OIDC_CLIENT_ID GRAFANA_OIDC_CLIENT_SECRET; do
+                     GRAFANA_OIDC_CLIENT_ID GRAFANA_OIDC_CLIENT_SECRET \
+                     AUTO_TRIGGER_GH_PAT; do
             [ -z "${!var:-}" ] && MISSING+=("$var")
           done
           if [ ${#MISSING[@]} -gt 0 ]; then
@@ -310,7 +316,7 @@ jobs:
             printf '::error::  • %s\n' "${MISSING[@]}"
             exit 1
           fi
-          echo "✓ All 24 required secrets present"
+          echo "✓ All 25 required secrets present"
       # W-1 fix: URL-encode POSTGRES_PASSWORD перед DATABASE_URL construction.
       # Python urllib.parse.quote обрабатывает ЛЮБОЙ password (base64 with +/=,
       # special chars, пробелы) — no format constraint на operator. Writes
@@ -365,6 +371,7 @@ jobs:
           GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
           GRAFANA_OIDC_CLIENT_ID=${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
           GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
+          AUTO_TRIGGER_GH_PAT=${{ secrets.AUTO_TRIGGER_GH_PAT }}
           SECRETS
       # kamal setup: idempotent full-boot (see staging decision comment выше).
       # Future optimization (when prod becomes real traffic): split first-time

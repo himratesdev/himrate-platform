@@ -1,0 +1,12 @@
+# BUG-010 PR2: Multi-VPS host resolution config (ADR DEC-30..33).
+# Pre-launch: single host для всех destinations. Multi-VPS scaling = добавить host
+# к array → AccessoryOps services + AccessoryDriftDetectorWorker target всех hosts sequential.
+#
+# Schema: <destination>: [<host>, <host>, ...]
+# Loaded в Rails initializer (config/initializers/accessory_hosts.rb)
+# Fail-fast on YAML parse errors (ADR DEC-6).
+
+staging:
+  - 194.135.85.159
+production:
+  - 194.135.85.159
