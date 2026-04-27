@@ -2,18 +2,35 @@
 
 # BUG-010 PR3 (FR-015..022, FR-122..134): rake tasks consumed accessory-ops.yml workflow.
 # Запускаются via SSH к web container на VPS:
-#   docker exec himrate-web bin/rails accessory_ops:<task>[args]
+#   docker exec [-i] himrate-web bin/rails accessory_ops:<task>[args]
 #
 # Workflow captures stdout (event_id, healthy|unhealthy verdict) для downstream steps.
 # Все tasks fail loud — exit 1 + structured stderr — workflow detects + branches accordingly.
+#
+# CR M-4 (defense-in-depth): каждый task с (destination, accessory) args validates через
+# AccessoryOps::DriftCheckService::ALLOWED_DESTINATIONS/ALLOWED_ACCESSORIES. Workflow type:
+# choice enums GitHub-side, но enforce здесь explicitly — paranoia.
+
+require "json"
 
 namespace :accessory_ops do
+  # Validation helper — reused всеми tasks с (destination, accessory) args.
+  validate_pair = lambda do |destination, accessory|
+    unless AccessoryOps::DriftCheckService::ALLOWED_DESTINATIONS.include?(destination)
+      abort "invalid destination=#{destination.inspect} (allowed: #{AccessoryOps::DriftCheckService::ALLOWED_DESTINATIONS.inspect})"
+    end
+    unless AccessoryOps::DriftCheckService::ALLOWED_ACCESSORIES.include?(accessory)
+      abort "invalid accessory=#{accessory.inspect} (allowed: #{AccessoryOps::DriftCheckService::ALLOWED_ACCESSORIES.inspect})"
+    end
+  end
+
   # FR-015..017: post-action health polling. Exits 0 = healthy, 1 = unhealthy.
   # Used after kamal accessory action в workflow — failure → triggers rollback path.
   desc "Poll AccessoryOps::HealthCheckService до timeout (default 300s, every 10s)"
   task :health_verify, %i[destination accessory timeout_seconds] => :environment do |_t, args|
     destination = args[:destination] or abort("Usage: accessory_ops:health_verify[destination,accessory,timeout_seconds]")
     accessory = args[:accessory] or abort("Missing accessory argument")
+    validate_pair.call(destination, accessory)
     timeout = args[:timeout_seconds].present? ? args[:timeout_seconds].to_i : 300
 
     deadline = Time.current + timeout
@@ -39,44 +56,55 @@ namespace :accessory_ops do
     end
   end
 
-  # FR-018..022: auto-rollback via kamal accessory boot к previous_image.
-  # Validates previous_image present + pullable до execution. Fail loud если registry tag missing —
-  # critical alert + manual intervention required (per "build for years" — silent rollback gap = bad).
-  desc "Rollback accessory к previous_image (выясняется из StateService)"
-  task :rollback, %i[destination accessory] => :environment do |_t, args|
-    destination = args[:destination] or abort("Usage: accessory_ops:rollback[destination,accessory]")
+  # FR-018..022 (CR B-2 honest naming): "rollback intent" — requests Kamal к restart accessory
+  # с current deploy.yml image. ТОЧНЫЙ image revert через CLI Kamal не поддерживает, real
+  # auto-rollback требует programmatic deploy.yml edit + commit + redeploy (TASK-083 deferred —
+  # высокий blast radius, постpone к manual operator path). Validates previous_image present
+  # AND differs от current — иначе no-op exit 0.
+  desc "Request Kamal restart accessory (intent: revert. Real image revert requires deploy.yml edit — see TASK-083)"
+  task :rollback_intent, %i[destination accessory] => :environment do |_t, args|
+    destination = args[:destination] or abort("Usage: accessory_ops:rollback_intent[destination,accessory]")
     accessory = args[:accessory] or abort("Missing accessory argument")
+    validate_pair.call(destination, accessory)
 
-    previous = AccessoryOps::StateService.previous_image(destination: destination, accessory: accessory)
-    if previous.blank?
-      warn "no_previous_image destination=#{destination} accessory=#{accessory}"
+    state = AccessoryState.find_by(destination: destination, accessory: accessory)
+    if state.nil?
+      warn "no_state destination=#{destination} accessory=#{accessory}"
+      exit 1
+    end
+
+    if state.previous_image.blank?
+      warn "no_previous_image destination=#{destination} accessory=#{accessory} current=#{state.current_image}"
       AlertmanagerNotifier.push(
         labels: { alertname: "AccessoryRollback", severity: "critical",
                   destination: destination, accessory: accessory, event_type: "rollback_no_previous" },
-        annotations: { summary: "Rollback не возможен: previous_image отсутствует",
-                       description: "AccessoryState.previous_image NULL — manual intervention required" }
+        annotations: { summary: "Rollback intent невозможен: previous_image отсутствует",
+                       description: "AccessoryState.previous_image NULL — manual operator intervention required" }
       )
       PrometheusMetrics.observe_rollback(destination: destination, accessory: accessory, result: "no_previous")
       exit 1
     end
 
-    puts "rolling_back destination=#{destination} accessory=#{accessory} target_image=#{previous}"
-    # Execute kamal accessory boot. previous_image берётся из state в текущем deploy.yml — рабочий
-    # rollback требует deploy.yml уже rolled back к previous tag (operator updates deploy.yml +
-    # `kamal accessory boot`). Здесь мы только trigger — workflow выше rollback-aware.
+    if state.previous_image == state.current_image
+      warn "no_op_rollback destination=#{destination} accessory=#{accessory} current=previous=#{state.current_image}"
+      exit 1
+    end
+
+    puts "rollback_intent destination=#{destination} accessory=#{accessory} target_image=#{state.previous_image} current_image=#{state.current_image}"
+    # NB: kamal accessory boot uses image из current deploy.yml. Если deploy.yml not yet
+    # rolled back, this just restarts с current_image — НЕ reverts. Real revert = TASK-083.
     success = system("kamal", "accessory", "boot", accessory, "-d", destination)
 
     AlertmanagerNotifier.push(
       labels: { alertname: "AccessoryRollback",
                 severity: success ? "warning" : "critical",
                 destination: destination, accessory: accessory,
-                event_type: success ? "rollback_success" : "rollback_failed" },
-      annotations: { summary: "Rollback #{success ? 'выполнен' : 'провален'}: #{accessory} на #{destination}",
-                     description: "target_image=#{previous}" }
+                event_type: success ? "rollback_intent_executed" : "rollback_intent_failed" },
+      annotations: { summary: "Kamal accessory boot #{success ? 'выполнен' : 'провален'}: #{accessory} на #{destination}",
+                     description: "target_image=#{state.previous_image} current_image=#{state.current_image} — manual deploy.yml revert may be required" }
     )
     PrometheusMetrics.observe_rollback(destination: destination, accessory: accessory,
-                                       result: success ? "success" : "failed")
-
+                                       result: success ? "executed" : "failed")
     exit(success ? 0 : 1)
   end
 
@@ -87,6 +115,7 @@ namespace :accessory_ops do
     accessory = args[:accessory] or abort("Missing accessory argument")
     image = args[:image] or abort("Missing image argument")
     status = args[:status] or abort("Missing status argument")
+    validate_pair.call(destination, accessory)
 
     record = AccessoryOps::StateService.update_after_health_check(
       destination: destination, accessory: accessory, image: image, status: status
@@ -94,13 +123,12 @@ namespace :accessory_ops do
     puts "state_updated id=#{record.id} current=#{record.current_image} previous=#{record.previous_image}"
   end
 
-  # Workflow-friendly wrapper: reads runtime image via DriftCheckService (kamal accessory
-  # details parse + docker inspect SSH), then calls StateService.update_after_health_check.
-  # Used после healthy verify — single command captures runtime + stores state.
+  # Workflow-friendly wrapper: reads runtime image via DriftCheckService, then persists.
   desc "Refresh AccessoryState с runtime image (DriftCheckService + StateService)"
   task :"state:refresh", %i[destination accessory status] => :environment do |_t, args|
     destination = args[:destination] or abort("Usage: accessory_ops:state:refresh[destination,accessory,status]")
     accessory = args[:accessory] or abort("Missing accessory argument")
+    validate_pair.call(destination, accessory)
     status = args[:status] || "healthy"
 
     drift = AccessoryOps::DriftCheckService.call(destination: destination, accessory: accessory)
@@ -117,13 +145,12 @@ namespace :accessory_ops do
   end
 
   namespace :downtime do
-    # FR hooks: INSERT downtime event при start (action=reboot/restart/stop). Outputs event_id —
-    # workflow captures для последующего :end call.
     desc "INSERT accessory_downtime_events row, output event_id"
     task :start, %i[destination accessory source drift_event_id] => :environment do |_t, args|
       destination = args[:destination] or abort("Usage: accessory_ops:downtime:start[destination,accessory,source,drift_event_id]")
       accessory = args[:accessory] or abort("Missing accessory argument")
       source = args[:source] or abort("Missing source argument (drift|restart|health_fail|rollback)")
+      validate_pair.call(destination, accessory)
       drift_event_id = args[:drift_event_id].presence
 
       event = AccessoryDowntimeEvent.create!(
@@ -133,7 +160,6 @@ namespace :accessory_ops do
       puts event.id
     end
 
-    # Close downtime event — sets ended_at + computes duration_seconds (model before_save).
     desc "Close accessory_downtime_event (sets ended_at)"
     task :end, %i[event_id] => :environment do |_t, args|
       event_id = args[:event_id] or abort("Usage: accessory_ops:downtime:end[event_id]")
@@ -144,15 +170,20 @@ namespace :accessory_ops do
     end
   end
 
-  # Wraps AlertmanagerNotifier.push. Workflow uses для structured alert после kamal action.
-  desc "Push alert через AlertmanagerNotifier"
-  task :notify, %i[event_type severity destination accessory summary description] => :environment do |_t, args|
-    event_type = args[:event_type] or abort("Usage: accessory_ops:notify[event_type,severity,destination,accessory,summary,description]")
-    severity = args[:severity] or abort("Missing severity")
-    destination = args[:destination] or abort("Missing destination")
-    accessory = args[:accessory] or abort("Missing accessory")
-    summary = args[:summary] || "#{event_type}: #{destination}/#{accessory}"
-    description = args[:description] || "Triggered by accessory-ops workflow"
+  # CR B-1: notify reads JSON payload из STDIN — bulletproof против commas/spaces/quotes
+  # в summary/description. Workflow: printf '{"event_type":"...",...}' | docker exec -i ...
+  # Required keys: event_type, severity, destination, accessory. Optional: summary, description.
+  desc "Push alert через AlertmanagerNotifier (JSON payload from STDIN)"
+  task notify: :environment do
+    payload = JSON.parse($stdin.read)
+    event_type = payload.fetch("event_type")
+    severity = payload.fetch("severity")
+    destination = payload.fetch("destination")
+    accessory = payload.fetch("accessory")
+    summary = payload["summary"].presence || "#{event_type}: #{destination}/#{accessory}"
+    description = payload["description"].presence || "Triggered by accessory-ops workflow"
+
+    validate_pair.call(destination, accessory)
 
     AlertmanagerNotifier.push(
       labels: { alertname: "AccessoryOps", severity: severity,
@@ -178,16 +209,11 @@ namespace :accessory_ops do
   end
 
   namespace :metrics do
-    # Cleanup stale grouping keys в Prometheus pushgateway — pushgateway accumulates entries
-    # bez TTL. Weekly cron should call это (grouping keys для accessories которые давно не emit
-    # анти-stale data).
     desc "Delete pushgateway groupings older than N days (default 7)"
     task :cleanup_stale_groupings, %i[days] => :environment do |_t, args|
       days = args[:days].present? ? args[:days].to_i : 7
       cutoff = Time.current - days.days
 
-      # Iterate AccessoryState — single source of truth для known (destination, accessory) pairs.
-      # Pairs без recent health_check (< cutoff) → delete grouping. Active pairs preserved.
       stale = AccessoryState.where("last_health_check_at < ? OR last_health_check_at IS NULL", cutoff)
       jobs = %w[accessory_ops accessory_drift accessory_health accessory_rollback accessory_cost]
       deleted = 0

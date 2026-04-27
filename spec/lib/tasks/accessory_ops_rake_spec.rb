@@ -16,6 +16,32 @@ RSpec.describe "accessory_ops rake tasks" do
     allow(AlertmanagerNotifier).to receive(:push)
   end
 
+  describe "validate_pair! defense-in-depth (CR M-4)" do
+    it "aborts при invalid destination" do
+      expect {
+        Rake::Task["accessory_ops:health_verify"].invoke("evil_shell", "redis", "10")
+      }.to raise_error(SystemExit)
+    end
+
+    it "aborts при invalid accessory" do
+      expect {
+        Rake::Task["accessory_ops:health_verify"].invoke("staging", "rm -rf /", "10")
+      }.to raise_error(SystemExit)
+    end
+
+    it "rollback_intent тоже валидирует" do
+      expect {
+        Rake::Task["accessory_ops:rollback_intent"].invoke("staging", "$(whoami)")
+      }.to raise_error(SystemExit)
+    end
+
+    it "downtime:start тоже валидирует" do
+      expect {
+        Rake::Task["accessory_ops:downtime:start"].invoke("evil", "redis", "drift")
+      }.to raise_error(SystemExit)
+    end
+  end
+
   describe "accessory_ops:health_verify" do
     it "exits 0 при healthy result сразу" do
       allow(AccessoryOps::HealthCheckService).to receive(:call).and_return(
@@ -30,7 +56,7 @@ RSpec.describe "accessory_ops rake tasks" do
       allow(AccessoryOps::HealthCheckService).to receive(:call).and_return(
         instance_double(AccessoryOps::HealthCheckService::Result, healthy?: false, status: "unhealthy")
       )
-      allow_any_instance_of(Object).to receive(:sleep) # skip 10s waits
+      allow_any_instance_of(Object).to receive(:sleep)
       expect {
         Rake::Task["accessory_ops:health_verify"].invoke("staging", "redis", "0")
       }.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
@@ -38,11 +64,18 @@ RSpec.describe "accessory_ops rake tasks" do
     end
   end
 
-  describe "accessory_ops:rollback" do
-    it "exits 1 + critical alert когда previous_image отсутствует" do
-      allow(AccessoryOps::StateService).to receive(:previous_image).and_return(nil)
+  describe "accessory_ops:rollback_intent (CR B-2)" do
+    it "exits 1 когда AccessoryState отсутствует" do
       expect {
-        Rake::Task["accessory_ops:rollback"].invoke("production", "redis")
+        Rake::Task["accessory_ops:rollback_intent"].invoke("production", "redis")
+      }.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
+    end
+
+    it "exits 1 + critical alert когда previous_image отсутствует" do
+      AccessoryState.create!(destination: "production", accessory: "redis",
+                             current_image: "redis:7.4-alpine", previous_image: nil)
+      expect {
+        Rake::Task["accessory_ops:rollback_intent"].invoke("production", "redis")
       }.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
       expect(AlertmanagerNotifier).to have_received(:push).with(
         labels: hash_including(severity: "critical", event_type: "rollback_no_previous"),
@@ -53,26 +86,23 @@ RSpec.describe "accessory_ops rake tasks" do
       )
     end
 
-    it "exits 0 когда kamal accessory boot succeeds" do
-      allow(AccessoryOps::StateService).to receive(:previous_image).and_return("redis:7.2-alpine")
-      allow_any_instance_of(Object).to receive(:system).with("kamal", "accessory", "boot", "redis", "-d", "production").and_return(true)
+    it "exits 1 (no-op) когда previous_image == current_image" do
+      AccessoryState.create!(destination: "production", accessory: "redis",
+                             current_image: "redis:7.4-alpine", previous_image: "redis:7.4-alpine")
       expect {
-        Rake::Task["accessory_ops:rollback"].invoke("production", "redis")
-      }.to raise_error(SystemExit) { |e| expect(e.status).to eq(0) }
-      expect(PrometheusMetrics).to have_received(:observe_rollback).with(
-        destination: "production", accessory: "redis", result: "success"
-      )
+        Rake::Task["accessory_ops:rollback_intent"].invoke("production", "redis")
+      }.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
     end
 
-    it "exits 1 + critical alert когда kamal command fails" do
-      allow(AccessoryOps::StateService).to receive(:previous_image).and_return("redis:7.2-alpine")
-      allow_any_instance_of(Object).to receive(:system).and_return(false)
+    it "exits 0 + executed alert когда kamal accessory boot succeeds" do
+      AccessoryState.create!(destination: "production", accessory: "redis",
+                             current_image: "redis:7.4-alpine", previous_image: "redis:7.2-alpine")
+      allow_any_instance_of(Object).to receive(:system).with("kamal", "accessory", "boot", "redis", "-d", "production").and_return(true)
       expect {
-        Rake::Task["accessory_ops:rollback"].invoke("production", "redis")
-      }.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
-      expect(AlertmanagerNotifier).to have_received(:push).with(
-        labels: hash_including(severity: "critical", event_type: "rollback_failed"),
-        annotations: kind_of(Hash)
+        Rake::Task["accessory_ops:rollback_intent"].invoke("production", "redis")
+      }.to raise_error(SystemExit) { |e| expect(e.status).to eq(0) }
+      expect(PrometheusMetrics).to have_received(:observe_rollback).with(
+        destination: "production", accessory: "redis", result: "executed"
       )
     end
   end
@@ -138,16 +168,56 @@ RSpec.describe "accessory_ops rake tasks" do
     end
   end
 
-  describe "accessory_ops:notify" do
-    it "invokes AlertmanagerNotifier.push с structured labels" do
-      Rake::Task["accessory_ops:notify"].invoke(
-        "drift_open", "warning", "production", "redis", "Test summary", "Details"
-      )
+  describe "accessory_ops:notify (CR B-1 — JSON STDIN)" do
+    it "reads JSON payload + invokes AlertmanagerNotifier" do
+      payload = {
+        event_type: "drift_open", severity: "warning",
+        destination: "production", accessory: "redis",
+        summary: "Test summary, with comma — em-dash, и кириллица",
+        description: "actor=human triggered_by=manual run=https://github.com/example/run/123"
+      }.to_json
+      original_stdin = $stdin
+      $stdin = StringIO.new(payload)
+      begin
+        Rake::Task["accessory_ops:notify"].invoke
+      ensure
+        $stdin = original_stdin
+      end
       expect(AlertmanagerNotifier).to have_received(:push).with(
         labels: hash_including(event_type: "drift_open", severity: "warning",
                                destination: "production", accessory: "redis"),
-        annotations: hash_including(summary: "Test summary", description: "Details")
+        annotations: hash_including(
+          summary: "Test summary, with comma — em-dash, и кириллица",
+          description: "actor=human triggered_by=manual run=https://github.com/example/run/123"
+        )
       )
+    end
+
+    it "validates pair (defense-in-depth)" do
+      payload = {
+        event_type: "x", severity: "info",
+        destination: "evil", accessory: "redis"
+      }.to_json
+      original_stdin = $stdin
+      $stdin = StringIO.new(payload)
+      begin
+        expect {
+          Rake::Task["accessory_ops:notify"].invoke
+        }.to raise_error(SystemExit)
+      ensure
+        $stdin = original_stdin
+      end
+    end
+
+    it "raises на missing required key (KeyError → workflow surface)" do
+      payload = { event_type: "x" }.to_json # missing severity, destination, accessory
+      original_stdin = $stdin
+      $stdin = StringIO.new(payload)
+      begin
+        expect { Rake::Task["accessory_ops:notify"].invoke }.to raise_error(KeyError)
+      ensure
+        $stdin = original_stdin
+      end
     end
   end
 
@@ -166,17 +236,16 @@ RSpec.describe "accessory_ops rake tasks" do
   end
 
   describe "accessory_ops:metrics:cleanup_stale_groupings" do
-    it "deletes pushgateway groupings для stale pairs (last_health_check_at старше cutoff)" do
+    it "deletes pushgateway groupings для stale pairs" do
       AccessoryState.create!(
         destination: "production", accessory: "redis", current_image: "redis:7.4-alpine",
         last_health_check_at: 10.days.ago
       )
       AccessoryState.create!(
         destination: "staging", accessory: "db", current_image: "postgres:16",
-        last_health_check_at: 1.hour.ago # active
+        last_health_check_at: 1.hour.ago
       )
       Rake::Task["accessory_ops:metrics:cleanup_stale_groupings"].invoke("7")
-      # 5 jobs × 1 stale pair = 5 delete_grouping calls
       expect(PrometheusMetrics).to have_received(:delete_grouping).exactly(5).times
     end
   end

@@ -247,8 +247,9 @@ jobs:
               "docker exec himrate-web bin/rails 'accessory_ops:downtime:end[${EVENT_ID}]'"
           fi
 
-      # PR3 FR-006/070: AlertmanagerNotifier push с structured labels — Alertmanager
-      # routing tree dispatches к Telegram (info/warning/critical channels per severity).
+      # PR3 FR-006/070 (CR B-1 fix): AlertmanagerNotifier push через JSON payload на STDIN.
+      # Bulletproof против commas/spaces/quotes/em-dashes в summary/description.
+      # Workflow строит JSON через jq -n + pipes к docker exec -i (stdin keep-open).
       - name: Send notification
         if: always()
         env:
@@ -280,8 +281,16 @@ jobs:
             SUMMARY="${ACTION} ${ACCESSORY} on ${DESTINATION} completed (no health verify)"
           fi
           DESCRIPTION="actor=${ACTOR} triggered_by=${TRIGGERED_BY} run=${RUN_URL}"
-          ssh "root@194.135.85.159" \
-            "docker exec himrate-web bin/rails 'accessory_ops:notify[${EVENT_TYPE},${SEVERITY},${DESTINATION},${ACCESSORY},${SUMMARY},${DESCRIPTION}]'"
+          PAYLOAD=$(jq -n \
+            --arg event_type "$EVENT_TYPE" \
+            --arg severity "$SEVERITY" \
+            --arg destination "$DESTINATION" \
+            --arg accessory "$ACCESSORY" \
+            --arg summary "$SUMMARY" \
+            --arg description "$DESCRIPTION" \
+            '{event_type:$event_type, severity:$severity, destination:$destination, accessory:$accessory, summary:$summary, description:$description}')
+          printf '%s' "$PAYLOAD" | ssh "root@194.135.85.159" \
+            "docker exec -i himrate-web bin/rails accessory_ops:notify"
 
       # FR-005: audit annotation на success.
       - name: Emit audit notice (success)
