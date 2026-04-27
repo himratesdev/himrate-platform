@@ -42,13 +42,13 @@ Sidekiq.configure_server do |config|
       },
       "ml_drift_forecast_trainer" => {
         "cron" => "0 3 * * 0", # Sundays 03:00 UTC (weekly, ADR DEC-13)
-        "class" => "MlOps::DriftForecastTrainerService",
+        "class" => "MlOps::DriftForecastTrainerWorker",
         "queue" => "long_running",
         "description" => "Train drift forecast model (skips if <50 events accumulated)"
       },
       "ml_drift_forecast_inference" => {
         "cron" => "0 4 * * *", # Daily at 04:00 UTC
-        "class" => "MlOps::DriftForecastInferenceService",
+        "class" => "MlOps::DriftForecastInferenceWorker",
         "queue" => "default",
         "description" => "Generate drift predictions next 30 days (skips if no model artifact)"
       },
