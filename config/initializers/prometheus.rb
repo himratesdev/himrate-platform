@@ -108,7 +108,7 @@ module PrometheusMetrics
     end
 
     def escape_label(value)
-      value.to_s.gsub('\\', '\\\\').gsub('"', '\"').gsub("\n", '\n')
+      value.to_s.gsub("\\", "\\\\").gsub('"', '\"').gsub("\n", '\n')
     end
 
     def path_for(job, grouping)
