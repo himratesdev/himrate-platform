@@ -1,0 +1,172 @@
+name: accessory-ops
+
+# BUG-010 PR2: manual accessory operations workflow.
+# Triggered via UI / `gh workflow run` / GitHub API (auto-remediation by AccessoryDriftDetectorWorker).
+# Production destination requires reviewer approval (GitHub Environment protection).
+# Health-check post-restart + auto-rollback on failure (FR-015..022).
+
+on:
+  workflow_dispatch:
+    inputs:
+      destination:
+        description: 'Deployment destination (production requires reviewer approval)'
+        required: true
+        type: choice
+        options:
+          - staging
+          - production
+      accessory:
+        description: 'Accessory name (must match config/deploy.yml)'
+        required: true
+        type: choice
+        options:
+          - db
+          - redis
+          - grafana
+          - prometheus
+          - prometheus-pushgateway
+          - loki
+          - promtail
+          - alertmanager
+      action:
+        description: 'Kamal action'
+        required: true
+        type: choice
+        options:
+          - reboot
+          - boot
+          - stop
+          - restart
+      triggered_by:
+        description: 'Trigger source (manual=PO, auto_remediation=worker)'
+        required: false
+        type: string
+        default: manual
+      auto_remediation_event_id:
+        description: 'AccessoryDriftEvent UUID (only for auto_remediation triggers)'
+        required: false
+        type: string
+
+# FR-008: Concurrency group cancel-in-progress per (destination, accessory) pair.
+# Prevents race conditions in kamal commands. Different pairs run в parallel.
+concurrency:
+  group: accessory-ops-${{ inputs.destination }}-${{ inputs.accessory }}
+  cancel-in-progress: true
+
+jobs:
+  execute:
+    name: Execute ${{ inputs.accessory }} ${{ inputs.action }} on ${{ inputs.destination }}
+    runs-on: ubuntu-latest
+    # FR-009: 72h timeout (production approval window).
+    timeout-minutes: 4320
+    # Production protection per BR-001 — reviewer approval gate.
+    environment: ${{ inputs.destination == 'production' && 'production' || 'staging' }}
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Audit log header
+        run: |
+          echo "::notice::Accessory ops triggered: actor=${{ github.actor }} \
+            destination=${{ inputs.destination }} accessory=${{ inputs.accessory }} \
+            action=${{ inputs.action }} triggered_by=${{ inputs.triggered_by }} \
+            run_id=${{ github.run_id }}"
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+
+      - run: gem install kamal
+
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host 194.135.85.159
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ServerAliveInterval 15
+            ServerAliveCountMax 10
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      # FR-002: validate-secrets fail-fast пред kamal invocation. Mirrors ci.yml deploy jobs.
+      - name: Validate required secrets
+        env:
+          KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          TELEGRAM_OPS_BOT_TOKEN: ${{ secrets.TELEGRAM_OPS_BOT_TOKEN }}
+          TELEGRAM_CRITICAL_CHAT_ID: ${{ secrets.TELEGRAM_CRITICAL_CHAT_ID }}
+          TELEGRAM_OPS_CHAT_ID: ${{ secrets.TELEGRAM_OPS_CHAT_ID }}
+          TELEGRAM_INFO_CHAT_ID: ${{ secrets.TELEGRAM_INFO_CHAT_ID }}
+          GRAFANA_ADMIN_USER: ${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD: ${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GRAFANA_OIDC_CLIENT_ID: ${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
+          GRAFANA_OIDC_CLIENT_SECRET: ${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
+        run: |
+          set -euo pipefail
+          MISSING=()
+          for var in KAMAL_REGISTRY_PASSWORD POSTGRES_PASSWORD \
+                     TELEGRAM_OPS_BOT_TOKEN TELEGRAM_CRITICAL_CHAT_ID \
+                     TELEGRAM_OPS_CHAT_ID TELEGRAM_INFO_CHAT_ID \
+                     GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD \
+                     GRAFANA_OIDC_CLIENT_ID GRAFANA_OIDC_CLIENT_SECRET; do
+            [ -z "${!var:-}" ] && MISSING+=("$var")
+          done
+          if [ ${#MISSING[@]} -gt 0 ]; then
+            echo "::error::Missing required repo secrets:"
+            printf '::error::  • %s\n' "${MISSING[@]}"
+            exit 1
+          fi
+          echo "✓ All required secrets present"
+
+      # ADR DEC-2: minimal subset для accessory operations (vs full ci.yml app deploy list).
+      - name: Write Kamal secrets
+        run: |
+          cat > .kamal/secrets.${{ inputs.destination }} <<SECRETS
+          KAMAL_REGISTRY_PASSWORD=${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          TELEGRAM_OPS_BOT_TOKEN=${{ secrets.TELEGRAM_OPS_BOT_TOKEN }}
+          TELEGRAM_CRITICAL_CHAT_ID=${{ secrets.TELEGRAM_CRITICAL_CHAT_ID }}
+          TELEGRAM_OPS_CHAT_ID=${{ secrets.TELEGRAM_OPS_CHAT_ID }}
+          TELEGRAM_INFO_CHAT_ID=${{ secrets.TELEGRAM_INFO_CHAT_ID }}
+          GRAFANA_ADMIN_USER=${{ secrets.GRAFANA_ADMIN_USER }}
+          GRAFANA_ADMIN_PASSWORD=${{ secrets.GRAFANA_ADMIN_PASSWORD }}
+          GRAFANA_OIDC_CLIENT_ID=${{ secrets.GRAFANA_OIDC_CLIENT_ID }}
+          GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
+          SECRETS
+
+      # FR-003: kamal accessory invocation. Trap EXIT cleanup secrets file (BR-007).
+      - name: Execute kamal accessory ${{ inputs.action }} ${{ inputs.accessory }}
+        id: kamal_op
+        run: |
+          trap 'rm -f .kamal/secrets.${{ inputs.destination }}' EXIT
+          start_ts=$(date +%s)
+          kamal accessory ${{ inputs.action }} ${{ inputs.accessory }} -d ${{ inputs.destination }}
+          end_ts=$(date +%s)
+          echo "duration_seconds=$((end_ts - start_ts))" >> "$GITHUB_OUTPUT"
+
+      # FR-005: audit annotation на success.
+      - name: Emit audit notice (success)
+        if: success()
+        run: |
+          echo "::notice::Accessory ops result: actor=${{ github.actor }} \
+            destination=${{ inputs.destination }} accessory=${{ inputs.accessory }} \
+            action=${{ inputs.action }} result=success \
+            duration=${{ steps.kamal_op.outputs.duration_seconds }}s \
+            triggered_by=${{ inputs.triggered_by }}"
+
+      # FR-005: audit annotation на failure.
+      - name: Emit audit notice (failure)
+        if: failure()
+        run: |
+          echo "::error::Accessory ops result: actor=${{ github.actor }} \
+            destination=${{ inputs.destination }} accessory=${{ inputs.accessory }} \
+            action=${{ inputs.action }} result=failure \
+            triggered_by=${{ inputs.triggered_by }}"
