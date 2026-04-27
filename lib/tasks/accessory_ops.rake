@@ -94,6 +94,28 @@ namespace :accessory_ops do
     puts "state_updated id=#{record.id} current=#{record.current_image} previous=#{record.previous_image}"
   end
 
+  # Workflow-friendly wrapper: reads runtime image via DriftCheckService (kamal accessory
+  # details parse + docker inspect SSH), then calls StateService.update_after_health_check.
+  # Used после healthy verify — single command captures runtime + stores state.
+  desc "Refresh AccessoryState с runtime image (DriftCheckService + StateService)"
+  task :"state:refresh", %i[destination accessory status] => :environment do |_t, args|
+    destination = args[:destination] or abort("Usage: accessory_ops:state:refresh[destination,accessory,status]")
+    accessory = args[:accessory] or abort("Missing accessory argument")
+    status = args[:status] || "healthy"
+
+    drift = AccessoryOps::DriftCheckService.call(destination: destination, accessory: accessory)
+    image = drift.runtime_image
+    if image.blank?
+      warn "state_refresh_failed runtime_image_unknown destination=#{destination} accessory=#{accessory}"
+      exit 1
+    end
+
+    record = AccessoryOps::StateService.update_after_health_check(
+      destination: destination, accessory: accessory, image: image, status: status
+    )
+    puts "state_refreshed id=#{record.id} current=#{record.current_image} previous=#{record.previous_image} status=#{record.last_health_status}"
+  end
+
   namespace :downtime do
     # FR hooks: INSERT downtime event при start (action=reboot/restart/stop). Outputs event_id —
     # workflow captures для последующего :end call.

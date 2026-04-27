@@ -89,6 +89,32 @@ RSpec.describe "accessory_ops rake tasks" do
     end
   end
 
+  describe "accessory_ops:state:refresh" do
+    it "reads runtime image via DriftCheckService и обновляет state" do
+      allow(AccessoryOps::DriftCheckService).to receive(:call).and_return(
+        AccessoryOps::DriftCheckService::Result.new(
+          drift_state: :match, declared_image: "redis:7.4-alpine", runtime_image: "redis:7.4-alpine"
+        )
+      )
+      record = AccessoryState.create!(destination: "staging", accessory: "redis", current_image: "redis:7.2-alpine")
+      expect(AccessoryOps::StateService).to receive(:update_after_health_check).and_return(record)
+      expect {
+        Rake::Task["accessory_ops:state:refresh"].invoke("staging", "redis", "healthy")
+      }.to output(/state_refreshed/).to_stdout
+    end
+
+    it "exits 1 когда runtime_image не доступен" do
+      allow(AccessoryOps::DriftCheckService).to receive(:call).and_return(
+        AccessoryOps::DriftCheckService::Result.new(
+          drift_state: :mismatch, declared_image: "redis:7.4-alpine", runtime_image: nil
+        )
+      )
+      expect {
+        Rake::Task["accessory_ops:state:refresh"].invoke("staging", "redis")
+      }.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
+    end
+  end
+
   describe "accessory_ops:downtime:start" do
     it "creates row и outputs event_id" do
       expect {

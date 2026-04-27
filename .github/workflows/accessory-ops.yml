@@ -172,6 +172,27 @@ jobs:
           GRAFANA_OIDC_CLIENT_SECRET=${GRAFANA_OIDC_CLIENT_SECRET}
           SECRETS
 
+      # PR3 FR-126: pre-action downtime tracking. INSERT row через rake (web container) —
+      # workflow captures event_id для последующего :end call. accessory action может
+      # cause downtime (especially reboot/restart/stop), записываем сразу.
+      - name: Record downtime start
+        id: downtime_start
+        if: contains(fromJson('["reboot","restart","stop"]'), inputs.action)
+        env:
+          DESTINATION: ${{ inputs.destination }}
+          ACCESSORY: ${{ inputs.accessory }}
+        run: |
+          set -euo pipefail
+          # Source: workflow_dispatch = "manual" or "auto_remediation". Both = drift|restart
+          # mapping per BR-007: human-triggered manual ops record как "restart"; drift detector
+          # auto-remediation already записал свой downtime в TriggerService path.
+          SOURCE="restart"
+          EVENT_ID=$(ssh "root@194.135.85.159" \
+            "docker exec himrate-web bin/rails 'accessory_ops:downtime:start[${DESTINATION},${ACCESSORY},${SOURCE}]'" \
+            | tail -1)
+          echo "event_id=${EVENT_ID}" >> "$GITHUB_OUTPUT"
+          echo "::notice::downtime_started event_id=${EVENT_ID}"
+
       # FR-003: kamal accessory invocation. Trap EXIT cleanup secrets file (BR-007).
       - name: Execute kamal accessory ${{ inputs.action }} ${{ inputs.accessory }}
         id: kamal_op
@@ -185,6 +206,82 @@ jobs:
           kamal accessory "$ACTION" "$ACCESSORY" -d "$DESTINATION"
           end_ts=$(date +%s)
           echo "duration_seconds=$((end_ts - start_ts))" >> "$GITHUB_OUTPUT"
+
+      # PR3 FR-015..017: post-action health verification. Polls HealthCheckService через
+      # rake (web container SSH) до 5min default. Fail fast но не aborts workflow — последующие
+      # шаги (notify, downtime:end) обрабатывают branching.
+      - name: Verify accessory health
+        id: health_verify
+        if: success() && contains(fromJson('["reboot","restart","boot"]'), inputs.action)
+        continue-on-error: true
+        env:
+          DESTINATION: ${{ inputs.destination }}
+          ACCESSORY: ${{ inputs.accessory }}
+        run: |
+          set -euo pipefail
+          ssh "root@194.135.85.159" \
+            "docker exec himrate-web bin/rails 'accessory_ops:health_verify[${DESTINATION},${ACCESSORY},300]'"
+
+      # PR3 FR-122..124: на healthy verdict — refresh AccessoryState (read runtime image
+      # via DriftCheckService + persist via StateService). На fail step — пропускаем (alert
+      # ниже).
+      - name: Refresh accessory state
+        if: steps.health_verify.outcome == 'success'
+        env:
+          DESTINATION: ${{ inputs.destination }}
+          ACCESSORY: ${{ inputs.accessory }}
+        run: |
+          ssh "root@194.135.85.159" \
+            "docker exec himrate-web bin/rails 'accessory_ops:state:refresh[${DESTINATION},${ACCESSORY},healthy]'"
+
+      # PR3 FR hooks: close downtime event с ended_at — duration_seconds auto-computed
+      # AccessoryDowntimeEvent.before_save. Both healthy + unhealthy flows close downtime
+      # (kamal action завершилась, neither recovers downtime tracking).
+      - name: Record downtime end
+        if: always() && steps.downtime_start.outcome == 'success'
+        env:
+          EVENT_ID: ${{ steps.downtime_start.outputs.event_id }}
+        run: |
+          if [ -n "${EVENT_ID:-}" ]; then
+            ssh "root@194.135.85.159" \
+              "docker exec himrate-web bin/rails 'accessory_ops:downtime:end[${EVENT_ID}]'"
+          fi
+
+      # PR3 FR-006/070: AlertmanagerNotifier push с structured labels — Alertmanager
+      # routing tree dispatches к Telegram (info/warning/critical channels per severity).
+      - name: Send notification
+        if: always()
+        env:
+          DESTINATION: ${{ inputs.destination }}
+          ACCESSORY: ${{ inputs.accessory }}
+          ACTION: ${{ inputs.action }}
+          HEALTH_OUTCOME: ${{ steps.health_verify.outcome }}
+          KAMAL_OUTCOME: ${{ steps.kamal_op.outcome }}
+          TRIGGERED_BY: ${{ inputs.triggered_by }}
+          ACTOR: ${{ github.actor }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          if [ "$KAMAL_OUTCOME" != "success" ]; then
+            EVENT_TYPE="action_failed"
+            SEVERITY="critical"
+            SUMMARY="${ACTION} ${ACCESSORY} on ${DESTINATION} FAILED — kamal step error"
+          elif [ "$HEALTH_OUTCOME" = "failure" ]; then
+            EVENT_TYPE="health_failed_after_action"
+            SEVERITY="critical"
+            SUMMARY="${ACTION} ${ACCESSORY} on ${DESTINATION} unhealthy после action — manual rollback may be required"
+          elif [ "$HEALTH_OUTCOME" = "success" ]; then
+            EVENT_TYPE="action_success"
+            SEVERITY="info"
+            SUMMARY="${ACTION} ${ACCESSORY} on ${DESTINATION} succeeded и проверено health"
+          else
+            EVENT_TYPE="action_completed"
+            SEVERITY="info"
+            SUMMARY="${ACTION} ${ACCESSORY} on ${DESTINATION} completed (no health verify)"
+          fi
+          DESCRIPTION="actor=${ACTOR} triggered_by=${TRIGGERED_BY} run=${RUN_URL}"
+          ssh "root@194.135.85.159" \
+            "docker exec himrate-web bin/rails 'accessory_ops:notify[${EVENT_TYPE},${SEVERITY},${DESTINATION},${ACCESSORY},${SUMMARY},${DESCRIPTION}]'"
 
       # FR-005: audit annotation на success.
       - name: Emit audit notice (success)
