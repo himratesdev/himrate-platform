@@ -47,9 +47,20 @@ module MlOps
         .for_pair(baseline.destination, baseline.accessory)
         .maximum(:detected_at) || baseline.computed_at
 
-      predicted = last_detected_at + baseline.mean_interval_seconds.seconds
+      mean_interval = baseline.mean_interval_seconds
+      stddev = baseline.stddev_interval_seconds.to_i
+      predicted = last_detected_at + mean_interval.seconds
+      # CR M-3: ±1σ confidence interval вокруг point estimate. Stddev может быть 0
+      # для perfectly periodic events — interval collapses в point.
+      lower_bound = last_detected_at + [ mean_interval - stddev, 1 ].max.seconds
+      upper_bound = last_detected_at + (mean_interval + stddev).seconds
       confidence = compute_confidence(baseline.sample_count)
-      { predicted_drift_at: predicted, confidence: confidence }
+      {
+        predicted_drift_at: predicted,
+        predicted_at_lower_bound: lower_bound,
+        predicted_at_upper_bound: upper_bound,
+        confidence: confidence
+      }
     end
 
     # Sample-size based confidence: 5..9 → 0.5; 10..29 → 0.7; 30+ → 0.85.
@@ -71,6 +82,8 @@ module MlOps
         destination: baseline.destination,
         accessory: baseline.accessory,
         predicted_drift_at: prediction[:predicted_drift_at],
+        predicted_at_lower_bound: prediction[:predicted_at_lower_bound],
+        predicted_at_upper_bound: prediction[:predicted_at_upper_bound],
         confidence: prediction[:confidence],
         model_version: baseline.algorithm_version,
         generated_at: Time.current

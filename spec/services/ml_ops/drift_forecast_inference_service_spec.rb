@@ -58,6 +58,13 @@ RSpec.describe MlOps::DriftForecastInferenceService do
         expect(prediction.model_version).to eq(DriftBaseline::ALGORITHM_VERSION)
         expect(prediction.predicted_drift_at).to be_within(1.minute).of(last_event.detected_at + 3.days)
       end
+
+      it "populates ±1σ confidence interval (CR M-3)" do
+        described_class.call
+        prediction = DriftForecastPrediction.first
+        expect(prediction.predicted_at_lower_bound).to be_within(1.minute).of(last_event.detected_at + 3.days - 1.hour)
+        expect(prediction.predicted_at_upper_bound).to be_within(1.minute).of(last_event.detected_at + 3.days + 1.hour)
+      end
     end
 
     context "когда predicted_at вне horizon (>30 days)" do
