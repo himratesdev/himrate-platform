@@ -93,7 +93,7 @@ jobs:
       # finding notifications via GitHub built-in.
       # Pin @v0.35.0 (verified via gh api trivy-action/tags).
       - name: Scan image for CVEs (report-only)
-        uses: aquasecurity/trivy-action@v0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           image-ref: ghcr.io/himratesdev/himrate-postgres:${{ steps.image_tag.outputs.tag }}
           format: sarif
