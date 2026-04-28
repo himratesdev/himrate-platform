@@ -22,10 +22,12 @@ alerting:
 rule_files: []
 
 scrape_configs:
-  # PG W-2 fix: rails-app scrape job removed. Application /metrics endpoint
-  # появится в PR2 через prometheus_exporter gem integration. Scrape config
-  # будет добавлен в том же PR2 with verified hostname pattern (likely
-  # docker_sd_configs matching org.kamal.role=web label).
+  # PR3: Rails app metrics реализованы через push-based pattern (PrometheusMetrics
+  # → himrate-prometheus-pushgateway:9091 → scraped Prometheus каждые 30s ниже).
+  # /metrics endpoint в Rails app намеренно отсутствует — rejected
+  # `prometheus_exporter` gem (2.2.x bugs с Rails engine eager_load_paths) за
+  # счёт push gateway approach: services/workers push gauges с per-pair grouping
+  # labels, Prometheus storage/dashboards/alerts unchanged.
   #
   # Hotfix #7 (DV finding): Kamal `kamal` network registers containers по
   # FULL container name (himrate-<accessory>). Short names (loki, grafana)

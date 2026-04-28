@@ -1,79 +1,104 @@
 # frozen_string_literal: true
 
-# BUG-010 PR2 (FR-099/100, ADR DEC-13): ML inference (dormant pre-launch).
-# Daily cron. Loads latest model artifact (skip if none). Generates predictions per
-# (destination, accessory) для next 30 days, INSERTs high-confidence (>=0.6) к DB.
-
-require "open3"
-require "json"
+# BUG-010 PR3 (FR-099/100, ADR DEC-13 corrigendum): heuristic inference (pure Ruby).
+# Daily cron via MlOps::DriftForecastInferenceWorker. For each pair с sufficient baseline:
+# predicts next drift = last_detected_at + mean_interval. Confidence based на sample_count.
+# Persists DriftForecastPrediction row если confidence >= min_for_persist.
+#
+# CR N-3: confidence thresholds DB-driven через SignalConfiguration (signal_type=
+# ml_drift_forecast, category=confidence). Admin tunable без code change.
 
 module MlOps
   class DriftForecastInferenceService
-    PYTHON_INFERENCE = Rails.root.join("scripts/ml_ops/predict_drift_forecast.py")
-    MODEL_DIR = Rails.root.join("var/ml_models")
     HORIZON_DAYS = 30
-    MIN_CONFIDENCE = 0.6
+    SIGNAL_TYPE = "ml_drift_forecast"
+    CATEGORY = "confidence"
 
-    Result = Struct.new(:status, :predictions_count, :model_version, keyword_init: true)
+    Result = Struct.new(:status, :predictions_count, :pairs_skipped, keyword_init: true)
 
     def self.call
-      latest = latest_model
-      unless latest
-        Rails.logger.info("MlOps::DriftForecastInferenceService: no_model — skip inference")
-        return Result.new(status: :no_model)
-      end
+      predictions_count = 0
+      pairs_skipped = 0
 
-      pairs = AccessoryHostsConfig.destinations.flat_map do |destination|
-        accessories_for(destination).map { |accessory| { destination: destination, accessory: accessory } }
-      end
-
-      predictions = pairs.flat_map do |pair|
-        run_inference(model_path: latest[:path], **pair).map do |raw|
-          raw.merge(destination: pair[:destination], accessory: pair[:accessory], model_version: latest[:version])
+      DriftBaseline.find_each do |baseline|
+        unless baseline.sufficient_data?
+          pairs_skipped += 1
+          next
         end
+
+        prediction = build_prediction(baseline)
+        unless within_horizon?(prediction[:predicted_drift_at])
+          pairs_skipped += 1
+          next
+        end
+        if prediction[:confidence] < min_confidence_for_persist
+          pairs_skipped += 1
+          next
+        end
+
+        persist!(baseline: baseline, prediction: prediction)
+        predictions_count += 1
       end
 
-      filtered = predictions.select { |p| p[:confidence].to_f >= MIN_CONFIDENCE }
-      filtered.each { |p| persist!(p) }
-
-      Result.new(status: :predicted, predictions_count: filtered.size, model_version: latest[:version])
+      Rails.logger.info(
+        "MlOps::DriftForecastInferenceService: predictions=#{predictions_count} skipped=#{pairs_skipped}"
+      )
+      Result.new(status: :ok, predictions_count: predictions_count, pairs_skipped: pairs_skipped)
     end
 
-    def self.latest_model
-      Dir.glob(File.join(MODEL_DIR, "drift_forecast_v*.bin")).map do |f|
-        version_match = File.basename(f).match(/drift_forecast_(v\d+)\.bin/)
-        next unless version_match
-        { path: f, version: version_match[1] }
-      end.compact.max_by { |m| File.mtime(m[:path]) }
+    def self.build_prediction(baseline)
+      last_detected_at = AccessoryDriftEvent
+        .for_pair(baseline.destination, baseline.accessory)
+        .maximum(:detected_at) || baseline.computed_at
+
+      mean_interval = baseline.mean_interval_seconds
+      stddev = baseline.stddev_interval_seconds.to_i
+      predicted = last_detected_at + mean_interval.seconds
+      # CR M-3: ±1σ confidence interval вокруг point estimate. Stddev может быть 0
+      # для perfectly periodic events — interval collapses в point.
+      lower_bound = last_detected_at + [ mean_interval - stddev, 1 ].max.seconds
+      upper_bound = last_detected_at + (mean_interval + stddev).seconds
+      confidence = compute_confidence(baseline.sample_count)
+      {
+        predicted_drift_at: predicted,
+        predicted_at_lower_bound: lower_bound,
+        predicted_at_upper_bound: upper_bound,
+        confidence: confidence
+      }
     end
 
-    def self.accessories_for(_destination)
-      %w[db redis grafana prometheus loki alertmanager prometheus-pushgateway promtail]
+    # Sample-size based confidence — thresholds DB-driven (SignalConfiguration).
+    # Statistical interpretation: больше observations = tighter prediction interval.
+    def self.compute_confidence(sample_count)
+      return SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "level_high") if sample_count >= SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "sample_threshold_high")
+      return SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "level_mid") if sample_count >= SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "sample_threshold_mid")
+      return SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "level_low") if sample_count >= SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "sample_threshold_low")
+
+      0.0
     end
 
-    def self.run_inference(model_path:, destination:, accessory:)
-      stdin_data = JSON.generate(destination: destination, accessory: accessory, horizon_days: HORIZON_DAYS)
-      command = [ "python3", PYTHON_INFERENCE.to_s, "--model", model_path ]
-      output, status = Open3.capture2e(*command, stdin_data: stdin_data)
-      return [] unless status.exitstatus.zero?
-
-      JSON.parse(output, symbolize_names: true).fetch(:predictions, [])
-    rescue StandardError => e
-      Rails.logger.warn("MlOps::DriftForecastInferenceService: inference failed — #{e.class}: #{e.message}")
-      []
+    def self.min_confidence_for_persist
+      SignalConfiguration.value_for(SIGNAL_TYPE, CATEGORY, "min_for_persist")
     end
 
-    def self.persist!(prediction)
+    def self.within_horizon?(predicted_at)
+      predicted_at && predicted_at <= HORIZON_DAYS.days.from_now
+    end
+
+    def self.persist!(baseline:, prediction:)
       DriftForecastPrediction.create!(
-        destination: prediction[:destination],
-        accessory: prediction[:accessory],
-        predicted_drift_at: Time.parse(prediction[:predicted_drift_at]),
+        destination: baseline.destination,
+        accessory: baseline.accessory,
+        predicted_drift_at: prediction[:predicted_drift_at],
+        predicted_at_lower_bound: prediction[:predicted_at_lower_bound],
+        predicted_at_upper_bound: prediction[:predicted_at_upper_bound],
         confidence: prediction[:confidence],
-        model_version: prediction[:model_version],
+        model_version: baseline.algorithm_version,
         generated_at: Time.current
       )
     end
 
-    private_class_method :latest_model, :accessories_for, :run_inference, :persist!
+    private_class_method :build_prediction, :compute_confidence, :min_confidence_for_persist,
+                         :within_horizon?, :persist!
   end
 end
