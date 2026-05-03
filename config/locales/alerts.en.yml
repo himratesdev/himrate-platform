@@ -1,0 +1,35 @@
+# TASK-085 FR-026 + SRS v1.2 §10A.2: Anomaly alert i18n catalog (backend contract reference).
+# See alerts.ru.yml для context. Per CLAUDE.md ERV labels v3 — legal-safe wording strict.
+
+en:
+  alert:
+    ccv_spike:
+      title: "Viewer surge"
+      detail: "+%{N}%% in %{M} min (%{From} → %{To})"
+    confirmed_raid:
+      title: "Confirmed raid"
+      detail: "Raid from @%{raider}: %{viewers} viewers"
+      detail_no_raider: "Raid: %{viewers} viewers"
+    anomaly_wave:
+      title: "Anomalous account wave"
+      detail: "%{N} new accounts with suspicious pattern in %{M} min"
+    ti_drop:
+      title: "Trust Index sharp drop"
+      detail: "TI dropped %{From} → %{To} (−%{N} pts) in %{M} min"
+    chatter_to_ccv_anomaly:
+      title: "Chat activity anomaly"
+      detail: "Chatter ratio %{N}%% (normal for %{Category}: %{Min}-%{Max}%%)"
+    chat_entropy_drop:
+      title: "Chat entropy drop"
+      detail: "Entropy %{N} (normal >2.0) — chat is templated"
+    erv_divergence:
+      title: "ERV/CCV divergence"
+      detail: "ERV/CCV ratio changed %{N}%% in %{M} min"
+    severity:
+      info:
+        aria: "Info"
+      yellow:
+        aria: "Caution"
+      red:
+        aria: "Critical anomaly"
+    dismiss: "Dismiss"

@@ -1,0 +1,42 @@
+# TASK-085 FR-026 + SRS v1.2 §10A.2: Anomaly alert i18n catalog (backend contract reference).
+# Frontend (himrate-extension) maintains parallel catalog для Side Panel rendering.
+# Backend keeps these keys для:
+#   1. Future server-side rendering (PDF reports, email digests, Telegram notifications)
+#   2. Single source of truth для translation work (dev sees full alert taxonomy)
+#   3. Contract clarity для frontend integration
+#
+# Per CLAUDE.md ERV labels v3 — legal-safe wording строго (no "бот", "накрутка", "фейк").
+# Per ADR-085 D-2 — anomaly_wave (не bot_wave) во всех контекстах.
+
+ru:
+  alert:
+    ccv_spike:
+      title: "Скачок зрителей"
+      detail: "+%{N}%% за %{M} мин (рост с %{From} до %{To})"
+    confirmed_raid:
+      title: "Подтверждённый рейд"
+      detail: "Рейд от @%{raider}: %{viewers} зрителей"
+      detail_no_raider: "Рейд: %{viewers} зрителей"
+    anomaly_wave:
+      title: "Аномальная волна аккаунтов"
+      detail: "%{N} новых аккаунтов с подозрительным паттерном за %{M} мин"
+    ti_drop:
+      title: "Резкое падение Trust Index"
+      detail: "TI упал с %{From} до %{To} (−%{N} pts) за %{M} мин"
+    chatter_to_ccv_anomaly:
+      title: "Аномалия активности чата"
+      detail: "Доля пишущих %{N}%% (норма для категории %{Category}: %{Min}-%{Max}%%)"
+    chat_entropy_drop:
+      title: "Падение энтропии чата"
+      detail: "Энтропия %{N} (норма >2.0) — чат шаблонный"
+    erv_divergence:
+      title: "Расхождение ERV/CCV"
+      detail: "ERV/CCV изменился на %{N}%% за %{M} мин"
+    severity:
+      info:
+        aria: "Информация"
+      yellow:
+        aria: "Внимание"
+      red:
+        aria: "Критическая аномалия"
+    dismiss: "Скрыть"
