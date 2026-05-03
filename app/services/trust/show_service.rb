@@ -19,6 +19,9 @@ module Trust
 
       if @view == :drill_down || @view == :full
         payload.merge!(build_drill_down(latest_ti))
+        # TASK-085 FR-008 (ADR-085 D-4 OVERRIDE): anomaly_alerts gated за :drill_down/:full —
+        # NOT :headline (Pundit contract preserved, no anonymous data leak).
+        payload[:anomaly_alerts] = AnomalyAlertsPresenter.new(channel: @channel).call
       end
 
       if @view == :full
