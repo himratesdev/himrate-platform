@@ -101,6 +101,21 @@ class ChannelPolicy < ApplicationPolicy
     PostStreamWindowService.open?(record)
   end
 
+  # TASK-085 FR-001/002/004 (US-001/002/003/013, EC-1): Stream Summary endpoint Pundit gating.
+  # - Guest → controller authenticate_user! returns 401 ДО Pundit (BR-004 / US-013)
+  # - Premium tracked / Business / Streamer own → always (no time window restriction per BR-002/003)
+  # - Free + no completed streams → permit (controller returns 404 STREAM_NOT_FOUND per EC-1)
+  # - Free + post_stream_window open → permit (BR-001 18h window)
+  # - Free + window expired → deny (403 SUBSCRIPTION_REQUIRED)
+  def view_latest_stream_summary?
+    return false unless registered?
+    return true if premium_access_for?(record)
+    # No completed streams → 404 path (Pundit permits, service returns :not_found).
+    return true unless record.streams.where.not(ended_at: nil).exists?
+
+    PostStreamWindowService.open?(record)
+  end
+
   # TASK-031 FR-008: Serializer view selection — single source of truth for tier-scoped fields.
   def serializer_view
     return :headline unless registered?
