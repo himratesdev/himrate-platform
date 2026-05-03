@@ -107,6 +107,11 @@ class ChannelPolicy < ApplicationPolicy
   # - Free + no completed streams → permit (controller returns 404 STREAM_NOT_FOUND per EC-1)
   # - Free + post_stream_window open → permit (BR-001 18h window)
   # - Free + window expired → deny (403 SUBSCRIPTION_REQUIRED)
+  #
+  # CR N-2 trade-off note: .exists? fires single SQL pre-service. LatestSummaryService then
+  # re-queries to load actual stream. Total = 2 lightweight indexed queries per Free request.
+  # Could optimize via passing scope through Pundit context, но это couples Pundit к service
+  # internals (anti-pattern). Premium short-circuits before .exists? — no overhead.
   def view_latest_stream_summary?
     return false unless registered?
     return true if premium_access_for?(record)
