@@ -51,6 +51,8 @@ Rails.application.routes.draw do
         resources :streams, only: %i[index] do
           # TASK-032 FR-003: Post-stream report
           get "report", on: :member, to: "streams#report"
+          # TASK-085 FR-001: Latest stream summary (collection-level)
+          get "latest/summary", on: :collection, to: "streams#latest_summary"
         end
         resource "bot-chain", only: :show, controller: "bot_chain", as: :bot_chain
         # TASK-032 FR-004: Health Score

@@ -9,7 +9,7 @@ module Api
       include Channelable
 
       before_action :set_channel
-      before_action :authenticate_user!, only: %i[index report]
+      before_action :authenticate_user!, only: %i[index report latest_summary]
 
       # FR-002: GET /api/v1/channels/:id/streams — stream history
       def index
@@ -42,6 +42,23 @@ module Api
         payload = Streams::ReportService.new(stream: stream, channel: @channel).call
 
         render json: { data: payload }
+      end
+
+      # TASK-085 FR-001..006: GET /api/v1/channels/:id/streams/latest/summary
+      # Returns last completed stream summary с PostStreamReport data (joined existing tables).
+      # Pundit ChannelPolicy#view_latest_stream_summary? gates: Premium/Business/Streamer own,
+      # OR Free + post_stream_window open (18h). Guest → 401 via authenticate_user! before Pundit.
+      def latest_summary
+        authorize @channel, :view_latest_stream_summary?
+
+        result = Streams::LatestSummaryService.new(channel: @channel).call
+
+        if result == Streams::LatestSummaryService::NOT_FOUND
+          render json: { error: { code: "STREAM_NOT_FOUND" } }, status: :not_found
+          return
+        end
+
+        render json: result
       end
 
       private

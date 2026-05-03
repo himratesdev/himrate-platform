@@ -22,6 +22,25 @@ RSpec.describe "Trust History API" do
       expect(data).to have_key("anomalies")
     end
 
+    # TASK-085 FR-023: build_anomalies fix — broken Anomaly.where(channel_id:, detected_at:)
+    # replaced with correct JOIN streams + timestamp column. Pre-fix wrapped в silent rescue (dead code).
+    it "build_anomalies returns valid anomaly records via stream JOIN (FR-023)" do
+      stream = create(:stream, channel: channel, started_at: 10.minutes.ago)
+      create(:anomaly, stream: stream, anomaly_type: "ti_drop", timestamp: 5.minutes.ago,
+        confidence: 0.95, details: { "delta_pts" => 18 })
+      create(:anomaly, stream: stream, anomaly_type: "anomaly_wave", timestamp: 2.minutes.ago,
+        confidence: 1.0, details: { "signal_value" => 0.85 })
+
+      get "/api/v1/channels/#{channel.id}/trust/history", headers: auth_headers(user)
+      expect(response).to have_http_status(:ok)
+
+      anomalies = response.parsed_body["data"]["anomalies"]
+      expect(anomalies.size).to eq(2)
+      expect(anomalies.map { |a| a["type"] }).to contain_exactly("ti_drop", "anomaly_wave")
+      # New shape: timestamp + confidence + details (replaces broken severity/delta_value)
+      expect(anomalies.first).to include("timestamp", "type", "confidence", "details")
+    end
+
     it "returns 7d data for premium user with tracked channel" do
       premium_user = create(:user, tier: "premium")
       create(:tracked_channel, user: premium_user, channel: channel, tracking_enabled: true)
