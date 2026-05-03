@@ -42,4 +42,26 @@ RSpec.describe TrustIndex::Signals::ChatBehavior do
     result = signal.calculate(bot_scores: scores)
     expect(result.confidence).to be >= 0.7
   end
+
+  # TASK-085 FR-017 (ADR-085 D-7): Shannon entropy_bits в metadata для chat_entropy_drop alert.
+  describe "entropy_bits в metadata (FR-017)" do
+    let(:bot_scores) { Array.new(10) { { bot_score: 0.1, confidence: 0.8, classification: "human" } } }
+
+    it "computes entropy_bits from chat_username_counts_5min context field" do
+      counts = { "alice" => 10, "bob" => 10, "carol" => 10, "dave" => 10 }
+      result = signal.calculate(bot_scores: bot_scores, chat_username_counts_5min: counts)
+      expect(result.metadata[:entropy_bits]).to be_within(0.01).of(2.0)
+    end
+
+    it "returns entropy_bits = 0.0 when chat_username_counts_5min absent (no live chat data)" do
+      result = signal.calculate(bot_scores: bot_scores)
+      expect(result.metadata[:entropy_bits]).to eq(0.0)
+    end
+
+    it "templated chat (1 dominant user) returns low entropy_bits (chat_entropy_drop alert range)" do
+      counts = { "spambot" => 95, "u1" => 1, "u2" => 1, "u3" => 1, "u4" => 1, "u5" => 1 }
+      result = signal.calculate(bot_scores: bot_scores, chat_username_counts_5min: counts)
+      expect(result.metadata[:entropy_bits]).to be < 2.0
+    end
+  end
 end

@@ -11,8 +11,9 @@ RSpec.describe TrustIndex::ContextBuilder do
 
     expected_keys = %i[
       latest_ccv latest_chatters ccv_series_15min ccv_series_30min ccv_series_10min
-      chat_rate_10min unique_chatters_60min bot_scores channel_protection_config
-      cross_channel_counts raids recent_raids category stream_duration_min
+      chat_rate_10min chat_username_counts_5min unique_chatters_60min bot_scores
+      channel_protection_config cross_channel_counts raids recent_raids category
+      stream_duration_min
     ]
     expect(context.keys).to match_array(expected_keys)
   end

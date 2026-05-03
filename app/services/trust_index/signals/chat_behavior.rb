@@ -28,13 +28,21 @@ module TrustIndex
         value = weighted_mean * 0.6 + confirmed_ratio * 0.4
         confidence = [ 1.0, total / 50.0 ].min * (total_weight.positive? ? [ 1.0, total_weight / total ].min : 0.5)
 
+        # TASK-085 FR-017 (ADR-085 D-7): Shannon entropy_bits для chat_entropy_drop alert.
+        # AnomalyAlerter line 36 forwards signal_metadata → Anomaly#details automatically.
+        # Trust::AnomalyAlertsPresenter reads anomaly.details.dig('signal_metadata', 'entropy_bits')
+        # для chat_entropy_drop derivation (zero extra query, D-7 simplification override SA).
+        username_counts = (context[:chat_username_counts_5min] || {}).values
+        entropy_bits = ShannonEntropy.compute(username_counts).round(2)
+
         result(
           value: value,
           confidence: confidence,
           metadata: {
             total_chatters: total, confirmed_bots: confirmed,
             weighted_mean: weighted_mean.round(4), confirmed_ratio: confirmed_ratio.round(4),
-            total_weight: total_weight.round(2)
+            total_weight: total_weight.round(2),
+            entropy_bits: entropy_bits
           }
         )
       end
