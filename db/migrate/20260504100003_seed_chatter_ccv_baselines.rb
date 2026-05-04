@@ -1,46 +1,31 @@
 # frozen_string_literal: true
 
-# TASK-085 FR-022 (ADR-085 D-1): seed category-specific auth baselines per BFT 08.4
-# для chatter_to_ccv_anomaly severity computation.
+# TASK-085 FR-022 (ADR-085 D-1) — schema migration noop.
 #
-# Storage strategy: extend existing signal_configurations table (TASK-028 pattern)
-# instead of new anomaly_baselines table — leverages SignalConfiguration.value_for
-# request-scoped memoization (Current.signal_config) + automatic 'default' fallback.
+# PG W-2 fix: Original migration body seeded 12 SignalConfiguration rows inline.
+# Per ai-dev-team/CLAUDE.md "Миграции — Нет данных в миграциях", seeding moved to
+# db/seeds/chatter_ccv_baselines.rb (auto-loaded from db/seeds.rb).
 #
-# 12 rows: 5 game categories + 'default' fallback × 2 params (baseline_min, baseline_max).
-# Music/ASMR shares 'Music' category — presenter normalizes 'ASMR' → 'Music' on lookup.
+# This file remains as a NOOP migration to preserve schema_migrations history
+# (already applied to staging at 20260504; deletion would orphan the row and
+# trigger Rails::ActiveRecord::PendingMigrationError on next deploy).
 #
-# Idempotent via find_or_create_by! — multi-deploy safe.
+# Deployment runbook (per ai-dev-team/prompts/deployment_verification.md):
+#   1. kamal app exec 'bin/rails db:migrate' — applies schema migrations (noop here)
+#   2. kamal app exec 'bin/rails db:seed' — seeds idempotent data including baselines
+#   3. Verify: SignalConfiguration.where(signal_type:'chatter_ccv_ratio',
+#                                        param_name:%w[baseline_min baseline_max]).count == 12
+#
+# Existing staging rows already in place — db:seed re-run is idempotent (find_or_initialize_by).
 
 class SeedChatterCcvBaselines < ActiveRecord::Migration[8.0]
-  BASELINES = {
-    "Just Chatting" => { min: 75, max: 90 },
-    "IRL"           => { min: 75, max: 90 },
-    "Gaming"        => { min: 65, max: 80 },
-    "Esports"       => { min: 30, max: 60 },
-    "Music"         => { min: 40, max: 70 },
-    "default"       => { min: 65, max: 80 }
-  }.freeze
-
   def up
-    BASELINES.each do |category, range|
-      %i[min max].each do |bound|
-        param_name = "baseline_#{bound}"
-        config = SignalConfiguration.find_or_initialize_by(
-          signal_type: "chatter_ccv_ratio",
-          category: category,
-          param_name: param_name
-        )
-        config.param_value = range[bound]
-        config.save!
-      end
-    end
+    # noop — see header comment + db/seeds/chatter_ccv_baselines.rb
   end
 
   def down
-    SignalConfiguration.where(
-      signal_type: "chatter_ccv_ratio",
-      param_name: %w[baseline_min baseline_max]
-    ).delete_all
+    # noop — companion to up; rollback semantics owned by db/seeds/chatter_ccv_baselines.rb
+    # (which is не invoked by db:rollback). Removal of seeded rows = manual SignalConfiguration
+    # cleanup task, not migration responsibility per CLAUDE.md.
   end
 end
