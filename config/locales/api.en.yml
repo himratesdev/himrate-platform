@@ -4,3 +4,9 @@ en:
       unauthorized: "Unauthorized"
       not_found: "Not found"
       internal_error: "Internal server error"
+  # TASK-085 FR-007 (BR-016): backend duration_text formatting per Accept-Language.
+  stream_summary:
+    duration_text:
+      full: "%{H}h %{M}m"
+      short: "%{M} min"
+      multi_day: "%{D}d %{H}h"

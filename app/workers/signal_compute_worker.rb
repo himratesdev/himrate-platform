@@ -65,6 +65,13 @@ class SignalComputeWorker
       category: context[:category] || "default"
     )
 
+    # TASK-085 FR-014/015 (ADR-085 D-6 + D-8b): NEW detectors extend AnomalyAlerter pattern.
+    # Run AFTER Engine.compute (writes TrustIndexHistory + ErvEstimate) но ДО invalidate_api_cache
+    # (D-8b race window prevention — fresh anomalies visible immediately on next poll).
+    extra_anomaly_ids = TrustIndex::Signals::TiDropDetector.check(stream) +
+                        TrustIndex::Signals::ErvDivergenceDetector.check(stream)
+    extra_anomaly_ids.each { |id| Trends::AnomalyAttributionWorker.perform_async(id) }
+
     # TASK-032 CR #16: Explicit cache invalidation after TI compute
     invalidate_api_cache(stream.channel_id)
 

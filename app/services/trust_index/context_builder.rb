@@ -20,6 +20,7 @@ module TrustIndex
         ccv_series_30min: fetch_ccv_series(stream, 30.minutes.ago),
         ccv_series_10min: fetch_ccv_series(stream, 10.minutes.ago),
         chat_rate_10min: fetch_chat_rate(stream, 10.minutes.ago),
+        chat_username_counts_5min: fetch_chat_username_counts(stream, 5.minutes.ago),
         unique_chatters_60min: fetch_unique_chatters(stream),
         bot_scores: fetch_bot_scores(stream),
         channel_protection_config: fetch_config(channel),
@@ -71,6 +72,19 @@ module TrustIndex
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: chat_rate failed (#{e.message})")
         []
+      end
+
+      # TASK-085 FR-017 (ADR-085 D-7): chat username frequency для Shannon entropy.
+      # Used by ChatBehavior signal — entropy < 2.0 → chat_entropy_drop alert.
+      def fetch_chat_username_counts(stream, since)
+        ChatMessage
+          .where(stream_id: stream.id, msg_type: "privmsg")
+          .where("timestamp > ?", since)
+          .group(:username)
+          .count
+      rescue ActiveRecord::StatementInvalid => e
+        Rails.logger.warn("ContextBuilder: chat_username_counts failed (#{e.message})")
+        {}
       end
 
       def fetch_unique_chatters(stream)

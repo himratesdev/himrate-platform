@@ -4,3 +4,9 @@ ru:
       unauthorized: "Не авторизован"
       not_found: "Не найдено"
       internal_error: "Внутренняя ошибка сервера"
+  # TASK-085 FR-007 (BR-016): backend duration_text formatting per Accept-Language.
+  stream_summary:
+    duration_text:
+      full: "%{H}ч %{M}м"
+      short: "%{M}мин"
+      multi_day: "%{D}д %{H}ч"

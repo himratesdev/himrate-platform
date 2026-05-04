@@ -78,6 +78,7 @@ module FlipperDefaults
     signal_compute
     hs_recommendations
     accessory_drift_detection
+    stream_summary_endpoint
   ].freeze
 
   # Hooks for upcoming features: flag зарегистрирован, но оставлен OFF до момента

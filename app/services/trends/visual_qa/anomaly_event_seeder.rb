@@ -7,7 +7,8 @@
 module Trends
   module VisualQa
     class AnomalyEventSeeder
-      ANOMALY_TYPES = %w[bot_wave viewbot_spike organic_spike ccv_step_function auth_ratio].freeze
+      # TASK-085 FR-019 (ADR-085 D-2): bot_wave → anomaly_wave (legal-safe).
+      ANOMALY_TYPES = %w[anomaly_wave viewbot_spike organic_spike ccv_step_function auth_ratio].freeze
 
       def self.seed(channel:, streams:, count:)
         new(channel: channel, streams: streams, count: count).seed

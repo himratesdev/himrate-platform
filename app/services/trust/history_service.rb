@@ -84,29 +84,27 @@ module Trust
         end
     end
 
-    # FND-001: anomalies from anomalies table for foundation
+    # TASK-085 FR-023: fix broken Anomaly query (channel_id/detected_at/severity/delta_value
+    # columns не существуют в actual Anomaly schema — pre-fix wrapped в silent rescue, dead code).
+    # Correct mapping: Anomaly belongs_to :stream, stream belongs_to :channel.
+    # Filter via JOIN; timestamp column instead of detected_at; expose details jsonb instead of severity.
     def build_anomalies
-      current_stream = @channel.streams.order(started_at: :desc).first
-      return [] unless current_stream
-
       cutoff = @period == "30m" ? 30.minutes.ago : 7.days.ago
 
       Anomaly
-        .where(channel_id: @channel.id)
-        .where("detected_at > ?", cutoff)
-        .order(detected_at: :desc)
+        .joins(stream: :channel)
+        .where(channels: { id: @channel.id })
+        .where("anomalies.timestamp > ?", cutoff)
+        .order(timestamp: :desc)
         .limit(20)
         .map do |a|
           {
-            timestamp: a.detected_at.iso8601,
+            timestamp: a.timestamp.iso8601,
             type: a.anomaly_type,
-            severity: a.severity,
-            delta: a.delta_value&.to_f
+            confidence: a.confidence&.to_f,
+            details: a.details
           }
         end
-    rescue ActiveRecord::StatementInvalid
-      # Anomaly table may not exist yet — graceful fallback
-      []
     end
 
     def merge_timeseries(ccv_points, ti_points)

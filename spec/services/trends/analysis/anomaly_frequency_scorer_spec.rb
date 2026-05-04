@@ -44,14 +44,15 @@ RSpec.describe Trends::Analysis::AnomalyFrequencyScorer do
     stream = create(:stream, channel: channel)
     from = 11.days.ago
     to = Time.current
+    # TASK-085 FR-019 (ADR-085 D-2): bot_wave → anomaly_wave legal-safe rename.
     8.times do |i|
-      create(:anomaly, stream: stream, timestamp: (i + 1).days.ago, confidence: 0.8, anomaly_type: "bot_wave")
+      create(:anomaly, stream: stream, timestamp: (i + 1).days.ago, confidence: 0.8, anomaly_type: "anomaly_wave")
     end
     3.times { |i| create(:anomaly, stream: stream, timestamp: (20 + i).days.ago, confidence: 0.8) }
 
     result = described_class.call(channel: channel, from: from, to: to)
 
-    expect(result[:distribution][:by_type]["bot_wave"]).to eq(8)
+    expect(result[:distribution][:by_type]["anomaly_wave"]).to eq(8)
     expect(result[:distribution][:by_day_of_week].values.sum).to eq(8)
   end
 

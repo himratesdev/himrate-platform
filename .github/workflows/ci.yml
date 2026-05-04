@@ -18,6 +18,10 @@ jobs:
         with:
           bundler-cache: true
       - run: bundle exec rubocop
+      # TASK-085 FR-024 (ADR-085 D-2): legal-safe wording CI gate.
+      # Fails build if 'bot_wave' string literal found in app/spec/db/seeds/lib.
+      # Per CLAUDE.md ERV labels v3 strict — see lib/tasks/audit.rake.
+      - run: bundle exec rake audit:verify_no_bot_wave
 
   # === Security scan — on every PR ===
   security:

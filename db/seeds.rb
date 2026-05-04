@@ -120,3 +120,18 @@ if defined?(HealthScoreTier) && defined?(HealthScoreCategory) && defined?(Recomm
   puts "Seed complete: #{HealthScoreTier.count} tiers, #{HealthScoreCategory.count} categories, " \
        "#{RecommendationTemplate.count} recommendation templates"
 end
+
+# TASK-085 PG W-2: chatter_ccv_ratio category baselines (moved out of migration #3 per
+# CLAUDE.md "Нет данных в миграциях"). Idempotent via find_or_initialize_by.
+#
+# PG M-3 declined: defined? guard parallels TASK-028 SignalConfiguration block above
+# (line 27) — intra-file consistency for the same model. Guard protects transient envs
+# (test rollback, partial migration state, rails runner edge cases) where SignalConfiguration
+# constant may not be loaded yet. Core domain models (User/Channel/Stream) skip guard
+# because they're loaded eagerly; DB-driven config models guard defensively.
+if defined?(SignalConfiguration)
+  load Rails.root.join("db/seeds/chatter_ccv_baselines.rb")
+  baseline_count = SignalConfiguration.where(signal_type: "chatter_ccv_ratio",
+                                             param_name: %w[baseline_min baseline_max]).count
+  puts "Seed complete: #{baseline_count} chatter_ccv_ratio baselines (PG W-2)"
+end

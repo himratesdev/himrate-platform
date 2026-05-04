@@ -19,7 +19,13 @@ RSpec.describe Anomaly, type: :model do
     end
 
     it "accepts canonical anomaly_type" do
-      expect(build(:anomaly, anomaly_type: "bot_wave")).to be_valid
+      # TASK-085 FR-019: bot_wave → anomaly_wave (ADR-085 D-2 legal-safe rename).
+      expect(build(:anomaly, anomaly_type: "anomaly_wave")).to be_valid
+    end
+
+    it "accepts new TASK-085 enum values (ti_drop, erv_divergence)" do
+      expect(build(:anomaly, anomaly_type: "ti_drop")).to be_valid
+      expect(build(:anomaly, anomaly_type: "erv_divergence")).to be_valid
     end
   end
 end

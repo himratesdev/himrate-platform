@@ -159,6 +159,36 @@ RSpec.describe "Trust API", type: :request do
       second_data = response.parsed_body["data"]
       expect(second_data).to eq(first_data)
     end
+
+    # TASK-085 FR-008 (ADR-085 D-4 OVERRIDE): anomaly_alerts gated за :drill_down/:full views.
+    describe "anomaly_alerts field gating (D-4)" do
+      it "Guest :headline view does NOT include anomaly_alerts" do
+        get "/api/v1/channels/#{channel.id}/trust"
+
+        data = response.parsed_body["data"]
+        expect(data).not_to have_key("anomaly_alerts")
+      end
+
+      it "Free live :drill_down view INCLUDES anomaly_alerts (empty array if нет аномалий)" do
+        create(:stream, channel: channel, started_at: 30.minutes.ago, ended_at: nil)
+
+        get "/api/v1/channels/#{channel.id}/trust", headers: headers_free
+
+        data = response.parsed_body["data"]
+        expect(data).to have_key("anomaly_alerts")
+        expect(data["anomaly_alerts"]).to be_an(Array)
+      end
+
+      it "Premium :full view INCLUDES anomaly_alerts" do
+        create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+        create(:subscription, user: user_premium, tier: "premium", is_active: true)
+
+        get "/api/v1/channels/#{channel.id}/trust", headers: headers_premium
+
+        data = response.parsed_body["data"]
+        expect(data).to have_key("anomaly_alerts")
+      end
+    end
   end
 
   private
