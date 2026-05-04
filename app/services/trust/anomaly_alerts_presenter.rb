@@ -263,7 +263,7 @@ module Trust
     # Memoized by [category, param_name] tuple — reused across all anomalies in same call.
     def lookup_baseline(category, param_name)
       @baseline_cache ||= {}
-      @baseline_cache[[category, param_name]] ||= begin
+      @baseline_cache[[ category, param_name ]] ||= begin
         SignalConfiguration.value_for("chatter_ccv_ratio", category, param_name).to_f
       rescue SignalConfiguration::ConfigurationMissing
         param_name == "baseline_min" ? DEFAULT_BASELINE_MIN : DEFAULT_BASELINE_MAX
