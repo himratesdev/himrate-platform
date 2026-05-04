@@ -48,19 +48,34 @@ namespace :audit do
   # Such rows would be silently dropped из AnomalyAlertsPresenter (PRESENTABLE_ANOMALY_TYPES
   # содержит 'anomaly_wave', не 'bot_wave') — graceful degradation, but still a data leak.
   #
-  # Run после kamal deploy completes. If any rows found, applies same UPDATE как migration #1.
-  # Per ai-dev-team/prompts/deployment_verification.md §17.
-  desc "Post-deploy: verify no 'bot_wave' anomaly_type rows leaked through rolling cutover (PG W-4)"
+  # PG M-2 split: verify (read-only, exit 0/1) vs heal (explicit destructive). Principle of
+  # least surprise — CI/oncall hooks expect verify_* to be side-effect-free. Heal is opt-in.
+  # Per ai-dev-team/prompts/deployment_verification.md §17 (deployment uses verify; heal
+  # invoked manually if verify fails).
+  desc "Post-deploy: verify no 'bot_wave' anomaly_type rows in DB (PG W-4, read-only). Exit 1 if found."
   task verify_no_bot_wave_in_db: :environment do
     legacy_count = Anomaly.where(anomaly_type: "bot_wave").count
 
     if legacy_count.zero?
       puts "✓ No legacy 'bot_wave' anomaly rows in DB (W-4 OK — rolling cutover clean)"
     else
-      puts "WARN: #{legacy_count} legacy 'bot_wave' anomaly rows found — applying rename..."
+      puts "FAIL: #{legacy_count} legacy 'bot_wave' anomaly rows found in DB"
+      puts "Investigate which container/window wrote these rows post-migrate."
+      puts "To fix: bundle exec rake audit:heal_bot_wave_in_db (explicit destructive)"
+      exit 1
+    end
+  end
+
+  desc "Heal: rename bot_wave → anomaly_wave для leaked rows (PG W-4 destructive). Manual oncall action."
+  task heal_bot_wave_in_db: :environment do
+    legacy_count = Anomaly.where(anomaly_type: "bot_wave").count
+
+    if legacy_count.zero?
+      puts "✓ No legacy 'bot_wave' rows — heal noop"
+    else
+      puts "Renaming #{legacy_count} legacy 'bot_wave' anomaly rows → 'anomaly_wave'..."
       updated = Anomaly.where(anomaly_type: "bot_wave").update_all(anomaly_type: "anomaly_wave")
-      puts "✓ Renamed #{updated} rows bot_wave → anomaly_wave (W-4 healed)"
-      puts "Investigate: which container/window wrote these rows post-migrate?"
+      puts "✓ Healed #{updated} rows bot_wave → anomaly_wave"
     end
   end
 end
