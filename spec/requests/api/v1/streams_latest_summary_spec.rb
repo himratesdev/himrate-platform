@@ -109,6 +109,22 @@ RSpec.describe "Streams Latest Summary API", type: :request do
       expect(data["erv_count_final"]).to be_nil
       expect(response.parsed_body["meta"]["preliminary"]).to be(true)
     end
+
+    # PG W-3: Flipper kill-switch :stream_summary_endpoint — emergency disable без revert+deploy.
+    context "Flipper kill-switch :stream_summary_endpoint (W-3)" do
+      it "returns 503 FEATURE_DISABLED когда flag disabled" do
+        Flipper.disable(:stream_summary_endpoint)
+        create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: 1.hour.ago,
+          duration_ms: 18_000_000, peak_ccv: 5000)
+
+        get "/api/v1/channels/#{channel.id}/streams/latest/summary", headers: headers_free
+
+        expect(response).to have_http_status(:service_unavailable)
+        expect(response.parsed_body.dig("error", "code")).to eq("FEATURE_DISABLED")
+      ensure
+        Flipper.enable(:stream_summary_endpoint)
+      end
+    end
   end
 
   private

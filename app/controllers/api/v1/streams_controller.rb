@@ -48,7 +48,17 @@ module Api
       # Returns last completed stream summary с PostStreamReport data (joined existing tables).
       # Pundit ChannelPolicy#view_latest_stream_summary? gates: Premium/Business/Streamer own,
       # OR Free + post_stream_window open (18h). Guest → 401 via authenticate_user! before Pundit.
+      #
+      # PG W-3: Flipper kill-switch :stream_summary_endpoint per CLAUDE.md "Feature flags для
+      # production рисков". Default ON (FlipperDefaults::ALL_FLAGS auto-enable on boot). Disable
+      # via Flipper.disable(:stream_summary_endpoint) для emergency rollback без revert+deploy.
       def latest_summary
+        unless Flipper.enabled?(:stream_summary_endpoint, current_user)
+          skip_authorization
+          render json: { error: { code: "FEATURE_DISABLED" } }, status: :service_unavailable
+          return
+        end
+
         authorize @channel, :view_latest_stream_summary?
 
         result = Streams::LatestSummaryService.new(channel: @channel).call
