@@ -214,6 +214,20 @@ RSpec.describe Trust::AnomalyAlertsPresenter do
         expect(alert[:metadata][:category]).to eq("Tetris99")
         expect(alert[:metadata][:baseline_min].to_i).to eq(65)  # default fallback
       end
+
+      # PG W-1: per-presenter memoization. Multiple chatter_ccv_ratio anomalies для same category
+      # должны hit SignalConfiguration.value_for только once per (category, param_name) pair, не per anomaly.
+      it "memoizes baseline lookup across multiple anomalies в одном #call (W-1)" do
+        live_stream  # game_name "Just Chatting"
+        3.times { |i| make_anomaly(type: "chatter_ccv_ratio", details: { "signal_value" => 20 + i }, timestamp: (i + 1).minutes.ago) }
+
+        # Without memoization: 3 anomalies × 2 params = 6 queries. With memoization: 2 queries (min + max).
+        expect(SignalConfiguration).to receive(:value_for).with("chatter_ccv_ratio", "Just Chatting", "baseline_min").once.and_call_original
+        expect(SignalConfiguration).to receive(:value_for).with("chatter_ccv_ratio", "Just Chatting", "baseline_max").once.and_call_original
+
+        result = presenter.call
+        expect(result.size).to eq(3)
+      end
     end
 
     context "chat_entropy_drop derivation via signal_metadata (FR-018, ADR-085 D-7)" do

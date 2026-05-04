@@ -258,10 +258,16 @@ module Trust
       end
     end
 
+    # PG W-1: per-presenter memoization. Without cache, each chatter_to_ccv anomaly
+    # triggers 2 SignalConfiguration.value_for queries (min + max). N anomalies → 2N queries.
+    # Memoized by [category, param_name] tuple — reused across all anomalies in same call.
     def lookup_baseline(category, param_name)
-      SignalConfiguration.value_for("chatter_ccv_ratio", category, param_name).to_f
-    rescue SignalConfiguration::ConfigurationMissing
-      param_name == "baseline_min" ? DEFAULT_BASELINE_MIN : DEFAULT_BASELINE_MAX
+      @baseline_cache ||= {}
+      @baseline_cache[[category, param_name]] ||= begin
+        SignalConfiguration.value_for("chatter_ccv_ratio", category, param_name).to_f
+      rescue SignalConfiguration::ConfigurationMissing
+        param_name == "baseline_min" ? DEFAULT_BASELINE_MIN : DEFAULT_BASELINE_MAX
+      end
     end
   end
 end
