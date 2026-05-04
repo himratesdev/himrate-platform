@@ -14,6 +14,9 @@
 namespace :audit do
   desc "Verify no 'bot_wave' string literal in app/spec/db/seeds/lib (ADR-085 D-2, BR-012)"
   task :verify_no_bot_wave do
+    # CR N-4: backtick shell exec acceptable here — `paths` is a hardcoded literal array,
+    # never user input. Defense-in-depth: pattern is a fixed string, --include globs are static.
+    # No command injection surface. Promoting to Open3 would obscure intent without security gain.
     paths = %w[app spec db/seeds lib]
     matches = paths.flat_map do |path|
       next [] unless Dir.exist?(path)

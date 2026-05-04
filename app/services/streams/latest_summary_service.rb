@@ -6,6 +6,9 @@
 
 module Streams
   class LatestSummaryService
+    # CR N-5: Symbol sentinel chosen over Result struct — only two outcomes (success Hash | not-found).
+    # Caller (StreamsController#latest_summary) does `result == NOT_FOUND` check, simple binary branch.
+    # Result/Dry::Monads abstraction would be overkill for this surface area.
     NOT_FOUND = :not_found
 
     def initialize(channel:)
