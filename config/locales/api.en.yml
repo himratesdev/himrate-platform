@@ -4,6 +4,10 @@ en:
       unauthorized: "Unauthorized"
       not_found: "Not found"
       internal_error: "Internal server error"
+    # TASK-090 OQ-4: MAINTENANCE_MODE middleware default message
+    # (overridable via MAINTENANCE_MODE_MESSAGE env var).
+    maintenance:
+      message: "Scheduled maintenance. Back shortly."
   # TASK-085 FR-007 (BR-016): backend duration_text formatting per Accept-Language.
   stream_summary:
     duration_text:
