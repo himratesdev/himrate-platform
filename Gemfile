@@ -32,7 +32,7 @@ gem "blueprinter", "~> 1.1"
 gem "flipper", "~> 1.3"
 gem "flipper-redis", "~> 1.3"
 gem "flipper-active_record", "~> 1.3"
-gem "flipper-ui", "~> 1.3"
+gem "flipper-ui", "~> 1.4"
 
 # CORS
 gem "rack-cors", "~> 2.0"
