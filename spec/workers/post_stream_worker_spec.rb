@@ -27,6 +27,7 @@ RSpec.describe PostStreamWorker do
     allow(StreamerReputationRefreshWorker).to receive(:perform_async)
     allow(StreamExpiringWorker).to receive(:perform_at)
     allow(Trends::QualifyingPercentileSnapshotWorker).to receive(:perform_in)
+    allow(Trends::LatestTihRefreshWorker).to receive(:perform_in)
     allow(Trends::AggregationWorker).to receive(:perform_async)
   end
 
@@ -64,6 +65,14 @@ RSpec.describe PostStreamWorker do
       described_class.new.perform(stream.id)
 
       expect(Trends::QualifyingPercentileSnapshotWorker).to have_received(:perform_in)
+        .with(2.minutes, stream.id)
+    end
+
+    # TASK-086 FR-032: PostStreamWorker enqueues the MV-refresh worker (2-min delay).
+    it "schedules Trends::LatestTihRefreshWorker with 2-minute delay (TC-038)" do
+      described_class.new.perform(stream.id)
+
+      expect(Trends::LatestTihRefreshWorker).to have_received(:perform_in)
         .with(2.minutes, stream.id)
     end
 
