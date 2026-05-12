@@ -1,12 +1,20 @@
 # frozen_string_literal: true
 
-# TASK-039 FR-032: Identifies best/worst stream in period by latest TI score.
+# TASK-039 FR-032: Identifies best/worst stream in period by FINAL TI score.
 # Output consumed by /trends/erv + /trends/trust-index endpoints (summary cards).
 # Also marks trends_daily_aggregates.{is_best_stream_day, is_worst_stream_day}
 # via DailyBuilder extension (lazy, recomputed on aggregation run).
 #
-# Strategy: rank TrustIndexHistory rows by trust_index_score within [from, to],
-# tie-break by calculated_at DESC (most recent stream wins).
+# Strategy: rank the per-stream FINAL TIH (one row per ended stream) by
+# trust_index_score within [from, to], tie-break by calculated_at DESC
+# (most recent stream wins).
+#
+# TASK-086 FR-032 / BR-002: reads the `latest_tih_per_stream` materialized view
+# (LatestTihPerStream) instead of raw `trust_index_histories`. That view holds
+# exactly the per-stream final TIH that survives CleanupWorker retention pruning,
+# so this ranking is stable regardless of how much intermediate history has been
+# deleted (it previously ranked *all* TIH rows — intermediate included — which
+# changed the result as soon as cleanup ran).
 #
 # Minimum streams threshold в SignalConfiguration (trends/best_worst/min_streams_required)
 # — below threshold returns nil pair (insufficient data signal to API/UI).
@@ -31,11 +39,10 @@ module Trends
       def call
         min_streams = SignalConfiguration.value_for("trends", "best_worst", "min_streams_required").to_i
 
-        scope = TrustIndexHistory
+        scope = LatestTihPerStream
           .for_channel(@channel_id)
           .where(calculated_at: @from..@to)
           .where.not(trust_index_score: nil)
-          .where.not(stream_id: nil)
 
         return { best: nil, worst: nil, insufficient_data: true } if scope.count < min_streams
 

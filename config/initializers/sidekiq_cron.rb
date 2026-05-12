@@ -27,6 +27,14 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "Auto-indexing top streams (50+ viewers)"
       },
+      # TASK-086 FR-010 (ADR-086 §4.8): daily retention cleanup. 03:15 UTC — staggered
+      # away from bot_list_refresh (03:00) to avoid DB contention (CleanupWorker is heavy).
+      "cleanup_worker_daily" => {
+        "cron" => "15 3 * * *", # Daily at 03:15 UTC
+        "class" => "CleanupWorker",
+        "queue" => "monitoring",
+        "description" => "Daily retention cleanup: TIH intermediate + signals + sessions + ccv/chatters/chat snapshots + audit"
+      },
       # BUG-010 PR2: Accessory Operations Platform schedules
       "accessory_drift_detector" => {
         "cron" => "0 * * * *", # Hourly at :00

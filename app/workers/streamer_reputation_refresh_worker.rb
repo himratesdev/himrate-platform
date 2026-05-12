@@ -111,14 +111,19 @@ class StreamerReputationRefreshWorker
   end
 
   # FR-021: Pattern History — botted_stream_ratio. Score = 100 × (1 - ratio).
+  # TASK-086 FR-032 / BR-002: counts ended streams whose FINAL TIH < 50 via the
+  # latest_tih_per_stream materialized view (one row per ended stream). Previously
+  # this counted DISTINCT stream_id over raw trust_index_histories — once
+  # CleanupWorker pruned intermediate TIH the count could swing (an intermediate
+  # dip under 50 would disappear); reading per-stream FINAL TIH makes it stable.
+  # Streams with no TIH yet (not in the MV) are correctly not counted.
   def compute_pattern_history(channel)
     total = channel.streams.where.not(ended_at: nil).count
     return nil if total < MIN_STREAMS
 
-    botted = TrustIndexHistory
+    botted = LatestTihPerStream
       .where(channel_id: channel.id)
       .where("trust_index_score < 50")
-      .select("DISTINCT stream_id")
       .count
 
     ratio = botted.to_f / total

@@ -86,6 +86,48 @@ module PrometheusMetrics
       push("accessory_cost", grouping: { destination: destination, accessory: accessory }, body: body)
     end
 
+    # TASK-086 FR-027..029: per-table cleanup metrics after a CleanupWorker sub-run.
+    # Gauges (pushgateway has no counter/histogram semantics — ADR-086 §4.4, PO-confirmed):
+    # last_run_deleted / last_run_duration_seconds / consecutive_errors. Subsystem-scoped
+    # name (cleanup_worker_*), grouping by table (URL-path label like accessory_* metrics).
+    def observe_cleanup_run(table:, deleted_count:, duration_seconds:, consecutive_errors: 0)
+      lines = [
+        "# HELP cleanup_worker_last_run_deleted Rows deleted by the last CleanupWorker run for this table",
+        "# TYPE cleanup_worker_last_run_deleted gauge",
+        build_metric("cleanup_worker_last_run_deleted", {}, deleted_count.to_i),
+        "# HELP cleanup_worker_last_run_duration_seconds Duration of the last CleanupWorker run for this table",
+        "# TYPE cleanup_worker_last_run_duration_seconds gauge",
+        build_metric("cleanup_worker_last_run_duration_seconds", {}, duration_seconds.to_f),
+        "# HELP cleanup_worker_last_run_timestamp_seconds Unix ts of the last CleanupWorker run for this table",
+        "# TYPE cleanup_worker_last_run_timestamp_seconds gauge",
+        build_metric("cleanup_worker_last_run_timestamp_seconds", {}, Time.current.to_i),
+        "# HELP cleanup_worker_consecutive_errors Consecutive error audit rows for this table",
+        "# TYPE cleanup_worker_consecutive_errors gauge",
+        build_metric("cleanup_worker_consecutive_errors", {}, consecutive_errors.to_i)
+      ].join("\n") + "\n"
+      push("cleanup_worker", grouping: { table: table.to_s }, body: lines)
+    end
+
+    # TASK-086 FR-029: weekly table-size stats (kind = intermediate|final|live for tih, total for others).
+    def observe_cleanup_table_rows(table:, kind:, rows:)
+      body = [
+        "# HELP cleanup_worker_table_rows Row count by table and kind (weekly stat)",
+        "# TYPE cleanup_worker_table_rows gauge",
+        build_metric("cleanup_worker_table_rows", { kind: kind.to_s }, rows.to_i)
+      ].join("\n") + "\n"
+      push("cleanup_worker", grouping: { table: table.to_s }, body: body)
+    end
+
+    # TASK-086 FR-038: best-effort audit-log INSERT failure marker (gauge — last failure ts).
+    def observe_cleanup_audit_insert_failure(table:)
+      body = [
+        "# HELP cleanup_worker_audit_log_insert_failure_timestamp_seconds Unix ts of last audit-log INSERT failure",
+        "# TYPE cleanup_worker_audit_log_insert_failure_timestamp_seconds gauge",
+        build_metric("cleanup_worker_audit_log_insert_failure_timestamp_seconds", {}, Time.current.to_i)
+      ].join("\n") + "\n"
+      push("cleanup_worker", grouping: { table: table.to_s }, body: body)
+    end
+
     # Cleanup stale grouping keys. Called периодически из CleanupWorker (FR-103) — удаляет
     # grouping keys где ни одной activity за last 7 days.
     def delete_grouping(job:, grouping:)

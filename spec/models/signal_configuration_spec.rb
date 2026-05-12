@@ -17,6 +17,30 @@ RSpec.describe SignalConfiguration do
       expect(record).not_to be_valid
       expect(record.errors.attribute_names).to include(:signal_type, :category, :param_name, :param_value)
     end
+
+    # TASK-086 (PG re-review W3): retention_days rows must not drop below CleanupWorker::MIN_RETENTION_DAYS.
+    describe "retention_days floor" do
+      it "rejects a retention_days config below MIN_RETENTION_DAYS" do
+        record = SignalConfiguration.new(signal_type: "cleanup", category: "ti_signals", param_name: "retention_days", param_value: 0)
+        expect(record).not_to be_valid
+        expect(record.errors.attribute_names).to include(:param_value)
+      end
+
+      it "accepts a retention_days config at exactly MIN_RETENTION_DAYS" do
+        record = SignalConfiguration.new(signal_type: "cleanup", category: "ti_signals", param_name: "retention_days", param_value: CleanupWorker::MIN_RETENTION_DAYS)
+        expect(record).to be_valid
+      end
+
+      it "accepts a retention_days config above MIN_RETENTION_DAYS" do
+        record = SignalConfiguration.new(signal_type: "trust_index_histories", category: "default", param_name: "retention_days", param_value: 90)
+        expect(record).to be_valid
+      end
+
+      it "does not constrain non-retention params (e.g. a weight of 0.15)" do
+        record = SignalConfiguration.new(signal_type: "auth_ratio", category: "default", param_name: "weight", param_value: 0.15)
+        expect(record).to be_valid
+      end
+    end
   end
 
   describe ".value_for" do

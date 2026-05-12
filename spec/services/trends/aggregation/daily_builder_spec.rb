@@ -167,6 +167,11 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
             calculated_at: target_date - (i + 3).days + 3.hours)
         end
 
+        # TASK-086 FR-032: BestWorstStreamFinder reads the latest_tih_per_stream MV
+        # (refreshed by Trends::LatestTihRefreshWorker after streams end). Refresh it
+        # so the per-stream final TIH the DailyBuilder ranks against is populated.
+        ActiveRecord::Base.connection.execute("REFRESH MATERIALIZED VIEW latest_tih_per_stream")
+
         described_class.call(channel.id, target_date)
         tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
 

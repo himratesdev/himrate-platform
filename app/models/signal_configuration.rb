@@ -5,11 +5,20 @@
 # All signal classes read config from here, not hardcoded constants.
 
 class SignalConfiguration < ApplicationRecord
+  # param_name used by CleanupWorker / cleanup.rake to read a table's retention horizon.
+  RETENTION_PARAM_NAME = "retention_days"
+
   validates :signal_type, presence: true
   validates :category, presence: true
   validates :param_name, presence: true
   validates :param_value, presence: true
   validates :signal_type, uniqueness: { scope: %i[category param_name] }
+  # TASK-086 (PG re-review W3): a `retention_days` row must never drop below the cleanup
+  # floor — a 0/1/… would let CleanupWorker collapse a table's retention window to "now".
+  # CleanupWorker::MIN_RETENTION_DAYS is the single source of truth (the worker + cleanup.rake
+  # clamp at read time too — this just stops a bad value from being persisted via the admin UI).
+  # Only retention rows are constrained; every other param_name is untouched.
+  validate :retention_days_not_below_floor
 
   scope :for_signal, ->(signal_type, category) {
     where(signal_type: signal_type, category: category)
@@ -46,4 +55,13 @@ class SignalConfiguration < ApplicationRecord
   end
 
   class ConfigurationMissing < StandardError; end
+
+  private
+
+  def retention_days_not_below_floor
+    return unless param_name == RETENTION_PARAM_NAME && param_value.present?
+    return if param_value >= CleanupWorker::MIN_RETENTION_DAYS
+
+    errors.add(:param_value, "must be >= #{CleanupWorker::MIN_RETENTION_DAYS} (cleanup retention floor)")
+  end
 end

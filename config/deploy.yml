@@ -105,9 +105,13 @@ accessories:
     port: "127.0.0.1:9090:9090"
     cmd: --storage.tsdb.retention.time=90d --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles
     # Deploy iter2 fix: Kamal `directories:` accepts только volumes/directory mounts.
-    # Single config files должны быть в `files:` block.
+    # Single config files должны быть в `files:` block (a dir bind mounts EMPTY).
     files:
       - prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      # TASK-086 FR-030: cleanup-worker safety-net alerting rules (rule_files glob
+      # /etc/prometheus/rules/*.yml in prometheus.yml). Mount each rule file
+      # individually — Kamal `files:` does not glob, `directories:` would mount empty.
+      - prometheus/rules/cleanup_health.yml:/etc/prometheus/rules/cleanup_health.yml
     directories:
       - himrate_prometheus:/prometheus
     options:
@@ -195,8 +199,8 @@ accessories:
   grafana:
     # ADR FR-034..037, FR-075..082: SSO Google OIDC + basic auth fallback + provisioning.
     # Web UI на grafana.himrate.com через kamal proxy SSL.
-    # 6 dashboards provisioned from grafana/dashboards/*.json (Drift Trend, Operations
-    # Frequency, MTTR, Accessory Health Overview, Logs Explorer, Cost Attribution).
+    # 7 dashboards provisioned from grafana/dashboards/*.json (Drift Trend, Operations
+    # Frequency, MTTR, Accessory Health Overview, Logs Explorer, Cost Attribution, Cleanup Health).
     image: grafana/grafana-oss:11.4.0
     host: 194.135.85.159
     # PG W-1 fix: bind 127.0.0.1:3000 (internal-only). Eliminates risk window
@@ -242,6 +246,9 @@ accessories:
       - grafana/dashboards/accessory_health_overview.json:/var/lib/grafana/dashboards/accessory_health_overview.json
       - grafana/dashboards/logs_explorer.json:/var/lib/grafana/dashboards/logs_explorer.json
       - grafana/dashboards/cost_attribution.json:/var/lib/grafana/dashboards/cost_attribution.json
+      # TASK-086 FR-040: cleanup-worker health dashboard (deleted-per-table, run
+      # duration, table row counts, consecutive errors, last-run age, audit-insert failures).
+      - grafana/dashboards/cleanup_health.json:/var/lib/grafana/dashboards/cleanup_health.json
     directories:
       - himrate_grafana:/var/lib/grafana
     options:

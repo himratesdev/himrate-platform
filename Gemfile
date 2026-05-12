@@ -40,6 +40,10 @@ gem "rack-cors", "~> 2.0"
 # Rate limiting
 gem "rack-attack", "~> 6.7"
 
+# CSV / JSON — stdlib, no longer default gems on Ruby 3.4+; pinned so rake tasks
+# (cleanup:report, hs_analytics) keep working under bundler regardless of Ruby version.
+gem "csv", "~> 3.3"
+
 # Reduces boot times through caching; required in config/boot.rb
 gem "bootsnap", require: false
 
