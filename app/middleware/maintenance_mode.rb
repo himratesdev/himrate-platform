@@ -19,9 +19,12 @@
 # `retry_after_minutes` (ceil of seconds / 60). Extra fields (`maintenance`,
 # `until*`, `retry_after_seconds`) are kept for PR #37 / OQ-4 compatibility.
 #
-# Excluded from blocking:
+# Scope: only /api/v1/* is ever considered for blocking. Everything else —
+# /up (Rails native health check / load balancer / Kamal proxy probe),
+# /webhooks/*, the Flipper UI, etc. — is outside the intercept guard entirely
+# and is never touched.
+# Excluded from blocking *within* /api/v1:
 # - /api/v1/health/* — frontend polling endpoint(s); must stay accessible.
-# - /up — Rails native health check (load balancer / Kamal proxy probe).
 # Exclusions match on path boundaries (exact prefix or prefix + "/"), so a
 # hypothetical /api/v1/healthcheck is NOT auto-excluded.
 #
@@ -45,9 +48,6 @@ class MaintenanceMode
   # Excluded if the path equals one of these or starts with "<prefix>/".
   EXCLUDED_PATH_PREFIXES = [
     "/api/v1/health"
-  ].freeze
-  EXCLUDED_EXACT_PATHS = [
-    "/up"
   ].freeze
 
   def initialize(app)
@@ -140,8 +140,8 @@ class MaintenanceMode
 
   def intercept?(path)
     # Boundary match on API_PREFIX too (CR N1): "/api/v1foo" is NOT an API path.
+    # Anything outside /api/v1 (e.g. /up, /webhooks/*) is excluded right here.
     return false unless path == API_PREFIX || path.start_with?("#{API_PREFIX}/")
-    return false if EXCLUDED_EXACT_PATHS.include?(path)
     return false if excluded_prefix?(path)
 
     true
