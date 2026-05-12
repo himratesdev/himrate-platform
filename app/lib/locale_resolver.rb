@@ -17,12 +17,9 @@ module LocaleResolver
   # I18n.available_locales (falls back to I18n.default_locale).
   def call(env)
     request = Rack::Request.new(env)
-    candidates = [ query_lang(request), env["HTTP_ACCEPT_LANGUAGE"] ]
-    candidates.each do |source|
-      locale = match_available(source)
-      return locale if locale
-    end
-    I18n.default_locale
+    match_available(query_lang(request)) ||
+      match_accept_language(env["HTTP_ACCEPT_LANGUAGE"]) ||
+      I18n.default_locale
   end
 
   # Query-only param read; an empty/malformed query string just yields nil.
@@ -32,11 +29,35 @@ module LocaleResolver
     nil
   end
 
+  # Single language tag → available-locale Symbol or nil (used for ?lang=).
   def match_available(source)
     return nil if source.blank?
 
-    tag = source.to_s.downcase.scan(/[a-z]{2}/).first
+    tag = source.to_s.downcase[/[a-z]{2}/]
     sym = tag&.to_sym
     sym if sym && I18n.available_locales.include?(sym)
+  end
+
+  # Accept-Language with q-value preference (RFC 9110 §12.5.4): "fr-CA,ru;q=0.9"
+  # → :ru, not :fr (which we don't support). Parses each entry's q-weight
+  # (default 1.0), highest-first; ties keep header order; returns the first
+  # supported locale.
+  def match_accept_language(header)
+    return nil if header.blank?
+
+    header.split(",").each_with_index.filter_map { |entry, i| parse_language_entry(entry, i) }
+          .min_by { |_locale, q, i| [ -q, i ] }
+          &.first
+  end
+
+  # "ru;q=0.9" → [:ru, 0.9, index] when :ru is supported, else nil.
+  # Malformed/absent q → 1.0.
+  def parse_language_entry(entry, index)
+    tag_part, *params = entry.strip.split(";")
+    locale = match_available(tag_part)
+    return nil unless locale
+
+    q = params.find { |p| p.strip.start_with?("q=") }&.then { |p| Float(p.strip[2..], exception: false) }
+    [ locale, q || 1.0, index ]
   end
 end

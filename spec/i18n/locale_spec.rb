@@ -55,6 +55,28 @@ RSpec.describe "i18n Configuration" do
       env = Rack::MockRequest.env_for("/api/v1/channels/1")
       expect(LocaleResolver.call(env)).to eq(I18n.default_locale)
     end
+
+    # CR N2: Accept-Language q-value preference (RFC 9110 §12.5.4). The first
+    # entry may be an unsupported locale — pick the highest-q SUPPORTED one.
+    it "honors q-values: 'fr-CA,ru;q=0.9' → :ru (skips unsupported :fr)" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1", "HTTP_ACCEPT_LANGUAGE" => "fr-CA,ru;q=0.9")
+      expect(LocaleResolver.call(env)).to eq(:ru)
+    end
+
+    it "prefers the higher q-value among supported locales ('en;q=0.3,ru;q=0.8' → :ru)" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1", "HTTP_ACCEPT_LANGUAGE" => "en;q=0.3,ru;q=0.8")
+      expect(LocaleResolver.call(env)).to eq(:ru)
+    end
+
+    it "ties keep header order ('en,ru' → :en)" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1", "HTTP_ACCEPT_LANGUAGE" => "en,ru")
+      expect(LocaleResolver.call(env)).to eq(:en)
+    end
+
+    it "falls back to default when no entry is supported ('fr,de;q=0.9' → :en)" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1", "HTTP_ACCEPT_LANGUAGE" => "fr,de;q=0.9")
+      expect(LocaleResolver.call(env)).to eq(I18n.default_locale)
+    end
   end
 
   # TC-005: Missing key in ru → EN fallback

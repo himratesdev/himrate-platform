@@ -25,6 +25,17 @@ module Himrate
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     config.autoload_lib(ignore: %w[assets tasks])
 
+    # TASK-090: `app/middleware/` holds Rack middleware that is loaded via the
+    # middleware stack (config/initializers/maintenance_mode.rb), never via a
+    # constant reference in app code. Config initializers run BEFORE zeitwerk's
+    # `setup_main_autoloader`, so the initializer `require`s the file directly.
+    # Tell zeitwerk to ignore the directory so it does not also register an
+    # autoload for the (already-loaded) constant — avoids the double-load /
+    # stale-reference-on-reload anti-pattern. This is the blessed pattern for
+    # app dirs loaded outside autoloading (Rails Autoloading guide,
+    # "Ignored Directories").
+    Rails.autoloaders.main.ignore("#{config.root}/app/middleware")
+
     # Configuration for the application, engines, and railties goes here.
     #
     # These settings can be overridden in specific environments using the files

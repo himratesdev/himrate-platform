@@ -2,28 +2,32 @@
 
 require "rails_helper"
 
-# TASK-090 OQ-4: MaintenanceMode middleware spec.
+# TASK-090 OQ-4 / SRS FR-019: MaintenanceMode middleware spec.
 #
 # Covers:
 #  1. Flag OFF → normal API endpoints respond as usual (middleware is no-op).
-#  2. Flag ON  → /api/v1/* returns 503 + JSON shape + Retry-After header.
+#  2. Flag ON  → /api/v1/* returns 503 + JSON shape (incl. error +
+#     retry_after_minutes per SRS FR-019) + Retry-After header.
 #  3. /api/v1/health/maintenance accessible in BOTH states (HTTP 200).
 #  4. /up (Rails health check) accessible during maintenance (HTTP 200).
 #  5. Locale switching via Accept-Language: en/ru produces correct message.
 #  6. MAINTENANCE_MODE_UNTIL ISO 8601 parsing — until_unix + retry_after_seconds
-#     reflect the configured time.
-#  7. MAINTENANCE_MODE_MESSAGE env override beats i18n default.
+#     reflect the configured time; retry_after_minutes = ceil(seconds / 60).
+#  7. MAINTENANCE_MODE_MESSAGE / _EN / _RU env overrides beat i18n default
+#     (locale-specific override wins over generic).
 #  8. Non-API paths (e.g. /webhooks/*) unaffected by middleware.
 RSpec.describe "MaintenanceMode middleware", type: :request do
   around do |example|
-    original_active = ENV["MAINTENANCE_MODE_ACTIVE"]
-    original_until = ENV["MAINTENANCE_MODE_UNTIL"]
-    original_message = ENV["MAINTENANCE_MODE_MESSAGE"]
+    saved = ENV.slice(
+      "MAINTENANCE_MODE_ACTIVE", "MAINTENANCE_MODE_UNTIL",
+      "MAINTENANCE_MODE_MESSAGE", "MAINTENANCE_MODE_MESSAGE_EN", "MAINTENANCE_MODE_MESSAGE_RU"
+    )
     example.run
   ensure
-    ENV["MAINTENANCE_MODE_ACTIVE"] = original_active
-    ENV["MAINTENANCE_MODE_UNTIL"] = original_until
-    ENV["MAINTENANCE_MODE_MESSAGE"] = original_message
+    %w[MAINTENANCE_MODE_ACTIVE MAINTENANCE_MODE_UNTIL MAINTENANCE_MODE_MESSAGE
+       MAINTENANCE_MODE_MESSAGE_EN MAINTENANCE_MODE_MESSAGE_RU].each do |k|
+      saved.key?(k) ? ENV[k] = saved[k] : ENV.delete(k)
+    end
   end
 
   describe "when MAINTENANCE_MODE_ACTIVE=false (or unset)" do
@@ -45,29 +49,48 @@ RSpec.describe "MaintenanceMode middleware", type: :request do
   describe "when MAINTENANCE_MODE_ACTIVE=true" do
     before { ENV["MAINTENANCE_MODE_ACTIVE"] = "true" }
 
-    it "returns 503 + JSON shape + Retry-After on /api/v1/* endpoints" do
+    it "returns 503 + SRS FR-019 JSON shape + Retry-After on /api/v1/* endpoints" do
       get "/api/v1/channels/123", headers: { "Authorization" => "Bearer x" }
 
       expect(response).to have_http_status(:service_unavailable)
       expect(response.headers["Content-Type"]).to start_with("application/json")
       expect(response.headers["Retry-After"]).to eq("60") # default when no UNTIL set
+      expect(response.headers["Cache-Control"]).to eq("no-store")
 
       body = JSON.parse(response.body)
+      # SRS FR-019 / §10A contract: extension routes on `error` (apiErrorCode);
+      # Frame19 countdown reads `retry_after_minutes`.
       expect(body["maintenance"]).to eq(true)
+      expect(body["error"]).to eq("MAINTENANCE_MODE")
       expect(body["message"]).to be_a(String).and(be_present)
       expect(body["retry_after_seconds"]).to eq(60)
+      expect(body["retry_after_minutes"]).to eq(1)
       expect(body).to have_key("until")
       expect(body).to have_key("until_unix")
     end
 
-    it "still allows /api/v1/health/maintenance (HTTP 200, body reports maintenance)" do
+    it "rounds retry_after_minutes UP from retry_after_seconds (ceil)" do
+      # 90s window → 2 minutes, not 1.
+      ENV["MAINTENANCE_MODE_UNTIL"] = (Time.now.utc + 90).iso8601
+
+      get "/api/v1/channels/123", headers: { "Authorization" => "Bearer x" }
+
+      body = JSON.parse(response.body)
+      expect(body["retry_after_seconds"]).to be_between(85, 91)
+      expect(body["retry_after_minutes"]).to eq(2)
+    end
+
+    it "still allows /api/v1/health/maintenance (HTTP 200, body mirrors the 503 contract)" do
       get "/api/v1/health/maintenance"
 
       expect(response).to have_http_status(:ok)
+      expect(response.headers["Cache-Control"]).to eq("no-store")
       body = JSON.parse(response.body)
       expect(body["maintenance"]).to eq(true)
+      expect(body["error"]).to eq("MAINTENANCE_MODE")
       expect(body["message"]).to be_present
       expect(body["retry_after_seconds"]).to eq(60)
+      expect(body["retry_after_minutes"]).to eq(1)
     end
 
     it "still allows /up (Rails native health check)" do
@@ -207,14 +230,34 @@ RSpec.describe "MaintenanceMode middleware", type: :request do
       end
     end
 
-    context "with MAINTENANCE_MODE_MESSAGE override" do
-      it "uses the env value instead of the i18n default" do
+    context "with MAINTENANCE_MODE_MESSAGE overrides" do
+      it "generic MAINTENANCE_MODE_MESSAGE beats the i18n default (any locale)" do
         ENV["MAINTENANCE_MODE_MESSAGE"] = "Custom downtime — see status.himrate.com"
 
-        get "/api/v1/channels/123", headers: { "Authorization" => "Bearer x" }
+        get "/api/v1/channels/123?lang=ru", headers: { "Authorization" => "Bearer x" }
 
         body = JSON.parse(response.body)
         expect(body["message"]).to eq("Custom downtime — see status.himrate.com")
+      end
+
+      it "locale-specific MAINTENANCE_MODE_MESSAGE_RU / _EN win over the generic override" do
+        ENV["MAINTENANCE_MODE_MESSAGE"]    = "Generic downtime"
+        ENV["MAINTENANCE_MODE_MESSAGE_RU"] = "Идут технические работы"
+        ENV["MAINTENANCE_MODE_MESSAGE_EN"] = "Maintenance in progress"
+
+        get "/api/v1/channels/123?lang=ru", headers: { "Authorization" => "Bearer x" }
+        expect(JSON.parse(response.body)["message"]).to eq("Идут технические работы")
+
+        get "/api/v1/channels/123?lang=en", headers: { "Authorization" => "Bearer x" }
+        expect(JSON.parse(response.body)["message"]).to eq("Maintenance in progress")
+      end
+
+      it "falls back to the generic override when only one locale-specific var is set" do
+        ENV["MAINTENANCE_MODE_MESSAGE"]    = "Generic downtime"
+        ENV["MAINTENANCE_MODE_MESSAGE_RU"] = "Идут технические работы"
+
+        get "/api/v1/channels/123?lang=en", headers: { "Authorization" => "Bearer x" }
+        expect(JSON.parse(response.body)["message"]).to eq("Generic downtime")
       end
     end
 

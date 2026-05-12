@@ -1,14 +1,23 @@
 # frozen_string_literal: true
 
-# TASK-090 OQ-4: MAINTENANCE_MODE infrastructure for graceful deploy/downtime.
+# TASK-090 OQ-4 / SRS v1.2+ FR-019 (OQ-6 ratification): MAINTENANCE_MODE
+# infrastructure for graceful deploy/downtime.
 #
 # Rack middleware that intercepts /api/v1/* requests when MAINTENANCE_MODE_ACTIVE=true
 # and returns HTTP 503 + machine-readable JSON. Frontend can detect this state and
 # render a maintenance banner instead of generic network errors.
 #
-# The 503 body intentionally has NO machine `error.code` field — the
-# `maintenance: true` flag is the discriminator the client gates on (see
-# docs/operations/maintenance-mode.md).
+# 503 / probe body contract (SRS FR-019, §10A — what the extension gates on):
+#   { maintenance: true,
+#     error: "MAINTENANCE_MODE",          # apiErrorCode the extension routes on
+#     until: "<iso8601>", until_unix: <int>,
+#     retry_after_seconds: <int>,
+#     retry_after_minutes: <int>,          # Frame19 ICU-plural countdown (minutes)
+#     message: "<localized>" }
+# `maintenance: true` AND `error: "MAINTENANCE_MODE"` are both discriminators —
+# the extension routes on `apiErrorCode` (← `error`); Frame19's countdown reads
+# `retry_after_minutes` (ceil of seconds / 60). Extra fields (`maintenance`,
+# `until*`, `retry_after_seconds`) are kept for PR #37 / OQ-4 compatibility.
 #
 # Excluded from blocking:
 # - /api/v1/health/* — frontend polling endpoint(s); must stay accessible.
@@ -20,10 +29,13 @@
 # (see config/initializers/maintenance_mode.rb).
 #
 # Configuration (ENV):
-#   MAINTENANCE_MODE_ACTIVE   — "true"/"false" (default false)
-#   MAINTENANCE_MODE_UNTIL    — ISO 8601 datetime (optional, e.g. "2026-05-12T20:30:00Z")
-#   MAINTENANCE_MODE_MESSAGE  — optional override; default uses i18n keys
-#                               api.maintenance.message (en/ru).
+#   MAINTENANCE_MODE_ACTIVE      — "true"/"false" (default false)
+#   MAINTENANCE_MODE_UNTIL       — ISO 8601 datetime (optional, e.g. "2026-06-01T12:00:00Z")
+#   MAINTENANCE_MODE_MESSAGE_EN  — optional EN-only message override
+#   MAINTENANCE_MODE_MESSAGE_RU  — optional RU-only message override
+#   MAINTENANCE_MODE_MESSAGE     — optional generic override (used for any locale
+#                                  with no locale-specific override). Resolution:
+#                                  locale-specific → generic → i18n api.maintenance.message.
 #
 # Locale: resolved by LocaleResolver (?lang= query param wins, then
 # Accept-Language header, else I18n.default_locale).
@@ -55,21 +67,24 @@ class MaintenanceMode
   class << self
     # Returns hash describing the current maintenance status. Used both by the
     # middleware and by Api::V1::Health::MaintenanceController so the payload
-    # shape stays consistent.
+    # shape stays consistent (SRS FR-019, §10A).
     #
-    # `until` / `until_unix` are ALWAYS non-null: when MAINTENANCE_MODE_UNTIL is
-    # unset, malformed, or in the past, they are derived from retry_after_seconds
-    # (now + retry_after_seconds) so the client always has a sensible retry
-    # target. A non-null ISO 8601 `until` is part of the contract the Chrome
-    # extension gates on (CR A1).
+    # `error: "MAINTENANCE_MODE"` is the apiErrorCode the extension routes on;
+    # `retry_after_minutes` (ceil of seconds / 60) drives Frame19's ICU-plural
+    # countdown. `until` / `until_unix` are ALWAYS non-null: when
+    # MAINTENANCE_MODE_UNTIL is unset, malformed, or in the past, they are
+    # derived from retry_after_seconds (now + retry_after_seconds) so the client
+    # always has a sensible retry target (CR A1).
     def status_payload(locale: I18n.default_locale)
       target, seconds = retry_window
       {
         maintenance: active?,
+        error: "MAINTENANCE_MODE",
         until: target.iso8601,
         until_unix: target.to_i,
-        message: message_for(locale),
-        retry_after_seconds: seconds
+        retry_after_seconds: seconds,
+        retry_after_minutes: (seconds / 60.0).ceil,
+        message: message_for(locale)
       }
     end
 
@@ -81,11 +96,13 @@ class MaintenanceMode
       retry_window.last
     end
 
+    # Resolution order: locale-specific ENV override
+    # (MAINTENANCE_MODE_MESSAGE_<UPCASE-LOCALE>) → generic
+    # MAINTENANCE_MODE_MESSAGE override → i18n api.maintenance.message.
     def message_for(locale)
-      override = ENV["MAINTENANCE_MODE_MESSAGE"]
-      return override if override.present?
-
-      I18n.t("api.maintenance.message", locale: locale)
+      ENV["MAINTENANCE_MODE_MESSAGE_#{locale.to_s.upcase}"].presence ||
+        ENV["MAINTENANCE_MODE_MESSAGE"].presence ||
+        I18n.t("api.maintenance.message", locale: locale)
     end
 
     private
@@ -122,7 +139,8 @@ class MaintenanceMode
   end
 
   def intercept?(path)
-    return false unless path.start_with?(API_PREFIX)
+    # Boundary match on API_PREFIX too (CR N1): "/api/v1foo" is NOT an API path.
+    return false unless path == API_PREFIX || path.start_with?("#{API_PREFIX}/")
     return false if EXCLUDED_EXACT_PATHS.include?(path)
     return false if excluded_prefix?(path)
 
@@ -138,10 +156,13 @@ class MaintenanceMode
   def build_response(env)
     locale = LocaleResolver.call(env)
     payload = self.class.status_payload(locale: locale)
+    # Rack 3 requires lowercase header keys; "cache-control" (not "Cache-Control")
+    # also stops the downstream response pipeline from layering its default
+    # `cache-control: no-cache` on top of our `no-store`.
     headers = {
-      "Content-Type" => "application/json; charset=utf-8",
-      "Retry-After" => payload[:retry_after_seconds].to_s,
-      "Cache-Control" => "no-store"
+      "content-type" => "application/json; charset=utf-8",
+      "retry-after" => payload[:retry_after_seconds].to_s,
+      "cache-control" => "no-store"
     }
     [ 503, headers, [ JSON.generate(payload) ] ]
   end
