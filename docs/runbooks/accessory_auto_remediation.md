@@ -22,8 +22,11 @@ Default OFF. Activate after PR1+PR2 deployed AND validated:
 open https://staging.himrate.com/admin/flipper
 # Enable "accessory_auto_remediation"
 
-# OR via Rails console
-docker exec -it himrate-web bundle exec rails runner "Flipper.enable(:accessory_auto_remediation)"
+# OR via Rails console — resolve the Kamal web container name first. Kamal names app
+# containers `himrate-web-<destination>-<sha>`, NOT a static `himrate-web`. On the
+# production host use `label=destination=production`.
+WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web --filter label=destination=staging | head -1)
+docker exec -it "$WEB" bundle exec rails runner "Flipper.enable(:accessory_auto_remediation)"
 ```
 
 ## Lifecycle per detection cycle
@@ -57,7 +60,9 @@ Effect:
 ### Manual re-enable
 
 ```bash
-docker exec -it himrate-web bundle exec rails runner "
+# Resolve the Kamal web container name (himrate-web-<destination>-<sha>) on the prod host:
+WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web --filter label=destination=production | head -1)
+docker exec -it "$WEB" bundle exec rails runner "
 AutoRemediationLog.where(
   destination: 'production',
   accessory: 'db',
@@ -110,8 +115,9 @@ Active drift events не auto-trigger retroactively. Worker checks flag on next 
 ## Disable globally
 
 ```bash
-# Disable Flipper flag
-docker exec -it himrate-web bundle exec rails runner "Flipper.disable(:accessory_auto_remediation)"
+# Disable Flipper flag (resolve the web container as above; use `label=destination=production` on the prod host)
+WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web --filter label=destination=staging | head -1)
+docker exec -it "$WEB" bundle exec rails runner "Flipper.disable(:accessory_auto_remediation)"
 ```
 
 Worker continues drift detection (still opens events, sends alerts) but no auto-trigger workflow. Manual trigger via UI still works.
