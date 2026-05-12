@@ -114,6 +114,29 @@ jobs:
           SSH_CONFIG
           chmod 600 ~/.ssh/config
 
+      # BUG-020: Kamal names app containers `<service>-<role>-<destination>-<sha>`
+      # (e.g. himrate-web-staging-5ec75ae...), NOT a static `himrate-web`. Resolve the
+      # actual web container name on the target host once, expose as step output, and
+      # use it in every `docker exec ... bin/rails accessory_ops:*` step below.
+      - name: Resolve web container name
+        id: web
+        env:
+          DESTINATION: ${{ inputs.destination }}
+        run: |
+          set -euo pipefail
+          # `head -1` on the LOCAL side of the pipe (not inside the ssh command string):
+          # keeps `pipefail` propagating a non-zero `docker ps` / ssh exit so a failed
+          # Docker query on the host fails this step loudly instead of silently yielding
+          # an empty NAME (which would otherwise be misreported as "no container found").
+          NAME=$(ssh "root@194.135.85.159" \
+            "docker ps --filter label=service=himrate --filter label=role=web --filter label=destination=${DESTINATION} --format '{{.Names}}'" | head -1)
+          if [ -z "$NAME" ]; then
+            echo "::error::No running himrate web container found on host for destination='${DESTINATION}' (expected labels service=himrate,role=web,destination=${DESTINATION})"
+            exit 1
+          fi
+          echo "Resolved web container: $NAME"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+
       # FR-002: validate-secrets fail-fast пред kamal invocation. Mirrors ci.yml deploy jobs.
       - name: Validate required secrets
         env:
@@ -181,6 +204,9 @@ jobs:
         env:
           DESTINATION: ${{ inputs.destination }}
           ACCESSORY: ${{ inputs.accessory }}
+          # PG W-1: route the resolved container name through env: (consistent with the
+          # workflow's command-injection-hardening pattern), not inline ${{ steps.* }}.
+          WEB_CONTAINER: ${{ steps.web.outputs.name }}
         run: |
           set -euo pipefail
           # Source: workflow_dispatch = "manual" or "auto_remediation". Both = drift|restart
@@ -188,7 +214,7 @@ jobs:
           # auto-remediation already записал свой downtime в TriggerService path.
           SOURCE="restart"
           EVENT_ID=$(ssh "root@194.135.85.159" \
-            "docker exec himrate-web bin/rails 'accessory_ops:downtime:start[${DESTINATION},${ACCESSORY},${SOURCE}]'" \
+            "docker exec ${WEB_CONTAINER} bin/rails 'accessory_ops:downtime:start[${DESTINATION},${ACCESSORY},${SOURCE}]'" \
             | tail -1)
           echo "event_id=${EVENT_ID}" >> "$GITHUB_OUTPUT"
           echo "::notice::downtime_started event_id=${EVENT_ID}"
@@ -217,10 +243,11 @@ jobs:
         env:
           DESTINATION: ${{ inputs.destination }}
           ACCESSORY: ${{ inputs.accessory }}
+          WEB_CONTAINER: ${{ steps.web.outputs.name }}
         run: |
           set -euo pipefail
           ssh "root@194.135.85.159" \
-            "docker exec himrate-web bin/rails 'accessory_ops:health_verify[${DESTINATION},${ACCESSORY},300]'"
+            "docker exec ${WEB_CONTAINER} bin/rails 'accessory_ops:health_verify[${DESTINATION},${ACCESSORY},300]'"
 
       # PR3 FR-122..124: на healthy verdict — refresh AccessoryState (read runtime image
       # via DriftCheckService + persist via StateService). На fail step — пропускаем (alert
@@ -230,9 +257,10 @@ jobs:
         env:
           DESTINATION: ${{ inputs.destination }}
           ACCESSORY: ${{ inputs.accessory }}
+          WEB_CONTAINER: ${{ steps.web.outputs.name }}
         run: |
           ssh "root@194.135.85.159" \
-            "docker exec himrate-web bin/rails 'accessory_ops:state:refresh[${DESTINATION},${ACCESSORY},healthy]'"
+            "docker exec ${WEB_CONTAINER} bin/rails 'accessory_ops:state:refresh[${DESTINATION},${ACCESSORY},healthy]'"
 
       # PR3 FR hooks: close downtime event с ended_at — duration_seconds auto-computed
       # AccessoryDowntimeEvent.before_save. Both healthy + unhealthy flows close downtime
@@ -241,10 +269,11 @@ jobs:
         if: always() && steps.downtime_start.outcome == 'success'
         env:
           EVENT_ID: ${{ steps.downtime_start.outputs.event_id }}
+          WEB_CONTAINER: ${{ steps.web.outputs.name }}
         run: |
           if [ -n "${EVENT_ID:-}" ]; then
             ssh "root@194.135.85.159" \
-              "docker exec himrate-web bin/rails 'accessory_ops:downtime:end[${EVENT_ID}]'"
+              "docker exec ${WEB_CONTAINER} bin/rails 'accessory_ops:downtime:end[${EVENT_ID}]'"
           fi
 
       # PR3 FR-006/070 (CR B-1 fix): AlertmanagerNotifier push через JSON payload на STDIN.
@@ -261,6 +290,7 @@ jobs:
           TRIGGERED_BY: ${{ inputs.triggered_by }}
           ACTOR: ${{ github.actor }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          WEB_CONTAINER: ${{ steps.web.outputs.name }}
         run: |
           set -euo pipefail
           if [ "$KAMAL_OUTCOME" != "success" ]; then
@@ -290,7 +320,7 @@ jobs:
             --arg description "$DESCRIPTION" \
             '{event_type:$event_type, severity:$severity, destination:$destination, accessory:$accessory, summary:$summary, description:$description}')
           printf '%s' "$PAYLOAD" | ssh "root@194.135.85.159" \
-            "docker exec -i himrate-web bin/rails accessory_ops:notify"
+            "docker exec -i ${WEB_CONTAINER} bin/rails accessory_ops:notify"
 
       # FR-005: audit annotation на success.
       - name: Emit audit notice (success)
