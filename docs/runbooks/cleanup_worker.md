@@ -14,7 +14,7 @@
 | Flipper флаг | `:cleanup_worker` — в `FlipperDefaults::ALL_FLAGS` ⇒ **enabled-by-default на каждом boot** |
 | Cron | nightly (`config/initializers/sidekiq_cron.rb`) |
 | Retention config | таблица `signal_configurations` (rows seeded миграцией `20260512100001_seed_cleanup_retention_thresholds.rb`); `SignalConfiguration` — source of truth, `DEFAULT_RETENTION_DAYS = 90` — last-resort fallback |
-| TIH floor | `CleanupWorker::MIN_RETENTION_DAYS = 7` — `retention_days` для `trust_index_histories` клампится снизу до 7д (защита от misconfigured admin-row `retention_days = 0`) |
+| Retention floor | `CleanupWorker::MIN_RETENTION_DAYS = 7` — `retention_days` **любой** из 5 таблиц клампится снизу до 7д (worker, rake-backfill, и валидация `SignalConfiguration` — защита от misconfigured/обнулённого admin-row `retention_days = 0`). Для `trust_index_histories` сверх этого работает ещё и conservation rule (FR-002/003) |
 | TIH conservation (FR-002/003) | rank-1 (финальная) TIH на каждый stream и **все** TIH live-стримов (`streams.ended_at IS NULL`) **никогда** не удаляются |
 | Audit | таблица `cleanup_audit_logs` (retention indefinite — никогда не auto-удаляется); по строке на sub-run (`success` / `partial` / `error` / `skipped`) |
 | Auto-disable | 3 подряд `error`-строки для таблицы ⇒ `Cleanup::AutoDisableService` выключает `:cleanup_worker` + critical Alertmanager alert |
@@ -70,7 +70,7 @@ bin/rails cleanup:initial_backfill[tih]          # dry-run preview (default)
 bin/rails cleanup:initial_backfill[tih,false]    # реальное удаление
 ```
 
-Cutoff берётся из `SignalConfiguration` (для `tih` — с тем же клампом снизу до `MIN_RETENTION_DAYS`, что и в worker'е). Безопасно перезапускать.
+Cutoff берётся из `SignalConfiguration` для выбранной таблицы и клампится снизу до `CleanupWorker::MIN_RETENTION_DAYS` — тот же floor, что применяет worker (`lib/tasks/cleanup.rake#retention_days_for`). Безопасно перезапускать.
 
 ---
 

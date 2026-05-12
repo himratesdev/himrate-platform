@@ -78,10 +78,17 @@ namespace :cleanup do
           "Until it ships there is nothing to restore from.")
   end
 
+  # Same retention horizon the worker uses, with the same MIN_RETENTION_DAYS floor —
+  # a misconfigured (or deliberately zeroed) admin row can't make the backfill cutoff
+  # collapse to "now". CleanupWorker::MIN_RETENTION_DAYS is the single source of truth.
   def retention_days_for(spec)
-    SignalConfiguration.value_for(spec[:signal_type], spec[:category], "retention_days").to_i
-  rescue StandardError
-    RETENTION_DAYS_DEFAULT
+    raw =
+      begin
+        SignalConfiguration.value_for(spec[:signal_type], spec[:category], "retention_days").to_i
+      rescue StandardError
+        RETENTION_DAYS_DEFAULT
+      end
+    raw.clamp(CleanupWorker::MIN_RETENTION_DAYS..)
   end
 
   def parse_report_date(value)

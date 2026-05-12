@@ -8,7 +8,9 @@
 # → weekly table-row stat push → auto-disable check → worker heartbeat metric.
 # Each sub-run:
 #   - reads its retention horizon from SignalConfiguration (no hardcoded const;
-#     job-scoped memoization via Current.signal_config — FR-024, zero new cache code)
+#     job-scoped memoization via Current.signal_config — FR-024, zero new cache code),
+#     then floors it at MIN_RETENTION_DAYS so a misconfigured `retention_days = 0` admin
+#     row can never push a cutoff to "now" (uniform across all 5 time-series tables)
 #   - deletes in BATCH_SIZE batches, each batch in its own transaction with
 #     SET LOCAL statement_timeout='30s' (FR-037 — long DELETE → timeout → retry,
 #     not a production lock stall). A timeout AFTER ≥1 committed batch → status
@@ -41,9 +43,13 @@ class CleanupWorker
   BATCH_SIZE = 1_000
   STATEMENT_TIMEOUT = "30s"
   DEFAULT_RETENTION_DAYS = 90 # last-resort fallback only (SignalConfiguration is the source of truth)
-  # Hard floor for the TIH retention horizon — a misconfigured admin row (retention_days = 0)
-  # must never push the cutoff to "now". The FR-002/003 conservation rule still protects
-  # final/live TIH, but this removes the foot-gun.
+  # Hard floor for EVERY per-table retention horizon — a misconfigured (or deliberately
+  # zeroed) admin row must never push a cutoff to "now". For trust_index_histories the
+  # FR-002/003 conservation rule additionally protects final/live rows; the other four
+  # tables (ti_signals, ccv_snapshots, chatters_snapshots, chat_messages) have no
+  # conservation rule, so this floor is their only guard against a full-table wipe.
+  # Single source of truth — referenced from lib/tasks/cleanup.rake and the
+  # SignalConfiguration model validation; do not duplicate the literal.
   MIN_RETENTION_DAYS = 7
   ADVISORY_LOCK_KEY = "cleanup_worker:daily"
   FLAG = :cleanup_worker
@@ -134,7 +140,7 @@ class CleanupWorker
   # --- TIH cleanup (FR-001/004/023): single-SQL window function, batched -------
 
   def cleanup_old_trust_index_histories
-    retention_days = retention_for("trust_index_histories", "default").clamp(MIN_RETENTION_DAYS..)
+    retention_days = retention_for("trust_index_histories", "default") # floored at MIN_RETENTION_DAYS inside retention_for
     warn_on_low_retention(retention_days)
     cutoff = retention_days.days.ago
     instrumented("tih", retention_days) do
@@ -266,12 +272,19 @@ class CleanupWorker
 
   # --- config + audit + metrics ----------------------------------------------
 
+  # Retention horizon (days) from SignalConfiguration, floored at MIN_RETENTION_DAYS.
+  # Every cutoff in this worker goes through here — a misconfigured (or deliberately
+  # zeroed) admin row can never collapse a retention window to "now".
   def retention_for(signal_type, category, fallback_category: nil)
+    raw_retention_for(signal_type, category, fallback_category: fallback_category).clamp(MIN_RETENTION_DAYS..)
+  end
+
+  def raw_retention_for(signal_type, category, fallback_category: nil)
     SignalConfiguration.value_for(signal_type, category, "retention_days").to_i
   rescue SignalConfiguration::ConfigurationMissing
     raise if fallback_category.nil?
 
-    retention_for(signal_type, fallback_category)
+    raw_retention_for(signal_type, fallback_category)
   rescue StandardError
     DEFAULT_RETENTION_DAYS
   end

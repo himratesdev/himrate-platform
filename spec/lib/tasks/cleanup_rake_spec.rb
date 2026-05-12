@@ -49,6 +49,19 @@ RSpec.describe "cleanup rake tasks" do
       expect(CcvSnapshot.exists?(old.id)).to be false
       expect(CcvSnapshot.exists?(recent.id)).to be true
     end
+
+    # PG re-review W2/W3: backfill cutoff is floored at CleanupWorker::MIN_RETENTION_DAYS,
+    # same as the worker — a misconfigured retention_days=0 can't make the backfill wipe the table.
+    it "clamps a misconfigured retention_days=0 to MIN_RETENTION_DAYS for the backfill cutoff" do
+      SignalConfiguration.where(signal_type: "cleanup", category: "ccv_snapshots", param_name: "retention_days").update_all(param_value: 0)
+      ActiveSupport::CurrentAttributes.clear_all
+      kept_in_floor = CcvSnapshot.create!(stream: ended_old, ccv_count: 1, timestamp: 3.days.ago)   # < 7d → survives the floor
+      deleted_past_floor = CcvSnapshot.create!(stream: ended_old, ccv_count: 2, timestamp: 10.days.ago) # > 7d → deleted
+
+      expect { Rake::Task["cleanup:initial_backfill"].invoke("ccv_snapshots", "false") }.to output(/Done: 1 ccv_snapshots/).to_stdout
+      expect(CcvSnapshot.exists?(kept_in_floor.id)).to be true
+      expect(CcvSnapshot.exists?(deleted_past_floor.id)).to be false
+    end
   end
 
   # FR-041: cleanup:report[start_date, end_date, format] — text|csv|json, per-table.

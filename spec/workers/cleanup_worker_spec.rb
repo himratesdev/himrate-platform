@@ -103,6 +103,47 @@ RSpec.describe CleanupWorker, type: :worker do
       end
     end
 
+    # --- MIN_RETENTION_DAYS floor applies to ALL 5 time-series tables, not just TIH (PG re-review W3) ---
+
+    context "MIN_RETENTION_DAYS floor on a non-TIH table (ti_signals)" do
+      it "clamps a misconfigured ti_signals retention_days=0 to MIN_RETENTION_DAYS — rows inside the 7d floor survive" do
+        SignalConfiguration.where(signal_type: "cleanup", category: "ti_signals", param_name: "retention_days").update_all(param_value: 0)
+        ActiveSupport::CurrentAttributes.clear_all
+        # Without the floor (cutoff ≈ now) this 3-day-old row would be deleted; with the 7d floor it must survive.
+        kept_in_floor = TiSignal.create!(stream: stream, timestamp: 3.days.ago, signal_type: "auth_ratio", value: 0.5)
+        deleted_past_floor = TiSignal.create!(stream: stream, timestamp: 10.days.ago, signal_type: "auth_ratio", value: 0.6)
+
+        described_class.new.perform
+
+        expect(TiSignal.exists?(kept_in_floor.id)).to be true
+        expect(TiSignal.exists?(deleted_past_floor.id)).to be false
+      end
+
+      it "records the clamped retention_days (>= MIN_RETENTION_DAYS) in the ti_signals audit row when admin set 0" do
+        SignalConfiguration.where(signal_type: "cleanup", category: "ti_signals", param_name: "retention_days").update_all(param_value: 0)
+        ActiveSupport::CurrentAttributes.clear_all
+
+        described_class.new.perform
+
+        row = CleanupAuditLog.where(table_name: "ti_signals").order(:run_at).last
+        expect(row.retention_days).to eq(CleanupWorker::MIN_RETENTION_DAYS)
+      end
+    end
+
+    context "MIN_RETENTION_DAYS floor on a non-TIH table (chat_messages, via cleanup_old_records)" do
+      it "clamps a misconfigured chat_messages retention_days=0 to MIN_RETENTION_DAYS — rows inside the 7d floor survive" do
+        SignalConfiguration.where(signal_type: "cleanup", category: "chat_messages", param_name: "retention_days").update_all(param_value: 0)
+        ActiveSupport::CurrentAttributes.clear_all
+        kept_in_floor = ChatMessage.create!(stream: stream, channel_login: "c", username: "u", timestamp: 3.days.ago)
+        deleted_past_floor = ChatMessage.create!(stream: stream, channel_login: "c", username: "u2", timestamp: 10.days.ago)
+
+        described_class.new.perform
+
+        expect(ChatMessage.exists?(kept_in_floor.id)).to be true
+        expect(ChatMessage.exists?(deleted_past_floor.id)).to be false
+      end
+    end
+
     context "expired sessions" do
       let(:user) { create(:user) }
 
