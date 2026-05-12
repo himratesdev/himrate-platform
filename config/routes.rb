@@ -25,6 +25,11 @@ Rails.application.routes.draw do
   # Auth + API endpoints
   namespace :api do
     namespace :v1 do
+      # TASK-090 OQ-4: maintenance health endpoint (always HTTP 200, even when
+      # MAINTENANCE_MODE_ACTIVE=true). Excluded from MaintenanceMode middleware
+      # so frontend can poll for window start/end.
+      get "health/maintenance", to: "health/maintenance#show"
+
       # Auth (TASK-005 + TASK-007)
       post "auth/twitch", to: "auth#twitch"
       get "auth/twitch/callback", to: "auth#twitch_callback"

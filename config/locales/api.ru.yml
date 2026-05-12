@@ -4,6 +4,10 @@ ru:
       unauthorized: "Не авторизован"
       not_found: "Не найдено"
       internal_error: "Внутренняя ошибка сервера"
+    # TASK-090 OQ-4: MAINTENANCE_MODE middleware default message
+    # (overridable via MAINTENANCE_MODE_MESSAGE env var).
+    maintenance:
+      message: "Системные работы. Возвращаемся скоро."
   # TASK-085 FR-007 (BR-016): backend duration_text formatting per Accept-Language.
   stream_summary:
     duration_text:

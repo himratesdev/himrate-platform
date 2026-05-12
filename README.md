@@ -74,3 +74,10 @@ git push origin v1.0.0
 | Local | localhost:3000 | docker compose up |
 | Staging | staging.himrate.com | auto on merge to main |
 | Production | api.himrate.com | git tag v*.*.* |
+
+## Operations runbooks
+
+- [Maintenance mode](docs/operations/maintenance-mode.md) — `MAINTENANCE_MODE_*` env flags for graceful deploy/incident downtime (TASK-090 OQ-4).
+- [Accessory drift detection](docs/runbooks/accessory_drift_detection.md)
+- [Accessory ops](docs/runbooks/accessory_ops.md)
+- [Kamal local deploy](docs/runbooks/kamal_local_deploy.md)
