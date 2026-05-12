@@ -23,9 +23,9 @@ open https://staging.himrate.com/admin/flipper
 # Enable "accessory_auto_remediation"
 
 # OR via Rails console — resolve the Kamal web container name first. Kamal names app
-# containers `himrate-web-<destination>-<sha>`, NOT a static `himrate-web`. On the
-# production host use `label=destination=production`.
-WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web --filter label=destination=staging | head -1)
+# containers `himrate-web-<destination>-<sha>`, NOT a static `himrate-web`; a given host
+# runs exactly one of them, so a service+role filter is enough on either host.
+WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web | head -1)
 docker exec -it "$WEB" bundle exec rails runner "Flipper.enable(:accessory_auto_remediation)"
 ```
 
@@ -60,8 +60,8 @@ Effect:
 ### Manual re-enable
 
 ```bash
-# Resolve the Kamal web container name (himrate-web-<destination>-<sha>) on the prod host:
-WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web --filter label=destination=production | head -1)
+# Resolve the Kamal web container name (himrate-web-<destination>-<sha>) — run this on the prod host:
+WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web | head -1)
 docker exec -it "$WEB" bundle exec rails runner "
 AutoRemediationLog.where(
   destination: 'production',
@@ -115,8 +115,8 @@ Active drift events не auto-trigger retroactively. Worker checks flag on next 
 ## Disable globally
 
 ```bash
-# Disable Flipper flag (resolve the web container as above; use `label=destination=production` on the prod host)
-WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web --filter label=destination=staging | head -1)
+# Disable Flipper flag (resolve the web container as above — works on either host)
+WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web | head -1)
 docker exec -it "$WEB" bundle exec rails runner "Flipper.disable(:accessory_auto_remediation)"
 ```
 
