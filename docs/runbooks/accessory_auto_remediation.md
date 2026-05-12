@@ -115,8 +115,9 @@ Active drift events не auto-trigger retroactively. Worker checks flag on next 
 ## Disable globally
 
 ```bash
-# Disable Flipper flag (resolve the web container as above; use `label=destination=production` on the prod host)
-WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web --filter label=destination=staging | head -1)
+# Disable Flipper flag — resolve the web container for the destination you're operating on
+# (production shown; on the staging host use `label=destination=staging`):
+WEB=$(docker ps -q --filter label=service=himrate --filter label=role=web --filter label=destination=production | head -1)
 docker exec -it "$WEB" bundle exec rails runner "Flipper.disable(:accessory_auto_remediation)"
 ```
 
