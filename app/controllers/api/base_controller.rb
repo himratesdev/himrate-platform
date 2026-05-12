@@ -13,13 +13,9 @@ module Api
     private
 
     def set_locale
-      I18n.locale = extract_locale_from_header
-    end
-
-    def extract_locale_from_header
-      header = request.headers["Accept-Language"].to_s
-      preferred = header.downcase.scan(/[a-z]{2}/).first&.to_sym
-      I18n.available_locales.include?(preferred) ? preferred : I18n.default_locale
+      # Shared with MaintenanceMode middleware (CR A3): ?lang= query param wins,
+      # then Accept-Language header, else I18n.default_locale.
+      I18n.locale = LocaleResolver.call(request.env)
     end
 
     def authenticate_user!

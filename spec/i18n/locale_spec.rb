@@ -38,14 +38,44 @@ RSpec.describe "i18n Configuration" do
     end
   end
 
-  # TC-004: Accept-Language: zh → EN fallback
+  # TC-004: Accept-Language: zh → EN fallback (via the shared LocaleResolver,
+  # CR A3 — same logic used by Api::BaseController and MaintenanceMode).
   describe "fallback for unsupported locale" do
     it "falls back to EN for unsupported language" do
-      controller = Api::BaseController.new
-      allow(controller).to receive(:request).and_return(
-        double(headers: { "Accept-Language" => "zh-CN" })
-      )
-      expect(controller.send(:extract_locale_from_header)).to eq(:en)
+      env = Rack::MockRequest.env_for("/api/v1/channels/1", "HTTP_ACCEPT_LANGUAGE" => "zh-CN")
+      expect(LocaleResolver.call(env)).to eq(:en)
+    end
+
+    it "?lang= query param wins over Accept-Language" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1?lang=ru", "HTTP_ACCEPT_LANGUAGE" => "en-US,en;q=0.9")
+      expect(LocaleResolver.call(env)).to eq(:ru)
+    end
+
+    it "no signal → I18n.default_locale" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1")
+      expect(LocaleResolver.call(env)).to eq(I18n.default_locale)
+    end
+
+    # CR N2: Accept-Language q-value preference (RFC 9110 §12.5.4). The first
+    # entry may be an unsupported locale — pick the highest-q SUPPORTED one.
+    it "honors q-values: 'fr-CA,ru;q=0.9' → :ru (skips unsupported :fr)" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1", "HTTP_ACCEPT_LANGUAGE" => "fr-CA,ru;q=0.9")
+      expect(LocaleResolver.call(env)).to eq(:ru)
+    end
+
+    it "prefers the higher q-value among supported locales ('en;q=0.3,ru;q=0.8' → :ru)" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1", "HTTP_ACCEPT_LANGUAGE" => "en;q=0.3,ru;q=0.8")
+      expect(LocaleResolver.call(env)).to eq(:ru)
+    end
+
+    it "ties keep header order ('en,ru' → :en)" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1", "HTTP_ACCEPT_LANGUAGE" => "en,ru")
+      expect(LocaleResolver.call(env)).to eq(:en)
+    end
+
+    it "falls back to default when no entry is supported ('fr,de;q=0.9' → :en)" do
+      env = Rack::MockRequest.env_for("/api/v1/channels/1", "HTTP_ACCEPT_LANGUAGE" => "fr,de;q=0.9")
+      expect(LocaleResolver.call(env)).to eq(I18n.default_locale)
     end
   end
 
