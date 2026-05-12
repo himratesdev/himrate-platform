@@ -41,6 +41,10 @@ class CleanupWorker
   BATCH_SIZE = 1_000
   STATEMENT_TIMEOUT = "30s"
   DEFAULT_RETENTION_DAYS = 90 # last-resort fallback only (SignalConfiguration is the source of truth)
+  # Hard floor for the TIH retention horizon — a misconfigured admin row (retention_days = 0)
+  # must never push the cutoff to "now". The FR-002/003 conservation rule still protects
+  # final/live TIH, but this removes the foot-gun.
+  MIN_RETENTION_DAYS = 7
   ADVISORY_LOCK_KEY = "cleanup_worker:daily"
   FLAG = :cleanup_worker
   HEARTBEAT_TABLE = "cleanup_worker" # grouping label for the per-perform heartbeat metric
@@ -130,7 +134,7 @@ class CleanupWorker
   # --- TIH cleanup (FR-001/004/023): single-SQL window function, batched -------
 
   def cleanup_old_trust_index_histories
-    retention_days = retention_for("trust_index_histories", "default")
+    retention_days = retention_for("trust_index_histories", "default").clamp(MIN_RETENTION_DAYS..)
     warn_on_low_retention(retention_days)
     cutoff = retention_days.days.ago
     instrumented("tih", retention_days) do

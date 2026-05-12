@@ -227,6 +227,35 @@ RSpec.describe CleanupWorker, type: :worker do
 
         expect(Rails.logger).to have_received(:warn).with(/retention_days=7 < 90/)
       end
+
+      it "clamps a misconfigured retention_days=0 to MIN_RETENTION_DAYS — the cutoff respects the 7d floor" do
+        SignalConfiguration.where(signal_type: "trust_index_histories", category: "default", param_name: "retention_days").update_all(param_value: 0)
+        ActiveSupport::CurrentAttributes.clear_all
+        # ended_old_stream (ended 95d ago) is well past the 7d floor → its intermediate TIH still go.
+        intermediate = tih_for(ended_old_stream, 96.days.ago)
+        final        = tih_for(ended_old_stream, 95.days.ago)
+        # A stream that ended 3 days ago is INSIDE the clamped 7d window — without the floor it
+        # would be eligible (cutoff ≈ now); with the floor its intermediate TIH must survive.
+        kept_in_floor_a = tih_for(ended_recent_stream, 2.5.days.ago)
+        kept_in_floor_b = tih_for(ended_recent_stream, 2.days.ago)
+
+        described_class.new.perform
+
+        expect(TrustIndexHistory.exists?(intermediate.id)).to be false
+        expect(TrustIndexHistory.exists?(final.id)).to be true
+        expect(TrustIndexHistory.exists?(kept_in_floor_a.id)).to be true
+        expect(TrustIndexHistory.exists?(kept_in_floor_b.id)).to be true
+      end
+
+      it "records the clamped retention_days (>= MIN_RETENTION_DAYS) in the tih audit row when admin set 0" do
+        SignalConfiguration.where(signal_type: "trust_index_histories", category: "default", param_name: "retention_days").update_all(param_value: 0)
+        ActiveSupport::CurrentAttributes.clear_all
+
+        described_class.new.perform
+
+        row = CleanupAuditLog.where(table_name: "tih").order(:run_at).last
+        expect(row.retention_days).to eq(CleanupWorker::MIN_RETENTION_DAYS)
+      end
     end
 
     # --- audit log (FR-031) ---
