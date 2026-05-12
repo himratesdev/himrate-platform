@@ -136,16 +136,74 @@ RSpec.describe "MaintenanceMode middleware", type: :request do
         expect(response.headers["Retry-After"]).to eq(body["retry_after_seconds"].to_s)
       end
 
-      it "tolerates malformed UNTIL (falls back to default Retry-After)" do
+      it "tolerates malformed UNTIL (falls back to default Retry-After, re-derives until)" do
         ENV["MAINTENANCE_MODE_UNTIL"] = "not-a-real-date"
 
         get "/api/v1/channels/123", headers: { "Authorization" => "Bearer x" }
 
         body = JSON.parse(response.body)
-        expect(body["until"]).to be_nil
-        expect(body["until_unix"]).to be_nil
+        # CR A1: until/until_unix must stay non-null even on malformed input —
+        # derived from retry_after_seconds (now + 60).
+        expect(body["until"]).to be_a(String)
+        expect(Time.iso8601(body["until"])).to be_within(5.seconds).of(Time.now.utc + 60)
+        expect(body["until_unix"]).to be_within(5).of((Time.now.utc + 60).to_i)
         expect(body["retry_after_seconds"]).to eq(60)
         expect(response).to have_http_status(:service_unavailable)
+      end
+
+      it "logs a warning on malformed UNTIL" do
+        ENV["MAINTENANCE_MODE_UNTIL"] = "not-a-real-date"
+        allow(Rails.logger).to receive(:warn)
+
+        get "/api/v1/channels/123", headers: { "Authorization" => "Bearer x" }
+
+        expect(Rails.logger).to have_received(:warn)
+          .with(/MaintenanceMode: invalid MAINTENANCE_MODE_UNTIL=.*not ISO 8601/)
+      end
+
+      it "clamps past UNTIL to 60s and re-derives `until` to a future time (CR A1)" do
+        ENV["MAINTENANCE_MODE_UNTIL"] = (Time.now.utc - 1.hour).iso8601
+
+        get "/api/v1/channels/123", headers: { "Authorization" => "Bearer x" }
+
+        body = JSON.parse(response.body)
+        expect(body["retry_after_seconds"]).to eq(60)
+        parsed_until = Time.iso8601(body["until"])
+        expect(parsed_until).to be > Time.now.utc
+        expect(parsed_until).to be_within(5.seconds).of(Time.now.utc + 60)
+        expect(body["until_unix"]).to be_within(5).of((Time.now.utc + 60).to_i)
+        expect(response.headers["Retry-After"]).to eq("60")
+      end
+    end
+
+    context "when MAINTENANCE_MODE_UNTIL is unset" do
+      it "still returns a non-null ISO 8601 `until` ≈ now + retry_after_seconds (CR A1)" do
+        ENV.delete("MAINTENANCE_MODE_UNTIL")
+
+        get "/api/v1/channels/123", headers: { "Authorization" => "Bearer x" }
+
+        body = JSON.parse(response.body)
+        expect(body["until"]).to be_a(String)
+        expect { Time.iso8601(body["until"]) }.not_to raise_error
+        expect(body["retry_after_seconds"]).to eq(60)
+        expect(Time.iso8601(body["until"])).to be_within(5.seconds).of(Time.now.utc + body["retry_after_seconds"])
+        expect(body["until_unix"]).to be_within(5).of((Time.now.utc + body["retry_after_seconds"]).to_i)
+      end
+    end
+
+    context "path-prefix exclusion is boundary-matched (CR A2)" do
+      it "intercepts /api/v1/healthx (not auto-excluded by the /api/v1/health prefix)" do
+        get "/api/v1/healthx", headers: { "Authorization" => "Bearer x" }
+
+        expect(response).to have_http_status(:service_unavailable)
+        body = JSON.parse(response.body)
+        expect(body["maintenance"]).to eq(true)
+      end
+
+      it "still excludes /api/v1/health/maintenance (exact prefix + '/')" do
+        get "/api/v1/health/maintenance"
+
+        expect(response).to have_http_status(:ok)
       end
     end
 

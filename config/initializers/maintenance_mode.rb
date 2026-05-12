@@ -8,6 +8,6 @@
 # Note: `app/middleware/` is autoloaded by Rails 8 zeitwerk by default; we still
 # require the file eagerly here to be resilient against initializer ordering
 # during early boot (middleware stack is frozen before lazy loading completes).
-require_relative Rails.root.join("app/middleware/maintenance_mode")
+require Rails.root.join("app/middleware/maintenance_mode").to_s
 
 Rails.application.config.middleware.insert_before Rack::Attack, MaintenanceMode

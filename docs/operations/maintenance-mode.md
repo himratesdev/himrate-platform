@@ -41,9 +41,17 @@ count toward rate-limit buckets.
 | `MAINTENANCE_MODE_UNTIL`   | string  | unset   | ISO 8601 datetime (e.g. `2026-05-12T20:30:00Z`). Drives `until` / `until_unix` / `Retry-After`. |
 | `MAINTENANCE_MODE_MESSAGE` | string  | i18n    | Override default `api.maintenance.message`. Same value goes to all locales when set.            |
 
-If `MAINTENANCE_MODE_UNTIL` is malformed or unset, `Retry-After` defaults to
-**60 seconds** and `until` / `until_unix` are `null`. A warning is logged once
-per request on invalid input — fix the env var or remove it.
+If `MAINTENANCE_MODE_UNTIL` is malformed, unset, or in the past, `Retry-After`
+defaults to **60 seconds** and `until` / `until_unix` are derived from it
+(`now + retry_after_seconds`) — they are **never `null`**, because the Chrome
+extension only treats a response as "maintenance" when `until` is a non-null
+ISO 8601 string. A warning is logged once per request on invalid input — fix
+the env var or remove it.
+
+> The maintenance 503 body intentionally has **no machine `error.code` field** —
+> the `maintenance: true` flag is the discriminator clients gate on (the body
+> shape is distinct from the `{ error: { code, message, ... } }` envelope used
+> by Pundit/auth errors).
 
 ## When to use
 
