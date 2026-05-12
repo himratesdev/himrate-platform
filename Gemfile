@@ -20,7 +20,7 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 
 # Auth
 gem "jwt", "~> 2.8"
-gem "http", "~> 5.0"
+gem "http", "~> 6.0"
 
 # Authorization
 gem "pundit", "~> 2.4"
