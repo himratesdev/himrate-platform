@@ -1,0 +1,59 @@
+# TASK-086 FR-030 (ADR-086 §4.4): the cleanup-worker safety net.
+#
+# CleanupWorker pushes a per-`perform` heartbeat gauge
+# `cleanup_worker_last_run_timestamp_seconds{table="cleanup_worker"}` on every run
+# (success, partial, error, AND a Flipper-skipped run — the worker still ran). The
+# daily Sidekiq cron means that timestamp must never be older than ~1 day; if it
+# is older than 7 days the worker has effectively stopped (cron not registered,
+# Flipper kill switch left disabled after a fix, Sidekiq down, etc.) and TIH +
+# the other time-series tables are growing unbounded — the very pre-launch blocker
+# this task closes.
+#
+# Prometheus evaluates these rules (evaluation_interval 30s) and pushes the firing
+# alert to Alertmanager (config/alertmanager/alertmanager.yml.tmpl), which routes
+# by the `severity` label — same Telegram channels every other cleanup / accessory
+# alert uses (severity=warning → telegram_ops; severity=critical → telegram_critical).
+# A Prometheus-evaluated rule is the right shape for "the worker isn't running":
+# a Sidekiq worker that checks whether a Sidekiq worker ran would be circular.
+
+groups:
+  - name: cleanup_worker_health
+    rules:
+      # Soft warning: no CleanupWorker run in 2 days (one missed daily run is fine —
+      # transient Sidekiq blip — two is the worker stalling).
+      - alert: cleanup_worker_stale
+        expr: time() - max(cleanup_worker_last_run_timestamp_seconds{table="cleanup_worker"}) > 2 * 24 * 3600
+        for: 30m
+        labels:
+          severity: warning
+          subsystem: cleanup_worker
+          event_type: cleanup_worker_stale
+        annotations:
+          summary: "CleanupWorker has not run in over 2 days"
+          description: "cleanup_worker_last_run_timestamp_seconds (table=cleanup_worker) is stale. Check the Sidekiq cron 'cleanup_worker_daily' and the :cleanup_worker Flipper flag."
+
+      # Hard: no run in 7 days — retention has effectively stopped. Per ADR-086 §4.4
+      # this is the safety net; escalate to the critical channel.
+      - alert: cleanup_worker_health
+        expr: time() - max(cleanup_worker_last_run_timestamp_seconds{table="cleanup_worker"}) > 7 * 24 * 3600
+        for: 30m
+        labels:
+          severity: critical
+          subsystem: cleanup_worker
+          event_type: cleanup_worker_health
+        annotations:
+          summary: "CleanupWorker has not run in over 7 days — retention cleanup has stopped"
+          description: "No cleanup_audit_logs run for 7d. Time-series tables (trust_index_histories, ti_signals, ccv/chatters/chat snapshots) are growing unbounded. Re-enable Flipper.enable(:cleanup_worker) and/or fix the Sidekiq cron 'cleanup_worker_daily'."
+
+      # Cleanup ran but keeps failing for a table (the auto-disable kill switch trips
+      # at 3 consecutive errors; this alert surfaces the trend before/around that).
+      - alert: cleanup_worker_consecutive_errors
+        expr: max by (table) (cleanup_worker_consecutive_errors) >= 2
+        for: 5m
+        labels:
+          severity: warning
+          subsystem: cleanup_worker
+          event_type: cleanup_worker_consecutive_errors
+        annotations:
+          summary: "CleanupWorker has {{ $value }} consecutive errors on table {{ $labels.table }}"
+          description: "Investigate cleanup_audit_logs for table={{ $labels.table }}. At 3 consecutive errors the :cleanup_worker Flipper flag auto-disables (FR-042)."

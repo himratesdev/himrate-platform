@@ -68,12 +68,13 @@ RSpec.describe PostStreamWorker do
         .with(2.minutes, stream.id)
     end
 
-    # TASK-086 FR-032: PostStreamWorker enqueues the MV-refresh worker (2-min delay).
-    it "schedules Trends::LatestTihRefreshWorker with 2-minute delay (TC-038)" do
+    # TASK-086 FR-032: PostStreamWorker enqueues the MV-refresh worker (2-min delay,
+    # NO stream arg — REFRESH ... CONCURRENTLY is a full refresh, advisory-lock dedup
+    # in the worker collapses many ended streams into one REFRESH).
+    it "schedules Trends::LatestTihRefreshWorker with a 2-minute delay and no stream arg (TC-038)" do
       described_class.new.perform(stream.id)
 
-      expect(Trends::LatestTihRefreshWorker).to have_received(:perform_in)
-        .with(2.minutes, stream.id)
+      expect(Trends::LatestTihRefreshWorker).to have_received(:perform_in).with(2.minutes)
     end
 
     # TASK-039 FR-018: PostStreamWorker enqueues daily aggregation

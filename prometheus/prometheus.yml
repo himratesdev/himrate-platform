@@ -17,9 +17,13 @@ alerting:
         - targets:
             - himrate-alertmanager:9093
 
-# Rule files for Prometheus alerts (none initially — Alertmanager routing
-# handles workflow-pushed alerts directly).
-rule_files: []
+# Rule files for Prometheus-evaluated alerts. TASK-086 FR-030: prometheus/rules/
+# cleanup_health.yml — fires when CleanupWorker has not run in N days (the safety
+# net per ADR-086 §4.4). Each *.yml in this directory is mounted into the
+# prometheus accessory (config/deploy.yml). Workflow-pushed alerts still reach
+# Alertmanager directly via AlertmanagerNotifier — that path is unchanged.
+rule_files:
+  - /etc/prometheus/rules/*.yml
 
 scrape_configs:
   # PR3: Rails app metrics реализованы через push-based pattern (PrometheusMetrics

@@ -68,10 +68,12 @@ class PostStreamWorker
       # complete (typically <30s) — snapshot reads fresh latest values.
       Trends::QualifyingPercentileSnapshotWorker.perform_in(2.minutes, stream.id)
 
-      # TASK-086 FR-032: refresh latest_tih_per_stream MV (per-stream final TIH).
-      # Delay 2 min ensures the final compute above committed; advisory-lock dedup
-      # in the worker collapses many ended streams into one REFRESH at prime time.
-      Trends::LatestTihRefreshWorker.perform_in(2.minutes, stream.id)
+      # TASK-086 FR-032: refresh the latest_tih_per_stream MV (per-stream final TIH).
+      # No stream arg — REFRESH ... CONCURRENTLY is a full refresh, not per-stream
+      # incremental. The 2-min delay ensures the final compute above committed; the
+      # advisory-lock dedup in the worker collapses many ended streams into one
+      # REFRESH at prime time (the no-arg fan-in is intentional and keeps it cheap).
+      Trends::LatestTihRefreshWorker.perform_in(2.minutes)
 
       # TASK-039 FR-018: daily aggregation refresh для stream's date.
       # pg_advisory_lock в AggregationWorker защищает от concurrent runs

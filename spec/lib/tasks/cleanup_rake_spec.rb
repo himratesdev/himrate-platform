@@ -2,6 +2,8 @@
 
 require "rails_helper"
 require "rake"
+require "json"
+require "csv"
 
 # TASK-086 FR-039/041/048: cleanup rake tasks.
 RSpec.describe "cleanup rake tasks" do
@@ -49,16 +51,62 @@ RSpec.describe "cleanup rake tasks" do
     end
   end
 
+  # FR-041: cleanup:report[start_date, end_date, format] — text|csv|json, per-table.
   describe "cleanup:report" do
-    it "prints a per-table summary from cleanup_audit_logs" do
-      CleanupAuditLog.create!(table_name: "tih", run_at: 1.hour.ago, status: :success, deleted_count: 7, duration_ms: 120)
-      CleanupAuditLog.create!(table_name: "tih", run_at: 30.minutes.ago, status: :error, deleted_count: 0, duration_ms: 5)
-
-      expect { Rake::Task["cleanup:report"].invoke("tih") }.to output(/tih: runs=2 deleted=7/).to_stdout
+    before do
+      CleanupAuditLog.create!(table_name: "tih", run_at: 1.day.ago, status: :success, deleted_count: 7, duration_ms: 120)
+      CleanupAuditLog.create!(table_name: "tih", run_at: 12.hours.ago, status: :error, deleted_count: 0, duration_ms: 5)
+      CleanupAuditLog.create!(table_name: "ti_signals", run_at: 90.days.ago, status: :success, deleted_count: 3, duration_ms: 10)
     end
 
-    it "handles no rows gracefully" do
-      expect { Rake::Task["cleanup:report"].invoke("nope") }.to output(/no rows/).to_stdout
+    it "prints a per-table text summary over all time by default" do
+      expect { Rake::Task["cleanup:report"].invoke }.to output(/tih: runs=2 deleted=7.*error:1/m).to_stdout
+    end
+
+    it "filters by [start_date, end_date]" do
+      output = capture_stdout { Rake::Task["cleanup:report"].invoke(2.days.ago.to_date.iso8601, Date.current.iso8601) }
+      expect(output).to match(/tih: runs=2/)
+      expect(output).not_to match(/ti_signals/) # 90d-old row excluded by start_date
+    end
+
+    it "supports json output" do
+      output = capture_stdout { Rake::Task["cleanup:report"].invoke(nil, nil, "json") }
+      parsed = JSON.parse(output)
+      tih = parsed["tables"].find { |t| t["table"] == "tih" }
+      expect(tih["runs"]).to eq(2)
+      expect(tih["deleted"]).to eq(7)
+      expect(tih["error"]).to eq(1)
+      expect(parsed["range"]).to have_key("start")
+    end
+
+    it "supports csv output" do
+      output = capture_stdout { Rake::Task["cleanup:report"].invoke(nil, nil, "csv") }
+      rows = CSV.parse(output)
+      expect(rows.first).to include("table", "runs", "deleted", "error")
+      tih_row = rows.find { |r| r.first == "tih" }
+      expect(tih_row).to be_present
+    end
+
+    it "aborts on an invalid format" do
+      expect { Rake::Task["cleanup:report"].invoke(nil, nil, "yaml") }.to raise_error(SystemExit)
+    end
+
+    it "aborts on a malformed date" do
+      expect { Rake::Task["cleanup:report"].invoke("not-a-date") }.to raise_error(SystemExit)
+    end
+
+    it "handles no rows gracefully (text)" do
+      CleanupAuditLog.delete_all
+      expect { Rake::Task["cleanup:report"].invoke }.to output(/no rows/).to_stdout
+    end
+
+    def capture_stdout
+      original = $stdout
+      $stdout = StringIO.new
+      yield
+      $stdout.string
+    ensure
+      $stdout = original
     end
   end
 

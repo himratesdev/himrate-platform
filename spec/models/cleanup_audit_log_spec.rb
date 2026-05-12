@@ -12,6 +12,16 @@ RSpec.describe CleanupAuditLog, type: :model do
     it "maps success=0 / partial=1 / error=2 / skipped=3" do
       expect(described_class.statuses).to eq("success" => 0, "partial" => 1, "error" => 2, "skipped" => 3)
     end
+
+    it "stores a partial row with the rows-deleted-so-far + a structured timeout error_code (FR-031, CR Should-6)" do
+      row = described_class.create!(table_name: "tih", run_at: Time.current, status: :partial, deleted_count: 4_000,
+                                    error_code: "57014",
+                                    error_context: { "table" => "tih", "reason" => "statement_timeout", "deleted_count" => 4_000 })
+      expect(row.reload).to be_partial
+      expect(row.deleted_count).to eq(4_000)
+      expect(row.error_code).to eq("57014")
+      expect(row.error_context).to include("reason" => "statement_timeout")
+    end
   end
 
   describe "validations" do

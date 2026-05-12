@@ -11,7 +11,8 @@ RSpec.describe Trends::LatestTihRefreshWorker, type: :worker do
   describe "#perform" do
     # REFRESH ... CONCURRENTLY cannot run inside a transaction (specs use transactional
     # fixtures), so the actual REFRESH SQL is stubbed; the conservation of behaviour
-    # (only-when-lock-acquired) is what is asserted here.
+    # (only-when-lock-acquired) is what is asserted here. perform takes NO argument —
+    # the MV refresh is a full refresh, not per-stream incremental.
     let(:worker) { described_class.new }
 
     it "REFRESHes the MV CONCURRENTLY when the advisory lock is acquired" do
@@ -20,7 +21,7 @@ RSpec.describe Trends::LatestTihRefreshWorker, type: :worker do
       expect(ActiveRecord::Base.connection).to receive(:execute)
         .with("REFRESH MATERIALIZED VIEW CONCURRENTLY latest_tih_per_stream")
 
-      worker.perform("some-stream-id")
+      worker.perform
     end
 
     it "is a no-op (no REFRESH) when the advisory lock is held by another run" do
@@ -29,7 +30,7 @@ RSpec.describe Trends::LatestTihRefreshWorker, type: :worker do
         .with("REFRESH MATERIALIZED VIEW CONCURRENTLY latest_tih_per_stream")
       allow(Rails.logger).to receive(:info).and_call_original
 
-      worker.perform("some-stream-id")
+      worker.perform
 
       expect(Rails.logger).to have_received(:info).with(/refresh already in progress/)
     end
@@ -40,7 +41,7 @@ RSpec.describe Trends::LatestTihRefreshWorker, type: :worker do
         .with("REFRESH MATERIALIZED VIEW CONCURRENTLY latest_tih_per_stream").and_raise(ActiveRecord::StatementInvalid, "boom")
       expect(worker).to receive(:release_lock)
 
-      expect { worker.perform("some-stream-id") }.to raise_error(ActiveRecord::StatementInvalid)
+      expect { worker.perform }.to raise_error(ActiveRecord::StatementInvalid)
     end
   end
 end

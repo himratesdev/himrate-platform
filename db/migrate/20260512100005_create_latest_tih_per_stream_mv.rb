@@ -17,13 +17,17 @@
 # the source table. On the first launch TIH is empty → instant. On an established
 # DB it's a phased low-traffic deploy step (SRS §12). disable_ddl_transaction!
 # because CREATE INDEX afterwards is fine either way and matches the pattern.
+#
+# Idempotent on partial failure (CR Nit-2): IF NOT EXISTS on the MV and both
+# indexes — re-running after a half-applied migration (e.g. the 2nd index failed)
+# does not error with "already exists".
 
 class CreateLatestTihPerStreamMv < ActiveRecord::Migration[8.0]
   disable_ddl_transaction!
 
   def up
     execute(<<~SQL.squish)
-      CREATE MATERIALIZED VIEW latest_tih_per_stream AS
+      CREATE MATERIALIZED VIEW IF NOT EXISTS latest_tih_per_stream AS
       SELECT DISTINCT ON (t.stream_id)
         t.stream_id,
         t.channel_id,
@@ -42,8 +46,8 @@ class CreateLatestTihPerStreamMv < ActiveRecord::Migration[8.0]
       ORDER BY t.stream_id, t.calculated_at DESC, t.id DESC
     SQL
 
-    execute("CREATE UNIQUE INDEX idx_latest_tih_per_stream_stream_id ON latest_tih_per_stream (stream_id)")
-    execute("CREATE INDEX idx_latest_tih_per_stream_channel_id ON latest_tih_per_stream (channel_id)")
+    execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_latest_tih_per_stream_stream_id ON latest_tih_per_stream (stream_id)")
+    execute("CREATE INDEX IF NOT EXISTS idx_latest_tih_per_stream_channel_id ON latest_tih_per_stream (channel_id)")
   end
 
   def down

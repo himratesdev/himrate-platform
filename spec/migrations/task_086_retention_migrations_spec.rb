@@ -2,7 +2,7 @@
 
 require "rails_helper"
 
-# TASK-086 §5.3 migration verification (FR-006/018/031/032/036).
+# TASK-086 §5.3 migration verification (FR-006/018/031/032/036 + CR Should-5, Nit-2).
 RSpec.describe "TASK-086 retention migrations", type: :model do
   let(:conn) { ActiveRecord::Base.connection }
 
@@ -50,6 +50,34 @@ RSpec.describe "TASK-086 retention migrations", type: :model do
     end
   end
 
+  describe "trust_index_histories (stream_id, calculated_at DESC, id DESC) composite index (CR Should-5)" do
+    it "exists as idx_tih_stream_calculated_id over the right columns in the right order" do
+      idx = conn.indexes(:trust_index_histories).find { |i| i.name == "idx_tih_stream_calculated_id" }
+      expect(idx).to be_present
+      expect(idx.columns).to eq(%w[stream_id calculated_at id])
+      # DESC ordering on calculated_at + id — the daily-cleanup ROW_NUMBER / MV DISTINCT ON sort key.
+      expect(idx.orders).to include("calculated_at" => :desc, "id" => :desc)
+    end
+
+    it "is a valid index the daily-TIH-cleanup window query can EXPLAIN ANALYZE against" do
+      channel = create(:channel)
+      ended = create(:stream, channel: channel, started_at: 100.days.ago, ended_at: 95.days.ago)
+      3.times { |i| create(:trust_index_history, channel: channel, stream: ended, calculated_at: (96 - i * 0.1).days.ago) }
+
+      plan = conn.execute(<<~SQL.squish).map { |r| r["QUERY PLAN"] }.join("\n")
+        EXPLAIN ANALYZE
+        SELECT t.id, ROW_NUMBER() OVER (PARTITION BY t.stream_id ORDER BY t.calculated_at DESC, t.id DESC) AS rn
+        FROM trust_index_histories t JOIN streams s ON s.id = t.stream_id
+        WHERE s.ended_at IS NOT NULL AND s.ended_at < now() - interval '90 days'
+      SQL
+      # On a few-row test table the planner will seq-scan + sort regardless (the
+      # cost-based use of idx_tih_stream_calculated_id is verified in QA on staging).
+      # Here: the query runs without error and the index is present + valid.
+      expect(plan).to be_a(String)
+      expect(conn.indexes(:trust_index_histories).map(&:name)).to include("idx_tih_stream_calculated_id")
+    end
+  end
+
   describe "cleanup_audit_logs table (FR-031/034/035/036)" do
     it "has the final schema columns with bigint duration_ms and no error_message" do
       cols = conn.columns(:cleanup_audit_logs).index_by(&:name)
@@ -85,6 +113,25 @@ RSpec.describe "TASK-086 retention migrations", type: :model do
     it "uses the ACTUAL TIH column names (trust_index_score / erv_percent / signal_breakdown)" do
       expect(mv_columns).to include("trust_index_score", "erv_percent", "signal_breakdown", "ccv")
       expect(mv_columns).not_to include("ti_score", "erv", "signals_data")
+    end
+
+    # CR Nit-2: the migration uses CREATE MATERIALIZED VIEW IF NOT EXISTS + CREATE
+    # INDEX IF NOT EXISTS, so re-running it after a half-applied migration does not
+    # error with "already exists". Re-run the exact migration DDL on the live schema.
+    it "is idempotent — re-running the CREATE-MV-IF-NOT-EXISTS DDL on the existing MV does not raise" do
+      ddl = <<~SQL.squish
+        CREATE MATERIALIZED VIEW IF NOT EXISTS latest_tih_per_stream AS
+        SELECT DISTINCT ON (t.stream_id) t.stream_id, t.channel_id, t.trust_index_score, t.erv_percent, t.ccv,
+          t.confidence, t.classification, t.cold_start_status, t.signal_breakdown, t.calculated_at, t.id AS trust_index_history_id
+        FROM trust_index_histories t JOIN streams s ON s.id = t.stream_id
+        WHERE s.ended_at IS NOT NULL ORDER BY t.stream_id, t.calculated_at DESC, t.id DESC
+      SQL
+      expect {
+        conn.execute(ddl)
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_latest_tih_per_stream_stream_id ON latest_tih_per_stream (stream_id)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_latest_tih_per_stream_channel_id ON latest_tih_per_stream (channel_id)")
+      }.not_to raise_error
+      expect(conn.select_value("SELECT count(*) FROM pg_matviews WHERE matviewname = 'latest_tih_per_stream'").to_i).to eq(1)
     end
 
     # NB: REFRESH ... CONCURRENTLY cannot run inside a transaction (and specs use

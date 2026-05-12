@@ -16,6 +16,19 @@ rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
 end
 
+# TASK-086: pg_dump dumps materialized views WITH NO DATA, so a test DB loaded from
+# db/structure.sql has latest_tih_per_stream in an unpopulated state — querying it
+# raises PG::ObjectNotInPrerequisiteState (and aborts the surrounding transaction).
+# In production the migration's `CREATE MATERIALIZED VIEW … AS …` defaults to
+# WITH DATA, so it's populated there. Populate it once here (committed, before any
+# example) so consumers (BestWorstStreamFinder, StreamerReputation.pattern_history,
+# CleanupWorker row-stats) and the LatestTihPerStream model are queryable in tests.
+begin
+  ActiveRecord::Base.connection.execute("REFRESH MATERIALIZED VIEW latest_tih_per_stream")
+rescue ActiveRecord::StatementInvalid => e
+  warn "rails_helper: could not pre-populate latest_tih_per_stream MV — #{e.class}"
+end
+
 # TASK-038: HealthScoreSeeds module lives in db/seeds/ (not autoloaded).
 # Specs rely on it for seeding test data — require eagerly to avoid NameError
 # when RecommendationTemplate already exists (skipping the conditional load).

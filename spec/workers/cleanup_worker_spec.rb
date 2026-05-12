@@ -23,6 +23,7 @@ RSpec.describe CleanupWorker, type: :worker do
     before do
       CleanupRetentionConfigSeeder.seed!
       allow(PrometheusMetrics).to receive(:observe_cleanup_run)
+      allow(PrometheusMetrics).to receive(:observe_cleanup_table_rows)
       allow(PrometheusMetrics).to receive(:observe_cleanup_audit_insert_failure)
     end
 
@@ -85,6 +86,20 @@ RSpec.describe CleanupWorker, type: :worker do
 
         expect(ChatMessage.exists?(old.id)).to be false
         expect(ChatMessage.exists?(recent.id)).to be true
+      end
+
+      it "still prunes NULL-stream_id chat_messages at the default window when a per-channel override exists (CR Nit-4)" do
+        SignalConfiguration.create!(signal_type: "cleanup", category: "channel:#{channel.id}", param_name: "retention_days", param_value: 365)
+        ActiveSupport::CurrentAttributes.clear_all
+        orphan_old = ChatMessage.create!(stream: nil, channel_login: "ghost", username: "u", timestamp: 120.days.ago)   # > 90d default → deleted
+        orphan_recent = ChatMessage.create!(stream: nil, channel_login: "ghost", username: "u2", timestamp: 1.day.ago)  # < 90d → kept
+        kept_for_override = ChatMessage.create!(stream: create(:stream, channel: channel), channel_login: "c", username: "u3", timestamp: 200.days.ago) # < 365d → kept
+
+        described_class.new.perform
+
+        expect(ChatMessage.exists?(orphan_old.id)).to be false
+        expect(ChatMessage.exists?(orphan_recent.id)).to be true
+        expect(ChatMessage.exists?(kept_for_override.id)).to be true
       end
     end
 
@@ -234,11 +249,91 @@ RSpec.describe CleanupWorker, type: :worker do
       it "records an error row (status=error, error_code present, no free-text message) when a sub-run raises" do
         allow(TiSignal).to receive(:where).and_raise(ActiveRecord::StatementInvalid, "boom")
 
-        expect { described_class.new.perform }.to raise_error(ActiveRecord::StatementInvalid)
+        expect { described_class.new.perform }.to raise_error(CleanupWorker::SubRunFailures)
         row = CleanupAuditLog.where(table_name: "ti_signals", status: :error).last
         expect(row).to be_present
         expect(row.error_code).to be_present
         expect(row.attributes.keys).not_to include("error_message")
+      end
+    end
+
+    # --- per-sub-run rescue-continue (FR-031, CR Should-4) ---
+
+    context "one failed sub-run does not starve the rest" do
+      it "still runs the daily TIH cleanup (and the other sub-runs) when an earlier sub-run raises, then re-raises an aggregated error" do
+        ended_old = create(:stream, channel: channel, started_at: 100.days.ago, ended_at: 95.days.ago)
+        intermediate = create(:trust_index_history, channel: channel, stream: ended_old, calculated_at: 96.days.ago)
+        final = create(:trust_index_history, channel: channel, stream: ended_old, calculated_at: 95.days.ago)
+        # Make the FIRST sub-run (:signals — cleanup_old_signals → TiSignal.where) blow up.
+        allow(TiSignal).to receive(:where).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+        expect { described_class.new.perform }.to raise_error(CleanupWorker::SubRunFailures, /signals/)
+
+        # TIH cleanup (sub-run #6, the pre-launch blocker) still ran:
+        expect(TrustIndexHistory.exists?(intermediate.id)).to be false
+        expect(TrustIndexHistory.exists?(final.id)).to be true
+        # The healthy sub-runs each still wrote a success audit row:
+        expect(CleanupAuditLog.where(table_name: "tih", status: :success)).to exist
+        expect(CleanupAuditLog.where(table_name: "ccv_snapshots", status: :success)).to exist
+        # The failed one wrote an error audit row:
+        expect(CleanupAuditLog.where(table_name: "ti_signals", status: :error)).to exist
+      end
+    end
+
+    # --- consecutive-errors gauge (FR-027, CR Should-3) ---
+
+    context "cleanup_worker_consecutive_errors gauge" do
+      it "is pushed with the real consecutive-error count on the error path (including the current run)" do
+        # 1 prior error + this run's error = 2 consecutive (below the auto-disable threshold of 3).
+        CleanupAuditLog.create!(table_name: "ti_signals", run_at: 2.hours.ago, status: :error, deleted_count: 0)
+        allow(TiSignal).to receive(:where).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+        expect { described_class.new.perform }.to raise_error(CleanupWorker::SubRunFailures)
+
+        expect(PrometheusMetrics).to have_received(:observe_cleanup_run)
+          .with(hash_including(table: "ti_signals", consecutive_errors: 2))
+      end
+
+      it "is 0 for a sub-run that just succeeded" do
+        described_class.new.perform
+
+        expect(PrometheusMetrics).to have_received(:observe_cleanup_run)
+          .with(hash_including(table: "tih", consecutive_errors: 0))
+      end
+    end
+
+    # --- partial status (FR-031, CR Should-6) ---
+
+    context "statement_timeout mid-run → status=partial" do
+      it "records status=partial with the rows deleted so far when a batched delete is canceled after progress" do
+        fake_relation = double("ti_signal_relation")
+        deletes = 0
+        allow(TiSignal).to receive(:where).and_return(fake_relation)
+        allow(fake_relation).to receive(:limit).and_return(fake_relation)
+        allow(fake_relation).to receive(:delete_all) do
+          deletes += 1
+          deletes == 1 ? CleanupWorker::BATCH_SIZE : raise(ActiveRecord::QueryCanceled, "canceling statement due to statement timeout")
+        end
+
+        described_class.new.perform # partial is not an error → no SubRunFailures
+
+        row = CleanupAuditLog.where(table_name: "ti_signals").order(:run_at).last
+        expect(row).to be_partial
+        expect(row.deleted_count).to eq(CleanupWorker::BATCH_SIZE)
+        expect(row.error_code).to eq("57014")
+      end
+
+      it "records status=error (not partial) when the timeout hits with zero progress" do
+        fake_relation = double("ti_signal_relation")
+        allow(TiSignal).to receive(:where).and_return(fake_relation)
+        allow(fake_relation).to receive(:limit).and_return(fake_relation)
+        allow(fake_relation).to receive(:delete_all).and_raise(ActiveRecord::QueryCanceled, "canceling statement due to statement timeout")
+
+        expect { described_class.new.perform }.to raise_error(CleanupWorker::SubRunFailures)
+
+        row = CleanupAuditLog.where(table_name: "ti_signals").order(:run_at).last
+        expect(row).to be_error
+        expect(row.deleted_count).to eq(0)
       end
     end
 
@@ -259,6 +354,14 @@ RSpec.describe CleanupWorker, type: :worker do
         expect(TiSignal.exists?(old_signal.id)).to be true
         expect(CleanupAuditLog.where(table_name: "cleanup_worker", status: :skipped)).to exist
         expect(Rails.logger).to have_received(:info).with("cleanup_worker: skipped (flag off)")
+      end
+
+      it "still pushes the worker heartbeat gauge on a Flipper-skipped run (FR-030 safety-net target)" do
+        Flipper.disable(:cleanup_worker)
+
+        described_class.new.perform
+
+        expect(PrometheusMetrics).to have_received(:observe_cleanup_run).with(hash_including(table: "cleanup_worker"))
       end
     end
 
@@ -281,14 +384,13 @@ RSpec.describe CleanupWorker, type: :worker do
     # --- auto-disable (FR-042) ---
 
     context "auto-disable after 3 consecutive errors" do
-      it "disables :cleanup_worker and fires a critical Alertmanager alert" do
-        2.times do
-          CleanupAuditLog.create!(table_name: "ti_signals", run_at: 1.hour.ago, status: :error, deleted_count: 0)
-        end
+      it "disables :cleanup_worker and fires a critical Alertmanager alert, then re-raises an aggregated error" do
+        CleanupAuditLog.create!(table_name: "ti_signals", run_at: 2.hours.ago, status: :error, deleted_count: 0)
+        CleanupAuditLog.create!(table_name: "ti_signals", run_at: 1.hour.ago, status: :error, deleted_count: 0)
         allow(TiSignal).to receive(:where).and_raise(ActiveRecord::StatementInvalid, "boom")
         stub_request(:post, "http://himrate-alertmanager:9093/api/v2/alerts").to_return(status: 200)
 
-        expect { described_class.new.perform }.to raise_error(ActiveRecord::StatementInvalid)
+        expect { described_class.new.perform }.to raise_error(CleanupWorker::SubRunFailures)
 
         expect(Flipper.enabled?(:cleanup_worker)).to be false
         expect(a_request(:post, "http://himrate-alertmanager:9093/api/v2/alerts")).to have_been_made.at_least_once
@@ -298,11 +400,33 @@ RSpec.describe CleanupWorker, type: :worker do
     # --- Prometheus gauges (FR-027..029) ---
 
     context "Prometheus metrics" do
-      it "pushes a cleanup_worker gauge for each table after a run" do
+      it "pushes a cleanup_worker gauge for each table after a run + a worker heartbeat" do
         described_class.new.perform
 
         expect(PrometheusMetrics).to have_received(:observe_cleanup_run).with(hash_including(table: "tih"))
         expect(PrometheusMetrics).to have_received(:observe_cleanup_run).with(hash_including(table: "ti_signals"))
+        expect(PrometheusMetrics).to have_received(:observe_cleanup_run).with(hash_including(table: "cleanup_worker"))
+      end
+
+      it "pushes per-table row-count gauges on the weekly cadence (FR-029)" do
+        stub_const("CleanupWorker::ROW_STATS_WDAY", Date.current.wday) # force the weekly path
+
+        described_class.new.perform
+
+        expect(PrometheusMetrics).to have_received(:observe_cleanup_table_rows)
+          .with(hash_including(table: "trust_index_histories", kind: "total"))
+        expect(PrometheusMetrics).to have_received(:observe_cleanup_table_rows)
+          .with(hash_including(table: "trust_index_histories", kind: "final"))
+        expect(PrometheusMetrics).to have_received(:observe_cleanup_table_rows)
+          .with(hash_including(table: "ti_signals", kind: "total"))
+      end
+
+      it "does NOT push the weekly row-count gauges off the weekly cadence" do
+        stub_const("CleanupWorker::ROW_STATS_WDAY", (Date.current.wday + 1) % 7) # never matches today
+
+        described_class.new.perform
+
+        expect(PrometheusMetrics).not_to have_received(:observe_cleanup_table_rows)
       end
     end
 
