@@ -14,6 +14,12 @@ module Api
     module Channels
       class TrendsController < Api::BaseController
         include Channelable
+        include Task201DeprecationResponse
+
+        # TASK-201 Phase 1: 410 Gone only for `rehabilitation` action (other
+        # Trends endpoints are unaffected). When :hs_recommendations Flipper
+        # is OFF — short-circuits the action before authenticate_user!.
+        prepend_before_action :check_task201_deprecation, only: :rehabilitation
 
         before_action :authenticate_user!
         before_action :set_channel
@@ -200,6 +206,13 @@ module Api
             error: "invalid_params",
             message: exception.message
           }, status: :bad_request
+        end
+
+        # TASK-201 Phase 1 transition wrapper for `rehabilitation` action.
+        def check_task201_deprecation
+          return if Flipper.enabled?(:hs_recommendations)
+
+          render_410_gone_for_task201(endpoint: :trends_rehabilitation)
         end
       end
     end

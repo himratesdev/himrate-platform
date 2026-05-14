@@ -118,6 +118,20 @@ module PrometheusMetrics
       push("cleanup_worker", grouping: { table: table.to_s }, body: body)
     end
 
+    # TASK-201 Phase 1 (ADR-201, §4.1): last-hit timestamp gauge for HS / Rehab /
+    # Streamer-Rating endpoints being deprecated in philosophy v2. Combined with
+    # structured logs in Task201DeprecationResponse, gives Grafana a clean
+    # "is the deployed extension still calling removed endpoints?" view.
+    # Phase 4 housekeeping removes this method + concern + before_action filters.
+    def observe_task201_endpoint_hit(endpoint:)
+      body = [
+        "# HELP task201_endpoint_hit_last_timestamp_seconds Unix ts of last hit on TASK-201 deprecated endpoint",
+        "# TYPE task201_endpoint_hit_last_timestamp_seconds gauge",
+        build_metric("task201_endpoint_hit_last_timestamp_seconds", {}, Time.current.to_i)
+      ].join("\n") + "\n"
+      push("task201_transition", grouping: { endpoint: endpoint.to_s }, body: body)
+    end
+
     # TASK-086 FR-038: best-effort audit-log INSERT failure marker (gauge — last failure ts).
     def observe_cleanup_audit_insert_failure(table:)
       body = [
