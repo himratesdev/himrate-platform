@@ -37,6 +37,18 @@ RSpec.describe "TASK-201 deprecated endpoint 410 transition", type: :request do
       expect(response.headers["Deprecation"]).to eq("true")
     end
 
+    it "sets Cache-Control: no-store (RFC 7234 §4.2.2 — 410 default heuristic cacheable)" do
+      perform_request
+      expect(response.headers["Cache-Control"]).to eq("no-store")
+    end
+
+    it "does NOT raise Pundit::AuthorizationNotPerformedError (skip_authorization called)" do
+      # Wrapper short-circuits before `authorize @channel, :…?` — Pundit's
+      # `after_action :verify_authorized` would otherwise log a warning per hit
+      # and pollute Loki/Grafana. `skip_authorization` in the concern silences it.
+      expect { perform_request }.not_to raise_error
+    end
+
     it "returns structured JSON body" do
       perform_request
       body = response.parsed_body
