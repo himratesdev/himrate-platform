@@ -214,6 +214,11 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
   describe "GET /api/v1/channels/:id/trends/rehabilitation" do
     let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/rehabilitation" }
 
+    # TASK-201 Phase 1 transitional: rehab endpoint behind :hs_recommendations
+    # (moved to HOOK_FLAGS). Explicit enable for legacy code path until Phase 2.4
+    # deletes the rehabilitation route + service + this describe block.
+    before { Flipper.enable(:hs_recommendations) }
+
     include_examples "requires authentication"
     include_examples "blocks Free user"
     include_examples "grants Premium tracked access"

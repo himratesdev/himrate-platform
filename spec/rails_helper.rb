@@ -64,6 +64,10 @@ RSpec.configure do |config|
     FlipperDefaults::ALL_FLAGS.each { |flag| Flipper.enable(flag) }
     # TASK-039 FR-040: HOOK_FLAGS registered но НЕ enabled (matchит production
     # initializer behavior — flag готов для future enable без code change).
+    # TASK-201 (2026-05-16): :hs_recommendations теперь в HOOK_FLAGS — production
+    # initializer no longer auto-enables → Phase 1 migration disable persists.
+    # Existing HS endpoint specs that need flag enabled call `Flipper.enable(:hs_recommendations)`
+    # explicitly in their `before` block (transitional; Phase 2.5 removes flag + tests).
     FlipperDefaults::HOOK_FLAGS.each_key { |flag| Flipper.add(flag) }
     # CR W-3: isolate Current.signal_config between specs — каждый example
     # стартует с чистым кэшем SignalConfiguration lookups (request/job scoping).

@@ -10,6 +10,10 @@ RSpec.describe "Health Score API", type: :request do
   let(:headers_premium) { auth_headers(user_premium) }
 
   before do
+    # TASK-201 Phase 1 transitional: :hs_recommendations moved to HOOK_FLAGS (not
+    # auto-enabled by initializer). Existing HS specs explicitly enable to test
+    # the legacy code path until Phase 2.4 deletes the controllers + this spec.
+    Flipper.enable(:hs_recommendations)
     # TASK-038: seed DB-driven config
     load Rails.root.join("db/seeds/health_score.rb") unless HealthScoreCategory.exists?
     HealthScoreSeeds.run

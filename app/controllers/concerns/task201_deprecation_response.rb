@@ -33,10 +33,20 @@ module Task201DeprecationResponse
   private
 
   def render_410_gone_for_task201(endpoint:)
+    # Pundit `after_action :verify_authorized` (Api::BaseController:8) would raise
+    # AuthorizationNotPerformedError otherwise, since the wrapper short-circuits
+    # before `authorize @channel, :…?` is called. `skip_authorization` marks the
+    # action as "explicitly no auth check needed" — verify_authorized passes silently.
+    skip_authorization if respond_to?(:skip_authorization, true)
+
     log_task201_hit(endpoint)
     push_task201_metric(endpoint)
     response.headers["Sunset"] = SUNSET_HEADER
     response.headers["Deprecation"] = "true"
+    # RFC 7234 §4.2.2: 410 Gone is heuristically cacheable by default → CDN /
+    # browser could pin the 410 indefinitely, defeating Flipper-based emergency
+    # rollback. `no-store` guarantees no caching layer holds on to this response.
+    response.headers["Cache-Control"] = "no-store"
     render json: {
       error: "endpoint_removed",
       message: "This endpoint is removed in HimRate philosophy v2. See #{CHANGELOG_URL}",
