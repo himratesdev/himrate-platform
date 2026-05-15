@@ -21,9 +21,14 @@
 module Task201DeprecationResponse
   extend ActiveSupport::Concern
 
-  SUNSET_HEADER = "Wed, 11 Jun 2026 00:00:00 GMT"
+  # RFC 7231 §7.1.1.1 IMF-fixdate. day-name MUST match the date (2026-06-11 = Thursday).
+  SUNSET_HEADER = "Thu, 11 Jun 2026 00:00:00 GMT"
   DEPRECATED_AT = "2026-05-14"
   SUNSET_AT = "2026-06-11"
+  # Pointer for API consumers. ai-dev-team/CLAUDE.md §«Окружения»: production-домен
+  # — TBD at Launch. Pre-Launch users ≈ 0 → forward-compatible. After Launch this
+  # path will land on the public changelog page; until then it 404s harmlessly.
+  CHANGELOG_URL = "https://himrate.com/changelog/task-201"
 
   private
 
@@ -34,20 +39,23 @@ module Task201DeprecationResponse
     response.headers["Deprecation"] = "true"
     render json: {
       error: "endpoint_removed",
-      message: "This endpoint is removed in HimRate philosophy v2. See https://himrate.com/changelog/task-201",
+      message: "This endpoint is removed in HimRate philosophy v2. See #{CHANGELOG_URL}",
       deprecated_at: DEPRECATED_AT,
       sunset_at: SUNSET_AT
     }, status: :gone
   end
 
+  # JSON-encoded log line so Loki / Promtail / jq parse it as structured data.
+  # Rails.logger.info(hash) emits Ruby `#inspect` (e.g. `{:msg=>"…"}`) which is
+  # not valid JSON — pipelines downstream want real JSON.
   def log_task201_hit(endpoint)
-    Rails.logger.info(
+    Rails.logger.info(JSON.generate(
       msg: "TASK-201 deprecated endpoint hit",
       task: "TASK-201",
       endpoint: endpoint.to_s,
       response_code: 410,
       user_id: respond_to?(:current_user, true) ? current_user&.id : nil
-    )
+    ))
   end
 
   def push_task201_metric(endpoint)

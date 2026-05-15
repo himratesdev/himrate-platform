@@ -7,10 +7,10 @@
 # emergency rollback needed before code removal.
 class DisableHsRecommendationsFlipper < ActiveRecord::Migration[8.0]
   def up
-    Flipper.disable(:hs_recommendations) if defined?(Flipper)
+    Flipper.disable(:hs_recommendations)
   end
 
   def down
-    Flipper.enable(:hs_recommendations) if defined?(Flipper)
+    Flipper.enable(:hs_recommendations)
   end
 end
