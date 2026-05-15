@@ -8,6 +8,10 @@ RSpec.describe "Health Score Recommendations API", type: :request do
   let(:headers) { auth_headers(user_premium) }
 
   before do
+    # TASK-201 Phase 1 transitional: :hs_recommendations moved to HOOK_FLAGS.
+    # Explicit enable required for legacy POST .../dismiss tests until Phase 2.4
+    # deletes the controller + this spec.
+    Flipper.enable(:hs_recommendations)
     load Rails.root.join("db/seeds/health_score.rb") unless RecommendationTemplate.exists?
     HealthScoreSeeds.run
     create(:tracked_channel, user: user_premium, channel: channel)

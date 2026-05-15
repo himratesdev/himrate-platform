@@ -9,6 +9,12 @@ module Api
   module V1
     class HealthScoresController < Api::BaseController
       include Channelable
+      include Task201DeprecationResponse
+
+      # TASK-201 Phase 1: 410 Gone when :hs_recommendations Flipper is OFF.
+      # Fires before authenticate_user! so unauthenticated callers also see 410
+      # (consistency for API consumers including deployed extension).
+      prepend_before_action :check_task201_deprecation
 
       before_action :authenticate_user!
       before_action :set_channel
@@ -195,6 +201,13 @@ module Api
 
       def policy
         @policy ||= ChannelPolicy.new(current_user, @channel)
+      end
+
+      # TASK-201 Phase 1 transition wrapper.
+      def check_task201_deprecation
+        return if Flipper.enabled?(:hs_recommendations)
+
+        render_410_gone_for_task201(endpoint: :health_score)
       end
     end
   end

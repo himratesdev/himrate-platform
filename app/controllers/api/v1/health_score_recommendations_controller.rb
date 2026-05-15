@@ -8,6 +8,10 @@ module Api
   module V1
     class HealthScoreRecommendationsController < Api::BaseController
       include Channelable
+      include Task201DeprecationResponse
+
+      # TASK-201 Phase 1: 410 Gone when :hs_recommendations Flipper is OFF.
+      prepend_before_action :check_task201_deprecation
 
       before_action :authenticate_user!
       before_action :set_channel
@@ -55,6 +59,13 @@ module Api
           0
         end
         Rails.cache.delete("health_score:cat_v#{version}:#{@channel.id}")
+      end
+
+      # TASK-201 Phase 1 transition wrapper.
+      def check_task201_deprecation
+        return if Flipper.enabled?(:hs_recommendations)
+
+        render_410_gone_for_task201(endpoint: :health_score_recommendation_dismiss)
       end
     end
   end

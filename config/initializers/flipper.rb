@@ -76,23 +76,26 @@ module FlipperDefaults
     channel_discovery
     bot_scoring
     signal_compute
-    hs_recommendations
     accessory_drift_detection
     stream_summary_endpoint
     cleanup_worker
   ].freeze
 
-  # Hooks for upcoming features: flag зарегистрирован, но оставлен OFF до момента
-  # когда feature ready. Включение через admin UI или Flipper.enable без нового deploy.
-  # Каждая запись = namespaced :flag => "TASK-XXX reference" для traceability.
+  # Hooks for upcoming features / transitional kill-switches: flag зарегистрирован,
+  # но НЕ auto-enabled. Production state управляется отдельно (миграция / admin UI /
+  # rake task). Каждая запись = namespaced :flag => "TASK-XXX reference" для traceability.
   HOOK_FLAGS = {
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
     billing_auto_subscription_creation: "BUG-012", # Dev/staging only: ChannelsController#track
     # auto-creates Subscription if missing. Production: flag OFF — Subscription must pre-exist
     # (payment provider webhook creates it). Prevents masking missing billing integration.
-    accessory_auto_remediation: "BUG-010 PR3" # Kill switch для AutoRemediation::TriggerService
+    accessory_auto_remediation: "BUG-010 PR3", # Kill switch для AutoRemediation::TriggerService
     # GitHub workflow_dispatch. Default OFF — operators enable через
     # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.
+    hs_recommendations: "TASK-201 Phase 1..2.5" # DEPRECATED (philosophy v2). Moved from ALL_FLAGS
+    # → HOOK_FLAGS 2026-05-16 после PG-finding что initializer auto-enable отменял Phase 1
+    # migration `Flipper.disable(:hs_recommendations)`. Теперь миграция = единственный source
+    # of truth для production state. Phase 2.5 удалит ключ из этого hash вместе с самим флагом.
   }.freeze
 end
 

@@ -17,6 +17,11 @@ RSpec.describe Hs::RecommendationService do
   end
 
   before do
+    # TASK-201 Phase 1 transitional: :hs_recommendations moved from ALL_FLAGS to
+    # HOOK_FLAGS (not auto-enabled by initializer). RecommendationService#call
+    # returns [] unless the flag is enabled — explicit enable required for the
+    # legacy service tests until Phase 2.1 deletes app/services/hs/ + this spec.
+    Flipper.enable(:hs_recommendations)
     load Rails.root.join("db/seeds/health_score.rb") unless HealthScoreCategory.exists?
     HealthScoreSeeds.run
     { ti: 0.30, stability: 0.20, engagement: 0.20, growth: 0.15, consistency: 0.15 }.each do |comp, val|
