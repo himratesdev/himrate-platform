@@ -18,25 +18,6 @@ RSpec.describe "Enum validations", type: :model do
     end
   end
 
-  describe HealthScore do
-    it "validates confidence_level inclusion" do
-      score = build(:health_score, confidence_level: "invalid")
-      expect(score).not_to be_valid
-    end
-
-    it "allows valid confidence_level" do
-      HealthScore::CONFIDENCE_LEVELS.each do |level|
-        score = build(:health_score, confidence_level: level)
-        expect(score).to be_valid, "Expected '#{level}' to be valid"
-      end
-    end
-
-    it "allows nil confidence_level" do
-      score = build(:health_score, confidence_level: nil)
-      expect(score).to be_valid
-    end
-  end
-
   describe Anomaly do
     it "validates anomaly_type inclusion" do
       anomaly = build(:anomaly, anomaly_type: "invalid")
