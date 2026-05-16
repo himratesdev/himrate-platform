@@ -3,30 +3,6 @@
 require "rails_helper"
 
 RSpec.describe "TASK-017 Models", type: :model do
-  describe StreamerRating do
-    it { is_expected.to belong_to(:channel) }
-    it { is_expected.to validate_presence_of(:rating_score) }
-    it { is_expected.to validate_presence_of(:calculated_at) }
-
-    it "validates rating_score range 0-100" do
-      rating = build(:streamer_rating, rating_score: 101)
-      expect(rating).not_to be_valid
-    end
-
-    it "validates decay_lambda range 0-1" do
-      expect(build(:streamer_rating, decay_lambda: 0)).not_to be_valid
-      expect(build(:streamer_rating, decay_lambda: -0.1)).not_to be_valid
-      expect(build(:streamer_rating, decay_lambda: 1.1)).not_to be_valid
-      expect(build(:streamer_rating, decay_lambda: 0.05)).to be_valid
-      expect(build(:streamer_rating, decay_lambda: 1.0)).to be_valid
-    end
-
-    it "creates valid record via factory" do
-      rating = create(:streamer_rating)
-      expect(rating).to be_persisted
-    end
-  end
-
   describe FollowerSnapshot do
     it { is_expected.to belong_to(:channel) }
     it { is_expected.to validate_presence_of(:timestamp) }

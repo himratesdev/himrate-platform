@@ -60,9 +60,6 @@ class PostStreamWorker
       # FR-011: Health Score refresh
       HealthScoreRefreshWorker.perform_async(stream.channel_id)
 
-      # FR-012: Streamer Rating refresh
-      StreamerRatingRefreshWorker.perform_async(stream.channel_id)
-
       # TASK-039 FR-046 foundation: snapshot qualifying percentiles в TIH.
       # Delay 2 минуты гарантирует что HS + Reputation refreshes выше успели
       # complete (typically <30s) — snapshot reads fresh latest values.

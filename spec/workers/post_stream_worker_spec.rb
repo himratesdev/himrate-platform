@@ -23,7 +23,6 @@ RSpec.describe PostStreamWorker do
     allow(TiDivergenceAlerter).to receive(:check)
     allow(PostStreamNotificationService).to receive(:broadcast_stream_ended)
     allow(HealthScoreRefreshWorker).to receive(:perform_async)
-    allow(StreamerRatingRefreshWorker).to receive(:perform_async)
     allow(StreamerReputationRefreshWorker).to receive(:perform_async)
     allow(StreamExpiringWorker).to receive(:perform_at)
     allow(Trends::QualifyingPercentileSnapshotWorker).to receive(:perform_in)
@@ -52,11 +51,10 @@ RSpec.describe PostStreamWorker do
         .with(stream, instance_of(PostStreamReport))
     end
 
-    it "triggers HealthScore and Rating refresh" do
+    it "triggers HealthScore refresh" do
       described_class.new.perform(stream.id)
 
       expect(HealthScoreRefreshWorker).to have_received(:perform_async).with(channel.id)
-      expect(StreamerRatingRefreshWorker).to have_received(:perform_async).with(channel.id)
     end
 
     # TASK-039 FR-046 foundation: PostStreamWorker enqueues snapshot worker

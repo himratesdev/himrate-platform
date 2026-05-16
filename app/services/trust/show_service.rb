@@ -52,8 +52,6 @@ module Trust
         confidence_display: erv_data[:confidence_display],
         is_live: @channel.live?,
         ccv: latest_ccv,
-        # FR-009: Streamer Rating
-        streamer_rating: streamer_rating_data,
         # FR-013: Category percentile (CR #9: cached)
         category_avg_ti: category_avg_ti,
         percentile_in_category: cached_percentile(latest_ti),
@@ -134,26 +132,6 @@ module Trust
           contribution: (sig.value.to_f * (sig.weight_in_ti || 0).to_f).round(4),
           metadata: sig.metadata
         }
-      end
-    end
-
-    def streamer_rating_data
-      rating = @channel.streamer_rating
-      return nil unless rating
-
-      {
-        score: rating.rating_score.to_f,
-        streams_count: rating.streams_count,
-        classification: rating_classification(rating.rating_score.to_f)
-      }
-    end
-
-    def rating_classification(score)
-      case score
-      when 80..100 then "trusted"
-      when 50..79 then "needs_review"
-      when 25..49 then "suspicious"
-      else "fraudulent"
       end
     end
 
