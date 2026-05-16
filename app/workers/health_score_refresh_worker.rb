@@ -11,6 +11,8 @@ class HealthScoreRefreshWorker
   DEDUPE_WINDOW = 60.seconds
 
   def perform(channel_id)
+    return unless Flipper.enabled?(:hs_recommendations)
+
     channel = Channel.find_by(id: channel_id)
     return unless channel
 

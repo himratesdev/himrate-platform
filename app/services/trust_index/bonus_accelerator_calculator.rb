@@ -13,7 +13,7 @@
 #   - clean_stream_ti_threshold=50 (rehabilitation/, shared с RehabilitationTracker — CR N-3)
 #
 # Source data:
-#   - trust_index_histories.engagement_percentile_at_end (Hs::ComponentPercentileService :engagement)
+#   - trust_index_histories.engagement_percentile_at_end (engagement component percentile)
 #   - trust_index_histories.engagement_consistency_percentile_at_end (Reputation::ComponentPercentileService :engagement_consistency)
 #   - Snapshots populated by Trends::QualifyingPercentileSnapshotWorker post-stream
 #   - Backfill rake: trends:backfill_qualifying_percentiles

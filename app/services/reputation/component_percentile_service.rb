@@ -1,7 +1,6 @@
 # frozen_string_literal: true
 
-# TASK-039 Phase A3a (FR-046): Per-component percentile в Reputation domain
-# (analogous Hs::ComponentPercentileService которое работает с health_scores).
+# TASK-039 Phase A3a (FR-046): Per-component percentile в Reputation domain.
 #
 # Reads streamer_reputations table — domain owner для components:
 #   :growth_pattern, :follower_quality, :engagement_consistency, :pattern_history
@@ -12,7 +11,7 @@
 #   - BonusAcceleratorCalculator (Phase A3b) → qualifying determination
 #   - Future: peer comparison dashboards, advertiser metrics
 #
-# Pattern идентичен Hs::ComponentPercentileService:
+# Pattern:
 #   single UNION query (no N+1), latest-per-channel via DISTINCT ON,
 #   freshness window 30d, min channels threshold, Redis cache 5min.
 #
@@ -77,7 +76,6 @@ module Reputation
     end
 
     # Single UNION query: one row per component с count_below.
-    # Mirrors Hs::ComponentPercentileService pattern exactly для consistency.
     # Все interpolations контролируемые: comp ∈ COMPONENTS hardcoded constant,
     # value/channel_id sanitized via .to_f и connection.quote.
     def count_channels_below(category_key, current_values)

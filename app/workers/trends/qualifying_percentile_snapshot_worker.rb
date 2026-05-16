@@ -30,6 +30,8 @@ module Trends
     class TihNotReady < StandardError; end
 
     def perform(stream_id)
+      return unless Flipper.enabled?(:hs_recommendations)
+
       stream = Stream.find_by(id: stream_id)
       return unless stream # legitimate skip — stream удалён
 

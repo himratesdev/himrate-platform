@@ -96,6 +96,10 @@ module FlipperDefaults
     # → HOOK_FLAGS 2026-05-16 после PG-finding что initializer auto-enable отменял Phase 1
     # migration `Flipper.disable(:hs_recommendations)`. Теперь миграция = единственный source
     # of truth для production state. Phase 2.5 удалит ключ из этого hash вместе с самим флагом.
+    # Emergency rollback caveat (post Phase 2.1): re-enabling this flag alone is NOT a complete
+    # rollback. Phase 2.1 deleted `app/services/hs/` → workers и controllers будут raise NameError
+    # при попытке выполнения. Rollback path = `git revert` Phase 2.x commits (restores services)
+    # THEN `Flipper.enable(:hs_recommendations)`.
   }.freeze
 end
 
