@@ -84,8 +84,6 @@ if defined?(SignalConfiguration)
     # === TASK-029: Trust Index Engine configs ===
     { signal_type: "trust_index", category: "default", param_name: "population_mean", param_value: 65.0 },
     { signal_type: "trust_index", category: "default", param_name: "incident_threshold", param_value: 40.0 },
-    { signal_type: "trust_index", category: "default", param_name: "rehabilitation_streams", param_value: 15.0 },
-    { signal_type: "trust_index", category: "default", param_name: "rehabilitation_bonus_max", param_value: 15.0 },
     { signal_type: "trust_index", category: "default", param_name: "engagement_percentile_threshold", param_value: 80.0 },
     # Classification thresholds (QDC: from DB, not hardcoded)
     { signal_type: "trust_index", category: "default", param_name: "trusted_min", param_value: 80.0 },

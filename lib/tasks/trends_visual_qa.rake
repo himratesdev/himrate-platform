@@ -8,13 +8,13 @@
 #
 # Usage:
 #   bin/rails 'trends:visual_qa:seed[vqa_test_01]'                     # default profile
-#   bin/rails 'trends:visual_qa:seed[vqa_test_02,streamer_with_rehab]' # named profile
+#   bin/rails 'trends:visual_qa:seed[vqa_test_02,cold_start]' # named profile
 #   bin/rails 'trends:visual_qa:clear[vqa_test_01]'
 #   bin/rails 'trends:visual_qa:status[vqa_test_01]'
 
 namespace :trends do
   namespace :visual_qa do
-    desc "Seed synthetic channel chain для Visual QA (profile: premium_tracked | streamer_with_rehab | cold_start)"
+    desc "Seed synthetic channel chain для Visual QA (profile: premium_tracked | cold_start)"
     task :seed, %i[login profile] => :environment do |_t, args|
       login = args[:login].presence || raise("login required: bin/rails 'trends:visual_qa:seed[vqa_test_01]'")
       profile = args[:profile].presence || "premium_tracked"
