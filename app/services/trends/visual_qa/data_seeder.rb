@@ -133,8 +133,7 @@ module Trends
       end
 
       # Profile: Premium user tracking сторонний channel с full Trends UI visible.
-      # 30 days streams → TDA + TIH + anomalies + tier_changes + follower snapshots +
-      # anomaly attributions. NO rehab.
+      # 30 days streams → TDA + TIH + anomalies + follower snapshots + anomaly attributions.
       #
       # CR N-3: FollowerSnapshot + AnomalyAttribution seeded для complete M4/M5 coverage.
       # Without them discovery_phase_score / follower_ccv_coupling_r остаются null,
@@ -147,7 +146,6 @@ module Trends
         tda = TdaAggregateSeeder.seed(channel: channel, streams: streams)
         anomalies = AnomalyEventSeeder.seed(channel: channel, streams: streams, count: 3)
         attributions = AnomalyAttributionSeeder.seed(anomalies: anomalies)
-        tier_changes = TierChangeSeeder.seed(channel: channel, streams: streams, count: 2)
 
         {
           streams: streams.size,
@@ -156,7 +154,7 @@ module Trends
           anomalies: anomalies.size,
           anomaly_attributions: attributions.size,
           follower_snapshots: follower_snapshots.size,
-          tier_changes: tier_changes.size,
+          tier_changes: 0,
           rehab_events: 0
         }
       end
@@ -191,7 +189,7 @@ module Trends
           anomaly_attributions: AnomalyAttribution.joins(anomaly: :stream)
             .where(streams: { channel_id: channel.id }).count,
           follower_snapshots: FollowerSnapshot.where(channel_id: channel.id).count,
-          tier_changes: HsTierChangeEvent.for_channel(channel.id).count,
+          tier_changes: 0,
           rehab_events: 0
         }
       end

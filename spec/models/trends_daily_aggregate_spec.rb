@@ -139,14 +139,6 @@ RSpec.describe TrendsDailyAggregate do
       end
     end
 
-    describe ".with_tier_changes" do
-      it "returns only days with tier_change_on_day=true" do
-        with = create(:trends_daily_aggregate, :tier_change, channel: channel, date: 1.day.ago)
-        _without = create(:trends_daily_aggregate, channel: channel, date: 2.days.ago)
-        expect(described_class.with_tier_changes).to contain_exactly(with)
-      end
-    end
-
     describe ".with_discovery" do
       it "returns only days with discovery_phase_score IS NOT NULL" do
         with = create(:trends_daily_aggregate, :with_discovery, channel: channel, date: 1.day.ago)

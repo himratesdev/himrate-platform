@@ -57,7 +57,7 @@ RSpec.describe Trends::VisualQa::DataSeeder do
       # CR N-3: anomaly_attributions + follower_snapshots в stats.
       expect(stats[:anomaly_attributions]).to be >= 3 # at minimum unattributed fallback per anomaly
       expect(stats[:follower_snapshots]).to eq(30)
-      expect(stats[:tier_changes]).to eq(2)
+      expect(stats[:tier_changes]).to eq(0)
       expect(stats[:rehab_events]).to eq(0)
 
       seed_record = VisualQaChannelSeed.find_by(channel_id: channel.id)

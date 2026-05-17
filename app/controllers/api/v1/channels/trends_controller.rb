@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # TASK-039 Phase C1: Trends API — nested under /api/v1/channels/:channel_id/trends/*.
-# Actions: erv, trust_index, anomalies, components, rehabilitation (C1 subset).
+# Actions: erv, trust_index, anomalies, components (C1 subset).
 # Stability, comparison, categories, weekday, insights → Phase C2.
 #
 # Controller тонкий (ai-dev-team/CLAUDE.md convention): params → endpoint service → render.
@@ -14,12 +14,6 @@ module Api
     module Channels
       class TrendsController < Api::BaseController
         include Channelable
-        include Task201DeprecationResponse
-
-        # TASK-201 Phase 1: 410 Gone only for `rehabilitation` action (other
-        # Trends endpoints are unaffected). When :hs_recommendations Flipper
-        # is OFF — short-circuits the action before authenticate_user!.
-        prepend_before_action :check_task201_deprecation, only: :rehabilitation
 
         before_action :authenticate_user!
         before_action :set_channel
@@ -68,16 +62,6 @@ module Api
           render_cached("components", extra_key: "g#{params[:group] || 'all'}") do
             Trends::Api::ComponentsEndpointService.new(
               channel: @channel, period: params[:period], group: params[:group],
-              user: current_user
-            ).call
-          end
-        end
-
-        # GET /api/v1/channels/:channel_id/trends/rehabilitation
-        def rehabilitation
-          render_cached("rehabilitation") do
-            Trends::Api::RehabilitationEndpointService.new(
-              channel: @channel, period: params[:period] || "30d",
               user: current_user
             ).call
           end
@@ -206,13 +190,6 @@ module Api
             error: "invalid_params",
             message: exception.message
           }, status: :bad_request
-        end
-
-        # TASK-201 Phase 1 transition wrapper for `rehabilitation` action.
-        def check_task201_deprecation
-          return if Flipper.enabled?(:hs_recommendations)
-
-          render_410_gone_for_task201(endpoint: :trends_rehabilitation)
         end
       end
     end

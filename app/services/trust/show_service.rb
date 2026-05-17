@@ -80,9 +80,7 @@ module Trust
         bot_raid_victim: bot_raid_victim?,
         ti_protected: bot_raid_victim?,
         # TASK-035 FR-033: top countries from chatters demographic data
-        top_countries: top_countries_data,
-        # TASK-035 FR-034: health score with 5 individual components
-        health_score: health_score_data
+        top_countries: top_countries_data
       }
     end
 
@@ -179,28 +177,6 @@ module Trust
     # will query the data. API contract is stable — UI hides module when null.
     def top_countries_data
       nil
-    end
-
-    # TASK-035 FR-034: Health Score with individual components
-    def health_score_data
-      hs = @channel.health_scores&.order(calculated_at: :desc)&.first
-      return nil unless hs
-
-      stream_count = @channel.streams.where.not(ended_at: nil).count
-
-      {
-        score: hs.health_score.to_f,
-        components: {
-          ti: { score: hs.ti_component&.to_f, weight: 35, label: "Trust Index" },
-          stability: { score: hs.stability_component&.to_f, weight: 15, label: "Stability" },
-          engagement: { score: hs.engagement_component&.to_f, weight: 25, label: "Engagement" },
-          growth: { score: hs.growth_component&.to_f, weight: 15, label: "Growth" },
-          consistency: { score: hs.consistency_component&.to_f, weight: 10, label: "Consistency" }
-        },
-        streams_count: stream_count,
-        provisional_status: TrustIndex::ColdStartGuard.assess_hash(stream_count)[:status],
-        percentile: cached_percentile(latest_trust_index)
-      }
     end
   end
 end

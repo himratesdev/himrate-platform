@@ -65,16 +65,8 @@ class TrustIndexBlueprint < Blueprinter::Base
     end
   end
 
-  # === Full (Premium) — drill-down + rehabilitation ===
+  # === Full (Premium) — drill-down ===
   view :full do
     include_view :drill_down
-
-    field :rehabilitation_penalty do |tih, _options|
-      tih&.rehabilitation_penalty&.to_f
-    end
-
-    field :rehabilitation_bonus do |tih, _options|
-      tih&.rehabilitation_bonus&.to_f
-    end
   end
 end

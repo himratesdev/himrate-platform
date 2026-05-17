@@ -50,7 +50,5 @@ class TrendsDailyAggregate < ApplicationRecord
     where(channel: channel, date: from..to).order(:date)
   }
 
-  scope :with_tier_changes, -> { where(tier_change_on_day: true) }
-
   scope :with_discovery, -> { where.not(discovery_phase_score: nil) }
 end
