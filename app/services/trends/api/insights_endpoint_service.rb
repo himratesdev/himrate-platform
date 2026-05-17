@@ -3,11 +3,10 @@
 # TASK-039 FR-010 (NEW v2.0): GET /api/v1/channels/:id/trends/insights — MovementInsights orchestrator.
 # Response per SRS §4.2: top-N insights (P0/P1/P2) с i18n messages + action deep-links.
 #
-# Aggregates inputs from 4 sources:
+# Aggregates inputs from 3 sources:
 #   - TrendCalculator (на TI points) — direction + delta
 #   - AnomalyFrequencyScorer — elevated/reduced verdict + delta_percent
 #   - TierChangeCounter — recent tier changes
-#   - RehabilitationTracker (optional) — active rehabilitation + bonus
 #
 # Передаются в Trends::Analysis::MovementInsights которая делает priority ranking + i18n.
 
@@ -21,7 +20,6 @@ module Trends
         trend = compute_trend(ti_points)
         anomaly_freq = Trends::Analysis::AnomalyFrequencyScorer.call(channel: channel, from: from_ts, to: to_ts)
         tier_changes = Trends::Analysis::TierChangeCounter.call(channel: channel, from: from_ts, to: to_ts)
-        rehabilitation = TrustIndex::RehabilitationTracker.call(channel)
         top_improvement, top_degradation = extract_top_signals(from_ts, to_ts)
 
         insights = Trends::Analysis::MovementInsights.call(
@@ -29,7 +27,6 @@ module Trends
           trend: trend,
           anomaly_frequency: anomaly_freq,
           tier_changes: tier_changes,
-          rehabilitation: rehabilitation,
           top_improvement: top_improvement,
           top_degradation: top_degradation
         )

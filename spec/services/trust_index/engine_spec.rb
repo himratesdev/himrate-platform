@@ -31,12 +31,6 @@ RSpec.describe TrustIndex::Engine do
       signal_type: "trust_index", category: "default", param_name: "incident_threshold"
     ) { |c| c.param_value = 40.0 }
     SignalConfiguration.find_or_create_by!(
-      signal_type: "trust_index", category: "default", param_name: "rehabilitation_streams"
-    ) { |c| c.param_value = 15.0 }
-    SignalConfiguration.find_or_create_by!(
-      signal_type: "trust_index", category: "default", param_name: "rehabilitation_bonus_max"
-    ) { |c| c.param_value = 15.0 }
-    SignalConfiguration.find_or_create_by!(
       signal_type: "trust_index", category: "default", param_name: "trusted_min"
     ) { |c| c.param_value = 80.0 }
     SignalConfiguration.find_or_create_by!(
@@ -125,5 +119,23 @@ RSpec.describe TrustIndex::Engine do
     # TI should be between 65 (pop mean) and 100 (calculated) due to shrinkage
     expect(result.ti_score).to be_between(65, 100)
     expect(result.ti_score).to be < 100
+  end
+
+  describe "philosophy v2: rehabilitation / penalty event / bonus accelerator code removed" do
+    let(:result) { engine.compute(signal_results: all_signals(value: 0.1), stream: stream, ccv: 1000) }
+
+    it "Result struct does not include rehabilitation_penalty/bonus members" do
+      expect(result.members).not_to include(:rehabilitation_penalty, :rehabilitation_bonus)
+    end
+
+    it "removed constants raise NameError on resolution" do
+      expect { TrustIndex::PenaltyEventEmitter }.to raise_error(NameError)
+      expect { TrustIndex::RehabilitationCurve }.to raise_error(NameError)
+      expect { TrustIndex::RehabilitationTracker }.to raise_error(NameError)
+      expect { TrustIndex::BonusAcceleratorCalculator }.to raise_error(NameError)
+      expect { Reputation::ComponentPercentileService }.to raise_error(NameError)
+      expect { Reputation::PercentileService }.to raise_error(NameError)
+      expect { RehabilitationPenaltyEvent }.to raise_error(NameError)
+    end
   end
 end

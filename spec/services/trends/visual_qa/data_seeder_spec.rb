@@ -78,16 +78,6 @@ RSpec.describe Trends::VisualQa::DataSeeder do
       expect(Stream.count).to eq(0)
     end
 
-    it "creates streamer_with_rehab profile с rehab event" do
-      result = described_class.seed(login: login, profile: "streamer_with_rehab")
-      stats = result[:stats]
-
-      expect(stats[:streams]).to eq(30)
-      expect(stats[:tier_changes]).to eq(1)
-      expect(stats[:rehab_events]).to eq(1)
-      expect(stats[:anomalies]).to eq(0)
-    end
-
     it "cold_start profile: <3 streams, no TIH/TDA" do
       result = described_class.seed(login: login, profile: "cold_start")
       stats = result[:stats]
