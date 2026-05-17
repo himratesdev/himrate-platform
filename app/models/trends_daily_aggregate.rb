@@ -10,7 +10,7 @@ class TrendsDailyAggregate < ApplicationRecord
   CLASSIFICATIONS = %w[trusted needs_review suspicious fraudulent].freeze
 
   # schema_version bumped при breaking change response shape.
-  # v2 включает discovery_phase_score / follower_ccv_coupling_r / tier_change_on_day / best/worst.
+  # v2 включает discovery_phase_score / follower_ccv_coupling_r / best/worst.
   SUPPORTED_SCHEMA_VERSIONS = [ 2 ].freeze
 
   belongs_to :channel
