@@ -15,7 +15,7 @@ module TrustIndex
     }.freeze
 
     Result = Data.define(:ti_score, :classification, :erv, :cold_start, :signal_breakdown,
-                         :confidence, :rehabilitation_penalty, :rehabilitation_bonus)
+                         :confidence)
 
     # Main entry point. Computes TI + ERV for a stream.
     # signal_results: Hash{signal_type => BaseSignal::Result} from Registry.compute_all
@@ -32,12 +32,8 @@ module TrustIndex
       cold_start = ColdStartGuard.assess(channel)
       ti_bayesian = apply_bayesian(ti_raw, cold_start[:confidence])
 
-      # FR-007: Rehabilitation
-      rehab = RehabilitationCurve.apply(channel: channel, calculated_ti: ti_bayesian)
-      ti_after_rehab = rehab[:adjusted_ti]
-
       # TASK-037 FR-007: Blend reputation (optional, 5% default weight)
-      ti_final = apply_reputation(channel, ti_after_rehab, category).round(0).clamp(0, 100)
+      ti_final = apply_reputation(channel, ti_bayesian, category).round(0).clamp(0, 100)
 
       # FR-006: Classification (from DB thresholds)
       classification = classify(ti_final)
@@ -50,18 +46,13 @@ module TrustIndex
         stream: stream, channel: channel, ti_score: ti_final,
         classification: classification, cold_start: cold_start,
         erv: erv, breakdown: breakdown, confidence: signal_confidence,
-        rehabilitation_penalty: rehab[:penalty], rehabilitation_bonus: rehab[:bonus],
         ccv: ccv
       )
-
-      # TASK-038 AR-11: Emit rehabilitation penalty/resolution events
-      PenaltyEventEmitter.call(channel: channel, stream: stream, ti_score: ti_final)
 
       Result.new(
         ti_score: ti_final, classification: classification, erv: erv,
         cold_start: cold_start, signal_breakdown: breakdown,
-        confidence: signal_confidence,
-        rehabilitation_penalty: rehab[:penalty], rehabilitation_bonus: rehab[:bonus]
+        confidence: signal_confidence
       )
     end
 
@@ -173,7 +164,7 @@ module TrustIndex
     end
 
     def persist(stream:, channel:, ti_score:, classification:, cold_start:, erv:,
-                breakdown:, confidence:, rehabilitation_penalty:, rehabilitation_bonus:, ccv:)
+                breakdown:, confidence:, ccv:)
       TrustIndexHistory.create!(
         channel: channel,
         stream: stream,
@@ -184,8 +175,6 @@ module TrustIndex
         classification: classification,
         cold_start_status: cold_start[:status],
         erv_percent: erv[:erv_percent],
-        rehabilitation_penalty: rehabilitation_penalty,
-        rehabilitation_bonus: rehabilitation_bonus,
         ccv: ccv
       )
 

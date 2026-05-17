@@ -211,31 +211,6 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
     end
   end
 
-  describe "GET /api/v1/channels/:id/trends/rehabilitation" do
-    let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/rehabilitation" }
-
-    # TASK-201 Phase 1 transitional: rehab endpoint behind :hs_recommendations
-    # (moved to HOOK_FLAGS). Explicit enable for legacy code path until Phase 2.4
-    # deletes the rehabilitation route + service + this describe block.
-    before { Flipper.enable(:hs_recommendations) }
-
-    include_examples "requires authentication"
-    include_examples "blocks Free user"
-    include_examples "grants Premium tracked access"
-
-    it "returns tracker output" do
-      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
-      create(:subscription, user: user_premium, tier: "premium", is_active: true)
-
-      get endpoint_path, headers: headers_premium
-
-      data = response.parsed_body["data"]
-      expect(data).to include("channel_id")
-      # tracker output shape — rehabilitation_active key присутствует
-      expect(data.keys).to include("rehabilitation_active").or include("active")
-    end
-  end
-
   describe "GET /api/v1/channels/:id/trends/stability (FR-003)" do
     let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/stability?period=30d" }
 

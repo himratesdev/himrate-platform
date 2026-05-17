@@ -19,9 +19,8 @@ module Trends
 
       # Supported profiles — каждый создаёт differently shaped test data:
       #   premium_tracked — активный канал, полный Trends UI visible (default)
-      #   streamer_with_rehab — streamer OAuth, active rehabilitation_penalty, bonus points
       #   cold_start — <3 streams для InsufficientData testing
-      PROFILES = %w[premium_tracked streamer_with_rehab cold_start].freeze
+      PROFILES = %w[premium_tracked cold_start].freeze
 
       def self.seed(login:, profile: "premium_tracked")
         new(login: login, profile: profile).seed
@@ -129,7 +128,6 @@ module Trends
       def run_profile(channel)
         case @profile
         when "premium_tracked" then seed_premium_tracked(channel)
-        when "streamer_with_rehab" then seed_streamer_with_rehab(channel)
         when "cold_start" then seed_cold_start(channel)
         end
       end
@@ -160,28 +158,6 @@ module Trends
           follower_snapshots: follower_snapshots.size,
           tier_changes: tier_changes.size,
           rehab_events: 0
-        }
-      end
-
-      # Profile: Streamer на own channel с active rehabilitation (for M6 testing).
-      def seed_streamer_with_rehab(channel)
-        ChannelSeeder.ensure_streamer_oauth(channel: channel)
-        streams = StreamHistorySeeder.seed(channel: channel, days: 30)
-        follower_snapshots = FollowerSnapshotSeeder.seed(channel: channel, days: 30)
-        tih = TihHistorySeeder.seed(channel: channel, streams: streams)
-        tda = TdaAggregateSeeder.seed(channel: channel, streams: streams)
-        tier_changes = TierChangeSeeder.seed(channel: channel, streams: streams, count: 1)
-        rehab = RehabilitationSeeder.seed(channel: channel, clean_streams: 5)
-
-        {
-          streams: streams.size,
-          tih: tih.size,
-          tda: tda.size,
-          anomalies: 0,
-          anomaly_attributions: 0,
-          follower_snapshots: follower_snapshots.size,
-          tier_changes: tier_changes.size,
-          rehab_events: rehab.size
         }
       end
 
@@ -216,7 +192,7 @@ module Trends
             .where(streams: { channel_id: channel.id }).count,
           follower_snapshots: FollowerSnapshot.where(channel_id: channel.id).count,
           tier_changes: HsTierChangeEvent.for_channel(channel.id).count,
-          rehab_events: RehabilitationPenaltyEvent.where(channel_id: channel.id).count
+          rehab_events: 0
         }
       end
     end

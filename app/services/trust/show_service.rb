@@ -69,7 +69,6 @@ module Trust
 
     def build_full
       reputation = @channel.streamer_reputation
-      rehabilitation = rehabilitation_data
 
       {
         streamer_reputation: reputation ? {
@@ -78,7 +77,6 @@ module Trust
           engagement_consistency_score: reputation.engagement_consistency_score&.to_f
         } : nil,
         erv_breakdown: erv_breakdown,
-        rehabilitation: rehabilitation,
         bot_raid_victim: bot_raid_victim?,
         ti_protected: bot_raid_victim?,
         # TASK-035 FR-033: top countries from chatters demographic data
@@ -144,26 +142,9 @@ module Trust
       nil
     end
 
-    # TASK-037 FR-015: Use PercentileService (DISTINCT ON latest HS per channel, cached)
+    # Percentile feature returns nil until a rolling-window replacement metric ships.
     def cached_percentile(_latest_ti)
-      ::Reputation::PercentileService.new(channel: @channel).call
-    end
-
-    def compute_percentile(ti_score, category)
-      latest_ti_per_channel = TrustIndexHistory
-        .joins(channel: :streams)
-        .where(streams: { game_name: category })
-        .select("DISTINCT ON (trust_index_histories.channel_id) trust_index_histories.channel_id, trust_index_histories.trust_index_score")
-        .order("trust_index_histories.channel_id, trust_index_histories.calculated_at DESC")
-
-      total = TrustIndexHistory.from(latest_ti_per_channel, :sub).count
-      return nil if total < 50
-
-      below = TrustIndexHistory.from(latest_ti_per_channel, :sub)
-                                .where("sub.trust_index_score < ?", ti_score)
-                                .count
-
-      ((below.to_f / total) * 100).round(1)
+      nil
     end
 
     def erv_breakdown
@@ -180,35 +161,6 @@ module Trust
         bots_estimated: [ bots, 0 ].max,
         confidence: ti.confidence&.to_f
       }
-    end
-
-    def rehabilitation_data
-      ti = latest_trust_index
-      return nil unless ti&.rehabilitation_penalty&.positive? || ti&.rehabilitation_bonus&.positive?
-
-      {
-        penalty: ti.rehabilitation_penalty.to_f,
-        bonus: ti.rehabilitation_bonus.to_f,
-        clean_streams: clean_streams_count,
-        total_required: 15
-      }
-    end
-
-    def clean_streams_count
-      threshold = SignalConfiguration.value_for("trust_index", "default", "incident_threshold")
-      last_incident = @channel.trust_index_histories
-                              .where("trust_index_score < ?", threshold)
-                              .order(calculated_at: :desc)
-                              .first
-
-      return 0 unless last_incident
-
-      @channel.trust_index_histories
-              .where("calculated_at > ?", last_incident.calculated_at)
-              .where("trust_index_score >= ?", threshold)
-              .count
-    rescue SignalConfiguration::ConfigurationMissing
-      0
     end
 
     def bot_raid_victim?
