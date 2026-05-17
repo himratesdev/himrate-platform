@@ -5,7 +5,7 @@
 #
 # Invoked AFTER TihHistorySeeder (нужны TIH rows для aggregation).
 # DailyBuilder hook calls Phase B3 analysis services → populates deferred fields
-# (discovery_phase_score, follower_ccv_coupling_r, tier_change_on_day, best_worst flags).
+# (discovery_phase_score, follower_ccv_coupling_r, best_worst flags).
 
 module Trends
   module VisualQa

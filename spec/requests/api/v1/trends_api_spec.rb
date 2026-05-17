@@ -152,14 +152,14 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
     include_examples "blocks Free user"
     include_examples "grants Premium tracked access"
 
-    it "включает tier_changes + anomaly_markers" do
+    it "включает anomaly_markers" do
       create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
       create(:subscription, user: user_premium, tier: "premium", is_active: true)
 
       get endpoint_path, headers: headers_premium
 
       data = response.parsed_body["data"]
-      expect(data).to include("tier_changes", "anomaly_markers", "points", "trend")
+      expect(data).to include("anomaly_markers", "points", "trend")
     end
   end
 

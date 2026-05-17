@@ -60,21 +60,14 @@ Rails.application.routes.draw do
           get "latest/summary", on: :collection, to: "streams#latest_summary"
         end
         resource "bot-chain", only: :show, controller: "bot_chain", as: :bot_chain
-        # TASK-032 FR-004: Health Score
-        resource :health_score, only: :show, controller: "health_scores" do
-          # TASK-038 FR-022: Dismiss recommendation
-          post "recommendations/:rule_id/dismiss", to: "health_score_recommendations#dismiss",
-            as: :dismiss_recommendation, constraints: { rule_id: /R-\d{2,}/ }
-        end
         # TASK-032 FR-005: ERV
         resource :erv, only: :show, controller: "erv"
 
-        # TASK-039 Phase C1: Trends API endpoints (M1 ERV / M2 TI / M4 Anomalies / M5 Components / M6 Rehabilitation)
+        # TASK-039 Phase C1: Trends API endpoints (M1 ERV / M2 TI / M4 Anomalies / M5 Components)
         get "trends/erv", to: "channels/trends#erv"
         get "trends/trust_index", to: "channels/trends#trust_index"
         get "trends/anomalies", to: "channels/trends#anomalies"
         get "trends/components", to: "channels/trends#components"
-        get "trends/rehabilitation", to: "channels/trends#rehabilitation"
         # TASK-039 Phase C2: Analytics endpoints (M3 Stability / M11 Peer / M12 Categories / M13 Weekday / Insights)
         get "trends/stability", to: "channels/trends#stability"
         get "trends/comparison", to: "channels/trends#comparison"

@@ -112,7 +112,7 @@ module Trends
         stats[:anomalies] = Anomaly.joins(:stream).where(streams: { channel_id: channel.id }).delete_all
         stats[:tih] = TrustIndexHistory.for_channel(channel.id).delete_all
         stats[:tda] = TrendsDailyAggregate.where(channel_id: channel.id).delete_all
-        stats[:tier_changes] = HsTierChangeEvent.for_channel(channel.id).delete_all
+        stats[:tier_changes] = 0
         stats[:rehab_events] = 0
         stats[:follower_snapshots] = FollowerSnapshot.where(channel_id: channel.id).delete_all
         stats[:streams] = channel.streams.delete_all

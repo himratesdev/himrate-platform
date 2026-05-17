@@ -11,10 +11,9 @@
 #   - classification_at_end ← latest TIH.classification на date
 #   - categories (jsonb) ← {game_name → count} по streams on date
 #
-# Phase B3 deferred (computed post-upsert, separate UPDATE): FR-029/030/032/033.
+# Phase B3 deferred (computed post-upsert, separate UPDATE): FR-029/030/033.
 #   - discovery_phase_score ← Analysis::DiscoveryPhaseDetector (FR-029)
 #   - follower_ccv_coupling_r ← Analysis::FollowerCcvCouplingTimeline (FR-030, rolling)
-#   - tier_change_on_day ← hs_tier_change_events existence на date
 #   - is_best_stream_day / is_worst_stream_day ← Analysis::BestWorstStreamFinder (period 90d)
 #   (signal_breakdown jsonb + botted_fraction — остаются B1b anomaly pipeline scope.)
 #
@@ -144,7 +143,7 @@ module Trends
       #   - Rails.logger.warn → local/dev visibility
       #
       # Channel loading (CR W-2):
-      #   - tier_change_on_day?/coupling/best_worst используют @channel_id напрямую
+      #   - coupling/best_worst используют @channel_id напрямую
       #     через refactored Finder/Timeline services — Channel.find_by не нужен
       #   - DiscoveryPhaseDetector требует Channel object (created_at + id) — грузится
       #     LAZY, только когда оба gate'а пройдены (age check + existing score check)
@@ -153,7 +152,6 @@ module Trends
 
       def populate_deferred_fields
         updates = {}
-        with_isolation(:tier_change_on_day) { updates[:tier_change_on_day] = tier_change_on_day? }
         with_isolation(:follower_ccv_coupling_r) { updates[:follower_ccv_coupling_r] = compute_coupling_r }
         with_isolation(:discovery_phase_score) do
           score = compute_discovery_score
@@ -186,14 +184,6 @@ module Trends
           field: field_label.to_s,
           error_class: e.class.name
         )
-      end
-
-      def tier_change_on_day?
-        HsTierChangeEvent
-          .for_channel(@channel_id)
-          .where(event_type: "tier_change")
-          .where(occurred_at: @date.beginning_of_day..@date.end_of_day)
-          .exists?
       end
 
       def compute_coupling_r

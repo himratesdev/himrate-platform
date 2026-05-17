@@ -6,7 +6,6 @@ class Channel < ApplicationRecord
   has_many :watchlist_channels, dependent: :destroy
   has_many :users, through: :tracked_channels
   has_many :trust_index_histories, dependent: :destroy
-  has_many :health_scores, dependent: :destroy
   has_one :streamer_reputation, dependent: :destroy
   has_one :channel_protection_config, dependent: :destroy
   # SF-5 CR iter 2: delete_all vs destroy — aggregate data без callbacks,

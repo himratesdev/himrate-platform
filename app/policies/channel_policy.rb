@@ -41,26 +41,6 @@ class ChannelPolicy < ApplicationPolicy
     premium_access_for?(record)
   end
 
-  # TASK-032 FR-004: Health Score — Streamer own, Premium tracked, Business.
-  def view_health_score?
-    return false unless registered?
-
-    owns_channel?(record) || premium_access_for?(record)
-  end
-
-  # TASK-038 FR-036: Dismiss recommendation — same as view_health_score
-  def dismiss_recommendation?
-    view_health_score?
-  end
-
-  # TASK-038 FR-037: Recommendations visibility (Streamer own + subscribers).
-  # BFT §5: Recommendations for streamer-tools roles. Premium/Business see as read-only for tracked channels.
-  def can_receive_recommendations?
-    return false unless registered?
-
-    owns_channel?(record) || premium_access_for?(record)
-  end
-
   # TASK-032 CR #4: show_trust? — always allows (headline for all), determines view level
   def show_trust?
     true

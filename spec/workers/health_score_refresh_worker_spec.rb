@@ -12,11 +12,6 @@ RSpec.describe HealthScoreRefreshWorker do
       it "returns early without invoking removed Hs::* constants" do
         expect { described_class.new.perform(channel.id) }.not_to raise_error
       end
-
-      it "does not write HealthScore record" do
-        expect { described_class.new.perform(channel.id) }
-          .not_to change { HealthScore.count }
-      end
     end
   end
 end

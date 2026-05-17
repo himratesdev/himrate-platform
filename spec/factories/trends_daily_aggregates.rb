@@ -28,10 +28,6 @@ FactoryBot.define do
       follower_ccv_coupling_r { 0.78 }
     end
 
-    trait :tier_change do
-      tier_change_on_day { true }
-    end
-
     trait :best do
       is_best_stream_day { true }
     end

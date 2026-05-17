@@ -25,7 +25,6 @@ module Trends
             trend: trend,
             forecast: compute_forecast(points),
             trend_explanation: build_explanation(trend),
-            tier_changes: Trends::Analysis::TierChangeCounter.call(channel: channel, from: from_ts, to: to_ts),
             anomaly_markers: build_anomaly_markers(from_ts, to_ts)
           },
           meta: meta

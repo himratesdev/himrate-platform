@@ -10,7 +10,6 @@ class Stream < ApplicationRecord
   has_many :erv_estimates, dependent: :destroy
   has_many :per_user_bot_scores, dependent: :destroy
   has_many :trust_index_histories, dependent: :destroy
-  has_many :health_scores, dependent: :destroy
   has_many :raid_attributions, dependent: :destroy
   has_many :anomalies, dependent: :destroy
   has_many :predictions_polls, dependent: :destroy

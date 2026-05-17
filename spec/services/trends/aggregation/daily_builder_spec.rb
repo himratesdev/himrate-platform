@@ -134,22 +134,6 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         ], unique_by: %i[signal_type category param_name], on_duplicate: :skip)
       end
 
-      it "sets tier_change_on_day=true when HsTierChangeEvent exists на date" do
-        create(:hs_tier_change_event, channel: channel, occurred_at: target_date.beginning_of_day + 5.hours,
-          event_type: "tier_change", from_tier: "trusted", to_tier: "needs_review")
-        described_class.call(channel.id, target_date)
-
-        tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
-        expect(tda.tier_change_on_day).to be true
-      end
-
-      it "leaves tier_change_on_day=false когда нет events" do
-        described_class.call(channel.id, target_date)
-        tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
-
-        expect(tda.tier_change_on_day).to be false
-      end
-
       it "marks is_best_stream_day when highest TI in 90d lookback" do
         best_stream = create(:stream, channel: channel,
           started_at: target_date.beginning_of_day + 2.hours,
@@ -178,11 +162,7 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         expect(tda.is_best_stream_day).to be true
       end
 
-      it "CR S-1: per-field isolation — failure в discovery НЕ теряет tier_change" do
-        # Create tier_change event, let tier_change_on_day succeed
-        create(:hs_tier_change_event, channel: channel, occurred_at: target_date.beginning_of_day + 5.hours,
-          event_type: "tier_change", from_tier: "trusted", to_tier: "needs_review")
-
+      it "CR S-1: per-field isolation — failure в discovery НЕ теряет other deferred fields" do
         # Channel young enough to invoke DiscoveryPhaseDetector; force it to raise
         channel.update!(created_at: 10.days.ago)
         allow(Trends::Analysis::DiscoveryPhaseDetector).to receive(:call).and_raise(StandardError.new("boom"))
@@ -196,8 +176,6 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         described_class.call(channel.id, target_date)
 
         tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
-        # tier_change_on_day успешно вычислился, хотя discovery упал
-        expect(tda.tier_change_on_day).to be true
         expect(tda.discovery_phase_score).to be_nil
       end
 

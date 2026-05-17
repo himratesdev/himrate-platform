@@ -111,14 +111,6 @@ if defined?(SignalConfiguration)
   puts "Seed complete: #{SignalConfiguration.count} signal configurations"
 end
 
-# TASK-038: Health Score seed data (tiers, categories, recommendation templates)
-if defined?(HealthScoreTier) && defined?(HealthScoreCategory) && defined?(RecommendationTemplate)
-  load Rails.root.join("db/seeds/health_score.rb")
-  HealthScoreSeeds.run
-  puts "Seed complete: #{HealthScoreTier.count} tiers, #{HealthScoreCategory.count} categories, " \
-       "#{RecommendationTemplate.count} recommendation templates"
-end
-
 # TASK-085 PG W-2: chatter_ccv_ratio category baselines (moved out of migration #3 per
 # CLAUDE.md "Нет данных в миграциях"). Idempotent via find_or_initialize_by.
 #
