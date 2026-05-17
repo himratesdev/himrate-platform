@@ -170,8 +170,8 @@ class CleanupWorker
     return if retention_days >= DEFAULT_RETENTION_DAYS
 
     Rails.logger.warn(
-      "CleanupWorker: trust_index_histories retention_days=#{retention_days} < #{DEFAULT_RETENTION_DAYS}, " \
-      "may break StreamerRatingRefreshWorker RATING_PERIOD invariant. Risk accepted."
+      "CleanupWorker: trust_index_histories retention_days=#{retention_days} < #{DEFAULT_RETENTION_DAYS}. " \
+      "Reduced retention may impact downstream analytics windows. Risk accepted."
     )
   end
 
