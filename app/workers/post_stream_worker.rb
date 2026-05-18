@@ -54,16 +54,8 @@ class PostStreamWorker
       # FR-009: Schedule expiring warning (17h after offline)
       schedule_expiring_warning(stream)
 
-      # TASK-037 FR-006: Reputation refresh (must run BEFORE Rating, as Rating may use reputation-adjusted TI)
+      # TASK-037 FR-006: Reputation refresh
       StreamerReputationRefreshWorker.perform_async(stream.channel_id)
-
-      # FR-011: Health Score refresh
-      HealthScoreRefreshWorker.perform_async(stream.channel_id)
-
-      # TASK-039 FR-046 foundation: snapshot qualifying percentiles в TIH.
-      # Delay 2 минуты гарантирует что HS + Reputation refreshes выше успели
-      # complete (typically <30s) — snapshot reads fresh latest values.
-      Trends::QualifyingPercentileSnapshotWorker.perform_in(2.minutes, stream.id)
 
       # TASK-086 FR-032: refresh the latest_tih_per_stream MV (per-stream final TIH).
       # No stream arg — REFRESH ... CONCURRENTLY is a full refresh, not per-stream

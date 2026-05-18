@@ -22,10 +22,8 @@ RSpec.describe PostStreamWorker do
     allow(SignalComputeWorker).to receive(:new).and_return(instance_double(SignalComputeWorker, perform: nil))
     allow(TiDivergenceAlerter).to receive(:check)
     allow(PostStreamNotificationService).to receive(:broadcast_stream_ended)
-    allow(HealthScoreRefreshWorker).to receive(:perform_async)
     allow(StreamerReputationRefreshWorker).to receive(:perform_async)
     allow(StreamExpiringWorker).to receive(:perform_at)
-    allow(Trends::QualifyingPercentileSnapshotWorker).to receive(:perform_in)
     allow(Trends::LatestTihRefreshWorker).to receive(:perform_in)
     allow(Trends::AggregationWorker).to receive(:perform_async)
   end
@@ -49,21 +47,6 @@ RSpec.describe PostStreamWorker do
 
       expect(PostStreamNotificationService).to have_received(:broadcast_stream_ended)
         .with(stream, instance_of(PostStreamReport))
-    end
-
-    it "triggers HealthScore refresh" do
-      described_class.new.perform(stream.id)
-
-      expect(HealthScoreRefreshWorker).to have_received(:perform_async).with(channel.id)
-    end
-
-    # TASK-039 FR-046 foundation: PostStreamWorker enqueues snapshot worker
-    # с 2-минутной задержкой (HS + Reputation refreshes должны complete first)
-    it "schedules QualifyingPercentileSnapshotWorker with 2-minute delay" do
-      described_class.new.perform(stream.id)
-
-      expect(Trends::QualifyingPercentileSnapshotWorker).to have_received(:perform_in)
-        .with(2.minutes, stream.id)
     end
 
     # TASK-086 FR-032: PostStreamWorker enqueues the MV-refresh worker (2-min delay,
