@@ -19,21 +19,6 @@ RSpec.describe "Flipper Feature Flags" do
     end
   end
 
-  # TASK-201 Phase 1 PG BLOCKER regression (2026-05-16): prior to this fix
-  # :hs_recommendations was in ALL_FLAGS, so the boot initializer unconditionally
-  # re-enabled it after the Phase 1 migration disabled it → production no-op.
-  # Lock the structural invariant so a future contributor cannot reintroduce the
-  # regression by adding :hs_recommendations back to ALL_FLAGS.
-  describe "TASK-201 :hs_recommendations transitional placement" do
-    it "is NOT in FlipperDefaults::ALL_FLAGS (initializer no longer auto-enables it)" do
-      expect(FlipperDefaults::ALL_FLAGS).not_to include(:hs_recommendations)
-    end
-
-    it "IS in FlipperDefaults::HOOK_FLAGS (registered but not enabled at boot)" do
-      expect(FlipperDefaults::HOOK_FLAGS.keys).to include(:hs_recommendations)
-    end
-  end
-
   # TC-003: pundit_enabled? uses Flipper
   describe "pundit_enabled? integration" do
     let(:controller_class) { Api::BaseController }

@@ -2,8 +2,7 @@
 
 # TASK-086 FR-032 (ADR-086 §4.2): refresh the latest_tih_per_stream materialized
 # view. Enqueued from PostStreamWorker via perform_in(2.minutes) after the
-# post-stream final compute — same enqueue pattern (but no per-stream arg) as
-# Trends::QualifyingPercentileSnapshotWorker.
+# post-stream final compute.
 #
 # Takes NO argument: `REFRESH MATERIALIZED VIEW CONCURRENTLY` is a full refresh of
 # the whole view — it cannot do per-stream incremental work, so a stream_id arg

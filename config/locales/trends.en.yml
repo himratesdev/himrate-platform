@@ -46,12 +46,8 @@ en:
       action:
         view_components: View components
         view_anomaly: View anomaly
-        view_rehabilitation: View recovery plan
-        view_tier_change: View tier change
       message:
         ti_drop: "TI dropped %{delta} pts — %{top_degradation} leading decline"
-        tier_change: "Tier changed %{from}→%{to} on %{date}"
-        rehabilitation_progress: "Recovery progress %{clean}/%{required} (+%{bonus} bonus)"
         improvement: "%{metric} up %{delta} — %{top_improvement}"
         anomaly_spike: "Anomalies up %{delta}% vs baseline"
         flat: No notable movement this period
@@ -59,11 +55,6 @@ en:
       title: Best stream
     worst_stream:
       title: Lowest stream
-    tier_changes:
-      count:
-        zero: No tier changes
-        one: "1 tier change"
-        other: "%{count} tier changes"
     patterns:
       weekday:
         title: Weekday pattern

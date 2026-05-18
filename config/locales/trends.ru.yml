@@ -46,12 +46,8 @@ ru:
       action:
         view_components: Открыть компоненты
         view_anomaly: Открыть аномалию
-        view_rehabilitation: Открыть план восстановления
-        view_tier_change: Открыть смену тира
       message:
         ti_drop: "TI упал на %{delta} pts — %{top_degradation} лидирует"
-        tier_change: "Тир сменился %{from}→%{to} — %{date}"
-        rehabilitation_progress: "Восстановление %{clean}/%{required} (+%{bonus} бонус)"
         improvement: "%{metric} вырос на %{delta} — %{top_improvement}"
         anomaly_spike: "Аномалии +%{delta}% к базовой линии"
         flat: Заметных изменений не обнаружено
@@ -59,13 +55,6 @@ ru:
       title: Лучший стрим
     worst_stream:
       title: Худший стрим
-    tier_changes:
-      count:
-        zero: Смен тира нет
-        one: "1 смена тира"
-        few: "%{count} смены тира"
-        many: "%{count} смен тира"
-        other: "%{count} смен тира"
     patterns:
       weekday:
         title: Разрез по дням недели
