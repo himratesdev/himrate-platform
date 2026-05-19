@@ -45,8 +45,6 @@ module Trends
             tih.erv_percent = erv.round(2)
             tih.ccv = stream.avg_ccv
             tih.signal_breakdown = build_signal_breakdown(idx, total)
-            tih.rehabilitation_penalty = 0.0
-            tih.rehabilitation_bonus = 0.0
             tih.calculated_at = stream.ended_at
           end
         end
