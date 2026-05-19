@@ -27,11 +27,9 @@ RSpec.describe SignalComputeWorker do
         signal_type: "trust_index", category: "default", param_name: param
       ) { |c| c.param_value = [ 80, 50, 25 ][i] }
     end
-    %w[incident_threshold rehabilitation_streams rehabilitation_bonus_max].each_with_index do |param, i|
-      SignalConfiguration.find_or_create_by!(
-        signal_type: "trust_index", category: "default", param_name: param
-      ) { |c| c.param_value = [ 40, 15, 15 ][i] }
-    end
+    SignalConfiguration.find_or_create_by!(
+      signal_type: "trust_index", category: "default", param_name: "incident_threshold"
+    ) { |c| c.param_value = 40 }
     SignalConfiguration.find_or_create_by!(
       signal_type: "auth_ratio", category: "default", param_name: "expected_min"
     ) { |c| c.param_value = 0.65 }
