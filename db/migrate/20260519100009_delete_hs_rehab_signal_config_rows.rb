@@ -1,19 +1,30 @@
 # frozen_string_literal: true
 
 # TASK-201 Phase 3.1: delete HS / Rehab / Recommendation rows из signal_configurations.
-# 3 sub-scopes mirror original seed migrations:
+# 4 sub-scopes mirror original seed migrations:
 #   1. signal_type='health_score' — 105 rows (21 categories × 5 weight params),
 #      seeded by 20260417100009_seed_health_score_category_weights.rb
 #   2. signal_type='recommendation' — 4 rows (TI drop thresholds),
 #      seeded by 20260417100010_seed_recommendation_config.rb
 #   3. signal_type='trust_index' AND category='rehabilitation' — 1 row
 #      (clean_stream_ti_threshold), seeded by 20260420100002_seed_clean_stream_ti_threshold.rb
+#   4. signal_type='trust_index' AND category='rehabilitation_bonus' — 4 rows
+#      (rehab_bonus_pts_max + per_qualifying_stream + percentile_threshold + acceleration_factor),
+#      seeded by 20260419100006_seed_trends_signal_configurations.rb. Owner =
+#      TrustIndex::BonusAcceleratorCalculator (removed Phase 2.3). Logically dead since
+#      Phase 2.3 merged 2026-05-17. Folded into Phase 3.1 per PG-iter-1 W1 finding
+#      (originally suggested Phase 3.3 alongside trust_index_histories.rehabilitation_bonus
+#      column drop; pulled forward here per `feedback_fix_all_warnings.md` — no concrete
+#      external blocker, fix is 1 line).
 #
 # NB: ADR-201 §4.1 originally specified `WHERE category IN ('health_score', 'rehabilitation')`.
-# Verified против actual seed migrations — sub-scopes are signal_type-keyed, not category-keyed.
-# Scope unchanged (всё ещё «remove HS/Rehab SignalConfig rows»), only the SQL precision corrected.
+# Verified против actual seed migrations — sub-scopes are signal_type-keyed plus
+# category-keyed разделение для trust_index rows (rehabilitation vs rehabilitation_bonus
+# are separate seed sources, separate logical owners). Scope intent unchanged (всё ещё
+# «remove all HS/Rehab/Recommendation SignalConfig rows»), only the SQL precision corrected.
 #
-# Live signal_type='trust_index' rows (live signals, cold-start thresholds etc.) preserved.
+# Live signal_type='trust_index' rows другого category (live signals, cold-start thresholds,
+# CPS, Channel Protection — НЕ rehabilitation* family) preserved.
 
 class DeleteHsRehabSignalConfigRows < ActiveRecord::Migration[8.0]
   def up
@@ -21,6 +32,9 @@ class DeleteHsRehabSignalConfigRows < ActiveRecord::Migration[8.0]
     SignalConfiguration.where(signal_type: "recommendation").delete_all
     SignalConfiguration
       .where(signal_type: "trust_index", category: "rehabilitation")
+      .delete_all
+    SignalConfiguration
+      .where(signal_type: "trust_index", category: "rehabilitation_bonus")
       .delete_all
   end
 
@@ -85,5 +99,26 @@ class DeleteHsRehabSignalConfigRows < ActiveRecord::Migration[8.0]
       category: "rehabilitation",
       param_name: "clean_stream_ti_threshold"
     ) { |c| c.param_value = 50 }
+
+    # Re-seed rehabilitation_bonus rows (verbatim from 20260419100006, на_duplicate :skip
+    # matched original — admin-tuned values preserved if re-run on populated env).
+    rehabilitation_bonus_rows = [
+      [ "trust_index", "rehabilitation_bonus", "rehab_bonus_pts_max", 15 ],
+      [ "trust_index", "rehabilitation_bonus", "rehab_bonus_per_qualifying_stream", 1 ],
+      [ "trust_index", "rehabilitation_bonus", "rehab_bonus_percentile_threshold", 80 ],
+      [ "trust_index", "rehabilitation_bonus", "rehab_bonus_acceleration_factor", 0.2 ]
+    ].map do |signal_type, category, param_name, param_value|
+      {
+        signal_type: signal_type,
+        category: category,
+        param_name: param_name,
+        param_value: param_value,
+        created_at: now,
+        updated_at: now
+      }
+    end
+    SignalConfiguration.upsert_all(rehabilitation_bonus_rows,
+      unique_by: %i[signal_type category param_name],
+      on_duplicate: :skip)
   end
 end
