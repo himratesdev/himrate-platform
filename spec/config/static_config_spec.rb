@@ -11,15 +11,17 @@ RSpec.describe "Static configuration" do
       )
     end
 
-    it "contains 8 queues" do
-      expect(config[:queues].size).to eq(8)
+    it "contains 9 queues" do
+      # TASK-110 v1.1 (2026-05-20): +whisper_transcripts queue для local whisper.cpp
+      # CPU-isolated jobs (concurrency=1 enforced via dedicated Sidekiq process role).
+      expect(config[:queues].size).to eq(9)
     end
 
     it "includes required queue names" do
       queue_names = config[:queues].map(&:first)
       expect(queue_names).to include(
         "signals", "chat", "post_stream", "default", "notifications", "monitoring",
-        "accessory_ops", "long_running"
+        "accessory_ops", "long_running", "whisper_transcripts"
       )
     end
 

@@ -259,6 +259,28 @@ accessories:
       # Hotfix #7 (DV finding #5): entrypoint script maps GRAFANA_* secrets к GF_* env names.
       entrypoint: /usr/local/bin/grafana-entrypoint.sh
 
+  # TASK-110 v1.1 (2026-05-20): whisper.cpp local STT для clip transcripts.
+  # Replaces OpenAI Whisper API per PO cost=$0 Day-0 directive (ADR-110 v1.1 SA-2 swap A→B).
+  # Image baked с small model (~466MB) per Dockerfile в whisper/.
+  #
+  # IMPORTANT: post-merge `kamal accessory reboot whisper -d <dest>` ОБЯЗАТЕЛЕН
+  # (per CLAUDE.md rule — accessories не пересоздаются при `kamal deploy`).
+  #
+  # Invocation: ClipTranscriptWorker → Multimodal::WhisperLocalClient → subprocess
+  # `kamal accessory exec whisper -- whisper {audio_path}` (himrate-whisper container).
+  #
+  # CPU isolation: --cpus="1.5" cap (50% of Time4VPS 3 cores), Sidekiq queue
+  # `whisper_transcripts` concurrency=1 enforced separately (sidekiq.yml + worker role).
+  whisper:
+    image: ghcr.io/himratesdev/himrate-whisper:small-v1
+    host: 194.135.85.159
+    directories:
+      - himrate_whisper_tmp:/tmp
+    options:
+      cpus: "1.5"
+      memory: 2g  # ~500MB resident model + ~500MB per-job peak + headroom
+      user: "0:0"
+
 volumes:
   - "himrate_storage:/rails/storage"
 

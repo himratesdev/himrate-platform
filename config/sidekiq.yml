@@ -20,3 +20,8 @@
   - [accessory_ops, 2]
   - [monitoring, 1]
   - [long_running, 1]
+  # TASK-110 v1.1: dedicated queue для CPU-isolated whisper.cpp jobs.
+  # Concurrency=1 enforced при production via separate Sidekiq process role
+  # (deploy.yml roles: whisper_worker — SIDEKIQ_QUEUES=whisper_transcripts + SIDEKIQ_CONCURRENCY=1).
+  # Weight 2 = moderate priority в shared sidekiq.yml fallback config.
+  - [whisper_transcripts, 2]
