@@ -5,9 +5,10 @@
 # Channel#has_many + Stream#has_many + serializer enrichment + Pundit policies + workers
 # gone). DV verified 0 callers on staging.
 #
-# def down reconstructs full schema (original CREATE + 3 amendments):
+# def down reconstructs full schema (original CREATE + 4 amendments):
 #   - 20260324000007 (original CREATE in create_analytics_tables.rb — 11 base columns)
 #   - 20260416100002 (add hs_classification column)
+#   - 20260417100001 (5-tier classification check constraint hs_classification_5tier)
 #   - 20260417100004 (add category column + idx_hs_channel_cat_time)
 #   - 20260417100011 (data normalization — no schema change; data loss acceptable on rollback,
 #     `def down: raise ActiveRecord::IrreversibleMigration` upstream)
@@ -38,5 +39,12 @@ class DropHealthScores < ActiveRecord::Migration[8.0]
     add_column :health_scores, :category, :string, limit: 100
     add_index :health_scores, %i[channel_id category calculated_at],
       name: "idx_hs_channel_cat_time", order: { calculated_at: :desc }
+
+    # Amendment 20260417100001: 5-tier classification check constraint.
+    # NB: data-update part of 20260417100001#up is no-op on the restored empty table
+    # — only the schema-change line needs reversal here.
+    add_check_constraint :health_scores,
+      "hs_classification IN ('excellent','good','average','below_average','poor')",
+      name: "hs_classification_5tier"
   end
 end
