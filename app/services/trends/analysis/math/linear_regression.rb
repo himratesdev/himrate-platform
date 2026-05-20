@@ -1,8 +1,7 @@
 # frozen_string_literal: true
 
-# TASK-039 Phase B3: Shared OLS linear regression helper.
-# Used by TrendCalculator (FR-024), ForecastService (FR-026),
-# DiscoveryPhaseDetector (FR-029) for linear vs step comparison.
+# TASK-A1 (philosophy-v2): Shared OLS linear regression helper.
+# Used by TrendCalculator (FR-024) and ForecastService (FR-026).
 #
 # Returns nil if ≤1 distinct x (no regression possible) or zero variance.
 # Build-for-years: pure math, zero DB coupling, reusable.

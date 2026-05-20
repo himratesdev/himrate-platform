@@ -18,22 +18,6 @@ FactoryBot.define do
     classification_at_end { "trusted" }
     categories { { "Just Chatting" => 1 } }
     signal_breakdown { { "auth_ratio" => 0.78 } }
-    schema_version { 2 }
-
-    trait :with_discovery do
-      discovery_phase_score { 0.85 }
-    end
-
-    trait :with_coupling do
-      follower_ccv_coupling_r { 0.78 }
-    end
-
-    trait :best do
-      is_best_stream_day { true }
-    end
-
-    trait :worst do
-      is_worst_stream_day { true }
-    end
+    schema_version { 3 }
   end
 end

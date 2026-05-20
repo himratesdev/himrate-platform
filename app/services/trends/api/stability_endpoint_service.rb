@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
-# TASK-039 FR-003: GET /api/v1/channels/:id/trends/stability — M3 Channel Stability.
-# Response per SRS §4.1: score + label + CV + TI mean/std + peer_comparison (conditional).
+# TASK-A1 FR-003 (philosophy-v2): GET /api/v1/channels/:id/trends/stability — M3 Channel Stability.
+# Response per SRS §4.1: score + label + CV + TI mean/std.
 #
 # Stability score = 1 - CV(TI) = 1 - (ti_std / ti_avg). BR-008:
 #   stable     ≥ stable_min_score   (default 0.85)
@@ -11,17 +11,12 @@
 # Minimum streams threshold (SignalConfig trends/stability/min_streams_required, default 7 — SRS
 # Edge Case #2). Ниже → insufficient_data, skip compute.
 #
-# Peer comparison (Business-only — SRS US-016): optional `include_peer_comparison=true`.
-# Controller enforces ChannelPolicy#view_peer_comparison? через before_action match.
+# Phase 1a (TASK-A1): removed peer_comparison (M11 «Среди коллег» dropped per
+# philosophy-v2 — Streamer Rating numeric percentile gone).
 
 module Trends
   module Api
     class StabilityEndpointService < BaseEndpointService
-      def initialize(channel:, period:, granularity: nil, include_peer_comparison: false, user: nil)
-        super(channel: channel, period: period, granularity: granularity, user: user)
-        @include_peer_comparison = ActiveModel::Type::Boolean.new.cast(include_peer_comparison)
-      end
-
       def call
         from_ts, to_ts = range
         aggregates = fetch_aggregates(from_ts, to_ts)
@@ -63,13 +58,6 @@ module Trends
           streams_count: aggregates[:streams_count],
           insufficient_data: false
         }
-
-        if @include_peer_comparison
-          category = latest_category
-          payload[:peer_comparison] = category ? Trends::Analysis::PeerComparisonService.call(
-            channel: channel, category: category, period: period
-          ) : nil
-        end
 
         { data: payload, meta: meta }
       end
@@ -129,10 +117,6 @@ module Trends
           reason: reason,
           min_streams_required: min_streams
         }
-      end
-
-      def latest_category
-        latest_category_for_channel
       end
     end
   end

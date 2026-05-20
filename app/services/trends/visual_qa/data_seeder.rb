@@ -136,8 +136,8 @@ module Trends
       # 30 days streams → TDA + TIH + anomalies + follower snapshots + anomaly attributions.
       #
       # CR N-3: FollowerSnapshot + AnomalyAttribution seeded для complete M4/M5 coverage.
-      # Without them discovery_phase_score / follower_ccv_coupling_r остаются null,
-      # M4 attribution field fallback на 'unattributed'. Full UI verification impossible.
+      # Без AnomalyAttribution M4 attribution field fallback на 'unattributed' —
+      # full UI verification impossible.
       def seed_premium_tracked(channel)
         ChannelSeeder.ensure_premium_user_tracking(channel: channel)
         streams = StreamHistorySeeder.seed(channel: channel, days: 30)
