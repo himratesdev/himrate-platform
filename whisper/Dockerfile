@@ -26,8 +26,12 @@ RUN apt-get update && \
       build-essential \
       cmake \
       git \
-      ca-certificates && \
+      ca-certificates \
+      curl && \
     rm -rf /var/lib/apt/lists/*
+
+# NB: curl REQUIRED — models/download-ggml-model.sh нуждается в wget OR curl для
+# download ggml-small.bin (без него: "Either wget or curl is required" → build fail).
 
 # Pin whisper.cpp к specific version (reproducible builds).
 # Update via dependabot / manual quarterly review (per CLAUDE.md ops cadence для whisper.cpp).
