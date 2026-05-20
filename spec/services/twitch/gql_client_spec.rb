@@ -165,6 +165,53 @@ RSpec.describe Twitch::GqlClient do
     end
   end
 
+  # === BUG-110-B: ClipVideoURL ===
+  describe "#clip_video_url" do
+    let(:clip_response) do
+      {
+        data: {
+          clip: {
+            playbackAccessToken: { signature: "abc123sig", value: "tok&en=val" },
+            videoQualities: [
+              { sourceURL: "https://cdn.example/clip-1080.mp4", quality: "1080", frameRate: 0 },
+              { sourceURL: "https://cdn.example/clip-360.mp4", quality: "360", frameRate: 0 }
+            ]
+          }
+        }
+      }
+    end
+
+    it "returns signed lowest-quality sourceURL (audio identical, min download)" do
+      stub_gql_request(body_includes: "ClipVideoURL", response: clip_response)
+
+      url = client.clip_video_url(slug: "FrozenZanyRaccoonGrammarKing")
+      expect(url).to start_with("https://cdn.example/clip-360.mp4?sig=abc123sig&token=")
+      expect(url).to include(CGI.escape("tok&en=val"))
+    end
+
+    it "returns bare sourceURL when token/signature absent" do
+      resp = { data: { clip: { playbackAccessToken: nil,
+                               videoQualities: [ { sourceURL: "https://cdn.example/c.mp4", quality: "480", frameRate: 0 } ] } } }
+      stub_gql_request(body_includes: "ClipVideoURL", response: resp)
+
+      expect(client.clip_video_url(slug: "x")).to eq("https://cdn.example/c.mp4")
+    end
+
+    it "returns nil for private/deleted clip (clip null)" do
+      stub_gql_request(body_includes: "ClipVideoURL", response: { data: { clip: nil } })
+      expect(client.clip_video_url(slug: "deleted")).to be_nil
+    end
+
+    it "returns nil when no video qualities" do
+      stub_gql_request(body_includes: "ClipVideoURL", response: { data: { clip: { videoQualities: [] } } })
+      expect(client.clip_video_url(slug: "x")).to be_nil
+    end
+
+    it "returns nil for blank slug" do
+      expect(client.clip_video_url(slug: "")).to be_nil
+    end
+  end
+
   # === FR-006: StreamMetadata ===
 
   describe "#stream_metadata" do

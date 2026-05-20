@@ -81,6 +81,31 @@ module Twitch
       result&.dig("data", "user", "stream", "viewersCount")
     end
 
+    # BUG-110-B (TASK-110 FR-013): resolve downloadable clip mp4 URL via GQL.
+    # Returns signed sourceURL (lowest quality — audio identical across qualities,
+    # minimizes download для STT) OR nil если clip private/deleted/no qualities.
+    # @param slug [String] Twitch clip slug (== Helix clip id)
+    def clip_video_url(slug:)
+      return nil if slug.blank?
+
+      result = execute(QUERIES[:clip_video_url], { "slug" => slug })
+      clip = result&.dig("data", "clip")
+      return nil if clip.nil?
+
+      qualities = clip["videoQualities"]
+      return nil if qualities.blank?
+
+      token = clip.dig("playbackAccessToken", "value")
+      sig = clip.dig("playbackAccessToken", "signature")
+      # Lowest quality (audio identical, smallest download). qualities desc by quality.
+      source = qualities.last["sourceURL"]
+      return nil if source.blank?
+
+      return source if token.blank? || sig.blank?
+
+      "#{source}?sig=#{sig}&token=#{CGI.escape(token.to_s)}"
+    end
+
     # FR-006: Stream metadata (title, game, tags, language)
     def stream_metadata(channel_login:)
       return nil if channel_login.blank?
@@ -648,7 +673,7 @@ module Twitch
         }
       GQL
 
-      top_streams: <<~GQL.squish
+      top_streams: <<~GQL.squish,
         query TopStreams($first: Int!, $gameID: ID) {
           streams(first: $first, options: { gameID: $gameID }) {
             edges {
@@ -658,6 +683,23 @@ module Twitch
                 game { name }
               }
             }
+          }
+        }
+      GQL
+
+      # BUG-110-B (TASK-110 FR-013): clip downloadable video URL + playback access token.
+      # Helix /clips НЕ отдаёт video URL; thumbnail derivation сломан для современных
+      # twitch-video-assets CDN clips. GQL clip query (inline, DSV-verified 2026-05-20) →
+      # videoQualities[].sourceURL + playbackAccessToken{signature,value}. Download =
+      # sourceURL + ?sig=<signature>&token=<url-encoded value>.
+      clip_video_url: <<~GQL.squish
+        query ClipVideoURL($slug: ID!) {
+          clip(slug: $slug) {
+            playbackAccessToken(params: {platform: "web", playerBackend: "mediaplayer", playerType: "clips-download"}) {
+              signature
+              value
+            }
+            videoQualities { sourceURL quality frameRate }
           }
         }
       GQL
