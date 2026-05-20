@@ -44,7 +44,11 @@ class ClipTranscriptWorker
     mp4_path = Rails.root.join("tmp", "clip_#{clip_id}.mp4").to_s
     wav_path = Rails.root.join("tmp", "clip_#{clip_id}.wav").to_s
     begin
-      download_capped(derive_mp4_url(clip_metadata[:thumbnail_url]), mp4_path)
+      # BUG-110-B: clip mp4 URL via GQL (thumbnail derivation сломан для современных clips).
+      mp4_url = Twitch::GqlClient.new.clip_video_url(slug: clip_id)
+      raise "clip video URL unavailable (private/deleted/no qualities): #{clip_id}" if mp4_url.blank?
+
+      download_capped(mp4_url, mp4_path)
       extract_wav(mp4_path, wav_path)
 
       result = Multimodal::WhisperHttpClient.new.transcribe(audio_path: wav_path)
@@ -66,17 +70,11 @@ class ClipTranscriptWorker
 
   private
 
-  def derive_mp4_url(thumbnail_url)
-    # Twitch clip mp4 derivation from thumbnail_url:
-    # https://clips-media-assets2.twitch.tv/.../<clip>-preview-480x272.jpg → .../<clip>.mp4
-    thumbnail_url.to_s.sub(/-preview-\d+x\d+\.jpg\z/, ".mp4")
-  end
-
   # S-3(a): stream-to-disk с size cap (OOM guard — Twitch clips могут быть до 100MB+).
   def download_capped(url, dest_path)
     bytes = 0
     File.open(dest_path, "wb") do |file|
-      response = HTTP.timeout(30).get(url)
+      response = HTTP.timeout(30).follow.get(url)
       raise "clip download failed: HTTP #{response.status}" unless response.status.success?
 
       response.body.each do |chunk|
