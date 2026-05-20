@@ -50,7 +50,16 @@ RUN cmake -B build -DGGML_OPENMP=ON -DWHISPER_BUILD_SERVER=ON && \
 # per ADR-110 §3.2 SA-2 (quality 70-85% vs ops/RAM cost trade-off).
 RUN ./models/download-ggml-model.sh small
 
-# Runtime image — minimal Debian с whisper-server binary + model.
+# BUG-110-A (robust fix): collect ALL .so* (libwhisper / libggml / libggml-base /
+# libggml-cpu / etc) в один dir path-agnostically. whisper.cpp build layout варьируется
+# между версиями (build/src/, build/ggml/src/, build/ggml/src/ggml-cpu/) — explicit paths
+# fragile (предыдущий fix #160 упал на отсутствующем libggml-cpu.so path). find + cp -a
+# (preserves symlinks) забирает всё что есть, ldconfig в runtime пересоздаёт SONAME links.
+RUN mkdir -p /opt/whisper/lib && \
+    find /src/whisper.cpp/build \( -name '*.so' -o -name '*.so.*' \) -exec cp -av {} /opt/whisper/lib/ \; && \
+    ls -la /opt/whisper/lib/
+
+# Runtime image — minimal Debian с whisper-server binary + model + shared libs.
 FROM debian:bookworm-slim
 
 RUN apt-get update && \
@@ -64,11 +73,9 @@ COPY --from=builder /src/whisper.cpp/build/bin/whisper-server /usr/local/bin/whi
 COPY --from=builder /src/whisper.cpp/models/ggml-small.bin /opt/whisper/models/ggml-small.bin
 
 # BUG-110-A: whisper-server динамически линкуется с libwhisper.so.1 + libggml*.so
-# (BUILD_SHARED_LIBS=ON default). Multi-stage runtime ДОЛЖЕН копировать .so из builder,
-# иначе ld-linux не разрешит зависимости → exit 127 crash-loop. ldconfig обновляет cache.
-COPY --from=builder /src/whisper.cpp/build/src/libwhisper.so* /usr/local/lib/
-COPY --from=builder /src/whisper.cpp/build/ggml/src/libggml*.so /usr/local/lib/
-COPY --from=builder /src/whisper.cpp/build/ggml/src/ggml-cpu/libggml-cpu.so /usr/local/lib/
+# (BUILD_SHARED_LIBS=ON default). Без них ld-linux → exit 127 crash-loop. Все .so собраны
+# builder'ом в /opt/whisper/lib (path-agnostic find). ldconfig пересоздаёт SONAME cache.
+COPY --from=builder /opt/whisper/lib/ /usr/local/lib/
 RUN ldconfig
 
 # N-5 (CR): non-root user — security hardening (Rails compromise не эскалирует в whisper).
