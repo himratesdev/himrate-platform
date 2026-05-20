@@ -18,7 +18,29 @@ class SyncEvent < ApplicationRecord
 
   def self.compute_hash(user_id:, event_type:, payload:, synced_at:)
     bucket = synced_at.utc.change(sec: 0).iso8601
-    canonical = "#{user_id}|#{event_type}|#{payload.to_json}|#{bucket}"
+    # S-1 (CR): recursive key-sort canonical JSON — Hash insertion order не должен влиять на hash,
+    # иначе two devices с different key order → different hash → FR-023 idempotency BROKEN.
+    canonical = "#{user_id}|#{event_type}|#{canonical_json(payload)}|#{bucket}"
     Digest::SHA256.hexdigest(canonical)
+  end
+
+  # Deterministic JSON: sorts Hash keys recursively (insertion-order-independent).
+  def self.canonical_json(obj)
+    case obj
+    when Hash
+      obj.transform_keys(&:to_s).sort.to_h.transform_values { |v| deep_sort(v) }.to_json
+    when Array
+      obj.map { |v| deep_sort(v) }.to_json
+    else
+      obj.to_json
+    end
+  end
+
+  def self.deep_sort(obj)
+    case obj
+    when Hash then obj.transform_keys(&:to_s).sort.to_h.transform_values { |v| deep_sort(v) }
+    when Array then obj.map { |v| deep_sort(v) }
+    else obj
+    end
   end
 end

@@ -59,6 +59,14 @@ module Twitch
       get("/clips", { broadcaster_id: broadcaster_id, first: first })&.dig("data")
     end
 
+    # TASK-110 FR-012: lookup specific clips by id (vs broadcaster_id). Public accessor so
+    # Twitch::ClipsClient не вызывает private #get via send (CR S-5).
+    def get_clips_by_ids(ids:)
+      return [] if Array(ids).empty?
+
+      get("/clips", { id: Array(ids) })&.dig("data")
+    end
+
     private
 
     # === HTTP ===

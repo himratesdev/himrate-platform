@@ -17,11 +17,26 @@ class ChatIngestWorker
 
     Rails.logger.info(
       "ChatIngestWorker: channel=#{channel_slug} batch_size=#{messages.size} " \
-      "first_ts=#{messages.first&.dig(:ts)} last_ts=#{messages.last&.dig(:ts)}"
+      "first_ts=#{messages.first&.dig('ts')} last_ts=#{messages.last&.dig('ts')}"
     )
 
-    # TASK-171 placeholder: chat archive ClickHouse pipeline (separate epic).
-    # For TASK-110 Day-0 — only logging + Sentry breadcrumb (telemetry validation chat capture works).
-    # When TASK-171 ships → swap к ClickHouse insert_all batch + retention policy.
+    # S-6 (CR): real Sentry breadcrumb (was comment-only) — telemetry validation chat capture works.
+    if defined?(Sentry)
+      Sentry.add_breadcrumb(
+        Sentry::Breadcrumb.new(
+          category: "chat_capture",
+          message: "chat_ingest_received",
+          level: "info",
+          data: { channel_slug: channel_slug, batch_size: messages.size }
+        )
+      )
+    end
+
+    # S-6 (CR): structured log line (Loki log-based metric chat_ingest_received_total{channel}).
+    Rails.logger.info("chat_ingest_received channel=#{channel_slug} count=#{messages.size}")
+
+    # TASK-171 placeholder: chat archive ClickHouse pipeline (separate epic). Downstream storage
+    # (ClickHouse insert_all batch + retention) ships в TASK-171. TASK-110 Day-0 = telemetry only
+    # (validates React fiber capture → backend ingestion path works end-to-end before archive built).
   end
 end

@@ -20,7 +20,10 @@ module Api
 
         SyncEventBatchWorker.perform_async(current_user.id, events.map(&:to_unsafe_h))
 
-        render json: { submitted: events.size, accepted: events.size, errors: [] }, status: :accepted
+        # S-8 (CR): honest async contract — worker применяет insert_all on_conflict_do_nothing,
+        # реальный accepted ≤ submitted (duplicates skipped FR-023). НЕ обещаем accepted/errors
+        # до worker execution. Frontend understands queued=true → poll snapshot для confirmation.
+        render json: { submitted: events.size, queued: true }, status: :accepted
       end
 
       # GET /api/v1/sync/snapshot

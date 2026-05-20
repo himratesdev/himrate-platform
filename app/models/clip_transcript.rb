@@ -17,7 +17,10 @@ class ClipTranscript < ApplicationRecord
            dependent: :destroy
 
   validates :clip_id, presence: true, length: { maximum: 255 }
-  validates :broadcaster_id, presence: true, length: { maximum: 255 }
+  # N-2 (CR): broadcaster_id nullable until worker fetches Helix metadata; presence enforced
+  # только когда transcript reaches done (worker всегда populates broadcaster_id перед done).
+  validates :broadcaster_id, length: { maximum: 255 }, allow_nil: true
+  validates :broadcaster_id, presence: true, if: -> { status == "done" }
   validates :status, presence: true, inclusion: { in: STATUSES }
   validates :whisper_cost_cents, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 

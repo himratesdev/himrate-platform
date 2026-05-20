@@ -13,11 +13,21 @@ class SyncEventBatchWorker
     events = Array(events)
     return if events.empty?
 
+    dropped = 0
     rows = events.filter_map do |event|
       event = event.with_indifferent_access if event.is_a?(Hash)
       synced_at = parse_time(event[:synced_at])
-      next nil unless SyncEvent::EVENT_TYPES.include?(event[:event_type])
-      next nil if synced_at.nil?
+      # N-7 (CR): log dropped events с reason (вместо silent drop).
+      unless SyncEvent::EVENT_TYPES.include?(event[:event_type])
+        dropped += 1
+        Rails.logger.warn("SyncEventBatchWorker: dropped event user=#{user_id} reason=invalid_event_type type=#{event[:event_type].inspect}")
+        next nil
+      end
+      if synced_at.nil?
+        dropped += 1
+        Rails.logger.warn("SyncEventBatchWorker: dropped event user=#{user_id} reason=invalid_synced_at value=#{event[:synced_at].inspect}")
+        next nil
+      end
 
       hash = SyncEvent.compute_hash(
         user_id: user_id,
@@ -43,7 +53,8 @@ class SyncEventBatchWorker
 
     inserted = SyncEvent.insert_all(rows, unique_by: %i[user_id event_hash])
     Rails.logger.info(
-      "SyncEventBatchWorker: user=#{user_id} submitted=#{rows.size} accepted=#{inserted.length}"
+      "SyncEventBatchWorker: user=#{user_id} valid=#{rows.size} accepted=#{inserted.length} " \
+      "dropped=#{dropped} duplicates=#{rows.size - inserted.length}"
     )
   end
 

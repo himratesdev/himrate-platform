@@ -18,21 +18,19 @@ module Api
           return render_invalid_clip
         end
 
-        transcript = ClipTranscript.find_or_initialize_by(clip_id: clip_id)
+        # S-2 (CR): atomic find_or_create — eliminates race на concurrent new clip_id (PK violation).
+        # N-2 (CR): broadcaster_id NULL until worker fetches Helix metadata (no "pending" magic string).
+        transcript = ClipTranscript.find_or_create_by!(clip_id: clip_id) do |t|
+          t.status = "queued"
+        end
 
-        # Pundit gate Free 10/мес — FR-014..015
-        unless ClipTranscriptPolicy.new(current_user, transcript).create?
+        # Pundit gate Free 10/мес — FR-014..015. N-10 (CR): single policy instance reused.
+        policy = ClipTranscriptPolicy.new(current_user, transcript)
+        unless policy.create?
           skip_authorization
           return render_paywall_402
         end
         authorize transcript, :create?, policy_class: ClipTranscriptPolicy
-
-        # FK depends on clip_transcripts row existing — save transcript FIRST.
-        if transcript.new_record?
-          transcript.broadcaster_id = "pending"
-          transcript.status = "queued"
-          transcript.save!
-        end
 
         # Idempotency: record per-user request (UNIQUE (user_id, clip_transcript_id))
         ClipTranscriptRequest.find_or_create_by!(
@@ -46,31 +44,33 @@ module Api
             status: "done",
             transcript: serialize(transcript),
             cache_hit: true,
-            remaining: remaining_for_current_user(transcript)
+            remaining: serialize_remaining(policy.remaining_for)
           })
         end
 
-        # Cache miss — enqueue async (FR-011)
+        # Cache miss — enqueue async (FR-011). N-3 (CR): polling = GET /:clip_id (no job_id sentinel).
         ClipTranscriptWorker.perform_async(clip_id)
 
         render json: {
-          status: "queued",
-          job_id: SecureRandom.uuid,
-          estimated_seconds: 180, # v1.1: 2.5-5 min CPU realtime small clip
+          status: transcript.status,
+          estimated_seconds: 180, # v1.x: 2.5-5 min CPU realtime small clip
           cache_hit: false,
-          remaining: remaining_for_current_user(transcript)
+          remaining: serialize_remaining(policy.remaining_for)
         }, status: :accepted
       end
 
       # GET /api/v1/clip_transcripts/:clip_id — FR-010
       def show
         clip_id = sanitize_clip_id(params[:clip_id])
-        return render_invalid_clip if clip_id.blank?
+        if clip_id.blank?
+          skip_authorization
+          return render_invalid_clip
+        end
 
         transcript = ClipTranscript.find_by(clip_id: clip_id)
         unless transcript
-          render(json: { error: "not_found", message: "Transcript not found" }, status: :not_found)
-          return
+          skip_authorization
+          return render(json: { error: "not_found", message: "Transcript not found" }, status: :not_found)
         end
 
         authorize transcript, :show?, policy_class: ClipTranscriptPolicy
@@ -80,7 +80,7 @@ module Api
           transcript: transcript.cache_hit? ? serialize(transcript) : nil,
           cache_hit: transcript.cache_hit?,
           error_message: transcript.error_message,
-          remaining: remaining_for_current_user(transcript)
+          remaining: serialize_remaining(ClipTranscriptPolicy.new(current_user, transcript).remaining_for)
         }
       end
 
@@ -88,7 +88,7 @@ module Api
       def remaining
         skip_authorization # public to all registered users (Pundit#remaining_for computed inline)
         render json: {
-          remaining: ClipTranscriptPolicy.new(current_user, nil).remaining_for,
+          remaining: serialize_remaining(ClipTranscriptPolicy.new(current_user, nil).remaining_for),
           limit: ClipTranscriptPolicy::FREE_MONTHLY_LIMIT,
           tier: current_user.premium_active? ? "premium" : "free"
         }
@@ -132,8 +132,13 @@ module Api
         }, status: :payment_required
       end
 
-      def remaining_for_current_user(_transcript)
-        ClipTranscriptPolicy.new(current_user, nil).remaining_for
+      # M-4 (CR): Float::INFINITY serializes к JSON null (misleading API contract).
+      # Map к explicit "unlimited" string sentinel для premium users. Frontend контракт:
+      # remaining = integer (Free) OR "unlimited" (Premium/Business).
+      def serialize_remaining(value)
+        return "unlimited" if value.is_a?(Float) && value.infinite?
+
+        value
       end
 
       def serialize(transcript)

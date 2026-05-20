@@ -7,7 +7,8 @@
 class CreateClipTranscripts < ActiveRecord::Migration[8.0]
   def change
     create_table :clip_transcripts, primary_key: :clip_id, id: :string do |t|
-      t.string :broadcaster_id, null: false
+      # N-2 (CR): nullable until ClipTranscriptWorker fetches Helix metadata (no "pending" magic string).
+      t.string :broadcaster_id
       t.jsonb :clip_metadata, null: false, default: {}
       t.string :status, null: false, default: "queued"
       t.jsonb :segments, null: false, default: []

@@ -7,8 +7,18 @@ RSpec.describe ClipTranscript, type: :model do
     subject { build(:clip_transcript) }
 
     it { is_expected.to validate_presence_of(:clip_id) }
-    it { is_expected.to validate_presence_of(:broadcaster_id) }
     it { is_expected.to validate_inclusion_of(:status).in_array(described_class::STATUSES) }
+
+    it "allows nil broadcaster_id while queued (N-2: worker fills after Helix fetch)" do
+      transcript = build(:clip_transcript, status: "queued", broadcaster_id: nil)
+      expect(transcript).to be_valid
+    end
+
+    it "requires broadcaster_id when status=done" do
+      transcript = build(:clip_transcript, :done, broadcaster_id: nil)
+      expect(transcript).not_to be_valid
+      expect(transcript.errors[:broadcaster_id]).to include("can't be blank")
+    end
     it { is_expected.to validate_numericality_of(:whisper_cost_cents).only_integer.is_greater_than_or_equal_to(0) }
   end
 

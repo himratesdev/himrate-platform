@@ -24,7 +24,7 @@ module Twitch
     def fetch(clip_id:)
       raise ArgumentError, "clip_id is required" if clip_id.blank?
 
-      data = @helix.send(:get, "/clips", { id: clip_id })&.dig("data")
+      data = @helix.get_clips_by_ids(ids: [ clip_id ]) # S-5 (CR): public accessor, не send(:get)
       raise ClipNotFoundError, "Clip #{clip_id} not found" if data.blank?
 
       clip = data.first

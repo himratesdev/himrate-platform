@@ -45,6 +45,26 @@ RSpec.describe SyncEvent, type: :model do
       )
       expect(hash1).to eq(hash2)
     end
+
+    it "is key-order-independent (S-1: reordered payload → same hash)" do
+      base = {
+        user_id: "abc", event_type: "stream_view",
+        synced_at: Time.utc(2026, 5, 20, 12, 0, 0)
+      }
+      hash_a = described_class.compute_hash(**base, payload: { "channel_id" => "1", "duration_sec" => 60 })
+      hash_b = described_class.compute_hash(**base, payload: { "duration_sec" => 60, "channel_id" => "1" })
+      expect(hash_a).to eq(hash_b)
+    end
+
+    it "is key-order-independent для nested hashes" do
+      base = {
+        user_id: "abc", event_type: "stream_view",
+        synced_at: Time.utc(2026, 5, 20, 12, 0, 0)
+      }
+      hash_a = described_class.compute_hash(**base, payload: { "meta" => { "a" => 1, "b" => 2 } })
+      hash_b = described_class.compute_hash(**base, payload: { "meta" => { "b" => 2, "a" => 1 } })
+      expect(hash_a).to eq(hash_b)
+    end
   end
 
   describe "uniqueness" do

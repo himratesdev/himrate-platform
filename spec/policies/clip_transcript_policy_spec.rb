@@ -48,8 +48,9 @@ RSpec.describe ClipTranscriptPolicy do
       expect(policy.create?).to be true
     end
 
-    it "shows infinite remaining" do
+    it "shows infinite remaining (controller serializes к 'unlimited' string — M-4)" do
       expect(policy.remaining_for).to eq(Float::INFINITY)
+      expect(policy.remaining_for.infinite?).to eq(1)
     end
 
     it "allows index (by_broadcaster)" do
