@@ -12,6 +12,8 @@ RSpec.describe "Static configuration" do
     end
 
     it "contains 8 queues" do
+      # TASK-110 v1.2 (CR S-7): whisper_transcripts НЕ в shared :queues — обрабатывается
+      # ТОЛЬКО dedicated whisper_worker role (deploy.yml) для CPU isolation concurrency=1.
       expect(config[:queues].size).to eq(8)
     end
 
@@ -21,6 +23,11 @@ RSpec.describe "Static configuration" do
         "signals", "chat", "post_stream", "default", "notifications", "monitoring",
         "accessory_ops", "long_running"
       )
+    end
+
+    it "does NOT include whisper_transcripts (dedicated role only — CR S-7)" do
+      queue_names = config[:queues].map(&:first)
+      expect(queue_names).not_to include("whisper_transcripts")
     end
 
     it "prioritizes signals queue highest" do

@@ -20,3 +20,7 @@
   - [accessory_ops, 2]
   - [monitoring, 1]
   - [long_running, 1]
+# TASK-110 v1.2 (CR S-7): `whisper_transcripts` queue НАМЕРЕННО НЕ в этом :queues списке.
+# Default `job` Sidekiq role не должен подхватывать whisper jobs (иначе concurrency=5-10
+# spawns multiple whisper invocations → defeats CPU isolation). Обрабатывается ТОЛЬКО
+# dedicated whisper_worker role (deploy.yml) через explicit `sidekiq -q whisper_transcripts -c 1`.

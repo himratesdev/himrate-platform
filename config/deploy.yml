@@ -17,6 +17,18 @@ servers:
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
+  # TASK-110 v1.2 (CR S-7): dedicated Sidekiq role для whisper_transcripts queue concurrency=1.
+  # CPU isolation — один transcript job в момент, prevents starvation web/job на Time4VPS 3 cores.
+  # whisper_transcripts queue НЕ в config/sidekiq.yml :queues (default `job` role его не подхватывает);
+  # обрабатывается ТОЛЬКО этим role через explicit -q flag.
+  whisper_worker:
+    hosts:
+      - 194.135.85.159
+    cmd: bundle exec sidekiq -q whisper_transcripts -c 1
+    proxy: false
+    options:
+      health-cmd: "ruby -e 'puts :ok'"
+      health-interval: 10s
   irc:
     hosts:
       - 194.135.85.159
@@ -258,6 +270,30 @@ accessories:
       user: "0:0"
       # Hotfix #7 (DV finding #5): entrypoint script maps GRAFANA_* secrets к GF_* env names.
       entrypoint: /usr/local/bin/grafana-entrypoint.sh
+
+  # TASK-110 v1.2 (CR M-2/M-3 fix 2026-05-20): whisper.cpp HTTP server для clip transcripts.
+  # Replaces OpenAI Whisper API per PO cost=$0 Day-0 directive (ADR-110 v1.1 SA-2 swap A→B).
+  # Image baked с small model (~466MB) + whisper-server HTTP daemon per Dockerfile в whisper/.
+  #
+  # v1.1 был broken (kamal accessory exec изнутри Rails container — CR M-2). v1.2 = HTTP server:
+  # ClipTranscriptWorker → Multimodal::WhisperHttpClient → POST multipart к
+  # http://himrate-whisper:8080/inference (Docker network, full container name DNS).
+  # No shared volume (M-3 — audio передаётся multipart upload, не через filesystem).
+  #
+  # IMPORTANT: post-merge `kamal accessory reboot whisper -d <dest>` ОБЯЗАТЕЛЕН
+  # (per CLAUDE.md rule — accessories не пересоздаются при `kamal deploy`).
+  #
+  # CPU isolation: --cpus="1.5" cap (50% of Time4VPS 3 cores) + Sidekiq dedicated
+  # whisper_worker role concurrency=1 (deploy.yml servers) — один inference в момент.
+  # Port 8080 bound internal-only 127.0.0.1 (Rails reaches via Kamal Docker network DNS).
+  whisper:
+    image: ghcr.io/himratesdev/himrate-whisper:small-v2
+    host: 194.135.85.159
+    port: "127.0.0.1:9000:8080"
+    options:
+      cpus: "1.5"
+      memory: 2g  # ~500MB resident model + ~500MB per-job peak + headroom
+      # N-5 (CR): non-root user 1000 baked в Dockerfile (USER whisper) — не override к 0:0.
 
 volumes:
   - "himrate_storage:/rails/storage"

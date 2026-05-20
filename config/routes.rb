@@ -99,6 +99,19 @@ Rails.application.routes.draw do
 
       # TASK-018: Auth events tracking (observability)
       post "analytics/auth_events", to: "auth_events#create"
+
+      # TASK-110 FR-008..018: Twitch Clips on-demand transcripts (S2 surface)
+      post "clip_transcripts/request", to: "clip_transcripts#request_transcript"
+      get "clip_transcripts/remaining", to: "clip_transcripts#remaining"
+      get "clip_transcripts/by_broadcaster/:broadcaster_id", to: "clip_transcripts#by_broadcaster"
+      get "clip_transcripts/:clip_id", to: "clip_transcripts#show", constraints: { clip_id: %r{[^/]+} }
+
+      # TASK-110 FR-021..025: Cross-device sync API (S3 surface)
+      post "sync/events", to: "sync#push"
+      get "sync/snapshot", to: "sync#snapshot"
+
+      # TASK-110 FR-006..007: React fiber chat capture batch ingest
+      post "chat/messages", to: "chat_ingest#create"
     end
   end
 
