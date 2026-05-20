@@ -54,7 +54,9 @@ module Multimodal
                  .timeout(connect: CONNECT_TIMEOUT_SEC, read: READ_TIMEOUT_SEC)
                  .post(uri, form: {
                          file: HTTP::FormData::File.new(audio_path),
-                         response_format: "json"
+                         # BUG-110-C: verbose_json возвращает segments[] + language + words[];
+                         # plain "json" отдаёт ТОЛЬКО {text} → segments/language теряются.
+                         response_format: "verbose_json"
                        })
 
       raise ServerError, "whisper-server #{response.status}: #{response.body.to_s.truncate(200)}" unless response.status.to_i == 200

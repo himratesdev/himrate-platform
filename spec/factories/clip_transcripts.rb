@@ -12,6 +12,7 @@ FactoryBot.define do
     trait :done do
       status { "done" }
       cached_at { Time.current }
+      text { "Hello world" }
       segments do
         [
           { "start_sec" => 0.0, "end_sec" => 3.2, "text" => "Hello" },
