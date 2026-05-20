@@ -7,10 +7,13 @@
 # к http://himrate-whisper:8080/inference (Docker network), audio передаётся multipart
 # (no shared volume needed — M-3 fix).
 #
-# Build: docker build -t ghcr.io/himratesdev/himrate-whisper:small-v2 -f whisper/Dockerfile whisper/
-# Push: docker push ghcr.io/himratesdev/himrate-whisper:small-v2
-# Deploy: kamal accessory boot whisper -d staging
-# Reboot после rebuild: kamal accessory reboot whisper -d staging
+# Build/push: CI workflow .github/workflows/build-whisper-image.yml (mirrors build-db-image.yml).
+#   Pre-merge: `gh workflow run build-whisper-image.yml --ref <feature-branch>` (workflow_dispatch)
+#     → builds + pushes ghcr.io/himratesdev/himrate-whisper:<tag> ПЕРЕД merge.
+#   Post-merge: auto-rebuild on push к main с изменением whisper/Dockerfile OR deploy.yml tag.
+#   Tag = SINGLE SOURCE из config/deploy.yml accessories.whisper.image (zero drift).
+# Deploy: kamal accessory boot whisper -d staging (initial — accessory ранее не существовал).
+# Reboot после rebuild: kamal accessory reboot whisper -d staging.
 #
 # Image size: ~600MB (~100MB Debian slim + ~500MB small model file baked).
 # CPU realtime: ~3-5× для small model на Time4VPS x86_64 (--cpus="1.5" cap в deploy.yml).

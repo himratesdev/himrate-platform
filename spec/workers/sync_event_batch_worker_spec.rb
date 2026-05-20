@@ -17,21 +17,21 @@ RSpec.describe SyncEventBatchWorker do
   describe "#perform" do
     it "inserts new sync_event" do
       expect {
-        described_class.new.perform(user.id, [event])
+        described_class.new.perform(user.id, [ event ])
       }.to change(SyncEvent, :count).by(1)
     end
 
     it "is idempotent (same event submitted twice → 1 row)" do
-      described_class.new.perform(user.id, [event])
+      described_class.new.perform(user.id, [ event ])
       expect {
-        described_class.new.perform(user.id, [event])
+        described_class.new.perform(user.id, [ event ])
       }.not_to change(SyncEvent, :count)
     end
 
     it "skips invalid event_type" do
       invalid = event.merge("event_type" => "bogus")
       expect {
-        described_class.new.perform(user.id, [invalid])
+        described_class.new.perform(user.id, [ invalid ])
       }.not_to change(SyncEvent, :count)
     end
 
