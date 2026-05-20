@@ -54,6 +54,7 @@ class ClipTranscriptWorker
       result = Multimodal::WhisperHttpClient.new.transcribe(audio_path: wav_path)
       transcript.update!(
         status: "done",
+        text: result[:text], # BUG-110-C: persist full transcript (was parsed но dropped — no column)
         segments: result[:segments],
         whisper_lang: result[:language],
         whisper_cost_cents: result[:cost_cents], # always 0 for local

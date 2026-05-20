@@ -10,28 +10,51 @@ RSpec.describe Multimodal::WhisperHttpClient do
   after { File.delete(audio_path) if File.exist?(audio_path) }
 
   describe "#transcribe" do
+    # BUG-110-C: verbose_json shape (whisper.cpp v1.7.6) — start/end float seconds + language.
     let(:server_response) do
       {
+        "task" => "transcribe",
+        "language" => "english",
+        "duration" => 6.0,
         "text" => "Hello world",
-        "language" => "en",
         "segments" => [
-          { "t0" => 0, "t1" => 320, "text" => "Hello" },
-          { "t0" => 320, "t1" => 600, "text" => "world" }
+          { "id" => 0, "start" => 0.0, "end" => 3.2, "text" => "Hello", "no_speech_prob" => 0.01 },
+          { "id" => 1, "start" => 3.2, "end" => 6.0, "text" => "world", "no_speech_prob" => 0.02 }
         ]
       }.to_json
     end
 
-    it "POSTs multipart к /inference and parses JSON segments" do
+    it "POSTs multipart к /inference and parses verbose_json segments" do
       stub_request(:post, "http://himrate-whisper:8080/inference")
         .to_return(status: 200, body: server_response)
 
       result = client.transcribe(audio_path: audio_path)
 
       expect(result[:text]).to eq("Hello world")
-      expect(result[:language]).to eq("en")
+      expect(result[:language]).to eq("english")
       expect(result[:cost_cents]).to eq(0)
       expect(result[:segments].size).to eq(2)
       expect(result[:segments].first).to eq("start_sec" => 0.0, "end_sec" => 3.2, "text" => "Hello")
+      expect(result[:segments].last).to eq("start_sec" => 3.2, "end_sec" => 6.0, "text" => "world")
+    end
+
+    it "requests response_format=verbose_json (BUG-110-C contract guard)" do
+      stub = stub_request(:post, "http://himrate-whisper:8080/inference")
+             .with { |req| req.body.to_s.include?("verbose_json") }
+             .to_return(status: 200, body: server_response)
+
+      client.transcribe(audio_path: audio_path)
+      expect(stub).to have_been_requested
+    end
+
+    it "returns non-empty segments + language for speech-bearing response (BUG-110-C regression)" do
+      stub_request(:post, "http://himrate-whisper:8080/inference")
+        .to_return(status: 200, body: server_response)
+
+      result = client.transcribe(audio_path: audio_path)
+      expect(result[:segments]).not_to be_empty
+      expect(result[:language]).not_to be_empty
+      expect(result[:segments]).to all(include("start_sec", "end_sec", "text"))
     end
 
     it "raises ServerError on non-200" do

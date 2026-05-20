@@ -145,6 +145,7 @@ module Api
         {
           clip_id: transcript.clip_id,
           clip_metadata: transcript.clip_metadata,
+          text: transcript.text, # BUG-110-C: full transcript text
           segments: transcript.segments,
           sentiment_scores: transcript.sentiment_scores, # phase-2 nullable
           ai_summary: transcript.ai_summary, # phase-2 nullable
