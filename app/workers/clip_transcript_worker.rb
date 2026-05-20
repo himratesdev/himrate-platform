@@ -39,10 +39,15 @@ class ClipTranscriptWorker
     clip_metadata = Twitch::ClipsClient.new.fetch(clip_id: clip_id)
     transcript.update!(clip_metadata: clip_metadata, broadcaster_id: clip_metadata[:broadcaster_id])
 
-    audio_path, mp4_path = download_and_extract_audio(clip_id, clip_metadata)
-
+    # Nit-1 (CR iter-2): deterministic clip-id-keyed paths computed BEFORE begin, so ensure
+    # cleans up both files даже если download_capped/extract_wav raises mid-way (no leak).
+    mp4_path = Rails.root.join("tmp", "clip_#{clip_id}.mp4").to_s
+    wav_path = Rails.root.join("tmp", "clip_#{clip_id}.wav").to_s
     begin
-      result = Multimodal::WhisperHttpClient.new.transcribe(audio_path: audio_path)
+      download_capped(derive_mp4_url(clip_metadata[:thumbnail_url]), mp4_path)
+      extract_wav(mp4_path, wav_path)
+
+      result = Multimodal::WhisperHttpClient.new.transcribe(audio_path: wav_path)
       transcript.update!(
         status: "done",
         segments: result[:segments],
@@ -54,24 +59,12 @@ class ClipTranscriptWorker
       duration = Process.clock_gettime(Process::CLOCK_MONOTONIC) - started_at
       Rails.logger.info("ClipTranscriptWorker: clip #{clip_id} done в #{duration.round(1)}s (#{result[:segments].size} segments)")
     ensure
-      File.delete(audio_path) if audio_path && File.exist?(audio_path)
-      File.delete(mp4_path) if mp4_path && File.exist?(mp4_path) # S-3(b): mp4 cleanup even on ffmpeg failure
+      File.delete(wav_path) if File.exist?(wav_path)
+      File.delete(mp4_path) if File.exist?(mp4_path) # S-3(b)/Nit-1: cleanup even on mid-pipeline failure
     end
   end
 
   private
-
-  # N-1 (CR): use validated clip_id (sanitized in controller) для path construction, не raw metadata.
-  def download_and_extract_audio(clip_id, clip_metadata)
-    mp4_url = derive_mp4_url(clip_metadata[:thumbnail_url])
-    tmp_mp4 = Rails.root.join("tmp", "clip_#{clip_id}.mp4").to_s
-    tmp_wav = Rails.root.join("tmp", "clip_#{clip_id}.wav").to_s
-
-    download_capped(mp4_url, tmp_mp4)
-    extract_wav(tmp_mp4, tmp_wav)
-
-    [ tmp_wav, tmp_mp4 ]
-  end
 
   def derive_mp4_url(thumbnail_url)
     # Twitch clip mp4 derivation from thumbnail_url:
