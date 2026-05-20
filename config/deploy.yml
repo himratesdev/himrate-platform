@@ -287,7 +287,7 @@ accessories:
   # whisper_worker role concurrency=1 (deploy.yml servers) — один inference в момент.
   # Port 8080 bound internal-only 127.0.0.1 (Rails reaches via Kamal Docker network DNS).
   whisper:
-    image: ghcr.io/himratesdev/himrate-whisper:small-v2
+    image: ghcr.io/himratesdev/himrate-whisper:small-v3
     host: 194.135.85.159
     port: "127.0.0.1:9000:8080"
     options:
