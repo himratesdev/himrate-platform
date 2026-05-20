@@ -72,17 +72,40 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3.8.0
 
-      - name: Build and push whisper.cpp HTTP server image
+      # BUG-110-A: build → load locally → SMOKE TEST → push. Smoke gates the push so
+      # a runtime-broken image (missing .so libs → exit 127) НИКОГДА не попадает на ghcr.
+      - name: Build whisper.cpp HTTP server image (load locally, no push yet)
         id: build
         uses: docker/build-push-action@v6.9.0
         with:
           context: ./whisper
           file: ./whisper/Dockerfile
-          push: true
+          load: true
+          push: false
           tags: ghcr.io/himratesdev/himrate-whisper:${{ steps.image_tag.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64
+
+      # BUG-110-A regression guard: verify ALL whisper-server dynamic deps resolve
+      # (libwhisper.so.1 + libggml*.so + libggml-cpu.so). Без них → ld-linux exit 127.
+      # ldd "not found" check = precise test для этого bug class (не зависит от --help
+      # exit-code поведения). Fail здесь → push НЕ выполняется → broken image не на registry.
+      - name: Smoke test — whisper-server runtime libs resolve (BUG-110-A guard)
+        run: |
+          set -euo pipefail
+          IMAGE="ghcr.io/himratesdev/himrate-whisper:${{ steps.image_tag.outputs.tag }}"
+          echo "Smoke-testing $IMAGE — ldd dynamic linker resolution"
+          LDD_OUT="$(docker run --rm --entrypoint sh "$IMAGE" -c 'ldd /usr/local/bin/whisper-server')"
+          echo "$LDD_OUT"
+          if echo "$LDD_OUT" | grep -q 'not found'; then
+            echo "::error::whisper-server has unresolved shared libraries (BUG-110-A regression)"
+            exit 1
+          fi
+          echo "✓ All whisper-server shared libraries resolve"
+
+      - name: Push whisper image to ghcr (after smoke pass)
+        run: docker push "ghcr.io/himratesdev/himrate-whisper:${{ steps.image_tag.outputs.tag }}"
 
       # CVE scan через trivy. Non-blocking (exit-code 0) — upstream Debian base
       # может содержать CVEs вне нашего контроля. SARIF upload в GitHub Security tab.

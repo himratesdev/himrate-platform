@@ -1,6 +1,8 @@
-# TASK-110 v1.2 (2026-05-20): whisper.cpp HTTP server для clip transcripts.
+# TASK-110 v1.3 (2026-05-20): whisper.cpp HTTP server для clip transcripts (tag small-v3).
 # Replaces OpenAI Whisper API per PO cost=$0 Day-0 directive (ADR-110 v1.1 SA-2 swap A→B).
 #
+# v1.3 (BUG-110-A fix): runtime stage копирует libwhisper.so.1 + libggml*.so + libggml-cpu.so
+#   из builder + ldconfig. v1.2 их пропускал → ld-linux exit 127 crash-loop (DV caught).
 # v1.2 (Backend CR iter-1 M-2/M-3 fix): runs whisper.cpp NATIVE HTTP SERVER (whisper-server)
 # instead of `kamal accessory exec` (which is architecturally broken — kamal = deploy CLI,
 # не работает изнутри Rails container). Rails ClipTranscriptWorker → HTTP multipart POST
@@ -60,6 +62,14 @@ RUN apt-get update && \
 
 COPY --from=builder /src/whisper.cpp/build/bin/whisper-server /usr/local/bin/whisper-server
 COPY --from=builder /src/whisper.cpp/models/ggml-small.bin /opt/whisper/models/ggml-small.bin
+
+# BUG-110-A: whisper-server динамически линкуется с libwhisper.so.1 + libggml*.so
+# (BUILD_SHARED_LIBS=ON default). Multi-stage runtime ДОЛЖЕН копировать .so из builder,
+# иначе ld-linux не разрешит зависимости → exit 127 crash-loop. ldconfig обновляет cache.
+COPY --from=builder /src/whisper.cpp/build/src/libwhisper.so* /usr/local/lib/
+COPY --from=builder /src/whisper.cpp/build/ggml/src/libggml*.so /usr/local/lib/
+COPY --from=builder /src/whisper.cpp/build/ggml/src/ggml-cpu/libggml-cpu.so /usr/local/lib/
+RUN ldconfig
 
 # N-5 (CR): non-root user — security hardening (Rails compromise не эскалирует в whisper).
 RUN useradd --system --uid 1000 --no-create-home whisper && \
