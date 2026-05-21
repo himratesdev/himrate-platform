@@ -4,13 +4,7 @@ require "rails_helper"
 
 RSpec.describe Trends::Cache::KeyBuilder do
   let(:channel_id) { "00000000-0000-0000-0000-000000000001" }
-
-  before do
-    SignalConfiguration.upsert_all([
-      { signal_type: "trends", category: "cache", param_name: "schema_version", param_value: 2,
-        created_at: Time.current, updated_at: Time.current }
-    ], unique_by: %i[signal_type category param_name], on_duplicate: :skip)
-  end
+  let(:expected_version) { TrendsDailyAggregate::SUPPORTED_SCHEMA_VERSIONS.max }
 
   describe ".call" do
     it "builds versioned key с schema_version + epoch" do
@@ -18,7 +12,7 @@ RSpec.describe Trends::Cache::KeyBuilder do
 
       key = described_class.call(channel_id: channel_id, endpoint: "erv", period: "30d")
 
-      expect(key).to start_with("trends:#{channel_id}:erv:30d:daily:v2:e")
+      expect(key).to start_with("trends:#{channel_id}:erv:30d:daily:v#{expected_version}:e")
     end
 
     it "includes granularity в ключ" do
@@ -26,7 +20,7 @@ RSpec.describe Trends::Cache::KeyBuilder do
 
       key = described_class.call(channel_id: channel_id, endpoint: "erv", period: "30d", granularity: "per_stream")
 
-      expect(key).to eq("trends:#{channel_id}:erv:30d:per_stream:v2:e5")
+      expect(key).to eq("trends:#{channel_id}:erv:30d:per_stream:v#{expected_version}:e5")
     end
   end
 
