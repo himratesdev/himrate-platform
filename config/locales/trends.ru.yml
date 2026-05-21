@@ -19,42 +19,6 @@ ru:
       rising_generic: "%{metric} растёт (%{delta} за период)."
       declining_generic: "%{metric} снижается (%{delta} за период)."
       flat: "%{metric} стабильный за период."
-    discovery:
-      status:
-        organic: Органический рост
-        anomalous_burst: Подозрительный скачок (+%{jump} за %{window}д)
-        missing: Нет выраженного роста
-        not_applicable: Канал старше окна discovery
-        insufficient_data: Мало снимков подписчиков
-    coupling:
-      health:
-        healthy: Здоровая (r≥%{threshold})
-        weakening: Ослабевает
-        decoupled: Расхождение — возможна накрутка
-    anomaly_frequency:
-      verdict:
-        elevated: Аномалии участились на %{delta}%
-        reduced: Аномалии реже на %{delta}%
-        normal: Уровень аномалий обычный
-        insufficient_baseline: Недостаточно данных базовой линии
-    insights:
-      title: Динамика за период
-      priority:
-        p0: Критично
-        p1: Важно
-        p2: Заметно
-      action:
-        view_components: Открыть компоненты
-        view_anomaly: Открыть аномалию
-      message:
-        ti_drop: "TI упал на %{delta} pts — %{top_degradation} лидирует"
-        improvement: "%{metric} вырос на %{delta} — %{top_improvement}"
-        anomaly_spike: "Аномалии +%{delta}% к базовой линии"
-        flat: Заметных изменений не обнаружено
-    best_stream:
-      title: Лучший стрим
-    worst_stream:
-      title: Худший стрим
     patterns:
       weekday:
         title: Разрез по дням недели
@@ -68,8 +32,6 @@ ru:
       range: "%{value} (%{lower}..%{upper})"
       horizon_7d: На 7 дней
       horizon_30d: На 30 дней
-    comparison:
-      verdict: "TI %{ti} в категории %{category}"
     categories:
       verdict:
         best_with_delta: "Лучший TI в %{name} (+%{delta})"

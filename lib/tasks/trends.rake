@@ -47,7 +47,7 @@ namespace :trends do
 
   # FR-045 backfill: re-aggregate trends_daily_aggregates для channel × date grid.
   # Enqueues Trends::AggregationWorker per (channel_id, date) pair. Worker handles
-  # pg_advisory_lock + idempotent UPSERT через DailyBuilder (core + deferred fields).
+  # pg_advisory_lock + idempotent UPSERT через DailyBuilder (core upsert).
   #
   # CR S-1: Redis/Sidekiq backpressure — throttle_ms sleep каждые 1000 enqueues.
   # На scale SRS §1.2 (100k channels × 90d = 9M jobs) без throttle Redis OOM
