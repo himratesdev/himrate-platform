@@ -71,24 +71,8 @@ RSpec.describe TrendsDailyAggregate do
     end
 
     describe "fractions (0..1)" do
-      it "rejects discovery_phase_score outside 0..1" do
-        expect(build(:trends_daily_aggregate, discovery_phase_score: 1.5)).not_to be_valid
-      end
-
       it "rejects botted_fraction outside 0..1" do
         expect(build(:trends_daily_aggregate, botted_fraction: 1.5)).not_to be_valid
-      end
-    end
-
-    describe "Pearson r (-1..1)" do
-      it "accepts follower_ccv_coupling_r in [-1, 1]" do
-        expect(build(:trends_daily_aggregate, follower_ccv_coupling_r: -0.5)).to be_valid
-        expect(build(:trends_daily_aggregate, follower_ccv_coupling_r: 0.78)).to be_valid
-      end
-
-      it "rejects follower_ccv_coupling_r outside -1..1" do
-        expect(build(:trends_daily_aggregate, follower_ccv_coupling_r: 1.5)).not_to be_valid
-        expect(build(:trends_daily_aggregate, follower_ccv_coupling_r: -1.5)).not_to be_valid
       end
     end
 
@@ -136,14 +120,6 @@ RSpec.describe TrendsDailyAggregate do
 
         result = described_class.for_period(channel, 5.days.ago.to_date, Date.current)
         expect(result).to eq([ a3, a1 ])
-      end
-    end
-
-    describe ".with_discovery" do
-      it "returns only days with discovery_phase_score IS NOT NULL" do
-        with = create(:trends_daily_aggregate, :with_discovery, channel: channel, date: 1.day.ago)
-        _without = create(:trends_daily_aggregate, channel: channel, date: 2.days.ago)
-        expect(described_class.with_discovery).to contain_exactly(with)
       end
     end
   end

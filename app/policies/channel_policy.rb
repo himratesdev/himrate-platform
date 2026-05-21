@@ -128,15 +128,6 @@ class ChannelPolicy < ApplicationPolicy
     effective_business?
   end
 
-  # TASK-039 FR-014: Peer comparison (M3 Stability + Trust Index ranking).
-  # PO clarification: Streamer на своём канале имеет полный доступ через data exchange.
-  # Тождественно view_trends_historical? — оставлено отдельным predicate per SRS §2.2.
-  def view_peer_comparison?
-    return false unless registered?
-
-    premium_access_for?(record) || streamer_on_channel?(record)
-  end
-
   # TASK-032 CR #7: Public query methods (no more policy.send(:private_method))
   def premium_access?
     premium_access_for?(record)

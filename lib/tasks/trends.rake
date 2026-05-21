@@ -47,7 +47,7 @@ namespace :trends do
 
   # FR-045 backfill: re-aggregate trends_daily_aggregates для channel × date grid.
   # Enqueues Trends::AggregationWorker per (channel_id, date) pair. Worker handles
-  # pg_advisory_lock + idempotent UPSERT через DailyBuilder (core + deferred fields).
+  # pg_advisory_lock + idempotent UPSERT через DailyBuilder (core upsert).
   #
   # CR S-1: Redis/Sidekiq backpressure — throttle_ms sleep каждые 1000 enqueues.
   # На scale SRS §1.2 (100k channels × 90d = 9M jobs) без throttle Redis OOM
@@ -110,79 +110,6 @@ namespace :trends do
     end
 
     puts "Done: #{enqueued} AggregationWorker jobs enqueued. Monitor Sidekiq queue :signals for completion."
-  end
-
-  # FR-045 backfill: recompute follower_ccv_coupling_r для TDA rows где оно NULL.
-  # Narrower scope than full backfill_aggregates — exists для edge case когда core
-  # aggregates populated но deferred coupling field missed (with_isolation recovery).
-  #
-  # Usage:
-  #   rake trends:backfill_follower_ccv_coupling                          # last 90d, all NULL rows
-  #   rake trends:backfill_follower_ccv_coupling[2026-01-01]              # since
-  #   rake trends:backfill_follower_ccv_coupling[2026-01-01,2026-04-01]   # range
-  #   rake trends:backfill_follower_ccv_coupling[,,true]                  # dry-run preview
-  desc "Recompute follower_ccv_coupling_r для trends_daily_aggregates rows с NULL coupling"
-  task :backfill_follower_ccv_coupling, %i[since until dry_run] => :environment do |_t, args|
-    since_date = args[:since].present? ? Date.parse(args[:since]) : 90.days.ago.to_date
-    until_date = args[:until].present? ? Date.parse(args[:until]) : Date.current
-    dry_run = ActiveModel::Type::Boolean.new.cast(args[:dry_run])
-
-    if since_date > until_date
-      abort "Invalid range: since (#{since_date}) > until (#{until_date})"
-    end
-
-    scope = TrendsDailyAggregate
-      .where(date: since_date..until_date)
-      .where(follower_ccv_coupling_r: nil)
-
-    total = scope.count
-
-    if dry_run
-      puts "[DRY-RUN] Would recompute follower_ccv_coupling_r для #{total} TDA rows в #{since_date} .. #{until_date}."
-      puts "[DRY-RUN] Sample rows (first 10):"
-      scope.limit(10).pluck(:channel_id, :date).each { |cid, d| puts "  - channel=#{cid} date=#{d}" }
-      puts "[DRY-RUN] Re-run без 3rd arg для actual compute."
-      next
-    end
-
-    puts "Recomputing follower_ccv_coupling_r для #{total} TDA rows..."
-    processed = 0
-    updated = 0
-    skipped_errors = 0
-
-    # CR S-2: per-row rescue — corrupt FollowerSnapshot / PG timeout в одном
-    # канале не абортит backfill. Warn-level log + counter для operator visibility,
-    # task продолжает работу. Sentry subscribers могут подхватить Rails.error.report.
-    scope.find_each(batch_size: 500) do |tda|
-      processed += 1
-      begin
-        result = Trends::Analysis::FollowerCcvCouplingTimeline.call(
-          channel_id: tda.channel_id, from: tda.date, to: tda.date
-        )
-        r_value = result[:timeline].first&.dig(:r)
-        next if r_value.nil?
-
-        TrendsDailyAggregate
-          .where(channel_id: tda.channel_id, date: tda.date)
-          .update_all(follower_ccv_coupling_r: r_value)
-        updated += 1
-      rescue StandardError => e
-        skipped_errors += 1
-        Rails.logger.warn(
-          "[backfill_follower_ccv_coupling] channel=#{tda.channel_id} date=#{tda.date} " \
-          "failed: #{e.class}: #{e.message}"
-        )
-        Rails.error.report(
-          e,
-          context: { rake: "trends:backfill_follower_ccv_coupling", channel_id: tda.channel_id, date: tda.date.to_s },
-          handled: true
-        )
-      end
-
-      puts "  ... #{processed}/#{total} processed (#{updated} updated, #{skipped_errors} errors)" if (processed % 1000).zero?
-    end
-
-    puts "Done: #{updated}/#{processed} rows updated (#{skipped_errors} errors logged; rest skipped: insufficient follower/ccv history)."
   end
 
   # FR-045 timezone detection: populate channels.timezone используя language distribution

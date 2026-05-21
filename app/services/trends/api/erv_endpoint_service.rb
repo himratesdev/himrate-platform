@@ -23,7 +23,6 @@ module Trends
         trend = compute_trend(points)
         forecast = compute_forecast(points)
         explanation = build_explanation(trend)
-        best_worst = fetch_best_worst(from_ts, to_ts)
 
         {
           data: {
@@ -36,9 +35,7 @@ module Trends
             summary: summary,
             trend: trend,
             forecast: forecast,
-            trend_explanation: explanation,
-            best_stream: best_worst[:best],
-            worst_stream: best_worst[:worst]
+            trend_explanation: explanation
           },
           meta: meta
         }
@@ -163,14 +160,6 @@ module Trends
 
       def metric_label
         I18n.t("trends.metric.erv", default: "ERV%")
-      end
-
-      def fetch_best_worst(from_ts, to_ts)
-        Trends::Analysis::BestWorstStreamFinder.call(
-          channel_id: channel.id,
-          from: from_ts,
-          to: to_ts
-        )
       end
     end
   end

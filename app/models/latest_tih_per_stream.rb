@@ -6,10 +6,9 @@
 # (enqueued from PostStreamWorker; the MV's UNIQUE index on stream_id makes
 # `REFRESH MATERIALIZED VIEW CONCURRENTLY` legal).
 #
-# Consumers (BR-002): Trends::Analysis::BestWorstStreamFinder and
-# StreamerReputationRefreshWorker#compute_pattern_history read per-stream FINAL TIH
-# only — they read it here so they stay correct regardless of how much intermediate
-# TIH CleanupWorker has pruned. NEVER writeable (it's a view).
+# Consumers (BR-002): StreamerReputationRefreshWorker#compute_pattern_history reads
+# per-stream FINAL TIH only — it reads it here so it stays correct regardless of
+# how much intermediate TIH CleanupWorker has pruned. NEVER writeable (it's a view).
 #
 # Columns (verify against migration 20260512100005):
 #   stream_id (PK), channel_id, trust_index_score, erv_percent, ccv, confidence,

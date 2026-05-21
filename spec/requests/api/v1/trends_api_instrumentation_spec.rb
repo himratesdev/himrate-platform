@@ -27,8 +27,7 @@ RSpec.describe "Trends API instrumentation", type: :request do
         [ "trends", "forecast", "horizon_days_short", 7 ],
         [ "trends", "forecast", "horizon_days_long", 30 ],
         [ "trends", "forecast", "reliability_high_r2", 0.7 ],
-        [ "trends", "forecast", "reliability_medium_r2", 0.4 ],
-        [ "trends", "best_worst", "min_streams_required", 3 ]
+        [ "trends", "forecast", "reliability_medium_r2", 0.4 ]
       ].map { |st, cat, name, val|
         { signal_type: st, category: cat, param_name: name, param_value: val,
           created_at: Time.current, updated_at: Time.current }

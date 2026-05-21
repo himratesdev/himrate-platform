@@ -1,7 +1,8 @@
 # frozen_string_literal: true
 
-# TASK-039 FR-004: GET /api/v1/channels/:id/trends/anomalies — M4 Anomaly Events.
-# Response per SRS §4.3 (extended): list + frequency_score + distribution + attribution.
+# TASK-A1 FR-004 (philosophy-v2): GET /api/v1/channels/:id/trends/anomalies — M4 Anomaly Events.
+# Response per SRS v3.0 §4.3: total + unattributed_count + anomalies (list) + pagination + attribution.
+# Phase 1a (TASK-A1): removed frequency_score + distribution (AnomalyFrequencyScorer dropped).
 #
 # Filter params:
 #   - severity: "high" | "medium" | "low" (derived from confidence threshold in SignalConfig)
@@ -26,7 +27,6 @@ module Trends
       def call
         from_ts, to_ts = range
         list_result = build_anomaly_list(from_ts, to_ts)
-        frequency = Trends::Analysis::AnomalyFrequencyScorer.call(channel: channel, from: from_ts, to: to_ts)
 
         {
           data: {
@@ -42,9 +42,7 @@ module Trends
               per_page: @per_page,
               total_pages: list_result[:total_pages],
               has_next: @page < list_result[:total_pages]
-            },
-            frequency_score: frequency,
-            distribution: frequency[:distribution]
+            }
           },
           meta: meta
         }
@@ -91,14 +89,14 @@ module Trends
         scope.where("confidence >= ?", threshold)
       end
 
+      # Confidence thresholds в-памяти (philosophy-v2: legacy `trends.anomaly_freq.*`
+      # SignalConfig категория removed). Phase 3 переедет на SignalConfig если
+      # admin-tuning потребуется; пока статичные defaults достаточно для M4 UI.
       def severity_to_confidence_threshold(severity)
-        # High/medium/low mapping via SignalConfig (build-for-years, admin-tunable).
-        # Re-use existing anomaly_freq.min_confidence_threshold для medium; compute high/low вокруг.
-        medium = SignalConfiguration.value_for("trends", "anomaly_freq", "min_confidence_threshold").to_f
         case severity.to_s
-        when "high" then medium + 0.3  # e.g. 0.7+
-        when "medium" then medium       # e.g. 0.4+
-        when "low" then 0.0             # all (включая low confidence)
+        when "high" then 0.7
+        when "medium" then 0.4
+        when "low" then 0.0
         end
       end
 

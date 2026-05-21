@@ -21,8 +21,8 @@ end
 # raises PG::ObjectNotInPrerequisiteState (and aborts the surrounding transaction).
 # In production the migration's `CREATE MATERIALIZED VIEW … AS …` defaults to
 # WITH DATA, so it's populated there. Populate it once here (committed, before any
-# example) so consumers (BestWorstStreamFinder, StreamerReputation.pattern_history,
-# CleanupWorker row-stats) and the LatestTihPerStream model are queryable in tests.
+# example) so consumers (StreamerReputation.pattern_history, CleanupWorker
+# row-stats) and the LatestTihPerStream model are queryable in tests.
 begin
   ActiveRecord::Base.connection.execute("REFRESH MATERIALIZED VIEW latest_tih_per_stream")
 rescue ActiveRecord::StatementInvalid => e

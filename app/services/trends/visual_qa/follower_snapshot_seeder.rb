@@ -1,11 +1,9 @@
 # frozen_string_literal: true
 
-# TASK-039 Visual QA: creates FollowerSnapshot daily rows — feeds
-# DiscoveryPhaseDetector (discovery_phase_score в TDA) + FollowerCcvCouplingTimeline
-# (follower_ccv_coupling_r в TDA + M5 coupling timeline chart).
+# TASK-A1 Visual QA (philosophy-v2): creates FollowerSnapshot daily rows —
+# feeds Streamer Reputation Growth (TI signal) + follower-history UI surfaces.
 #
-# Distribution: daily snapshot для периода с realistic linear/sigmoidal growth
-# (organic discovery pattern — logistic-ish curve).
+# Distribution: daily snapshot для периода с realistic linear/sigmoidal growth.
 # Idempotent via (channel_id, timestamp rounded к date).
 
 module Trends

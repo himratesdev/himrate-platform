@@ -2,7 +2,7 @@
 
 # TASK-039 Visual QA: creates Anomaly events на random streams — feeds M4 Anomaly Events.
 # Distributes evenly: каждая anomaly attached к отдельной stream (older 2/3 of period).
-# Confidence 0.7+ (passes min_confidence_threshold) для visibility в AnomalyFrequencyScorer.
+# Confidence 0.7+ для visibility в M4 Anomaly Events UI.
 
 module Trends
   module VisualQa

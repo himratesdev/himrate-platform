@@ -16,8 +16,7 @@ RSpec.describe Trends::Api::ErvEndpointService do
       { signal_type: "trends", category: "forecast", param_name: "horizon_days_short", param_value: 7, created_at: Time.current, updated_at: Time.current },
       { signal_type: "trends", category: "forecast", param_name: "horizon_days_long", param_value: 30, created_at: Time.current, updated_at: Time.current },
       { signal_type: "trends", category: "forecast", param_name: "reliability_high_r2", param_value: 0.7, created_at: Time.current, updated_at: Time.current },
-      { signal_type: "trends", category: "forecast", param_name: "reliability_medium_r2", param_value: 0.4, created_at: Time.current, updated_at: Time.current },
-      { signal_type: "trends", category: "best_worst", param_name: "min_streams_required", param_value: 3, created_at: Time.current, updated_at: Time.current }
+      { signal_type: "trends", category: "forecast", param_name: "reliability_medium_r2", param_value: 0.4, created_at: Time.current, updated_at: Time.current }
     ], unique_by: %i[signal_type category param_name], on_duplicate: :skip)
   end
 

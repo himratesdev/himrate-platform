@@ -1,13 +1,17 @@
 # frozen_string_literal: true
 
-# TASK-039 FR-005: GET /api/v1/channels/:id/trends/components — M5 Component Breakdown.
-# Response per SRS §4.4 extended: points + degradation_signals + discovery_phase + coupling_timeline + botted_fraction.
+# TASK-A1 FR-005 (philosophy-v2): GET /api/v1/channels/:id/trends/components — M5 Component Breakdown.
+# Response per SRS §4.4: points + degradation_signals + botted_fraction.
 #
 # Group filter (SRS US-014):
 #   - nil (default): all 14 components (11 live signals + 3 reputation)
 #   - "live_signals": 11 live signals
 #   - "streamer_reputation": 3 reputation components
 #   - "core": top-5 для mobile compact view
+#
+# Phase 1a (TASK-A1): dropped discovery_phase + follower_ccv_coupling_timeline
+# fields — philosophy-v1 services removed. Components теперь simplified per
+# SRS v3.0 §4.4 (no Discovery / Coupling sub-blocks).
 
 module Trends
   module Api
@@ -29,10 +33,6 @@ module Trends
         from_ts, to_ts = range
         points = build_points(from_ts, to_ts)
         degradation = compute_degradation_signals(points)
-        discovery_phase = Trends::Analysis::DiscoveryPhaseDetector.call(channel)
-        coupling = Trends::Analysis::FollowerCcvCouplingTimeline.call(
-          channel_id: channel.id, from: from_ts.to_date, to: to_ts.to_date
-        )
         botted_fraction = compute_botted_fraction(from_ts, to_ts)
 
         {
@@ -45,9 +45,6 @@ module Trends
             components: active_components,
             points: points,
             degradation_signals: degradation,
-            discovery_phase: discovery_phase,
-            follower_ccv_coupling_timeline: coupling[:timeline],
-            follower_ccv_coupling_summary: coupling[:summary],
             botted_fraction: botted_fraction
           },
           meta: meta

@@ -22,27 +22,9 @@ RSpec.describe Trends::VisualQa::DataSeeder do
   describe ".seed" do
     let(:login) { "vqa_test_premium_01" }
 
-    before do
-      # Minimal SignalConfiguration rows needed для analysis services called из DailyBuilder.
-      SignalConfiguration.upsert_all(
-        [
-          [ "trends", "discovery", "channel_age_max_days", 60 ],
-          [ "trends", "discovery", "min_data_points", 7 ],
-          [ "trends", "discovery", "logistic_r2_organic_min", 0.7 ],
-          [ "trends", "discovery", "step_r2_burst_min", 0.9 ],
-          [ "trends", "discovery", "burst_window_days_max", 3 ],
-          [ "trends", "discovery", "burst_jump_min", 1000 ],
-          [ "trends", "coupling", "rolling_window_days", 30 ],
-          [ "trends", "coupling", "healthy_r_min", 0.7 ],
-          [ "trends", "coupling", "weakening_r_min", 0.3 ],
-          [ "trends", "coupling", "min_history_days", 7 ],
-          [ "trends", "best_worst", "min_streams_required", 3 ]
-        ].map do |sig, cat, p, v|
-          { signal_type: sig, category: cat, param_name: p, param_value: v, created_at: Time.current, updated_at: Time.current }
-        end,
-        unique_by: %i[signal_type category param_name], on_duplicate: :skip
-      )
-    end
+    # Philosophy-v2: DailyBuilder больше не вызывает legacy analysis services
+    # (anomaly_freq / best_worst / coupling / discovery), поэтому seed-блок
+    # SignalConfig из старого spec'а — больше не нужен.
 
     it "creates full data chain для premium_tracked profile" do
       result = described_class.seed(login: login, profile: "premium_tracked")
@@ -110,27 +92,6 @@ RSpec.describe Trends::VisualQa::DataSeeder do
 
   describe ".clear" do
     let(:login) { "vqa_test_teardown" }
-
-    before do
-      SignalConfiguration.upsert_all(
-        [
-          [ "trends", "discovery", "channel_age_max_days", 60 ],
-          [ "trends", "discovery", "min_data_points", 7 ],
-          [ "trends", "discovery", "logistic_r2_organic_min", 0.7 ],
-          [ "trends", "discovery", "step_r2_burst_min", 0.9 ],
-          [ "trends", "discovery", "burst_window_days_max", 3 ],
-          [ "trends", "discovery", "burst_jump_min", 1000 ],
-          [ "trends", "coupling", "rolling_window_days", 30 ],
-          [ "trends", "coupling", "healthy_r_min", 0.7 ],
-          [ "trends", "coupling", "weakening_r_min", 0.3 ],
-          [ "trends", "coupling", "min_history_days", 7 ],
-          [ "trends", "best_worst", "min_streams_required", 3 ]
-        ].map do |sig, cat, p, v|
-          { signal_type: sig, category: cat, param_name: p, param_value: v, created_at: Time.current, updated_at: Time.current }
-        end,
-        unique_by: %i[signal_type category param_name], on_duplicate: :skip
-      )
-    end
 
     it "removes full chain + metadata after seed" do
       described_class.seed(login: login, profile: "premium_tracked")

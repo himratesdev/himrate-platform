@@ -53,14 +53,13 @@ RSpec.describe ChannelPolicy, type: :policy do
     it { is_expected.to permit_action(:show) }
   end
 
-  # TASK-039 Phase A2: FR-012/013/014 Trends-scoped predicates.
-  describe "Trends predicates (FR-012/013/014)" do
+  # TASK-A1 (philosophy-v2): FR-012/013 Trends-scoped predicates.
+  describe "Trends predicates (FR-012/013)" do
     context "when guest" do
       let(:user) { nil }
 
       it { is_expected.to forbid_action(:view_trends_historical) }
       it { is_expected.to forbid_action(:view_365d_trends) }
-      it { is_expected.to forbid_action(:view_peer_comparison) }
     end
 
     context "when free user without tracked channel" do
@@ -68,7 +67,6 @@ RSpec.describe ChannelPolicy, type: :policy do
 
       it { is_expected.to forbid_action(:view_trends_historical) }
       it { is_expected.to forbid_action(:view_365d_trends) }
-      it { is_expected.to forbid_action(:view_peer_comparison) }
     end
 
     context "when premium with tracked channel" do
@@ -79,7 +77,6 @@ RSpec.describe ChannelPolicy, type: :policy do
 
       it { is_expected.to permit_action(:view_trends_historical) }
       it { is_expected.to forbid_action(:view_365d_trends) }
-      it { is_expected.to permit_action(:view_peer_comparison) }
     end
 
     context "when premium without tracked channel" do
@@ -87,7 +84,6 @@ RSpec.describe ChannelPolicy, type: :policy do
 
       it { is_expected.to forbid_action(:view_trends_historical) }
       it { is_expected.to forbid_action(:view_365d_trends) }
-      it { is_expected.to forbid_action(:view_peer_comparison) }
     end
 
     context "when business user" do
@@ -95,7 +91,6 @@ RSpec.describe ChannelPolicy, type: :policy do
 
       it { is_expected.to permit_action(:view_trends_historical) }
       it { is_expected.to permit_action(:view_365d_trends) }
-      it { is_expected.to permit_action(:view_peer_comparison) }
     end
 
     context "when streamer on own channel" do
@@ -105,7 +100,6 @@ RSpec.describe ChannelPolicy, type: :policy do
 
       it { is_expected.to permit_action(:view_trends_historical) }
       it { is_expected.to forbid_action(:view_365d_trends) }
-      it { is_expected.to permit_action(:view_peer_comparison) }
     end
 
     context "when streamer on a different channel" do
@@ -116,7 +110,6 @@ RSpec.describe ChannelPolicy, type: :policy do
 
       it { is_expected.to forbid_action(:view_trends_historical) }
       it { is_expected.to forbid_action(:view_365d_trends) }
-      it { is_expected.to forbid_action(:view_peer_comparison) }
     end
   end
 end
