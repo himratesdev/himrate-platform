@@ -79,7 +79,7 @@ module FlipperDefaults
     accessory_drift_detection
     stream_summary_endpoint
     cleanup_worker
-    trends_tab_enabled
+    trends_tab
   ].freeze
 
   # Hooks for upcoming features / transitional kill-switches: flag зарегистрирован,
