@@ -14,7 +14,6 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
   # Seed minimal SignalConfiguration rows needed by analysis services.
   before do
     configs = [
-      [ "trends", "cache", "schema_version", 2 ],
       [ "trends", "trend", "direction_rising_slope_min", 0.1 ],
       [ "trends", "trend", "direction_declining_slope_max", -0.1 ],
       [ "trends", "trend", "confidence_high_r2", 0.7 ],

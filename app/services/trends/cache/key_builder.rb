@@ -1,10 +1,14 @@
 # frozen_string_literal: true
 
-# TASK-039 FR-035 + ADR §4.12: Versioned cache key builder для Trends API.
+# TASK-A1 FR-035 + ADR §4.12 (philosophy-v2): Versioned cache key builder для Trends API.
 # Формат: trends:{channel_id}:{endpoint}:{period}:{granularity}:v{schema_version}:{invalidation_epoch}
 #
-# schema_version — из SignalConfiguration trends/cache/schema_version (build-for-years:
-# admin bumps когда breaking change в response shape, instantly invalidates все cached responses).
+# schema_version — из TrendsDailyAggregate::SUPPORTED_SCHEMA_VERSIONS.max (single source
+# of truth, aligned с Trends::Aggregation::DailyBuilder::SCHEMA_VERSION). Bump в модели =
+# instant cache namespace transition (все existing cached responses становятся stale,
+# refilled via TTL). Phase 1b CR M-1: decoupled от SignalConfiguration row-storage —
+# eliminates per-request DB read on hot path + позволяет cleanup orphan
+# trends.cache.schema_version SignalConfig row.
 #
 # invalidation_epoch — per-channel counter в Redis (incremented по PostStreamWorker).
 # Позволяет O(1) invalidation для одного канала — не надо сканировать keys.
@@ -26,7 +30,7 @@ module Trends
       end
 
       def call
-        schema_version = SignalConfiguration.value_for("trends", "cache", "schema_version").to_i
+        schema_version = TrendsDailyAggregate::SUPPORTED_SCHEMA_VERSIONS.max
         epoch = current_epoch
 
         "trends:#{@channel_id}:#{@endpoint}:#{@period}:#{@granularity}:v#{schema_version}:e#{epoch}"
