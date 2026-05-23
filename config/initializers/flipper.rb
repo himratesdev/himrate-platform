@@ -80,6 +80,7 @@ module FlipperDefaults
     stream_summary_endpoint
     cleanup_worker
     trends_tab
+    trends_aggregation_nightly
   ].freeze
 
   # Hooks for upcoming features / transitional kill-switches: flag зарегистрирован,

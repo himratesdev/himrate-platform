@@ -58,8 +58,7 @@ module Trends
       ENDPOINT_TTL_OVERRIDES = {
         "categories" => 6.hours,          # SRS §9: 6h all periods
         "weekday_patterns" => 6.hours,    # SRS §9: 6h all periods
-        "insights" => 1.hour,              # SRS §9: 1h (expensive orchestration)
-        "rehabilitation" => 10.minutes     # SRS §9: 10m (fresh rehab scoreboard)
+        "insights" => 1.hour               # SRS §9: 1h (expensive orchestration)
       }.freeze
 
       # Invalidation TTL per endpoint × period (SRS §9, FR-035).
@@ -76,9 +75,9 @@ module Trends
       end
 
       # race_condition_ttl per endpoint × period (SRS §9):
-      # endpoint-specific expensive paths (insights, comparison) = 60s lock.
+      # endpoint-specific expensive paths (insights) = 60s lock.
       # Default period-based: 30s short, 60s 365d.
-      EXPENSIVE_ENDPOINTS = %w[insights comparison categories weekday_patterns].freeze
+      EXPENSIVE_ENDPOINTS = %w[insights categories weekday_patterns].freeze
 
       def self.race_condition_ttl_for(period, endpoint: nil)
         return 60.seconds if endpoint && EXPENSIVE_ENDPOINTS.include?(endpoint.to_s)
