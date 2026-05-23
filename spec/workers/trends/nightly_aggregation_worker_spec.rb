@@ -2,34 +2,34 @@
 
 require "rails_helper"
 
+# Enqueue behaviour is asserted via message expectations on Trends::AggregationWorker
+# (repo convention — see aggregation_worker_spec). The suite does not globally enable
+# Sidekiq::Testing.fake!, so the fake-queue `.jobs` API is not relied upon here.
 RSpec.describe Trends::NightlyAggregationWorker, type: :worker do
   let(:yesterday) { Date.current - 1 }
 
-  before do
-    Flipper.enable(:trends_aggregation_nightly)
-    Trends::AggregationWorker.jobs.clear # Sidekiq fake queue accumulates across examples — isolate
-  end
+  before { Flipper.enable(:trends_aggregation_nightly) }
 
   describe "#perform" do
-    it "enqueues AggregationWorker for each channel that streamed yesterday" do
+    it "enqueues AggregationWorker once per channel that streamed yesterday" do
       ch1 = create(:channel)
       ch2 = create(:channel)
       create(:stream, channel: ch1, started_at: yesterday.beginning_of_day + 2.hours)
       create(:stream, channel: ch2, started_at: yesterday.end_of_day - 1.hour)
 
-      expect { described_class.new.perform }
-        .to change(Trends::AggregationWorker.jobs, :size).by(2)
+      expect(Trends::AggregationWorker).to receive(:perform_async).with(ch1.id, yesterday.to_s).once
+      expect(Trends::AggregationWorker).to receive(:perform_async).with(ch2.id, yesterday.to_s).once
 
-      enqueued_args = Trends::AggregationWorker.jobs.map { |j| j["args"] }
-      expect(enqueued_args).to contain_exactly([ ch1.id, yesterday.to_s ], [ ch2.id, yesterday.to_s ])
+      described_class.new.perform
     end
 
     it "does not enqueue for channels that did not stream yesterday" do
       ch = create(:channel)
       create(:stream, channel: ch, started_at: (yesterday - 3.days).beginning_of_day + 1.hour)
 
-      expect { described_class.new.perform }
-        .not_to change(Trends::AggregationWorker.jobs, :size)
+      expect(Trends::AggregationWorker).not_to receive(:perform_async)
+
+      described_class.new.perform
     end
 
     it "deduplicates channels with multiple streams yesterday" do
@@ -37,8 +37,9 @@ RSpec.describe Trends::NightlyAggregationWorker, type: :worker do
       create(:stream, channel: ch, started_at: yesterday.beginning_of_day + 1.hour)
       create(:stream, channel: ch, started_at: yesterday.beginning_of_day + 5.hours)
 
-      expect { described_class.new.perform }
-        .to change(Trends::AggregationWorker.jobs, :size).by(1)
+      expect(Trends::AggregationWorker).to receive(:perform_async).with(ch.id, yesterday.to_s).once
+
+      described_class.new.perform
     end
 
     it "is a no-op when the trends_aggregation_nightly flag is disabled" do
@@ -46,11 +47,13 @@ RSpec.describe Trends::NightlyAggregationWorker, type: :worker do
       ch = create(:channel)
       create(:stream, channel: ch, started_at: yesterday.beginning_of_day + 1.hour)
 
-      expect { described_class.new.perform }
-        .not_to change(Trends::AggregationWorker.jobs, :size)
+      expect(Trends::AggregationWorker).not_to receive(:perform_async)
+
+      described_class.new.perform
     end
 
     it "emits a completion instrumentation event with the date and count" do
+      allow(Trends::AggregationWorker).to receive(:perform_async)
       events = []
       ActiveSupport::Notifications.subscribe("trends.nightly_aggregation.completed") do |*args|
         events << ActiveSupport::Notifications::Event.new(*args)
