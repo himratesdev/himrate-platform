@@ -35,6 +35,15 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "Daily retention cleanup: TIH intermediate + signals + sessions + ccv/chatters/chat snapshots + audit"
       },
+      # TASK-A1 FR-012(a): nightly safety-net re-aggregation of yesterday's TDA.
+      # Dispatcher (one query + Redis enqueue) is light; heavy AggregationWorker
+      # fan-out lands on :signals, paced by queue → no DB-contention at 03:00.
+      "trends_aggregation_nightly" => {
+        "cron" => "0 3 * * *", # Daily at 03:00 UTC (SRS FR-012a)
+        "class" => "Trends::NightlyAggregationWorker",
+        "queue" => "monitoring",
+        "description" => "Nightly safety-net: re-aggregate yesterday's trends_daily_aggregates for channels that streamed (idempotent fan-out → AggregationWorker)"
+      },
       # BUG-010 PR2: Accessory Operations Platform schedules
       "accessory_drift_detector" => {
         "cron" => "0 * * * *", # Hourly at :00
