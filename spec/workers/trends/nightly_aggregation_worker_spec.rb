@@ -5,7 +5,10 @@ require "rails_helper"
 RSpec.describe Trends::NightlyAggregationWorker, type: :worker do
   let(:yesterday) { Date.current - 1 }
 
-  before { Flipper.enable(:trends_aggregation_nightly) }
+  before do
+    Flipper.enable(:trends_aggregation_nightly)
+    Trends::AggregationWorker.jobs.clear # Sidekiq fake queue accumulates across examples — isolate
+  end
 
   describe "#perform" do
     it "enqueues AggregationWorker for each channel that streamed yesterday" do
@@ -64,7 +67,7 @@ RSpec.describe Trends::NightlyAggregationWorker, type: :worker do
 
   describe "sidekiq options" do
     it "runs on the :monitoring queue with retry: 1" do
-      expect(described_class.sidekiq_options["queue"]).to eq("monitoring")
+      expect(described_class.sidekiq_options["queue"]).to eq(:monitoring)
       expect(described_class.sidekiq_options["retry"]).to eq(1)
     end
   end
