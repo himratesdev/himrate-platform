@@ -25,7 +25,9 @@ RSpec.describe "Google Auth API", type: :request do
       state = "test_google_state"
       Rails.cache.write("google_state:#{state}", { redirect_uri: ENV.fetch("GOOGLE_REDIRECT_URI") })
 
+      # Assert the exchange uses the state-bound redirect_uri (BUG-027)
       stub_request(:post, "https://oauth2.googleapis.com/token")
+        .with(body: hash_including("redirect_uri" => ENV.fetch("GOOGLE_REDIRECT_URI")))
         .to_return(
           status: 200,
           body: { access_token: "google_at", refresh_token: "google_rt", expires_in: 3600 }.to_json,

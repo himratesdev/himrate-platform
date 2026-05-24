@@ -22,6 +22,9 @@ module Auth
     end
 
     def entries
+      # One allowlist shared across providers by design: the extension's
+      # chromiumapp.org redirect is provider-agnostic, and provider-side dev-app
+      # registration bounds which URIs each provider will actually redirect to.
       [
         ENV["TWITCH_REDIRECT_URI"],
         ENV["GOOGLE_REDIRECT_URI"],

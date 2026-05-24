@@ -23,8 +23,9 @@ RSpec.describe "Auth API", type: :request do
       state = "test_state_123"
       Rails.cache.write("pkce:#{state}", { code_verifier: "test_verifier", redirect_uri: ENV.fetch("TWITCH_REDIRECT_URI") })
 
-      # Mock Twitch token exchange
+      # Mock Twitch token exchange — assert the exchange uses the state-bound redirect_uri (BUG-027)
       stub_request(:post, "https://id.twitch.tv/oauth2/token")
+        .with(body: hash_including("redirect_uri" => ENV.fetch("TWITCH_REDIRECT_URI")))
         .to_return(
           status: 200,
           body: { access_token: "twitch_at", refresh_token: "twitch_rt", expires_in: 14400 }.to_json,

@@ -34,7 +34,7 @@ module Api
         end
 
         cached = Rails.cache.read("pkce:#{state}")
-        unless cached
+        unless cached.is_a?(Hash)
           render json: { error: "INVALID_STATE", message: I18n.t("auth.errors.invalid_state") }, status: :unauthorized
           return
         end
@@ -107,7 +107,7 @@ module Api
         end
 
         cached = Rails.cache.read("google_state:#{state}")
-        unless cached
+        unless cached.is_a?(Hash)
           render json: { error: "INVALID_STATE", message: I18n.t("auth.errors.invalid_state") }, status: :unauthorized
           return
         end
@@ -203,6 +203,7 @@ module Api
         uri = params[:redirect_uri].presence || default
         return uri if Auth::RedirectUriAllowlist.allowed?(uri)
 
+        Rails.logger.warn("Rejected OAuth redirect_uri: #{uri.inspect}")
         render json: {
           error: "INVALID_REDIRECT_URI",
           message: I18n.t("auth.errors.invalid_redirect_uri")
