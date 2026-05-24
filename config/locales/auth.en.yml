@@ -14,3 +14,4 @@ en:
       twitch_auth_failed: "Twitch authentication failed"
       google_auth_failed: "Google authentication failed"
       auth_failed: "Authentication failed"
+      invalid_redirect_uri: "Invalid redirect URI"

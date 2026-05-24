@@ -14,3 +14,4 @@ ru:
       twitch_auth_failed: "Ошибка авторизации Twitch"
       google_auth_failed: "Ошибка авторизации Google"
       auth_failed: "Ошибка авторизации"
+      invalid_redirect_uri: "Недопустимый redirect URI"

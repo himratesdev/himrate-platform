@@ -7,10 +7,17 @@ module Api
 
       # FR-001: POST /api/v1/auth/twitch
       def twitch
-        oauth = Auth::TwitchOauth.new
-        result = oauth.authorize_url
+        redirect_uri = validated_redirect_uri(ENV.fetch("TWITCH_REDIRECT_URI"))
+        return unless redirect_uri
 
-        Rails.cache.write("pkce:#{result[:state]}", result[:code_verifier], expires_in: 10.minutes)
+        oauth = Auth::TwitchOauth.new
+        result = oauth.authorize_url(redirect_uri: redirect_uri)
+
+        Rails.cache.write(
+          "pkce:#{result[:state]}",
+          { code_verifier: result[:code_verifier], redirect_uri: redirect_uri },
+          expires_in: 10.minutes
+        )
 
         render json: { redirect_url: result[:redirect_url], state: result[:state] }
       end
@@ -26,8 +33,8 @@ module Api
           return
         end
 
-        code_verifier = Rails.cache.read("pkce:#{state}")
-        unless code_verifier
+        cached = Rails.cache.read("pkce:#{state}")
+        unless cached
           render json: { error: "INVALID_STATE", message: I18n.t("auth.errors.invalid_state") }, status: :unauthorized
           return
         end
@@ -35,7 +42,7 @@ module Api
         Rails.cache.delete("pkce:#{state}")
 
         oauth = Auth::TwitchOauth.new
-        user = oauth.callback(code: code, code_verifier: code_verifier)
+        user = oauth.callback(code: code, code_verifier: cached[:code_verifier], redirect_uri: cached[:redirect_uri])
 
         Session.create!(
           user: user,
@@ -73,10 +80,17 @@ module Api
 
       # TASK-007: POST /api/v1/auth/google
       def google
-        oauth = Auth::GoogleOauth.new
-        result = oauth.authorize_url
+        redirect_uri = validated_redirect_uri(ENV.fetch("GOOGLE_REDIRECT_URI"))
+        return unless redirect_uri
 
-        Rails.cache.write("google_state:#{result[:state]}", "valid", expires_in: 10.minutes)
+        oauth = Auth::GoogleOauth.new
+        result = oauth.authorize_url(redirect_uri: redirect_uri)
+
+        Rails.cache.write(
+          "google_state:#{result[:state]}",
+          { redirect_uri: redirect_uri },
+          expires_in: 10.minutes
+        )
 
         render json: { redirect_url: result[:redirect_url], state: result[:state] }
       end
@@ -92,7 +106,8 @@ module Api
           return
         end
 
-        unless Rails.cache.read("google_state:#{state}")
+        cached = Rails.cache.read("google_state:#{state}")
+        unless cached
           render json: { error: "INVALID_STATE", message: I18n.t("auth.errors.invalid_state") }, status: :unauthorized
           return
         end
@@ -100,7 +115,7 @@ module Api
         Rails.cache.delete("google_state:#{state}")
 
         oauth = Auth::GoogleOauth.new
-        user = oauth.callback(code: code)
+        user = oauth.callback(code: code, redirect_uri: cached[:redirect_uri])
 
         Session.create!(
           user: user,
@@ -175,6 +190,24 @@ module Api
       rescue Auth::AuthError, ActiveRecord::RecordNotFound => e
         Rails.logger.error("Logout failed: #{e.class} #{e.message}")
         render json: { error: "INVALID_TOKEN", message: I18n.t("auth.errors.invalid_token") }, status: :unauthorized
+      end
+
+      private
+
+      # BUG-027: resolve + validate the OAuth redirect_uri for this client.
+      # A client-supplied redirect_uri (e.g. the extension's chromiumapp.org URL)
+      # must be in Auth::RedirectUriAllowlist; absent → the provider web-callback
+      # default. Returns the validated URI, or renders 400 and returns nil so the
+      # caller can guard (`return unless redirect_uri`).
+      def validated_redirect_uri(default)
+        uri = params[:redirect_uri].presence || default
+        return uri if Auth::RedirectUriAllowlist.allowed?(uri)
+
+        render json: {
+          error: "INVALID_REDIRECT_URI",
+          message: I18n.t("auth.errors.invalid_redirect_uri")
+        }, status: :bad_request
+        nil
       end
     end
   end

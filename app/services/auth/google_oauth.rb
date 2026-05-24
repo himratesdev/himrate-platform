@@ -14,12 +14,12 @@ module Auth
     end
 
     # FR-001: Generate redirect URL
-    def authorize_url
+    def authorize_url(redirect_uri: @redirect_uri)
       state = SecureRandom.hex(32)
 
       url = "#{AUTHORIZE_URL}?" + {
         client_id: @client_id,
-        redirect_uri: @redirect_uri,
+        redirect_uri: redirect_uri,
         response_type: "code",
         scope: SCOPES,
         state: state,
@@ -31,8 +31,8 @@ module Auth
     end
 
     # FR-002: Exchange code for tokens + get user info
-    def callback(code:)
-      tokens = exchange_code(code)
+    def callback(code:, redirect_uri: @redirect_uri)
+      tokens = exchange_code(code, redirect_uri)
       user_info = fetch_user_info(tokens[:access_token])
 
       find_or_create_user(user_info, tokens)
@@ -40,13 +40,13 @@ module Auth
 
     private
 
-    def exchange_code(code)
+    def exchange_code(code, redirect_uri)
       response = HTTP.timeout(10).post(TOKEN_URL, form: {
         client_id: @client_id,
         client_secret: @client_secret,
         code: code,
         grant_type: "authorization_code",
-        redirect_uri: @redirect_uri
+        redirect_uri: redirect_uri
       })
 
       raise Auth::AuthError, "Google token exchange failed: #{response.status}" unless response.status.success?

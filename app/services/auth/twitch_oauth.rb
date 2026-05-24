@@ -14,7 +14,7 @@ module Auth
     end
 
     # FR-001: Generate PKCE + redirect URL
-    def authorize_url
+    def authorize_url(redirect_uri: @redirect_uri)
       code_verifier = SecureRandom.urlsafe_base64(96)
       code_challenge = Base64.urlsafe_encode64(
         Digest::SHA256.digest(code_verifier), padding: false
@@ -23,7 +23,7 @@ module Auth
 
       url = "#{AUTHORIZE_URL}?" + {
         client_id: @client_id,
-        redirect_uri: @redirect_uri,
+        redirect_uri: redirect_uri,
         response_type: "code",
         scope: SCOPES,
         code_challenge: code_challenge,
@@ -35,8 +35,8 @@ module Auth
     end
 
     # FR-002: Exchange code for tokens + get user info
-    def callback(code:, code_verifier:)
-      tokens = exchange_code(code, code_verifier)
+    def callback(code:, code_verifier:, redirect_uri: @redirect_uri)
+      tokens = exchange_code(code, code_verifier, redirect_uri)
       user_info = fetch_user_info(tokens[:access_token])
 
       find_or_create_user(user_info, tokens)
@@ -44,13 +44,13 @@ module Auth
 
     private
 
-    def exchange_code(code, code_verifier)
+    def exchange_code(code, code_verifier, redirect_uri)
       response = HTTP.timeout(5).post(TOKEN_URL, form: {
         client_id: @client_id,
         client_secret: @client_secret,
         code: code,
         grant_type: "authorization_code",
-        redirect_uri: @redirect_uri,
+        redirect_uri: redirect_uri,
         code_verifier: code_verifier
       })
 
