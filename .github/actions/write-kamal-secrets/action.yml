@@ -39,6 +39,9 @@ inputs:
     required: true
   google_redirect_uri:
     required: true
+  oauth_allowed_redirect_uris:
+    required: false
+    default: ""
   active_record_encryption_primary_key:
     required: true
   active_record_encryption_deterministic_key:
@@ -78,6 +81,7 @@ runs:
         GOOGLE_CLIENT_ID: ${{ inputs.google_client_id }}
         GOOGLE_CLIENT_SECRET: ${{ inputs.google_client_secret }}
         GOOGLE_REDIRECT_URI: ${{ inputs.google_redirect_uri }}
+        OAUTH_ALLOWED_REDIRECT_URIS: ${{ inputs.oauth_allowed_redirect_uris }}
         ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: ${{ inputs.active_record_encryption_primary_key }}
         ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: ${{ inputs.active_record_encryption_deterministic_key }}
         ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${{ inputs.active_record_encryption_key_derivation_salt }}
@@ -105,6 +109,7 @@ runs:
           printf 'GOOGLE_CLIENT_ID=%s\n' "$GOOGLE_CLIENT_ID"
           printf 'GOOGLE_CLIENT_SECRET=%s\n' "$GOOGLE_CLIENT_SECRET"
           printf 'GOOGLE_REDIRECT_URI=%s\n' "$GOOGLE_REDIRECT_URI"
+          printf 'OAUTH_ALLOWED_REDIRECT_URIS=%s\n' "$OAUTH_ALLOWED_REDIRECT_URIS"
           printf 'ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=%s\n' "$ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY"
           printf 'ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=%s\n' "$ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY"
           printf 'ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=%s\n' "$ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT"

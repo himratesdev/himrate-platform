@@ -23,9 +23,11 @@ RSpec.describe "Google Auth API", type: :request do
   describe "GET /api/v1/auth/google/callback (happy path)" do
     before do
       state = "test_google_state"
-      Rails.cache.write("google_state:#{state}", "valid")
+      Rails.cache.write("google_state:#{state}", { redirect_uri: ENV.fetch("GOOGLE_REDIRECT_URI") })
 
+      # Assert the exchange uses the state-bound redirect_uri (BUG-027)
       stub_request(:post, "https://oauth2.googleapis.com/token")
+        .with(body: hash_including("redirect_uri" => ENV.fetch("GOOGLE_REDIRECT_URI")))
         .to_return(
           status: 200,
           body: { access_token: "google_at", refresh_token: "google_rt", expires_in: 3600 }.to_json,
@@ -60,7 +62,7 @@ RSpec.describe "Google Auth API", type: :request do
     let!(:existing_auth) { AuthProvider.create!(user: existing_user, provider: "google", provider_id: "google_existing", access_token: "old", refresh_token: "old", is_broadcaster: false) }
 
     before do
-      Rails.cache.write("google_state:nodup_state", "valid")
+      Rails.cache.write("google_state:nodup_state", { redirect_uri: ENV.fetch("GOOGLE_REDIRECT_URI") })
 
       stub_request(:post, "https://oauth2.googleapis.com/token")
         .to_return(status: 200, body: { access_token: "new_at", refresh_token: "new_rt", expires_in: 3600 }.to_json, headers: { "Content-Type" => "application/json" })
@@ -130,7 +132,7 @@ RSpec.describe "Google Auth API", type: :request do
   # TC-008: Google user role is always viewer
   describe "GET /api/v1/auth/google/callback (role = viewer)" do
     before do
-      Rails.cache.write("google_state:role_state", "valid")
+      Rails.cache.write("google_state:role_state", { redirect_uri: ENV.fetch("GOOGLE_REDIRECT_URI") })
 
       stub_request(:post, "https://oauth2.googleapis.com/token")
         .to_return(status: 200, body: { access_token: "at", refresh_token: "rt", expires_in: 3600 }.to_json, headers: { "Content-Type" => "application/json" })
@@ -153,7 +155,7 @@ RSpec.describe "Google Auth API", type: :request do
     let!(:twitch_auth) { AuthProvider.create!(user: twitch_user, provider: "twitch", provider_id: "twitch_123", access_token: "at", refresh_token: "rt", is_broadcaster: false) }
 
     before do
-      Rails.cache.write("google_state:collision_state", "valid")
+      Rails.cache.write("google_state:collision_state", { redirect_uri: ENV.fetch("GOOGLE_REDIRECT_URI") })
 
       stub_request(:post, "https://oauth2.googleapis.com/token")
         .to_return(status: 200, body: { access_token: "at", refresh_token: "rt", expires_in: 3600 }.to_json, headers: { "Content-Type" => "application/json" })
@@ -168,6 +170,34 @@ RSpec.describe "Google Auth API", type: :request do
       expect(response).to have_http_status(:conflict)
       body = JSON.parse(response.body)
       expect(body["error"]).to eq("EMAIL_ALREADY_EXISTS")
+    end
+  end
+
+  # BUG-027: extension flow — allowlisted client redirect_uri baked into authorize URL
+  describe "POST /api/v1/auth/google with extension redirect_uri (allowlisted)" do
+    let(:ext_uri) { "https://gnnhhopjghkjdbjafhefmbckakbjkabp.chromiumapp.org/" }
+
+    before do
+      allow(ENV).to receive(:fetch).and_call_original
+      allow(ENV).to receive(:fetch).with("OAUTH_ALLOWED_REDIRECT_URIS", "").and_return(ext_uri)
+    end
+
+    it "uses the supplied redirect_uri in the authorize URL" do
+      post "/api/v1/auth/google", params: { redirect_uri: ext_uri }
+
+      expect(response).to have_http_status(:ok)
+      query = Rack::Utils.parse_query(URI(JSON.parse(response.body)["redirect_url"]).query)
+      expect(query["redirect_uri"]).to eq(ext_uri)
+    end
+  end
+
+  # BUG-027: untrusted redirect_uri rejected (open-redirect guard)
+  describe "POST /api/v1/auth/google with disallowed redirect_uri" do
+    it "returns 400 INVALID_REDIRECT_URI" do
+      post "/api/v1/auth/google", params: { redirect_uri: "https://evil.example.com/steal" }
+
+      expect(response).to have_http_status(:bad_request)
+      expect(JSON.parse(response.body)["error"]).to eq("INVALID_REDIRECT_URI")
     end
   end
 end

@@ -188,6 +188,7 @@ jobs:
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REDIRECT_URI=https://staging.himrate.com/api/v1/auth/google/callback
+          OAUTH_ALLOWED_REDIRECT_URIS=https://gnnhhopjghkjdbjafhefmbckakbjkabp.chromiumapp.org/
           ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
           ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
@@ -358,6 +359,12 @@ jobs:
           GOOGLE_CLIENT_ID=${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET=${{ secrets.GOOGLE_CLIENT_SECRET }}
           GOOGLE_REDIRECT_URI=https://api.himrate.com/api/v1/auth/google/callback
+          # BUG-027: production extension redirect_uri = the CWS-published item's
+          # chromiumapp.org URL (ext-id assigned by Chrome Web Store, unknown until
+          # CWS submission — T3-009 / CO-007). Set it here then, mirroring staging.
+          # Explicit (empty for now) so deploy.yml env.secret + secrets-common have no
+          # dangling reference and the deferral is documented vs an accidental omission.
+          OAUTH_ALLOWED_REDIRECT_URIS=
           ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY }}
           ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY=${{ secrets.ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY }}
           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}

@@ -65,6 +65,9 @@ env:
     - GOOGLE_CLIENT_ID
     - GOOGLE_CLIENT_SECRET
     - GOOGLE_REDIRECT_URI
+    # BUG-027: comma-separated allowlist of extra OAuth redirect_uris (extension
+    # chromiumapp.org + future clients). Web-callback defaults are always trusted.
+    - OAUTH_ALLOWED_REDIRECT_URIS
     - ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY
     - ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY
     - ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT
