@@ -24,6 +24,8 @@ Sidekiq.configure_server do |config|
       # TASK-251.1: autonomous live detection over the monitored set (Helix Get-Streams →
       # open/close Stream rows via StreamOnline/OfflineWorker). Feeds StreamMonitorWorker
       # real active streams; without it collection only ran on stale EventSub-created streams.
+      # CR nit-2: shares the :monitoring 5-thread pool with stream_monitor (both minute-cadence);
+      # Helix sweep ~5s for ~2.4k channels today — revisit a dedicated queue if the set grows large.
       "monitored_live_detector" => {
         "cron" => "* * * * *", # Every minute
         "class" => "MonitoredLiveDetectorWorker",

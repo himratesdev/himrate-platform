@@ -20,6 +20,10 @@ class MonitoredLiveDetectorWorker
   # Close a Stream only after this many consecutive cycles where the channel is absent
   # from Helix live results — debounce against transient empty responses (flapping).
   OFFLINE_MISS_THRESHOLD = 3
+  # TTL on the miss counter (CR nit-1): a sub-threshold count self-expires if the stream
+  # is closed by another path (e.g. EventSub) before this worker reaches the threshold,
+  # so the channel drops out of close-reconciliation and the key would otherwise linger.
+  MISS_KEY_TTL = OFFLINE_MISS_THRESHOLD * CYCLE_INTERVAL * 5 # seconds
   MISS_KEY_PREFIX = "live_detector:offline_misses:" # + channel.id
 
   def perform
@@ -86,7 +90,9 @@ class MonitoredLiveDetectorWorker
   end
 
   def register_offline_miss(channel)
-    misses = redis.incr("#{MISS_KEY_PREFIX}#{channel.id}").to_i
+    key = "#{MISS_KEY_PREFIX}#{channel.id}"
+    misses = redis.incr(key).to_i
+    redis.expire(key, MISS_KEY_TTL) # self-clean partial counts (CR nit-1)
     return if misses < OFFLINE_MISS_THRESHOLD
 
     StreamOfflineWorker.perform_async(

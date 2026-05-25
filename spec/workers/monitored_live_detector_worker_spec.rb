@@ -12,6 +12,7 @@ RSpec.describe MonitoredLiveDetectorWorker do
     allow(Twitch::HelixClient).to receive(:new).and_return(helix)
     allow(Redis).to receive(:new).and_return(redis)
     allow(redis).to receive(:incr).and_return(1)
+    allow(redis).to receive(:expire)
     allow(redis).to receive(:del)
   end
 
@@ -74,6 +75,17 @@ RSpec.describe MonitoredLiveDetectorWorker do
     )
 
     3.times { worker.perform }
+  end
+
+  it "does NOT close a Stream before the miss threshold (e.g. after 2 misses)" do
+    channel = create(:channel, twitch_id: "111", login: "big", is_monitored: true)
+    create(:stream, channel: channel, ended_at: nil)
+    allow(helix).to receive(:get_streams).and_return([]) # channel no longer live
+    allow(redis).to receive(:incr).and_return(1, 2)      # only two consecutive misses
+
+    expect(StreamOfflineWorker).not_to receive(:perform_async)
+
+    2.times { worker.perform }
   end
 
   it "does NOT close streams when every Helix batch fails (no data != offline)" do
