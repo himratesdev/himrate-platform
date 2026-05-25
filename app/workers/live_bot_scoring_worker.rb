@@ -15,8 +15,10 @@ class LiveBotScoringWorker
   include Sidekiq::Job
   sidekiq_options queue: :signals, retry: 1
 
-  # Bound per run; cron re-runs. At scale (thousands of concurrent live streams) add a
-  # Stream#bot_scored_at column to rotate fairly + incremental/windowed scoring — see TASK-251.8 note.
+  # Bound per run; cron re-runs. Follow-up at scale (thousands of concurrent live streams): a
+  # Stream#bot_scored_at column to rotate fairly (least-recently-scored first) + incremental/windowed
+  # scoring. That also fixes oldest-first starvation AND a zombie stream (un-closed ended_at) that
+  # would otherwise permanently top the queue and re-score static chat.
   MAX_STREAMS_PER_RUN = 300
 
   def perform
