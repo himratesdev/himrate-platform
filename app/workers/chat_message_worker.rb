@@ -2,7 +2,9 @@
 
 # TASK-024: Batch insert chat messages from Redis queue into PostgreSQL.
 # Reads from Redis list `irc:chat_messages`, inserts in batches via insert_all.
-# Self-scheduling: enqueues itself again after processing.
+# TASK-251.5: cron-driven (every minute). Drains the queue in a loop until empty or
+# MAX_RUNTIME_SECONDS, then exits — sidekiq-cron re-runs it next minute. (Replaces the old
+# self-reschedule, which was never bootstrapped → the queue never drained → ChatMessage=0.)
 
 class ChatMessageWorker
   include Sidekiq::Job
@@ -10,20 +12,45 @@ class ChatMessageWorker
 
   REDIS_QUEUE_KEY = "irc:chat_messages"
   BATCH_SIZE = 500
-  SCHEDULE_INTERVAL = 5 # seconds
+  MAX_RUNTIME_SECONDS = 50 # drain loop budget; < 60s cron cadence → no overlapping runs
 
   def perform
-    messages = drain_redis_queue
-    return schedule_next if messages.empty?
+    deadline = Time.current + MAX_RUNTIME_SECONDS
+    total = 0
 
-    records = messages.filter_map { |json| parse_message(json) }
-    batch_insert(records) if records.any?
+    loop do
+      raw = drain_redis_queue
+      break if raw.empty?
 
-    Rails.logger.info("ChatMessageWorker: inserted #{records.size}/#{messages.size} messages")
-    schedule_next
+      total += insert_batch(raw)
+      break if Time.current >= deadline
+    end
+
+    Rails.logger.info("ChatMessageWorker: inserted #{total} messages") if total.positive?
   end
 
   private
+
+  # Insert one drained batch. drain_redis_queue already removed it from Redis, so on an
+  # unexpected (e.g. connection-level) failure re-queue the raw batch before re-raising —
+  # otherwise the batch would be lost (CR nit-1). StatementInvalid is handled inside
+  # batch_insert (per-record), so only connection/unexpected errors reach the rescue here.
+  def insert_batch(raw)
+    records = raw.filter_map { |json| parse_message(json) }
+    batch_insert(records) if records.any?
+    records.size
+  rescue StandardError => e
+    requeue(raw)
+    raise e
+  end
+
+  # Restore a drained batch to the tail (oldest-first FIFO preserved) so Sidekiq retry
+  # re-processes it. Best-effort: if Redis itself is down the batch is already lost.
+  def requeue(raw)
+    redis.rpush(REDIS_QUEUE_KEY, *raw) if raw.any?
+  rescue Redis::BaseError
+    nil
+  end
 
   def drain_redis_queue
     results = redis.multi do |tx|
@@ -100,10 +127,6 @@ class ChatMessageWorker
     Time.parse(value)
   rescue ArgumentError
     Time.current
-  end
-
-  def schedule_next
-    self.class.perform_in(SCHEDULE_INTERVAL)
   end
 
   def redis

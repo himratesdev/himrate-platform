@@ -15,7 +15,10 @@ module Twitch
   class IrcMonitor
     IRC_HOST = "irc.chat.twitch.tv"
     IRC_PORT = 6697
-    MAX_CHANNELS = 100
+    # Single anon connection holds the live monitored set. Raised 100→300 (TASK-251.5):
+    # at 100 the detector's 168+ live channels thrashed JOIN/PART. Shard across
+    # connections (follow-up) when the live set approaches a single socket's practical limit.
+    MAX_CHANNELS = 300
     JOIN_THROTTLE_LIMIT = 20     # max JOINs per throttle window
     JOIN_THROTTLE_WINDOW = 30    # seconds
     REDIS_QUEUE_KEY = "irc:chat_messages"
@@ -29,11 +32,13 @@ module Twitch
 
     class Error < StandardError; end
 
-    attr_reader :channels
+    attr_reader :channels, :pending_joins
     attr_writer :on_periodic_check
 
     def initialize
       @channels = Set.new
+      @pending_joins = []
+      @join_mutex = Mutex.new
       @mutex = Monitor.new
       @socket = nil
       @ssl_socket = nil
@@ -72,33 +77,33 @@ module Twitch
       close_connection
     end
 
-    # Subscribe to a channel (JOIN).
+    # Subscribe to a channel: record desired state + enqueue a JOIN. The actual JOIN is
+    # sent by process_pending_joins from the listen loop (throttled, non-blocking) so a
+    # burst of subscribe calls never blocks the reader (TASK-251.5).
     def subscribe(channel_login)
       login = channel_login.to_s.downcase.delete_prefix("#")
-      return :already_joined if @channels.include?(login)
-
-      @mutex.synchronize do
+      @join_mutex.synchronize do
+        return :already_joined if @channels.include?(login)
         return :capacity_full if @channels.size >= MAX_CHANNELS
 
-        throttle_join
-        send_raw("JOIN ##{login}")
         @channels.add(login)
-        Rails.logger.info("IrcMonitor: JOIN ##{login} (#{@channels.size}/#{MAX_CHANNELS})")
-        :ok
+        @pending_joins << login unless @pending_joins.include?(login)
       end
+      :queued
     end
 
-    # Unsubscribe from a channel (PART).
+    # Unsubscribe from a channel (PART). Also cancels a pending JOIN if not yet sent.
     def unsubscribe(channel_login)
       login = channel_login.to_s.downcase.delete_prefix("#")
-      return :not_joined unless @channels.include?(login)
-
-      @mutex.synchronize do
-        send_raw("PART ##{login}")
-        @channels.delete(login)
-        Rails.logger.info("IrcMonitor: PART ##{login} (#{@channels.size}/#{MAX_CHANNELS})")
-        :ok
+      was_joined = @join_mutex.synchronize do
+        @pending_joins.delete(login)
+        @channels.delete?(login)
       end
+      return :not_joined unless was_joined
+
+      send_raw("PART ##{login}")
+      Rails.logger.info("IrcMonitor: PART ##{login} (#{@channels.size}/#{MAX_CHANNELS})")
+      :ok
     end
 
     def connected?
@@ -161,13 +166,14 @@ module Twitch
       Rails.logger.info("IrcMonitor: authenticated as justinfan")
     end
 
+    # On (re)connect, re-queue the desired channel set so process_pending_joins re-sends
+    # JOINs gradually from the listen loop — never a blocking synchronous rejoin.
     def rejoin_channels
-      channels_copy = @channels.to_a
-      channels_copy.each do |login|
-        throttle_join
-        send_raw("JOIN ##{login}")
+      count = @join_mutex.synchronize do
+        @channels.each { |login| @pending_joins << login unless @pending_joins.include?(login) }
+        @channels.size
       end
-      Rails.logger.info("IrcMonitor: re-joined #{channels_copy.size} channels") if channels_copy.any?
+      Rails.logger.info("IrcMonitor: re-queued #{count} channels for JOIN") if count.positive?
     end
 
     # === Main Loop ===
@@ -184,6 +190,9 @@ module Twitch
         else
           send_keepalive_ping if Time.current - @last_message_at > PING_INTERVAL
         end
+
+        # Drain queued JOINs at the throttled rate WITHOUT sleeping the reader (TASK-251.5).
+        process_pending_joins
 
         # Periodic heartbeat for Kamal health check + optional callback
         if Time.current - @last_heartbeat_at > 30
@@ -250,22 +259,29 @@ module Twitch
       sleep(delay)
     end
 
-    # === JOIN Throttle ===
+    # === JOIN Queue (throttled, non-blocking) ===
 
-    def throttle_join
+    # Send up to the remaining throttle budget of queued JOINs. Called every listen_loop
+    # iteration; never sleeps, so the reader keeps reading PRIVMSG / PONG / heartbeat while
+    # the channel set fills gradually (TASK-251.5 — replaces the blocking throttle_join).
+    def process_pending_joins
+      return if @pending_joins.empty?
+
+      join_budget.times do
+        login = @join_mutex.synchronize { @pending_joins.shift }
+        break unless login
+
+        send_raw("JOIN ##{login}")
+        @join_timestamps << Time.current
+        Rails.logger.info("IrcMonitor: JOIN ##{login} (#{@channels.size}/#{MAX_CHANNELS}, #{@pending_joins.size} pending)")
+      end
+    end
+
+    # JOINs still allowed in the current throttle window (sliding JOIN_THROTTLE_WINDOW).
+    def join_budget
       now = Time.current
       @join_timestamps.reject! { |t| now - t > JOIN_THROTTLE_WINDOW }
-
-      if @join_timestamps.size >= JOIN_THROTTLE_LIMIT
-        wait = JOIN_THROTTLE_WINDOW - (now - @join_timestamps.first)
-        if wait > 0
-          Rails.logger.info("IrcMonitor: JOIN throttle, waiting #{wait.round(1)}s")
-          sleep(wait)
-        end
-        @join_timestamps.reject! { |t| Time.current - t > JOIN_THROTTLE_WINDOW }
-      end
-
-      @join_timestamps << Time.current
+      [ JOIN_THROTTLE_LIMIT - @join_timestamps.size, 0 ].max
     end
 
     # === Keepalive ===
@@ -385,6 +401,7 @@ module Twitch
       redis.setex(REDIS_HEARTBEAT_KEY, 60, {
         connected: connected?,
         channels: @channels.size,
+        pending_joins: @pending_joins.size,
         last_message_at: @last_message_at.iso8601,
         uptime_seconds: (Time.current - @started_at).to_i
       }.to_json)

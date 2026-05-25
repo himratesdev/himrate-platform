@@ -130,5 +130,14 @@ RSpec.describe ChatMessageWorker do
       msg = ChatMessage.last
       expect(msg.stream_id).to be_nil
     end
+
+    # TASK-251.5 CR nit-1: drained batch must not be lost on an unexpected insert failure
+    it "re-queues the drained batch and re-raises on an unexpected insert failure" do
+      push_message(sample_message)
+      allow(ChatMessage).to receive(:insert_all).and_raise(ActiveRecord::ConnectionNotEstablished)
+
+      expect { worker.perform }.to raise_error(ActiveRecord::ConnectionNotEstablished)
+      expect(Redis.new(url: redis_url).llen(redis_key)).to eq(1) # restored, not lost
+    end
   end
 end
