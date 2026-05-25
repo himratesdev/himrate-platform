@@ -56,11 +56,28 @@ RSpec.describe ChannelDiscoveryWorker do
     expect(helix).not_to have_received(:get_users).with(ids: [ "222" ])
   end
 
-  it "skips a stream whose broadcaster_type is not affiliate/partner (quality gate)" do
-    allow(helix).to receive(:get_streams).and_return([ stream(id: "333", login: "viewbotchan", viewers: 4000) ])
-    allow(helix).to receive(:get_users).with(ids: [ "333" ]).and_return([ helix_user(id: "333", login: "viewbotchan", type: "") ])
+  # PO tier: a non-monetized "regular" streamer (e.g. a pro who never enabled affiliate but streams
+  # a lot, like an esports player) qualifies at the higher 500-viewer floor.
+  it "admits a non-monetized streamer at >=500 viewers (higher tier floor)" do
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "333", login: "esportspro", viewers: 2847) ])
+    allow(helix).to receive(:get_users).with(ids: [ "333" ]).and_return([ helix_user(id: "333", login: "esportspro", type: "") ])
+
+    expect { worker.perform }.to change(Channel, :count).by(1)
+    expect(Channel.find_by(twitch_id: "333")).to have_attributes(is_monitored: true, is_pinned: false, broadcaster_type: "")
+  end
+
+  it "skips a non-monetized streamer between 300 and 500 viewers (below the higher floor)" do
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "334", login: "midnone", viewers: 400) ])
+    allow(helix).to receive(:get_users).with(ids: [ "334" ]).and_return([ helix_user(id: "334", login: "midnone", type: "") ])
 
     expect { worker.perform }.not_to change(Channel, :count)
+  end
+
+  it "admits a monetized (affiliate) streamer at the lower 300 floor" do
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "335", login: "smallaffil", viewers: 350) ])
+    allow(helix).to receive(:get_users).with(ids: [ "335" ]).and_return([ helix_user(id: "335", login: "smallaffil", type: "affiliate") ])
+
+    expect { worker.perform }.to change(Channel, :count).by(1)
   end
 
   it "skips existing channels (idempotent)" do
