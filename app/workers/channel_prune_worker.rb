@@ -11,9 +11,15 @@
 # auditable, and if the channel ever returns live and re-clears the quality-gate, discovery
 # re-monitors it (ChannelDiscoveryWorker#process_stream re-monitors existing unmonitored channels).
 # Bounded per run (MAX_PER_RUN) + batched update_all so it scales to tens of thousands of channels
-# without N+1 or long locks; the cron re-runs to drain a backlog and to catch newly-banned channels
-# over time. Gated behind the :channel_prune kill-switch (HOOK flag, OFF by default — enabled only
-# after a dry-run review).
+# without N+1 or long locks; the cron re-runs to drain a backlog and to catch channels that newly
+# meet the signal over time. Gated behind the :channel_prune kill-switch (HOOK flag, OFF by default
+# — enabled only after a dry-run review).
+#
+# Scope note: the blank-display_name signal targets login-only channels Helix has NEVER named (the
+# pre-quality-gate discovery garbage — the cleanup target). A channel that HAD a name and is later
+# banned keeps its name (assign_helix_metadata blank-keeps display_name by design) so it is NOT
+# caught here — detecting post-name bans needs a dedicated "Helix returned empty on last sync"
+# signal (follow-up), out of scope for this cleanup.
 
 class ChannelPruneWorker
   include Sidekiq::Job

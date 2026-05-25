@@ -89,7 +89,7 @@ class ChannelDiscoveryWorker
     return false unless twitch_id && login
 
     channel = Channel.find_or_initialize_by(twitch_id: twitch_id)
-    return false if channel.is_monitored? # already monitored → nothing to do
+    return false if channel.is_monitored? || channel.deleted_at.present? # already monitored or soft-deleted → leave it
 
     was_new = channel.new_record?
     channel.login = login

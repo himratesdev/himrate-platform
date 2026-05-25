@@ -100,6 +100,16 @@ RSpec.describe ChannelDiscoveryWorker do
     expect(pruned.reload.is_monitored).to be(true)
   end
 
+  it "does not re-monitor a soft-deleted channel (leaves deleted_at rows alone)" do
+    deleted = create(:channel, twitch_id: "113", login: "deleted", is_monitored: false, deleted_at: Time.current)
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "113", login: "deleted", viewers: 5000) ])
+    allow(helix).to receive(:get_users).with(ids: [ "113" ]).and_return([ helix_user(id: "113", login: "deleted", type: "partner") ])
+
+    worker.perform
+
+    expect(deleted.reload.is_monitored).to be(false)
+  end
+
   it "skips a malformed stream entry and still processes the valid ones" do
     allow(helix).to receive(:get_streams).and_return([
       stream(id: nil, login: "broken", viewers: 1000),
