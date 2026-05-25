@@ -6,9 +6,9 @@
 # login + is_monitored → metadata was null).
 class AddMetadataSyncedAtToChannels < ActiveRecord::Migration[8.0]
   def change
+    # Column only (transactional). The index is built CONCURRENTLY in a separate migration
+    # (20260525100002) — channels is large (100k+) and migrations run during rolling deploy
+    # while the old release still writes to it (PG blocker fix, repo convention BUG-012).
     add_column :channels, :metadata_synced_at, :datetime
-    # NULLS FIRST so the worker's "never-synced first" backfill order is index-served, not a
-    # bounded top-N sort (CR nit-3). Serves both the WHERE (IS NULL / < stale) and the ORDER.
-    add_index :channels, :metadata_synced_at, order: { metadata_synced_at: "ASC NULLS FIRST" }
   end
 end
