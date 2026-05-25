@@ -51,12 +51,18 @@ module Channels
     end
 
     def sync_batch(batch)
-      users = @helix.get_users(logins: batch)
+      users = @helix.get_users(logins: batch, raise_on_bad_request: true)
       # nil = transient Helix failure → skip this batch, a re-run picks it up (idempotent).
       return Rails.logger.warn("CuratedSeeder: Helix failed for #{batch.size} logins (retry next run)") if users.nil?
 
       by_login = users.index_by { |u| u["login"]&.downcase }
       batch.each { |login| upsert(login, by_login[login]) }
+    rescue Twitch::HelixClient::BadRequestError => e
+      # VALID_LOGIN pre-filter makes a 400 near-impossible; if one still occurs it is permanent
+      # (not transient), so mark the batch unresolved + log loudly rather than silently "retrying"
+      # forever (the TASK-251.10 footgun). Re-run won't fix it — needs a human/YAML correction.
+      Rails.logger.error("CuratedSeeder: Helix 400 on batch (#{e.message.truncate(120)}); marking #{batch.size} logins unresolved")
+      @unresolved.concat(batch)
     end
 
     def upsert(login, user)
