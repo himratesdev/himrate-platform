@@ -20,9 +20,7 @@ RSpec.describe StreamMonitorWorker do
     allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_return(
       [ { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } } ]
     )
-    allow(gql).to receive(:batch).with(array_including(hash_including(query: /ChattersCount/))).and_return(
-      [ { "data" => { "channel" => { "chatters" => { "count" => 400 } } } } ]
-    )
+    # TASK-251.6: chatters now come from chat_messages, not GQL ChattersCount.
 
     # Tier 2 stubs
     allow(gql).to receive(:chat_room_state).and_return(nil)
@@ -48,13 +46,18 @@ RSpec.describe StreamMonitorWorker do
     expect(snapshot.ccv_count).to eq(500)
   end
 
-  # TC-009: Chatters snapshot with auth_ratio
-  it "creates chatters_snapshot with auth_ratio" do
+  # TC-009: Chatters snapshot from captured chat (TASK-251.6 — unique chatters + messages)
+  it "creates chatters_snapshot from captured chat" do
+    %w[alice bob carol alice].each do |u| # 3 unique, 4 messages
+      create(:chat_message, stream: stream, channel_login: "teststreamer", username: u, timestamp: Time.current)
+    end
+
     expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
 
     snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
-    expect(snapshot.unique_chatters_count).to eq(400)
-    expect(snapshot.auth_ratio.to_f).to be_within(0.01).of(0.8)
+    expect(snapshot.unique_chatters_count).to eq(3)
+    expect(snapshot.total_messages_count).to eq(4)
+    expect(snapshot.auth_ratio.to_f).to be_within(0.0001).of(3.0 / 500) # ccv 500 from StreamMetadata stub
   end
 
   # TC-011: Helix fallback
