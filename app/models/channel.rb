@@ -17,6 +17,8 @@ class Channel < ApplicationRecord
 
   scope :active, -> { where(deleted_at: nil) }
   scope :monitored, -> { where(is_monitored: true) }
+  # TASK-251.12: pinned = curated set, guaranteed-monitored + protected from the discovery prune.
+  scope :pinned, -> { where(is_pinned: true) }
 
   # TASK-032 CR #5: channel_live? as instance method (DRY)
   def live?
