@@ -11,6 +11,11 @@ module Channels
   class CuratedSeeder
     SEED_PATH = Rails.root.join("db/seeds/curated_channels.yml")
     HELIX_BATCH_SIZE = 100 # Helix /users accepts up to 100 logins per request
+    # Twitch login charset. A malformed entry (invalid chars / >25) is the only thing that makes
+    # /users?login= return 400 "Bad Identifiers" and poison the whole batch — a real risk for a
+    # hand-edited YAML — so we drop those up front (a format-valid but non-existent login just
+    # comes back empty, not 400). Min length 1 keeps legacy short names (e.g. "nix").
+    VALID_LOGIN = /\A[a-z0-9_]{1,25}\z/
 
     Result = Struct.new(:pinned, :unresolved, keyword_init: true)
 
@@ -21,10 +26,10 @@ module Channels
     end
 
     def initialize(logins: nil, helix: Twitch::HelixClient.new)
-      @logins = normalize(logins || self.class.load_seed)
       @helix = helix
       @pinned = 0
       @unresolved = []
+      @logins = normalize(logins || self.class.load_seed)
     end
 
     def call
@@ -36,7 +41,13 @@ module Channels
     private
 
     def normalize(logins)
-      Array(logins).map { |l| l.to_s.strip.downcase }.reject(&:blank?).uniq
+      candidates = Array(logins).map { |l| l.to_s.strip.downcase }.reject(&:blank?).uniq
+      valid, invalid = candidates.partition { |l| l.match?(VALID_LOGIN) }
+      if invalid.any?
+        @unresolved.concat(invalid)
+        Rails.logger.warn("CuratedSeeder: #{invalid.size} malformed login(s) skipped: #{invalid.inspect}")
+      end
+      valid
     end
 
     def sync_batch(batch)
@@ -58,15 +69,9 @@ module Channels
     def pin_channel(user)
       channel = Channel.find_or_initialize_by(twitch_id: user["id"])
       channel.login = user["login"].presence&.downcase || channel.login
-      channel.assign_attributes(
-        is_monitored: true,
-        is_pinned: true,
-        display_name: user["display_name"].presence || channel.display_name,
-        profile_image_url: user["profile_image_url"].presence || channel.profile_image_url,
-        broadcaster_type: user["broadcaster_type"],
-        description: user["description"],
-        metadata_synced_at: Time.current
-      )
+      channel.is_monitored = true
+      channel.is_pinned = true
+      channel.assign_helix_metadata(user) # shared Helix-user → metadata mapping (TASK-251.3/251.12)
       channel.save!
     end
   end

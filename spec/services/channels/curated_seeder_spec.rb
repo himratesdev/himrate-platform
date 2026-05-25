@@ -63,6 +63,16 @@ RSpec.describe Channels::CuratedSeeder do
     expect(helix).to have_received(:get_users).with(logins: [ "dup" ]).once
   end
 
+  it "drops malformed logins up front (would 400 the batch) and reports them as unresolved" do
+    allow(helix).to receive(:get_users).with(logins: [ "validone" ]).and_return([ helix_user(id: "5", login: "validone") ])
+
+    result = described_class.call(logins: [ "validone", "bad login!", "way_too_long_username_exceeding_limit" ], helix: helix)
+
+    expect(result.pinned).to eq(1)
+    expect(result.unresolved).to include("bad login!", "way_too_long_username_exceeding_limit")
+    expect(helix).to have_received(:get_users).with(logins: [ "validone" ]).once
+  end
+
   it "loads the committed seed list from db/seeds/curated_channels.yml" do
     seed = described_class.load_seed
     expect(seed).to be_an(Array)

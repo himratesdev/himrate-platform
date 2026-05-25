@@ -24,4 +24,20 @@ class Channel < ApplicationRecord
   def live?
     streams.where(ended_at: nil).exists?
   end
+
+  # TASK-251.12: map a Helix /users record onto this channel's metadata columns. Shared by
+  # ChannelMetadataRefreshWorker (TASK-251.3) and Channels::CuratedSeeder (TASK-251.12) so the
+  # mapping has a single source of truth. Keeps the existing display_name/avatar when Helix returns
+  # blank (don't lose data); broadcaster_type/description reflect the current Helix value as-is
+  # ("" = normal user / cleared bio is meaningful, must not stay stale). Stamps metadata_synced_at.
+  # The caller persists (save!/update!).
+  def assign_helix_metadata(user)
+    assign_attributes(
+      display_name: user["display_name"].presence || display_name,
+      profile_image_url: user["profile_image_url"].presence || profile_image_url,
+      broadcaster_type: user["broadcaster_type"],
+      description: user["description"],
+      metadata_synced_at: Time.current
+    )
+  end
 end
