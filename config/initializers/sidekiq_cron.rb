@@ -21,6 +21,15 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "Periodic CCV/chatters polling (Tier 1 + Tier 2)"
       },
+      # TASK-251.1: autonomous live detection over the monitored set (Helix Get-Streams →
+      # open/close Stream rows via StreamOnline/OfflineWorker). Feeds StreamMonitorWorker
+      # real active streams; without it collection only ran on stale EventSub-created streams.
+      "monitored_live_detector" => {
+        "cron" => "* * * * *", # Every minute
+        "class" => "MonitoredLiveDetectorWorker",
+        "queue" => "monitoring",
+        "description" => "Autonomous live detection: Helix Get-Streams over monitored channels → open/close Stream rows (reuses StreamOnline/OfflineWorker)"
+      },
       "channel_discovery" => {
         "cron" => "*/5 * * * *", # Every 5 minutes
         "class" => "ChannelDiscoveryWorker",
