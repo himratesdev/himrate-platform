@@ -25,7 +25,12 @@ class ChannelMetadataRefreshWorker
 
     synced = 0
     channels.each_slice(HELIX_BATCH_SIZE) do |batch|
-      by_id = (helix.get_users(ids: batch.map(&:twitch_id)) || []).index_by { |u| u["id"] }
+      result = helix.get_users(ids: batch.map(&:twitch_id))
+      # nil = transient Helix failure (timeout/429/5xx) → skip without stamping, retry next run.
+      # [] = request OK, no such user (banned/deleted) → apply_metadata stamps to avoid retry storm.
+      next if result.nil?
+
+      by_id = result.index_by { |u| u["id"] }
       batch.each { |channel| synced += 1 if apply_metadata(channel, by_id[channel.twitch_id]) }
     end
 
@@ -47,9 +52,12 @@ class ChannelMetadataRefreshWorker
   def apply_metadata(channel, user)
     attrs = { metadata_synced_at: Time.current }
     if user
+      # Keep existing value when Helix returns blank for display_name/avatar (don't lose data).
+      # broadcaster_type/description reflect the current Helix value as-is ("" = normal user /
+      # cleared bio is meaningful, must not stay stale).
       attrs[:display_name] = user["display_name"].presence || channel.display_name
-      attrs[:profile_image_url] = user["profile_image_url"].presence
-      attrs[:broadcaster_type] = user["broadcaster_type"].presence
+      attrs[:profile_image_url] = user["profile_image_url"].presence || channel.profile_image_url
+      attrs[:broadcaster_type] = user["broadcaster_type"]
       attrs[:description] = user["description"]
     end
 

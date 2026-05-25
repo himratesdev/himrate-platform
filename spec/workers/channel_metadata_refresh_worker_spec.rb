@@ -62,4 +62,18 @@ RSpec.describe ChannelMetadataRefreshWorker do
     expect(helix).not_to receive(:get_users)
     worker.perform
   end
+
+  # CR Must-Fix: transient Helix failure (nil) must NOT stamp metadata_synced_at — otherwise
+  # the row is frozen with null metadata for STALE_AFTER (re-introduces the bug being fixed).
+  it "does NOT stamp on transient Helix failure (nil) — stays re-eligible next run" do
+    channel = create(:channel, twitch_id: "555", login: "ghost2", display_name: nil, is_monitored: true)
+    channel.update_columns(metadata_synced_at: nil)
+    allow(helix).to receive(:get_users).and_return(nil)
+
+    worker.perform
+
+    channel.reload
+    expect(channel.metadata_synced_at).to be_nil
+    expect(channel.display_name).to be_nil
+  end
 end
