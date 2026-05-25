@@ -8,6 +8,7 @@ RSpec.describe ChannelDiscoveryWorker do
 
   before do
     allow(Flipper).to receive(:enabled?).with(:stream_monitor).and_return(true)
+    allow(Flipper).to receive(:enabled?).with(:channel_discovery).and_return(true)
     allow(Twitch::HelixClient).to receive(:new).and_return(helix)
     allow(helix).to receive(:get_users).and_return([]) # default: no candidates resolved
 
@@ -99,8 +100,15 @@ RSpec.describe ChannelDiscoveryWorker do
     expect(Channel.find_by(twitch_id: "444")).to be_present
   end
 
-  it "skips when Flipper disabled (no Helix call)" do
+  it "skips when :stream_monitor disabled (no Helix call)" do
     allow(Flipper).to receive(:enabled?).with(:stream_monitor).and_return(false)
+    expect(helix).not_to receive(:get_streams)
+
+    expect { worker.perform }.not_to change(Channel, :count)
+  end
+
+  it "skips when :channel_discovery disabled — independent kill-switch (no Helix call)" do
+    allow(Flipper).to receive(:enabled?).with(:channel_discovery).and_return(false)
     expect(helix).not_to receive(:get_streams)
 
     expect { worker.perform }.not_to change(Channel, :count)

@@ -36,7 +36,7 @@ Sidekiq.configure_server do |config|
         "cron" => "*/5 * * * *", # Every 5 minutes
         "class" => "ChannelDiscoveryWorker",
         "queue" => "monitoring",
-        "description" => "Auto-indexing top streams (50+ viewers)"
+        "description" => "Quality-gated RU discovery (affiliate/partner >=300v, non-monetized >=500v)"
       },
       # TASK-251.5: bootstrap the IRC chat drainer every minute. The worker drains
       # irc:chat_messages in a loop (~50s) then exits; cron re-runs it. Without this the

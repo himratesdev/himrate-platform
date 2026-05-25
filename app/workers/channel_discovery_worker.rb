@@ -26,7 +26,9 @@ class ChannelDiscoveryWorker
   MONETIZED_TYPES = %w[affiliate partner].freeze
 
   def perform
-    return unless Flipper.enabled?(:stream_monitor)
+    # Gate on both the master monitoring switch and the dedicated discovery flag so discovery can be
+    # paused independently (kill-switch) without halting live-detection/chat (which use :stream_monitor).
+    return unless Flipper.enabled?(:stream_monitor) && Flipper.enabled?(:channel_discovery)
 
     streams = helix.get_streams(language: LANGUAGE, first: MAX_STREAMS) || []
     # Pre-filter on the lower bar: nothing below MIN_VIEWERS_MONETIZED can qualify under either tier.
