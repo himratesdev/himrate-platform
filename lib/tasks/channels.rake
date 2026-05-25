@@ -7,4 +7,11 @@ namespace :channels do
     puts "CuratedSeeder: pinned=#{result.pinned} unresolved=#{result.unresolved.size}"
     puts "Unresolved logins: #{result.unresolved.inspect}" if result.unresolved.any?
   end
+
+  desc "TASK-251.2: preview the channel prune (dry-run, read-only, no changes)"
+  task prune_dry_run: :environment do
+    result = ChannelPruneWorker.new.preview
+    puts "ChannelPruneWorker dry-run: would unmonitor #{result[:count]} banned non-pinned channels (per run; bounded by MAX_PER_RUN)"
+    puts "Sample: #{result[:sample].inspect}"
+  end
 end
