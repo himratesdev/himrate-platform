@@ -127,6 +127,28 @@ RSpec.describe Twitch::HelixClient do
       result = client.get_users(logins: [ "test" ])
       expect(result).to be_nil
     end
+
+    # TASK-251.10: a 400 is a permanent client error, not transient. Default keeps the legacy
+    # nil behavior; opt-in callers raise BadRequestError so they can isolate the offending id.
+    context "on 400 Bad Request (Bad Identifiers)" do
+      let(:bad_request_body) do
+        { error: "Bad Request", status: 400, message: "Invalid username(s), email(s), or ID(s). Bad Identifiers." }.to_json
+      end
+
+      before do
+        stub_request(:get, "https://api.twitch.tv/helix/users?id=qa31track")
+          .to_return(status: 400, body: bad_request_body, headers: { "Content-Type" => "application/json" })
+      end
+
+      it "returns nil by default (back-compat for existing callers)" do
+        expect(client.get_users(ids: [ "qa31track" ])).to be_nil
+      end
+
+      it "raises BadRequestError when raise_on_bad_request: true" do
+        expect { client.get_users(ids: [ "qa31track" ], raise_on_bad_request: true) }
+          .to raise_error(Twitch::HelixClient::BadRequestError, /Bad Identifiers/)
+      end
+    end
   end
 
   describe "token management" do
