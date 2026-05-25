@@ -7,53 +7,85 @@ RSpec.describe ChannelDiscoveryWorker do
   let(:helix) { instance_double(Twitch::HelixClient) }
 
   before do
-    allow(ENV).to receive(:fetch).and_call_original
-    allow(ENV).to receive(:fetch).with("TWITCH_CLIENT_ID").and_return("test_id")
-    allow(ENV).to receive(:fetch).with("TWITCH_CLIENT_SECRET").and_return("test_secret")
-    allow(ENV).to receive(:fetch).with("REDIS_URL", anything).and_return("redis://localhost:6379/1")
     allow(Flipper).to receive(:enabled?).with(:stream_monitor).and_return(true)
     allow(Twitch::HelixClient).to receive(:new).and_return(helix)
+    allow(helix).to receive(:get_users).and_return([]) # default: no candidates resolved
 
     eventsub = instance_double(Twitch::EventSubService)
     allow(Twitch::EventSubService).to receive(:new).and_return(eventsub)
     allow(eventsub).to receive(:subscribe).and_return([ { "id" => "sub-1" } ])
   end
 
-  # TC-017: New channel discovered
-  it "creates Channel for streams with 50+ viewers" do
-    allow(helix).to receive(:get_streams).and_return([
-      { "user_id" => "111", "user_login" => "bigstreamer", "viewer_count" => 5000 },
-      { "user_id" => "222", "user_login" => "smallstreamer", "viewer_count" => 30 }
-    ])
-
-    expect { worker.perform }.to change(Channel, :count).by(1)
-    expect(Channel.find_by(twitch_id: "111").login).to eq("bigstreamer")
-    expect(Channel.find_by(twitch_id: "222")).to be_nil
+  def stream(id:, login:, viewers:)
+    { "user_id" => id, "user_login" => login, "viewer_count" => viewers }
   end
 
-  # TC-018: Existing channel → skip
-  it "skips existing channels (idempotent)" do
-    create(:channel, twitch_id: "111", login: "bigstreamer")
+  def helix_user(id:, login: "login", type: "affiliate")
+    {
+      "id" => id, "login" => login, "display_name" => login.capitalize,
+      "broadcaster_type" => type, "description" => "bio",
+      "profile_image_url" => "https://cdn.twitch/#{login}.png"
+    }
+  end
 
-    allow(helix).to receive(:get_streams).and_return([
-      { "user_id" => "111", "user_login" => "bigstreamer", "viewer_count" => 5000 }
-    ])
+  it "scans the top RU streams (language=ru, first=100)" do
+    allow(helix).to receive(:get_streams).with(language: "ru", first: 100).and_return([])
+
+    worker.perform
+
+    expect(helix).to have_received(:get_streams).with(language: "ru", first: 100)
+  end
+
+  # TASK-251.13: monetized (affiliate/partner) RU streamer over the viewer floor → monitored, with
+  # metadata filled at creation; is_pinned stays false (discovery = broad side, not curated).
+  it "creates a monitored channel for an affiliate/partner stream >=300 viewers, metadata filled" do
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "111", login: "bigstreamer", viewers: 5000) ])
+    allow(helix).to receive(:get_users).with(ids: [ "111" ]).and_return([ helix_user(id: "111", login: "bigstreamer", type: "partner") ])
+
+    expect { worker.perform }.to change(Channel, :count).by(1)
+
+    channel = Channel.find_by(twitch_id: "111")
+    expect(channel).to have_attributes(login: "bigstreamer", is_monitored: true, is_pinned: false, broadcaster_type: "partner", display_name: "Bigstreamer")
+    expect(channel.metadata_synced_at).to be_present
+  end
+
+  it "skips streams below MIN_VIEWERS (300) — never looked up for broadcaster_type" do
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "222", login: "smallstreamer", viewers: 250) ])
+
+    expect { worker.perform }.not_to change(Channel, :count)
+    expect(helix).not_to have_received(:get_users).with(ids: [ "222" ])
+  end
+
+  it "skips a stream whose broadcaster_type is not affiliate/partner (quality gate)" do
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "333", login: "viewbotchan", viewers: 4000) ])
+    allow(helix).to receive(:get_users).with(ids: [ "333" ]).and_return([ helix_user(id: "333", login: "viewbotchan", type: "") ])
 
     expect { worker.perform }.not_to change(Channel, :count)
   end
 
-  it "handles errors per-channel without cascade failure" do
-    allow(helix).to receive(:get_streams).and_return([
-      { "user_id" => nil, "user_login" => "broken", "viewer_count" => 100 },
-      { "user_id" => "333", "user_login" => "goodchannel", "viewer_count" => 200 }
-    ])
+  it "skips existing channels (idempotent)" do
+    create(:channel, twitch_id: "111", login: "bigstreamer")
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "111", login: "bigstreamer", viewers: 5000) ])
+    allow(helix).to receive(:get_users).with(ids: [ "111" ]).and_return([ helix_user(id: "111", login: "bigstreamer") ])
 
-    expect { worker.perform }.to change(Channel, :count).by(1)
-    expect(Channel.find_by(twitch_id: "333")).to be_present
+    expect { worker.perform }.not_to change(Channel, :count)
   end
 
-  it "skips when Flipper disabled" do
+  it "skips a malformed stream entry and still processes the valid ones" do
+    allow(helix).to receive(:get_streams).and_return([
+      stream(id: nil, login: "broken", viewers: 1000),
+      stream(id: "444", login: "goodchannel", viewers: 2000)
+    ])
+    allow(helix).to receive(:get_users).with(ids: [ "444" ]).and_return([ helix_user(id: "444", login: "goodchannel") ])
+
+    expect { worker.perform }.to change(Channel, :count).by(1)
+    expect(Channel.find_by(twitch_id: "444")).to be_present
+  end
+
+  it "skips when Flipper disabled (no Helix call)" do
     allow(Flipper).to receive(:enabled?).with(:stream_monitor).and_return(false)
+    expect(helix).not_to receive(:get_streams)
+
     expect { worker.perform }.not_to change(Channel, :count)
   end
 end
