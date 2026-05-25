@@ -38,6 +38,12 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "Quality-gated RU discovery (affiliate/partner >=300v, non-monetized >=500v)"
       },
+      "channel_prune" => {
+        "cron" => "17 * * * *", # hourly (offset :17 to avoid colliding with other jobs)
+        "class" => "ChannelPruneWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-251.2: unmonitor banned non-pinned channels (gated by :channel_prune, OFF until reviewed)"
+      },
       # TASK-251.5: bootstrap the IRC chat drainer every minute. The worker drains
       # irc:chat_messages in a loop (~50s) then exits; cron re-runs it. Without this the
       # queue was never consumed (worker self-rescheduled but was never bootstrapped) →

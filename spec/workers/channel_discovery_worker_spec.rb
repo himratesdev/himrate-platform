@@ -81,12 +81,33 @@ RSpec.describe ChannelDiscoveryWorker do
     expect { worker.perform }.to change(Channel, :count).by(1)
   end
 
-  it "skips existing channels (idempotent)" do
-    create(:channel, twitch_id: "111", login: "bigstreamer")
+  it "skips an already-monitored existing channel (idempotent)" do
+    create(:channel, twitch_id: "111", login: "bigstreamer", is_monitored: true)
     allow(helix).to receive(:get_streams).and_return([ stream(id: "111", login: "bigstreamer", viewers: 5000) ])
     allow(helix).to receive(:get_users).with(ids: [ "111" ]).and_return([ helix_user(id: "111", login: "bigstreamer") ])
 
     expect { worker.perform }.not_to change(Channel, :count)
+  end
+
+  # TASK-251.2 lifecycle: a channel the prune unmonitored (is_monitored=false) that returns live and
+  # re-clears the gate is re-monitored (not silently left out) — closes the prune↔rediscovery loop.
+  it "re-monitors an existing unmonitored channel that re-qualifies (returned after prune)" do
+    pruned = create(:channel, twitch_id: "112", login: "returned", is_monitored: false, is_pinned: false)
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "112", login: "returned", viewers: 5000) ])
+    allow(helix).to receive(:get_users).with(ids: [ "112" ]).and_return([ helix_user(id: "112", login: "returned", type: "partner") ])
+
+    expect { worker.perform }.not_to change(Channel, :count) # re-monitored, not re-created
+    expect(pruned.reload.is_monitored).to be(true)
+  end
+
+  it "does not re-monitor a soft-deleted channel (leaves deleted_at rows alone)" do
+    deleted = create(:channel, twitch_id: "113", login: "deleted", is_monitored: false, deleted_at: Time.current)
+    allow(helix).to receive(:get_streams).and_return([ stream(id: "113", login: "deleted", viewers: 5000) ])
+    allow(helix).to receive(:get_users).with(ids: [ "113" ]).and_return([ helix_user(id: "113", login: "deleted", type: "partner") ])
+
+    worker.perform
+
+    expect(deleted.reload.is_monitored).to be(false)
   end
 
   it "skips a malformed stream entry and still processes the valid ones" do
