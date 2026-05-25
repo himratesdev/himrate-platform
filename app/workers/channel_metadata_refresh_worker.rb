@@ -81,19 +81,16 @@ class ChannelMetadataRefreshWorker
 
   # Stamp metadata_synced_at on every processed channel (even when Helix returns nothing —
   # banned/deleted user) so it isn't retried every run. Returns true when metadata was filled.
+  # The Helix-user → Channel mapping lives in Channel#assign_helix_metadata (shared with the
+  # curated seeder, TASK-251.12) so the blank-keep semantics have one source of truth.
   def apply_metadata(channel, user)
-    attrs = { metadata_synced_at: Time.current }
     if user
-      # Keep existing value when Helix returns blank for display_name/avatar (don't lose data).
-      # broadcaster_type/description reflect the current Helix value as-is ("" = normal user /
-      # cleared bio is meaningful, must not stay stale).
-      attrs[:display_name] = user["display_name"].presence || channel.display_name
-      attrs[:profile_image_url] = user["profile_image_url"].presence || channel.profile_image_url
-      attrs[:broadcaster_type] = user["broadcaster_type"]
-      attrs[:description] = user["description"]
+      channel.assign_helix_metadata(user)
+    else
+      channel.metadata_synced_at = Time.current
     end
 
-    channel.update!(attrs)
+    channel.save!
     user.present?
   rescue ActiveRecord::RecordInvalid => e
     Rails.logger.warn("ChannelMetadataRefreshWorker: #{channel.login} update failed (#{e.message})")

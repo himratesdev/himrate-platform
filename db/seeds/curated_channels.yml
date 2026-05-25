@@ -1,0 +1,90 @@
+# TASK-251.12 — Curated RU-streamer list (pinned monitoring set, hybrid strategy).
+#
+# Source: Notion DB "HimRate — 100-streamer scraping list (RU)" (CO-001/TASK-151), cross-checked
+# against the live Twitch language=ru top streams (confirmed these are real, substantial streamers —
+# not the casino/restream/viewbot noise that pollutes the raw top list, which the curated list excludes).
+#
+# Pinned channels are guaranteed-monitored and protected from the discovery-cleanup prune (TASK-251.2).
+# The seeder (Channels::CuratedSeeder) is idempotent — append logins here and re-run to top up.
+# Currently 78/100 (the Notion DB had no bulk-export; remaining ~22 are topped up trivially later).
+#
+# Logins are case-insensitive on Twitch; stored lowercased to match Channel#login.
+---
+- battlestategamesru
+- casebattle_official
+- koreshzy
+- slimenkpac
+- exbo_official
+- zakvielchannel
+- welovegames
+- rejoinlive
+- anarabdullaev
+- rias_murk
+- vasianacamry
+- egorkreed
+- unclebjorn
+- dmitry_lixxx
+- chopperinho
+- deepins02
+- serega_pirat
+- dkincc
+- jeens
+- alinarinrin
+- versuta
+- rostikfacekid
+- leha_paws
+- danila_gorilla
+- vitalxshark
+- dota2_paragon_ru2
+- dota2_paragon_ru
+- koma
+- judah_xx
+- tpabomah
+- daxak
+- alohadancetv
+- avice
+- dyrachyo
+- lenagol0vach
+- stray228
+- a1ti_
+- just_ns
+- stariy_bog
+- ramzes
+- rostislav_999
+- ybicanoooobov
+- cs2_paragon_ru
+- malr1ne_dota
+- cs2_paragon_ru2
+- t2x2
+- leva2k
+- edison
+- zubarefff
+- ravshann
+- honeymad
+- yuuechka
+- gensyxa
+- morphe_ya
+- sasavot
+- paradeev1ch
+- guacamolemolly
+- mokrivskyi
+- bratishkinoff
+- mafanyaking
+- riasanxiety
+- enzzai
+- steel
+- pinkssage
+- toosefn
+- silvername
+- en1ghtt
+- tanks_blitz_official
+- blackufa
+- orkpod
+- legendaafk
+- elwycco
+- dangar
+- watchfultv
+- bigrussianmum
+- dangerlyoha
+- dmitry_bale
+- nix
