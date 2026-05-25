@@ -38,6 +38,16 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "Auto-indexing top streams (50+ viewers)"
       },
+      # TASK-251.5: bootstrap the IRC chat drainer every minute. The worker drains
+      # irc:chat_messages in a loop (~50s) then exits; cron re-runs it. Without this the
+      # queue was never consumed (worker self-rescheduled but was never bootstrapped) →
+      # ChatMessage stayed 0 even when IRC captured chat.
+      "chat_message_drain" => {
+        "cron" => "* * * * *", # Every minute
+        "class" => "ChatMessageWorker",
+        "queue" => "chat",
+        "description" => "Drain irc:chat_messages Redis queue → chat_messages (loop up to ~50s, cron-driven)"
+      },
       # TASK-086 FR-010 (ADR-086 §4.8): daily retention cleanup. 03:15 UTC — staggered
       # away from bot_list_refresh (03:00) to avoid DB contention (CleanupWorker is heavy).
       "cleanup_worker_daily" => {

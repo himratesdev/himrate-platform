@@ -2,7 +2,9 @@
 
 # TASK-024: Batch insert chat messages from Redis queue into PostgreSQL.
 # Reads from Redis list `irc:chat_messages`, inserts in batches via insert_all.
-# Self-scheduling: enqueues itself again after processing.
+# TASK-251.5: cron-driven (every minute). Drains the queue in a loop until empty or
+# MAX_RUNTIME_SECONDS, then exits — sidekiq-cron re-runs it next minute. (Replaces the old
+# self-reschedule, which was never bootstrapped → the queue never drained → ChatMessage=0.)
 
 class ChatMessageWorker
   include Sidekiq::Job
@@ -10,17 +12,23 @@ class ChatMessageWorker
 
   REDIS_QUEUE_KEY = "irc:chat_messages"
   BATCH_SIZE = 500
-  SCHEDULE_INTERVAL = 5 # seconds
+  MAX_RUNTIME_SECONDS = 50 # drain loop budget; < 60s cron cadence → no overlapping runs
 
   def perform
-    messages = drain_redis_queue
-    return schedule_next if messages.empty?
+    deadline = Time.current + MAX_RUNTIME_SECONDS
+    total = 0
 
-    records = messages.filter_map { |json| parse_message(json) }
-    batch_insert(records) if records.any?
+    loop do
+      messages = drain_redis_queue
+      break if messages.empty?
 
-    Rails.logger.info("ChatMessageWorker: inserted #{records.size}/#{messages.size} messages")
-    schedule_next
+      records = messages.filter_map { |json| parse_message(json) }
+      batch_insert(records) if records.any?
+      total += records.size
+      break if Time.current >= deadline
+    end
+
+    Rails.logger.info("ChatMessageWorker: inserted #{total} messages") if total.positive?
   end
 
   private
@@ -100,10 +108,6 @@ class ChatMessageWorker
     Time.parse(value)
   rescue ArgumentError
     Time.current
-  end
-
-  def schedule_next
-    self.class.perform_in(SCHEDULE_INTERVAL)
   end
 
   def redis
