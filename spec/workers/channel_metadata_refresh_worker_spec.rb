@@ -28,7 +28,7 @@ RSpec.describe ChannelMetadataRefreshWorker do
   it "fills metadata for a monitored channel that was never synced" do
     channel = create(:channel, twitch_id: "111", login: "bigstreamer", display_name: nil, is_monitored: true)
     channel.update_columns(metadata_synced_at: nil)
-    allow(helix).to receive(:get_users).with(ids: [ "111" ]).and_return([ helix_user(id: "111", display_name: "BigStreamer", login: "bigstreamer") ])
+    allow(helix).to receive(:get_users).with(ids: [ "111" ], raise_on_bad_request: true).and_return([ helix_user(id: "111", display_name: "BigStreamer", login: "bigstreamer") ])
 
     worker.perform
 
@@ -48,7 +48,7 @@ RSpec.describe ChannelMetadataRefreshWorker do
   it "stamps metadata_synced_at even when Helix returns no user (banned/deleted)" do
     channel = create(:channel, twitch_id: "333", login: "ghost", display_name: nil, is_monitored: true)
     channel.update_columns(metadata_synced_at: nil)
-    allow(helix).to receive(:get_users).with(ids: [ "333" ]).and_return([])
+    allow(helix).to receive(:get_users).with(ids: [ "333" ], raise_on_bad_request: true).and_return([])
 
     worker.perform
 
@@ -81,7 +81,7 @@ RSpec.describe ChannelMetadataRefreshWorker do
   it "re-syncs a channel whose metadata is stale (synced past STALE_AFTER)" do
     channel = create(:channel, twitch_id: "666", login: "oldsync", display_name: "Old", is_monitored: true)
     channel.update_columns(metadata_synced_at: 8.days.ago)
-    allow(helix).to receive(:get_users).with(ids: [ "666" ]).and_return([ helix_user(id: "666", display_name: "Fresh", login: "oldsync") ])
+    allow(helix).to receive(:get_users).with(ids: [ "666" ], raise_on_bad_request: true).and_return([ helix_user(id: "666", display_name: "Fresh", login: "oldsync") ])
 
     worker.perform
 
@@ -94,11 +94,49 @@ RSpec.describe ChannelMetadataRefreshWorker do
   it "keeps the existing display_name when Helix returns a blank one" do
     channel = create(:channel, twitch_id: "777", login: "keep", display_name: "KeepMe", is_monitored: true)
     channel.update_columns(metadata_synced_at: nil)
-    allow(helix).to receive(:get_users).with(ids: [ "777" ]).and_return([ helix_user(id: "777", display_name: "", login: "keep") ])
+    allow(helix).to receive(:get_users).with(ids: [ "777" ], raise_on_bad_request: true).and_return([ helix_user(id: "777", display_name: "", login: "keep") ])
 
     worker.perform
 
     channel.reload
     expect(channel.display_name).to eq("KeepMe")
+  end
+
+  # TASK-251.10: one invalid twitch_id (e.g. leftover test fixture) makes Helix reject the whole
+  # batch with 400 "Bad Identifiers". The worker must binary-split to isolate it so the valid ids
+  # in the same batch still get synced (was: one bad id froze all 99 siblings, retried forever).
+  it "isolates a single bad id via split-on-400 and still syncs the valid siblings" do
+    good = create(:channel, twitch_id: "good1", login: "goodone", display_name: nil, is_monitored: true)
+    bad  = create(:channel, twitch_id: "bad", login: "poison", display_name: nil, is_monitored: true)
+    [ good, bad ].each { |c| c.update_columns(metadata_synced_at: nil) }
+
+    # Helix 400s any batch containing the bad id; returns data once it's split out.
+    allow(helix).to receive(:get_users) do |ids:, raise_on_bad_request:|
+      expect(raise_on_bad_request).to be(true)
+      raise Twitch::HelixClient::BadRequestError, "Bad Identifiers" if ids.include?("bad")
+
+      ids.map { |id| helix_user(id: id, display_name: "Synced", login: "l#{id}") }
+    end
+
+    worker.perform
+
+    good.reload
+    bad.reload
+    expect(good.display_name).to eq("Synced")        # valid sibling synced despite poison in batch
+    expect(good.metadata_synced_at).to be_present
+    expect(bad.metadata_synced_at).to be_present      # poison stamped → drops out for STALE_AFTER
+    expect(bad.display_name).to be_nil                # no metadata filled for the unsyncable id
+  end
+
+  it "makes a single Helix call for a clean batch (no split)" do
+    channel = create(:channel, twitch_id: "888", login: "clean", display_name: nil, is_monitored: true)
+    channel.update_columns(metadata_synced_at: nil)
+    expect(helix).to receive(:get_users)
+      .once.with(ids: [ "888" ], raise_on_bad_request: true)
+      .and_return([ helix_user(id: "888", display_name: "Clean", login: "clean") ])
+
+    worker.perform
+
+    expect(channel.reload.display_name).to eq("Clean")
   end
 end

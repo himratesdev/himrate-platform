@@ -23,21 +23,53 @@ class ChannelMetadataRefreshWorker
     channels = channels_to_sync
     return if channels.empty?
 
-    synced = 0
-    channels.each_slice(HELIX_BATCH_SIZE) do |batch|
-      result = helix.get_users(ids: batch.map(&:twitch_id))
-      # nil = transient Helix failure (timeout/429/5xx) → skip without stamping, retry next run.
-      # [] = request OK, no such user (banned/deleted) → apply_metadata stamps to avoid retry storm.
-      next if result.nil?
+    @unsyncable = 0
+    synced = channels.each_slice(HELIX_BATCH_SIZE).sum { |batch| sync_slice(batch) }
 
-      by_id = result.index_by { |u| u["id"] }
-      batch.each { |channel| synced += 1 if apply_metadata(channel, by_id[channel.twitch_id]) }
-    end
-
-    Rails.logger.info("ChannelMetadataRefreshWorker: synced #{synced}/#{channels.size} channels")
+    # Surface @unsyncable so split amplification is observable: a non-trivial count means many ids
+    # are being isolated (each costs extra Helix calls via split) and likely need TASK-251.2 cleanup.
+    Rails.logger.info("ChannelMetadataRefreshWorker: synced #{synced}/#{channels.size} channels (#{@unsyncable} unsyncable id(s) isolated)")
   end
 
   private
+
+  # Fetch + apply metadata for one batch. A single malformed/invalid twitch_id makes Helix reject
+  # the WHOLE batch with 400 "Bad Identifiers", so we binary-split on 400 to isolate the offender
+  # (stamped processed so it stops poisoning every run) while the valid ids still get synced.
+  # Returns the count of channels whose metadata was filled.
+  def sync_slice(batch)
+    return 0 if batch.empty?
+
+    result = helix.get_users(ids: batch.map(&:twitch_id), raise_on_bad_request: true)
+    # nil = transient Helix failure (timeout/429/5xx) → skip without stamping, retry next run.
+    # [] = request OK, no such user (banned/deleted) → apply_metadata stamps to avoid retry storm.
+    return 0 if result.nil?
+
+    by_id = result.index_by { |u| u["id"] }
+    batch.count { |channel| apply_metadata(channel, by_id[channel.twitch_id]) }
+  rescue Twitch::HelixClient::BadRequestError => e
+    return isolate_bad_id(batch.first, e) if batch.one?
+
+    mid = batch.size / 2
+    sync_slice(batch[0...mid]) + sync_slice(batch[mid..])
+  end
+
+  # A single id Helix refuses (invalid/malformed — e.g. a leftover test fixture). Stamp it processed
+  # so it drops out of channels_to_sync for STALE_AFTER instead of poisoning every run; permanent
+  # removal of such rows is TASK-251.2 cleanup. Returns 0 (no metadata was filled).
+  #
+  # Safe even if a 400 were ever NOT about a specific id: apply_metadata(channel, nil) only stamps
+  # metadata_synced_at — it never overwrites an existing display_name/avatar — so the worst case is
+  # a one-off re-sync delay of STALE_AFTER, not data loss. (/users by id 400s only on bad ids.)
+  def isolate_bad_id(channel, error)
+    @unsyncable += 1
+    Rails.logger.warn(
+      "ChannelMetadataRefreshWorker: unsyncable twitch_id=#{channel.twitch_id} (#{channel.login}) " \
+      "— #{error.message.truncate(120)}; marking processed (flag for TASK-251.2 cleanup)"
+    )
+    apply_metadata(channel, nil)
+    0
+  end
 
   def channels_to_sync
     Channel.monitored.active
