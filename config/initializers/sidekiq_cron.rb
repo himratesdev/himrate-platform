@@ -48,6 +48,16 @@ Sidekiq.configure_server do |config|
         "queue" => "chat",
         "description" => "Drain irc:chat_messages Redis queue → chat_messages (loop up to ~50s, cron-driven)"
       },
+      # TASK-251.3: backfill/refresh monitored Channel metadata (display_name / avatar /
+      # broadcaster_type / description) from Helix /users. Channels created by discovery/
+      # EventSub carry only login + is_monitored → these were null. ≤1000 channels/run (≤10
+      # Helix calls), stamped via metadata_synced_at so each refreshes at most once per 7 days.
+      "channel_metadata_refresh" => {
+        "cron" => "*/10 * * * *", # Every 10 minutes
+        "class" => "ChannelMetadataRefreshWorker",
+        "queue" => "monitoring",
+        "description" => "Backfill/refresh monitored Channel metadata (display_name/avatar/...) from Helix /users"
+      },
       # TASK-086 FR-010 (ADR-086 §4.8): daily retention cleanup. 03:15 UTC — staggered
       # away from bot_list_refresh (03:00) to avoid DB contention (CleanupWorker is heavy).
       "cleanup_worker_daily" => {
