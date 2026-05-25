@@ -47,10 +47,15 @@ module Twitch
       get("/users", params, raise_on_bad_request: raise_on_bad_request)&.dig("data")
     end
 
-    def get_streams(user_logins: [], user_ids: [])
+    # language / first support the discovery quality-gate (TASK-251.13): top live streams for a
+    # language, ranked by viewers. Helix caps first at 100. Defaults keep existing callers
+    # (MonitoredLiveDetector / StreamMonitor query by user_ids) unchanged.
+    def get_streams(user_logins: [], user_ids: [], language: nil, first: nil)
       params = {}
       params[:user_login] = user_logins if user_logins.any?
       params[:user_id] = user_ids if user_ids.any?
+      params[:language] = language if language
+      params[:first] = first if first
       get("/streams", params)&.dig("data")
     end
 

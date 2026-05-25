@@ -61,6 +61,21 @@ RSpec.describe Twitch::HelixClient do
       result = client.get_streams(user_logins: [ "shroud" ])
       expect(result.first["viewer_count"]).to eq(32000)
     end
+
+    # TASK-251.13: language/first must serialize into the query string (discovery quality-gate).
+    it "serializes language + first into the /streams query" do
+      stub_request(:get, "https://api.twitch.tv/helix/streams?language=ru&first=100")
+        .to_return(
+          status: 200,
+          body: { data: [ { user_login: "ru_streamer", viewer_count: 1500, type: "live" } ] }.to_json,
+          headers: { "Content-Type" => "application/json", "Ratelimit-Remaining" => "797" }
+        )
+
+      result = client.get_streams(language: "ru", first: 100)
+
+      expect(result.first["user_login"]).to eq("ru_streamer")
+      expect(WebMock).to have_requested(:get, "https://api.twitch.tv/helix/streams?language=ru&first=100")
+    end
   end
 
   describe "#get_followers_count" do
