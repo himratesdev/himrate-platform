@@ -44,6 +44,12 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-251.2: unmonitor banned non-pinned channels (gated by :channel_prune, OFF until reviewed)"
       },
+      "live_bot_scoring" => {
+        "cron" => "*/10 * * * *", # every 10 min — re-score live streams' chatters mid-stream
+        "class" => "LiveBotScoringWorker",
+        "queue" => "signals",
+        "description" => "TASK-251.8: periodic bot-scoring of live streams (real-time bot presence in live TI)"
+      },
       # TASK-251.5: bootstrap the IRC chat drainer every minute. The worker drains
       # irc:chat_messages in a loop (~50s) then exits; cron re-runs it. Without this the
       # queue was never consumed (worker self-rescheduled but was never bootstrapped) →
