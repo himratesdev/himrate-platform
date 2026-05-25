@@ -43,26 +43,28 @@ class ChannelDiscoveryWorker
   private
 
   # Apply the tiered gate to each prelim candidate and create the new monitored channels.
-  # Returns { qualified:, created: } for the summary log. Per-stream errors don't cascade.
+  # Returns { qualified:, created: } for the summary log.
   def discover(prelim, users)
-    qualified = 0
-    created = 0
-    prelim.each do |stream|
-      user = users[stream["user_id"]]
-      next unless user && qualifies?(stream, user)
-
-      qualified += 1
-      created += 1 if process_stream(stream, user)
-    rescue StandardError => e
-      Rails.logger.warn("ChannelDiscoveryWorker: failed for #{stream["user_login"]} (#{e.message})")
-    end
-    { qualified: qualified, created: created }
+    qualified = prelim.select { |stream| qualifies?(stream, users[stream["user_id"]]) }
+    created = qualified.count { |stream| create_channel_safely(stream, users[stream["user_id"]]) }
+    { qualified: qualified.size, created: created }
   end
 
   # Tiered viewer floor: monetized channels qualify at the lower bar, everyone else at the higher.
+  # An unresolved user (nil — Helix didn't return it) is gated out: can't verify → don't admit.
   def qualifies?(stream, user)
+    return false if user.nil?
+
     floor = MONETIZED_TYPES.include?(user["broadcaster_type"]) ? MIN_VIEWERS_MONETIZED : MIN_VIEWERS_UNMONETIZED
     stream["viewer_count"].to_i >= floor
+  end
+
+  # Create one channel, isolating per-stream errors so a single failure doesn't abort the run.
+  def create_channel_safely(stream, user)
+    process_stream(stream, user)
+  rescue StandardError => e
+    Rails.logger.warn("ChannelDiscoveryWorker: failed for #{stream["user_login"]} (#{e.message})")
+    false
   end
 
   # Resolve broadcaster_type (+ metadata) for the candidate user_ids. ids come from get_streams
