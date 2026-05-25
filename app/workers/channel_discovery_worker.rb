@@ -31,28 +31,33 @@ class ChannelDiscoveryWorker
     streams = helix.get_streams(language: LANGUAGE, first: MAX_STREAMS) || []
     # Pre-filter on the lower bar: nothing below MIN_VIEWERS_MONETIZED can qualify under either tier.
     prelim = streams.select { |s| s["viewer_count"].to_i >= MIN_VIEWERS_MONETIZED }
-    users = broadcaster_users(prelim.map { |s| s["user_id"] }.compact)
-
-    new_count = 0
-    qualified = 0
-    prelim.each do |stream|
-      user = users[stream["user_id"]]
-      next unless user && qualifies?(stream, user)
-
-      qualified += 1
-      new_count += 1 if process_stream(stream, user)
-    rescue StandardError => e
-      Rails.logger.warn("ChannelDiscoveryWorker: failed for #{stream["user_login"]} (#{e.message})")
-    end
+    stats = discover(prelim, broadcaster_users(prelim.map { |s| s["user_id"] }.compact))
 
     Rails.logger.info(
       "ChannelDiscoveryWorker: #{streams.size} #{LANGUAGE} streams, #{prelim.size} >=#{MIN_VIEWERS_MONETIZED}v, " \
-      "#{qualified} qualified (mon>=#{MIN_VIEWERS_MONETIZED}/other>=#{MIN_VIEWERS_UNMONETIZED}), #{new_count} new channels"
+      "#{stats[:qualified]} qualified (mon>=#{MIN_VIEWERS_MONETIZED}/other>=#{MIN_VIEWERS_UNMONETIZED}), #{stats[:created]} new channels"
     )
     # Scheduling via sidekiq-cron (config/initializers/sidekiq_cron.rb)
   end
 
   private
+
+  # Apply the tiered gate to each prelim candidate and create the new monitored channels.
+  # Returns { qualified:, created: } for the summary log. Per-stream errors don't cascade.
+  def discover(prelim, users)
+    qualified = 0
+    created = 0
+    prelim.each do |stream|
+      user = users[stream["user_id"]]
+      next unless user && qualifies?(stream, user)
+
+      qualified += 1
+      created += 1 if process_stream(stream, user)
+    rescue StandardError => e
+      Rails.logger.warn("ChannelDiscoveryWorker: failed for #{stream["user_login"]} (#{e.message})")
+    end
+    { qualified: qualified, created: created }
+  end
 
   # Tiered viewer floor: monetized channels qualify at the lower bar, everyone else at the higher.
   def qualifies?(stream, user)
