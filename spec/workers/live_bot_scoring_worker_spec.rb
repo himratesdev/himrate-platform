@@ -39,13 +39,15 @@ RSpec.describe LiveBotScoringWorker do
     expect(BotScoringWorker).not_to have_received(:perform_async)
   end
 
-  it "bounds the number of streams enqueued per run (MAX_STREAMS_PER_RUN)" do
+  it "bounds streams per run (oldest-started first) and warns when the cap binds" do
     stub_const("LiveBotScoringWorker::MAX_STREAMS_PER_RUN", 1)
-    create(:stream, ended_at: nil)
-    create(:stream, ended_at: nil)
+    older = create(:stream, ended_at: nil, started_at: 3.hours.ago)
+    create(:stream, ended_at: nil, started_at: 10.minutes.ago)
+    expect(Rails.logger).to receive(:warn).with(/MAX_STREAMS_PER_RUN/)
 
     worker.perform
 
+    expect(BotScoringWorker).to have_received(:perform_async).with(older.id).once
     expect(BotScoringWorker).to have_received(:perform_async).exactly(1).time
   end
 end

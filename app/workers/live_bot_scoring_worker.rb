@@ -22,10 +22,15 @@ class LiveBotScoringWorker
   def perform
     return unless Flipper.enabled?(:stream_monitor) && Flipper.enabled?(:bot_scoring)
 
-    stream_ids = Stream.where(ended_at: nil).order(:started_at).limit(MAX_STREAMS_PER_RUN).pluck(:id)
+    stream_ids = Stream.active.order(:started_at).limit(MAX_STREAMS_PER_RUN).pluck(:id)
     # BotScoringWorker skips streams with 0 chatters, so no need to pre-filter on chat here.
     stream_ids.each { |stream_id| BotScoringWorker.perform_async(stream_id) }
 
+    # Make the cap binding observable: past MAX_STREAMS_PER_RUN some live streams are skipped this
+    # run (oldest-first), which is the trigger to implement Stream#bot_scored_at rotation (follow-up).
+    if stream_ids.size == MAX_STREAMS_PER_RUN
+      Rails.logger.warn("LiveBotScoringWorker: MAX_STREAMS_PER_RUN=#{MAX_STREAMS_PER_RUN} cap reached — newer live streams skipped this run; add Stream#bot_scored_at rotation (TASK-251.8 follow-up)")
+    end
     Rails.logger.info("LiveBotScoringWorker: enqueued bot-scoring for #{stream_ids.size} live streams")
   end
 end
