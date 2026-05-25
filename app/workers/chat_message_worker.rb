@@ -19,12 +19,10 @@ class ChatMessageWorker
     total = 0
 
     loop do
-      messages = drain_redis_queue
-      break if messages.empty?
+      raw = drain_redis_queue
+      break if raw.empty?
 
-      records = messages.filter_map { |json| parse_message(json) }
-      batch_insert(records) if records.any?
-      total += records.size
+      total += insert_batch(raw)
       break if Time.current >= deadline
     end
 
@@ -32,6 +30,27 @@ class ChatMessageWorker
   end
 
   private
+
+  # Insert one drained batch. drain_redis_queue already removed it from Redis, so on an
+  # unexpected (e.g. connection-level) failure re-queue the raw batch before re-raising —
+  # otherwise the batch would be lost (CR nit-1). StatementInvalid is handled inside
+  # batch_insert (per-record), so only connection/unexpected errors reach the rescue here.
+  def insert_batch(raw)
+    records = raw.filter_map { |json| parse_message(json) }
+    batch_insert(records) if records.any?
+    records.size
+  rescue StandardError => e
+    requeue(raw)
+    raise e
+  end
+
+  # Restore a drained batch to the tail (oldest-first FIFO preserved) so Sidekiq retry
+  # re-processes it. Best-effort: if Redis itself is down the batch is already lost.
+  def requeue(raw)
+    redis.rpush(REDIS_QUEUE_KEY, *raw) if raw.any?
+  rescue Redis::BaseError
+    nil
+  end
 
   def drain_redis_queue
     results = redis.multi do |tx|
