@@ -79,23 +79,26 @@ class ChannelDiscoveryWorker
     users.index_by { |u| u["id"] }
   end
 
-  # Returns true if a new channel was created. Fills metadata at creation from the already-fetched
-  # Helix user (shared mapping with the metadata worker / seeder — Channel#assign_helix_metadata).
+  # Monitor a qualifying channel: create it, or re-monitor an existing unmonitored one (e.g. a
+  # channel the TASK-251.2 prune unmonitored that has since returned live and re-cleared the gate).
+  # Returns true when it (re)monitored, false when already monitored / malformed. Fills metadata
+  # from the already-fetched Helix user (shared Channel#assign_helix_metadata).
   def process_stream(stream, user)
     twitch_id = stream["user_id"]
     login = stream["user_login"]&.downcase
     return false unless twitch_id && login
 
     channel = Channel.find_or_initialize_by(twitch_id: twitch_id)
-    return false unless channel.new_record?
+    return false if channel.is_monitored? # already monitored → nothing to do
 
+    was_new = channel.new_record?
     channel.login = login
     channel.is_monitored = true
     channel.assign_helix_metadata(user)
     channel.save!
 
-    subscribe_eventsub(channel)
-    Rails.logger.info("ChannelDiscoveryWorker: new channel #{login} (#{twitch_id}, #{user["broadcaster_type"].presence || "none"}, #{stream["viewer_count"]}v)")
+    subscribe_eventsub(channel) if was_new # existing channels keep their subscription; pull-based detector covers them
+    Rails.logger.info("ChannelDiscoveryWorker: #{was_new ? "new" : "re-monitored"} channel #{login} (#{twitch_id}, #{user["broadcaster_type"].presence || "none"}, #{stream["viewer_count"]}v)")
     true
   end
 

@@ -8,7 +8,8 @@
 # for it (banned / deleted / renamed). Pinned curated channels (TASK-251.12) are ALWAYS protected.
 #
 # Prune = set is_monitored=false (reversible, NOT a delete): the row + any history is kept and
-# auditable, and if the channel ever returns live it is re-added by the quality-gated discovery.
+# auditable, and if the channel ever returns live and re-clears the quality-gate, discovery
+# re-monitors it (ChannelDiscoveryWorker#process_stream re-monitors existing unmonitored channels).
 # Bounded per run (MAX_PER_RUN) + batched update_all so it scales to tens of thousands of channels
 # without N+1 or long locks; the cron re-runs to drain a backlog and to catch newly-banned channels
 # over time. Gated behind the :channel_prune kill-switch (HOOK flag, OFF by default — enabled only
@@ -26,7 +27,9 @@ class ChannelPruneWorker
     rows = eligible.pluck(:id, :login)
     return if rows.empty?
 
-    pruned = Channel.where(id: rows.map(&:first)).update_all(is_monitored: false, updated_at: Time.current)
+    # Re-assert is_pinned=false in the UPDATE so a channel pinned in the pluck→update window is never
+    # unmonitored (pinned curated channels are protected even under the race).
+    pruned = Channel.where(id: rows.map(&:first), is_pinned: false).update_all(is_monitored: false, updated_at: Time.current)
     Rails.logger.info("ChannelPruneWorker: unmonitored #{pruned} banned non-pinned channels (sample: #{sample(rows)})")
   end
 
