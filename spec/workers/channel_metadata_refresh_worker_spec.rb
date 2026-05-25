@@ -76,4 +76,29 @@ RSpec.describe ChannelMetadataRefreshWorker do
     expect(channel.metadata_synced_at).to be_nil
     expect(channel.display_name).to be_nil
   end
+
+  # CR iter-2 nit: cover the positive stale-resync path (synced > STALE_AFTER ago → re-fetched)
+  it "re-syncs a channel whose metadata is stale (synced past STALE_AFTER)" do
+    channel = create(:channel, twitch_id: "666", login: "oldsync", display_name: "Old", is_monitored: true)
+    channel.update_columns(metadata_synced_at: 8.days.ago)
+    allow(helix).to receive(:get_users).with(ids: [ "666" ]).and_return([ helix_user(id: "666", display_name: "Fresh", login: "oldsync") ])
+
+    worker.perform
+
+    channel.reload
+    expect(channel.display_name).to eq("Fresh")
+    expect(channel.metadata_synced_at).to be > 1.minute.ago
+  end
+
+  # CR iter-2 nit: cover the Nit-4 blank fallback (Helix blank display_name → existing kept)
+  it "keeps the existing display_name when Helix returns a blank one" do
+    channel = create(:channel, twitch_id: "777", login: "keep", display_name: "KeepMe", is_monitored: true)
+    channel.update_columns(metadata_synced_at: nil)
+    allow(helix).to receive(:get_users).with(ids: [ "777" ]).and_return([ helix_user(id: "777", display_name: "", login: "keep") ])
+
+    worker.perform
+
+    channel.reload
+    expect(channel.display_name).to eq("KeepMe")
+  end
 end
