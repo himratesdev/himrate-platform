@@ -38,8 +38,8 @@ module BotDetection
     #   chat_stats: { message_count:, cv_timing:, entropy:, has_custom_emotes: },
     #   known_bot: { bot:, confidence:, sources: },
     #   cross_channel_count: Integer,
-    #   profile: { created_at:, profile_view_count:, followers_count:, follows_count:,
-    #              description:, banner_image_url:, videos_count:, last_broadcast_at: } (optional)
+    #   profile: { created_at:, profile_view_count:, followers_count:, follows_count: } (optional —
+    #              genuine bot-account traits only; streamer-presence fields were dropped, TASK-251.W2b)
     # }
     def score(username, stream_context)
       components = {}

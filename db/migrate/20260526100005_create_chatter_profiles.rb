@@ -1,9 +1,9 @@
 # frozen_string_literal: true
 
-# TASK-251.W2b: cross-stream cache of per-chatter Twitch profile data (account age,
-# followers, follows, profile views, videos, description/banner presence, last broadcast).
-# Feeds BotDetection::Scorer#score_profile → revives Account Profile Scoring (signal #11),
-# which was dead because BotScoringWorker hardcoded `profile: nil` ("future enhancement").
+# TASK-251.W2b: cross-stream cache of per-chatter Twitch profile data — only the genuine
+# bot-account traits the scorer uses: account age (twitch_created_at), followers, follows,
+# profile views. Feeds BotDetection::Scorer#score_profile → revives Account Profile Scoring
+# (signal #11), which was dead because BotScoringWorker hardcoded `profile: nil`.
 #
 # Cached per-user (not per-stream) and refreshed on a staleness cadence by
 # ChatterProfileRefreshWorker (off the :signals hot path), so BotScoringWorker reads the
