@@ -70,6 +70,16 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "Backfill/refresh monitored Channel metadata (display_name/avatar/...) from Helix /users"
       },
+      # TASK-251.W2a: snapshot monitored channels' follower count from Helix (1 call/broadcaster,
+      # ≤200/run, once/day per channel via followers_synced_at). Feeds Streamer Reputation Growth
+      # #12 + Follower Quality #13 (both were dead — no production writer). Frequent cron clears
+      # the daily backlog in bursts then idles (stale-guard selects 0). Gated by :follower_snapshot.
+      "follower_snapshot" => {
+        "cron" => "*/15 * * * *", # Every 15 minutes — bounded batch covers all monitored within a day
+        "class" => "FollowerSnapshotWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-251.W2a: daily-cadence Helix follower-count snapshots (Reputation #12/#13), gated :follower_snapshot"
+      },
       # TASK-086 FR-010 (ADR-086 §4.8): daily retention cleanup. 03:15 UTC — staggered
       # away from bot_list_refresh (03:00) to avoid DB contention (CleanupWorker is heavy).
       "cleanup_worker_daily" => {
