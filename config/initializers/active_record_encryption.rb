@@ -2,14 +2,20 @@
 
 # Configure Active Record Encryption from ENV vars.
 # Required for AuthProvider.encrypts :access_token, :refresh_token
-encryption_keys = %w[PRIMARY_KEY DETERMINISTIC_KEY KEY_DERIVATION_SALT].map { |k|
-  ENV["ACTIVE_RECORD_ENCRYPTION_#{k}"]
+encryption_config = {
+  primary_key: ENV["ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY"],
+  deterministic_key: ENV["ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY"],
+  key_derivation_salt: ENV["ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT"]
 }
 
-if encryption_keys.any?(&:present?)
-  raise "Incomplete Active Record Encryption config: all 3 keys required" unless encryption_keys.all?(&:present?)
+if encryption_config.values.any?(&:present?)
+  raise "Incomplete Active Record Encryption config: all 3 keys required" unless encryption_config.values.all?(&:present?)
 
-  Rails.application.config.active_record.encryption.primary_key = ENV["ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY"]
-  Rails.application.config.active_record.encryption.deterministic_key = ENV["ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY"]
-  Rails.application.config.active_record.encryption.key_derivation_salt = ENV["ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT"]
+  # BUG-028: apply via ActiveRecord::Encryption.configure, NOT
+  # `config.active_record.encryption.x=`. config/initializers/* run after the
+  # `active_record.encryption` railtie has already applied config.active_record.encryption
+  # to the live ActiveRecord::Encryption.config — so a late `config.x=` here never reaches
+  # it, leaving primary_key nil → "Missing Active Record encryption credential" on the first
+  # encrypted write (AuthProvider tokens). configure(...) sets the live config directly.
+  ActiveRecord::Encryption.configure(**encryption_config)
 end
