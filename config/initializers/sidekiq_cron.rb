@@ -80,6 +80,15 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-251.W2a: daily-cadence Helix follower-count snapshots (Reputation #12/#13), gated :follower_snapshot"
       },
+      # TASK-251.W2b: warm the ChatterProfile cache from GQL for recently-active chatters (≤350/run,
+      # ≤10 GQL batches, once/30d per chatter). BotScoringWorker reads the cache → Account Profile
+      # Scoring (#11). Runs on :monitoring (off the :signals hot path). Gated by :chatter_profile_enrichment.
+      "chatter_profile_enrichment" => {
+        "cron" => "*/5 * * * *", # Every 5 minutes — warms the cache over time for active chatters
+        "class" => "ChatterProfileRefreshWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-251.W2b: GQL per-chatter profile cache (Account Profile Scoring #11), gated :chatter_profile_enrichment"
+      },
       # TASK-086 FR-010 (ADR-086 §4.8): daily retention cleanup. 03:15 UTC — staggered
       # away from bot_list_refresh (03:00) to avoid DB contention (CleanupWorker is heavy).
       "cleanup_worker_daily" => {

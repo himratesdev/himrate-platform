@@ -7,11 +7,17 @@
 module TrustIndex
   module Signals
     class AccountProfileScoring < BaseSignal
+      # TASK-251.W2b: only genuine bot-account traits count as flags. Streamer-presence flags
+      # (description/banner/videos/last_broadcast nulls) were dropped from the scorer — they are
+      # normal for viewers (not content creators) and falsely flagged ~50% of real chatters.
       PROFILE_KEYS = %w[
         profile_view_zero followers_zero account_age_7d account_age_30d
-        follows_zero follows_excessive description_null banner_null
-        videos_zero last_broadcast_null
+        follows_zero follows_excessive
       ].freeze
+
+      # Zero-weight marker the scorer sets on every chatter whose profile was actually fetched.
+      # Used as the denominator so a clean profile (no flags) counts as "profiled, not suspicious".
+      PROFILE_PRESENT_KEY = "profile_present"
 
       MIN_FLAGS = 3
 
@@ -46,10 +52,13 @@ module TrustIndex
 
       private
 
+      # "We have this chatter's profile" = the scorer set the zero-weight profile_present marker.
+      # (Previously this checked for any flag key, so a clean profile looked like "no data" and was
+      # excluded from the denominator — inflating the suspicious ratio.)
       def has_profile_data?(components)
         return false unless components.is_a?(Hash)
 
-        PROFILE_KEYS.any? { |key| components.key?(key) || components.key?(key.to_sym) }
+        components.key?(PROFILE_PRESENT_KEY) || components.key?(PROFILE_PRESENT_KEY.to_sym)
       end
 
       def count_profile_flags(components)

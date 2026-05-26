@@ -36,6 +36,11 @@ class BotScoringWorker
     # Cross-channel presence (FR-010): count distinct channels per user in last 24h
     cross_channel_counts = fetch_cross_channel_counts(usernames)
 
+    # TASK-251.W2b: per-chatter profile from the ChatterProfile cache (populated off the :signals
+    # hot path by ChatterProfileRefreshWorker). Read-only here — zero GQL calls in bot scoring.
+    # Feeds Scorer#score_profile → Account Profile Scoring (#11). Graceful for un-cached chatters.
+    profiles = fetch_chatter_profiles(usernames)
+
     # Score each chatter
     scores = []
     started_at = Time.current
@@ -46,7 +51,8 @@ class BotScoringWorker
           username: username,
           chatter_data: chatters[username],
           known_bot: known_bot_results[username],
-          cross_channel_count: cross_channel_counts[username] || 0
+          cross_channel_count: cross_channel_counts[username] || 0,
+          profile: profiles[username]
         )
 
         result = scorer.score(username, context)
@@ -206,13 +212,23 @@ class BotScoringWorker
     {}
   end
 
-  def build_context(username:, chatter_data:, known_bot:, cross_channel_count:)
+  # TASK-251.W2b: look up cached Twitch profiles for the scored chatters (one query, no N+1,
+  # no GQL). Returns { username => scorer_profile_hash }; un-cached chatters are simply absent
+  # (Scorer#score_profile is a no-op on nil profile).
+  def fetch_chatter_profiles(usernames)
+    ChatterProfile.where(login: usernames).index_by(&:login).transform_values(&:to_scorer_profile)
+  rescue ActiveRecord::StatementInvalid => e
+    Rails.logger.warn("BotScoringWorker: chatter profile lookup failed (#{e.message})")
+    {}
+  end
+
+  def build_context(username:, chatter_data:, known_bot:, cross_channel_count:, profile: nil)
     {
       irc_tags: chatter_data[:irc_tags],
       chat_stats: chatter_data[:chat_stats],
       known_bot: known_bot || { bot: false, confidence: 0.0, sources: [] },
       cross_channel_count: cross_channel_count,
-      profile: nil # GQL profile data — future enhancement, graceful without it
+      profile: profile
     }
   end
 end
