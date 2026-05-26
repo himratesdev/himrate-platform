@@ -11,8 +11,15 @@
 # ~0.01–0.08 of CCV — measured on staging) — feeding that at 0.65 would yield value≈0.9 for
 # EVERY channel = false view-bot flag (harmful + legal-sensitive). So we abstain rather than
 # misfire. chatter_ccv_ratio (#2) already covers active-chatters/CCV at a calibrated threshold.
-# Re-scope/recalibration (recalibrate-to-active / retire-as-redundant / wire present-chatters
-# via extension gql_data) tracked in TASK-C1 (TI v2 signals) + TASK-251.9.
+#
+# TASK-251.9 re-scope decision — KEEP this signal (do NOT retire, do NOT recalibrate onto
+# active-chatters: that would merely duplicate chatter_ccv_ratio #2). It is a DISTINCT signal:
+# the share of CCV PRESENT/connected in chat (whether or not they type) vs #2's actively-typing
+# share — present-vs-silent catches view-only inflation that #2 structurally cannot. Its only
+# viable source is the extension's browser-context present-chatters/community ingest (gql_data;
+# integrity-blocked server-side). It stays abstaining until that ingest is wired, and the compute
+# path is built TOGETHER with the gql_data feature — no source means nothing to compute now, so
+# we do not add a speculative compute path. Re-activation tracked under TASK-C1 (TI v2 signals).
 
 module TrustIndex
   module Signals

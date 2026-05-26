@@ -10,7 +10,7 @@ RSpec.describe TrustIndex::ContextBuilder do
     context = described_class.build(stream)
 
     expected_keys = %i[
-      latest_ccv latest_chatters ccv_series_15min ccv_series_30min ccv_series_10min
+      latest_ccv ccv_series_15min ccv_series_30min ccv_series_10min
       chat_rate_10min chat_username_counts_5min unique_chatters_60min bot_scores
       channel_protection_config cross_channel_counts raids recent_raids category
       stream_duration_min
@@ -42,7 +42,6 @@ RSpec.describe TrustIndex::ContextBuilder do
   it "returns nils gracefully when no data" do
     context = described_class.build(stream)
     expect(context[:latest_ccv]).to be_nil
-    expect(context[:latest_chatters]).to be_nil
     expect(context[:bot_scores]).to eq([])
     expect(context[:raids]).to eq([])
   end
