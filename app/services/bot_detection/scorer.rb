@@ -9,9 +9,11 @@
 #   Definitive (1.0): 2+ bot databases, 100+ channels/day
 #   Very High (0.95): 1 bot database
 #   High (0.60-0.70): CV timing, entropy, profileViewCount=0, followers=0, createdAt<7d
-#   Medium (0.30-0.40): createdAt<30d, follows=0, follows>1000, 0 custom emotes, description=null
-#   Low (0.10-0.15): bannerImageURL=null, videos=0, lastBroadcast=null
+#   Medium (0.30-0.40): createdAt<30d, follows=0, follows>1000, 0 custom emotes
 #   Anti-bot (negative): mod/VIP whitelist, subscriber, returning-chatter, prediction/poll, hype train
+# TASK-251.W2b: streamer-presence profile flags (description=null, bannerImageURL=null, videos=0,
+#   lastBroadcast=null) were CALIBRATED OUT of score_profile — they are normal for viewers (not
+#   content creators) and false-flagged ~50% of real chatters as suspicious.
 
 module BotDetection
   class Scorer
