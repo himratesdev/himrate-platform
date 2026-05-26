@@ -46,8 +46,13 @@ class FollowerSnapshotWorker
     return false if count.nil?
 
     now = Time.current
-    FollowerSnapshot.create!(channel_id: channel.id, timestamp: now, followers_count: count)
-    channel.update!(followers_total: count, followers_synced_at: now)
+    # Atomic: a snapshot without its followers_synced_at stamp would let the next run create a
+    # second row for the same day (defeating the once-per-STALE_AFTER guard), so both writes commit
+    # together or neither does.
+    ActiveRecord::Base.transaction do
+      FollowerSnapshot.create!(channel_id: channel.id, timestamp: now, followers_count: count)
+      channel.update!(followers_total: count, followers_synced_at: now)
+    end
     true
   rescue ActiveRecord::RecordInvalid => e
     Rails.logger.warn("FollowerSnapshotWorker: #{channel.login} snapshot failed (#{e.message})")
