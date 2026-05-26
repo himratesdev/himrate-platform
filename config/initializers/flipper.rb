@@ -92,6 +92,8 @@ module FlipperDefaults
     follower_snapshot: "TASK-251.W2a", # FollowerSnapshotWorker: daily Helix follower-count
     # snapshots → Streamer Reputation Growth #12 / Follower Quality #13. OFF by default —
     # additive data collection, enabled per-env post-deploy (same pattern as other monitoring workers).
+    chatter_profile_enrichment: "TASK-251.W2b", # ChatterProfileRefreshWorker: GQL per-chatter
+    # profile cache → Account Profile Scoring (#11). OFF by default — additive, enabled per-env.
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
     billing_auto_subscription_creation: "BUG-012", # Dev/staging only: ChannelsController#track
     # auto-creates Subscription if missing. Production: flag OFF — Subscription must pre-exist
