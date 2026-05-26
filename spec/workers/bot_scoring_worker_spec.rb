@@ -62,17 +62,34 @@ RSpec.describe BotScoringWorker do
       ChatMessage.create!(stream: stream, channel_login: "prof_channel", username: "botty",
                           message_text: "spam #{i}", timestamp: 90.minutes.ago + i.minutes, msg_type: "privmsg")
     end
-    # Cached profile with strong bot signals (zero followers + brand-new account + zero profile views).
+    # Cached profile with genuine bot signals (zero followers + brand-new account + zero profile
+    # views + follows nobody).
     ChatterProfile.create!(login: "botty", twitch_created_at: 2.days.ago, followers_count: 0,
-                           follows_count: 0, profile_view_count: 0, videos_count: 0,
-                           description_present: false, banner_present: false, fetched_at: Time.current)
+                           follows_count: 0, profile_view_count: 0, fetched_at: Time.current)
     allow_any_instance_of(KnownBotService).to receive(:check_batch).and_return("botty" => { bot: false, confidence: 0.0, sources: [] })
 
     worker.perform(stream.id)
 
-    components = PerUserBotScore.find_by(stream: stream, username: "botty").components
-    # Profile-derived flags now present (were never set when profile was hardcoded nil).
-    expect(components.keys.map(&:to_s)).to include("followers_zero", "account_age_7d", "profile_view_zero")
+    components = PerUserBotScore.find_by(stream: stream, username: "botty").components.keys.map(&:to_s)
+    # Profile was scored (marker) + genuine bot flags present (were never set when profile was nil).
+    expect(components).to include("profile_present", "followers_zero", "account_age_7d", "profile_view_zero", "follows_zero")
+  end
+
+  # TASK-251.W2b: a normal viewer's profile (old account, has followers, follows channels) must NOT
+  # be flagged — only the zero-weight profile_present marker, no suspicious flags.
+  it "does NOT flag a normal viewer's cached profile (calibration: no streamer-presence flags)" do
+    channel = Channel.create!(twitch_id: "779", login: "viewer_channel", display_name: "V")
+    stream = Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
+    3.times { |i| ChatMessage.create!(stream: stream, channel_login: "viewer_channel", username: "realviewer", message_text: "hi #{i}", timestamp: 90.minutes.ago + i.minutes, msg_type: "privmsg") }
+    ChatterProfile.create!(login: "realviewer", twitch_created_at: 3.years.ago, followers_count: 25,
+                           follows_count: 120, profile_view_count: nil, fetched_at: Time.current)
+    allow_any_instance_of(KnownBotService).to receive(:check_batch).and_return("realviewer" => { bot: false, confidence: 0.0, sources: [] })
+
+    worker.perform(stream.id)
+
+    components = PerUserBotScore.find_by(stream: stream, username: "realviewer").components.keys.map(&:to_s)
+    expect(components).to include("profile_present")
+    expect(components).not_to include("followers_zero", "account_age_7d", "account_age_30d", "follows_zero", "profile_view_zero")
   end
 
   it "handles stream with 0 chatters" do

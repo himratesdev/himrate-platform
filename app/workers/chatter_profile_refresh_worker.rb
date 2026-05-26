@@ -16,6 +16,11 @@ class ChatterProfileRefreshWorker
   STALE_AFTER = 30.days   # profile data is slow-moving; re-fetch rarely
   MAX_PER_RUN = 350       # ≤10 GQL batches (batch size 35); cron re-runs to clear the backlog
 
+  # Columns updated on a re-fetch (excludes login = unique key; created_at/updated_at are managed
+  # by record_timestamps so created_at is preserved and updated_at is bumped automatically).
+  UPDATE_COLUMNS = %i[twitch_user_id twitch_created_at followers_count follows_count
+                      profile_view_count fetched_at].freeze
+
   def perform
     return unless Flipper.enabled?(:stream_monitor) && Flipper.enabled?(:chatter_profile_enrichment)
 
@@ -23,12 +28,15 @@ class ChatterProfileRefreshWorker
     return if logins.empty?
 
     profiles_by_login = fetch_profiles(logins)
-    rows = logins.map { |login| build_row(login, profiles_by_login[login]) }
+    # Cache ONLY resolved profiles. Unresolved logins (transient GQL failure OR genuine
+    # banned/deleted) are deliberately NOT stamped: caching them with null fields would feed
+    # fabricated flags into the scorer / #11. "Un-cached" = "no signal" (Scorer no-ops on nil).
+    # Anti-retry isn't needed here (unlike monitored channels): an unresolved chatter ages out of
+    # the LOOKBACK window once they stop chatting, so it won't be re-selected for long.
+    rows = profiles_by_login.filter_map { |login, profile| build_row(login, profile) if profile }
+    ChatterProfile.upsert_all(rows, unique_by: :login, update_only: UPDATE_COLUMNS, record_timestamps: true) if rows.any?
 
-    ChatterProfile.upsert_all(rows, unique_by: :login) if rows.any?
-
-    resolved = profiles_by_login.values.compact.size
-    Rails.logger.info("ChatterProfileRefreshWorker: enriched #{logins.size} chatters (#{resolved} resolved, #{logins.size - resolved} unresolved/stamped)")
+    Rails.logger.info("ChatterProfileRefreshWorker: cached #{rows.size}/#{logins.size} chatters (#{logins.size - rows.size} unresolved → retried)")
   end
 
   private
@@ -61,25 +69,16 @@ class ChatterProfileRefreshWorker
     result
   end
 
-  # Build an upsert row. Resolved logins get full profile data; unresolved (banned/deleted/GQL
-  # miss) are still stamped (fetched_at + defaults) so they drop out for STALE_AFTER instead of
-  # being re-fetched every run (anti-retry, mirrors ChannelMetadataRefreshWorker).
+  # Build an upsert row from a resolved GQL profile (callers pass only resolved profiles).
   def build_row(login, profile)
-    now = Time.current
-    base = { login: login, fetched_at: now, created_at: now, updated_at: now }
-    return base.merge(description_present: false, banner_present: false) unless profile
-
-    base.merge(
+    {
+      login: login, fetched_at: Time.current,
       twitch_user_id: profile[:id],
       twitch_created_at: parse_time(profile[:created_at]),
       followers_count: profile[:followers_count],
       follows_count: profile[:follows_count],
-      profile_view_count: profile[:profile_view_count],
-      videos_count: profile[:videos_count],
-      description_present: profile[:description].present?,
-      banner_present: profile[:banner_image_url].present?,
-      last_broadcast_at: parse_time(profile.dig(:last_broadcast, :started_at))
-    )
+      profile_view_count: profile[:profile_view_count]
+    }
   end
 
   def parse_time(value)

@@ -17,10 +17,9 @@ RSpec.describe ChatterProfileRefreshWorker do
                         timestamp: ts, msg_type: "privmsg")
   end
 
-  def profile(login:, created_at: "2020-01-01T00:00:00Z", followers: 100, description: "bio", banner: "url")
+  def profile(login:, created_at: "2020-01-01T00:00:00Z", followers: 100)
     { id: "id_#{login}", login: login, created_at: created_at, followers_count: followers,
-      follows_count: 50, profile_view_count: 10, videos_count: 2, description: description,
-      banner_image_url: banner, last_broadcast: { started_at: "2021-01-01T00:00:00Z" } }
+      follows_count: 50, profile_view_count: 10 }
   end
 
   it "skips when either flag is disabled" do
@@ -37,22 +36,27 @@ RSpec.describe ChatterProfileRefreshWorker do
 
     cp = ChatterProfile.find_by(login: "alice")
     expect(cp.followers_count).to eq(0)
+    expect(cp.follows_count).to eq(50)
+    expect(cp.profile_view_count).to eq(10)
     expect(cp.twitch_user_id).to eq("id_alice")
-    expect(cp.description_present).to be(true)
-    expect(cp.banner_present).to be(true)
     expect(cp.twitch_created_at).to be_present
     expect(cp.fetched_at).to be_present
   end
 
-  it "stamps unresolved (banned/deleted) chatters to avoid re-fetch every run (anti-retry)" do
+  # MF-1: unresolved logins (banned/deleted OR transient GQL miss) are NOT cached — caching them
+  # with null fields would feed fabricated flags into bot scoring / #11. Un-cached = retried.
+  it "does NOT cache unresolved (nil) chatters" do
     chat("ghost")
     allow(gql).to receive(:batch_bot_check).with(logins: [ "ghost" ]).and_return([ nil ])
 
-    expect { worker.perform }.to change(ChatterProfile, :count).by(1)
-    cp = ChatterProfile.find_by(login: "ghost")
-    expect(cp.fetched_at).to be_present
-    expect(cp.twitch_user_id).to be_nil
-    expect(cp.description_present).to be(false)
+    expect { worker.perform }.not_to change(ChatterProfile, :count)
+  end
+
+  it "does NOT cache anyone when the GQL batch fails transiently (retried next run)" do
+    chat("flap")
+    allow(gql).to receive(:batch_bot_check).and_raise(StandardError, "GQL timeout")
+
+    expect { worker.perform }.not_to change(ChatterProfile, :count)
   end
 
   it "skips chatters already cached within STALE_AFTER" do

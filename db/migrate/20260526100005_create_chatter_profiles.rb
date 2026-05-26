@@ -14,14 +14,10 @@ class CreateChatterProfiles < ActiveRecord::Migration[8.0]
     create_table :chatter_profiles, id: :uuid do |t|
       t.string :login, null: false
       t.string :twitch_user_id
-      t.datetime :twitch_created_at
-      t.integer :followers_count
-      t.integer :follows_count
-      t.integer :profile_view_count
-      t.integer :videos_count
-      t.boolean :description_present, null: false, default: false
-      t.boolean :banner_present, null: false, default: false
-      t.datetime :last_broadcast_at
+      t.datetime :twitch_created_at  # account age (account_age_7d / _30d flags)
+      t.integer :followers_count     # followers_zero flag
+      t.integer :follows_count       # follows_zero / follows_excessive flags
+      t.integer :profile_view_count  # profile_view_zero flag (often nil — Twitch deprecated)
       t.datetime :fetched_at, null: false
 
       t.timestamps

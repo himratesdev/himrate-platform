@@ -157,6 +157,11 @@ module BotDetection
 
       total = 0.0
 
+      # TASK-251.W2b: mark that a profile was actually scored (zero bot-weight). Account Profile
+      # Scoring (#11) uses this as its denominator so a clean viewer profile (no flags) counts as
+      # "profiled, not suspicious" rather than "no data" (which would inflate the suspicious %).
+      components[:profile_present] = { value: true, weight: 0.0, contribution: 0.0 }
+
       # High signals
       if profile[:profile_view_count]&.zero?
         weight = 0.65
@@ -191,31 +196,11 @@ module BotDetection
         total += weight
       end
 
-      if profile[:description].nil?
-        weight = 0.30
-        components[:description_null] = { value: nil, weight: weight, contribution: weight }
-        total += weight
-      end
-
-      # Low signals
-      if profile[:banner_image_url].nil?
-        weight = 0.15
-        components[:banner_null] = { value: nil, weight: weight, contribution: weight }
-        total += weight
-      end
-
-      if profile[:videos_count]&.zero?
-        weight = 0.10
-        components[:videos_zero] = { value: 0, weight: weight, contribution: weight }
-        total += weight
-      end
-
-      if profile[:last_broadcast_at].nil?
-        weight = 0.10
-        components[:last_broadcast_null] = { value: nil, weight: weight, contribution: weight }
-        total += weight
-      end
-
+      # TASK-251.W2b: description_null / banner_null / videos_zero / last_broadcast_null were DROPPED.
+      # They are normal for VIEWERS (who are not content creators) and flagged ~50% of real chatters
+      # as suspicious (measured on staging) → false positives in bot scoring and Account Profile
+      # Scoring (#11). Profile flags now cover only genuine bot-account traits above (zero profile
+      # views, zero followers, new account, follow-count anomaly).
       total
     end
 
