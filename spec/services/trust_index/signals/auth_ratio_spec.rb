@@ -16,19 +16,19 @@ RSpec.describe TrustIndex::Signals::AuthRatio do
   # active-chatters data (which would false-flag every channel as view-botted).
   # Re-scope tracked in TASK-C1 / TASK-251.9.
   it "abstains (insufficient) — present-chatters count unavailable server-side" do
-    result = signal.calculate(latest_ccv: 1000, latest_chatters: 800, category: "just_chatting")
+    result = signal.calculate(latest_ccv: 1000, category: "just_chatting")
     expect(result.value).to be_nil
     expect(result.confidence).to eq(0.0)
   end
 
-  it "abstains regardless of the chatters/ccv values supplied" do
-    result = signal.calculate(latest_ccv: 1000, latest_chatters: 50, category: "default")
+  it "abstains regardless of how high CCV is" do
+    result = signal.calculate(latest_ccv: 50_000, category: "default")
     expect(result.value).to be_nil
     expect(result.confidence).to eq(0.0)
   end
 
   it "reports no_ccv when CCV is absent" do
-    result = signal.calculate(latest_ccv: 0, latest_chatters: 100, category: "default")
+    result = signal.calculate(latest_ccv: 0, category: "default")
     expect(result.value).to be_nil
     expect(result.confidence).to eq(0.0)
   end

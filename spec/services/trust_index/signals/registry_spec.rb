@@ -47,7 +47,7 @@ RSpec.describe TrustIndex::Signals::Registry do
   end
 
   describe ".compute_all" do
-    let(:context) { { latest_ccv: nil, latest_chatters: nil, category: "default" } }
+    let(:context) { { latest_ccv: nil, category: "default" } }
 
     it "returns hash with 11 keys" do
       results = described_class.compute_all(context)
