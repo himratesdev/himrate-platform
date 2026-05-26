@@ -95,12 +95,13 @@ module Api
         }
       end
 
+      # TASK-251.6: auth_percent intentionally suppressed (nil). ChattersSnapshot.auth_ratio
+      # now holds ACTIVE chat-senders / CCV (~0.01–0.08), not the "authenticated/present
+      # chatters" share this field implies — surfacing ~3% as "auth_percent" reads as
+      # "97% bots" (the misleading, legal-sensitive metric the Auth Ratio signal itself
+      # abstains on). Re-enable when a present-chatters source is wired (TASK-251.9).
       def latest_auth_ratio
-        stream = @channel.streams.where(ended_at: nil).order(started_at: :desc).first ||
-                 @channel.streams.order(started_at: :desc).first
-        return nil unless stream
-
-        ChattersSnapshot.where(stream: stream).order(timestamp: :desc).pick(:auth_ratio)&.to_f
+        nil
       end
 
       def historical_erv_7d

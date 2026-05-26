@@ -15,7 +15,6 @@ module TrustIndex
 
       {
         latest_ccv: fetch_latest_ccv(stream),
-        latest_chatters: fetch_latest_chatters(stream),
         ccv_series_15min: fetch_ccv_series(stream, 15.minutes.ago),
         ccv_series_30min: fetch_ccv_series(stream, 30.minutes.ago),
         ccv_series_10min: fetch_ccv_series(stream, 10.minutes.ago),
@@ -39,13 +38,6 @@ module TrustIndex
         stream.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count)
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: latest_ccv failed (#{e.message})")
-        nil
-      end
-
-      def fetch_latest_chatters(stream)
-        stream.chatters_snapshots.order(timestamp: :desc).pick(:unique_chatters_count)
-      rescue ActiveRecord::StatementInvalid => e
-        Rails.logger.warn("ContextBuilder: latest_chatters failed (#{e.message})")
         nil
       end
 

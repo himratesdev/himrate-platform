@@ -21,11 +21,64 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "Periodic CCV/chatters polling (Tier 1 + Tier 2)"
       },
+      # TASK-251.1: autonomous live detection over the monitored set (Helix Get-Streams →
+      # open/close Stream rows via StreamOnline/OfflineWorker). Feeds StreamMonitorWorker
+      # real active streams; without it collection only ran on stale EventSub-created streams.
+      # CR nit-2: shares the :monitoring 5-thread pool with stream_monitor (both minute-cadence);
+      # Helix sweep ~5s for ~2.4k channels today — revisit a dedicated queue if the set grows large.
+      "monitored_live_detector" => {
+        "cron" => "* * * * *", # Every minute
+        "class" => "MonitoredLiveDetectorWorker",
+        "queue" => "monitoring",
+        "description" => "Autonomous live detection: Helix Get-Streams over monitored channels → open/close Stream rows (reuses StreamOnline/OfflineWorker)"
+      },
       "channel_discovery" => {
         "cron" => "*/5 * * * *", # Every 5 minutes
         "class" => "ChannelDiscoveryWorker",
         "queue" => "monitoring",
-        "description" => "Auto-indexing top streams (50+ viewers)"
+        "description" => "Quality-gated RU discovery (affiliate/partner >=300v, non-monetized >=500v)"
+      },
+      "channel_prune" => {
+        "cron" => "17 * * * *", # hourly (offset :17 to avoid colliding with other jobs)
+        "class" => "ChannelPruneWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-251.2: unmonitor banned non-pinned channels (gated by :channel_prune, OFF until reviewed)"
+      },
+      "live_bot_scoring" => {
+        "cron" => "*/10 * * * *", # every 10 min — re-score live streams' chatters mid-stream
+        "class" => "LiveBotScoringWorker",
+        "queue" => "signals",
+        "description" => "TASK-251.8: periodic bot-scoring of live streams (real-time bot presence in live TI)"
+      },
+      # TASK-251.5: bootstrap the IRC chat drainer every minute. The worker drains
+      # irc:chat_messages in a loop (~50s) then exits; cron re-runs it. Without this the
+      # queue was never consumed (worker self-rescheduled but was never bootstrapped) →
+      # ChatMessage stayed 0 even when IRC captured chat.
+      "chat_message_drain" => {
+        "cron" => "* * * * *", # Every minute
+        "class" => "ChatMessageWorker",
+        "queue" => "chat",
+        "description" => "Drain irc:chat_messages Redis queue → chat_messages (loop up to ~50s, cron-driven)"
+      },
+      # TASK-251.3: backfill/refresh monitored Channel metadata (display_name / avatar /
+      # broadcaster_type / description) from Helix /users. Channels created by discovery/
+      # EventSub carry only login + is_monitored → these were null. ≤1000 channels/run (≤10
+      # Helix calls), stamped via metadata_synced_at so each refreshes at most once per 7 days.
+      "channel_metadata_refresh" => {
+        "cron" => "*/10 * * * *", # Every 10 minutes
+        "class" => "ChannelMetadataRefreshWorker",
+        "queue" => "monitoring",
+        "description" => "Backfill/refresh monitored Channel metadata (display_name/avatar/...) from Helix /users"
+      },
+      # TASK-251.W2a: snapshot monitored channels' follower count from Helix (1 call/broadcaster,
+      # ≤200/run, once/day per channel via followers_synced_at). Feeds Streamer Reputation Growth
+      # #12 + Follower Quality #13 (both were dead — no production writer). Frequent cron clears
+      # the daily backlog in bursts then idles (stale-guard selects 0). Gated by :follower_snapshot.
+      "follower_snapshot" => {
+        "cron" => "*/15 * * * *", # Every 15 minutes — bounded batch covers all monitored within a day
+        "class" => "FollowerSnapshotWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-251.W2a: daily-cadence Helix follower-count snapshots (Reputation #12/#13), gated :follower_snapshot"
       },
       # TASK-086 FR-010 (ADR-086 §4.8): daily retention cleanup. 03:15 UTC — staggered
       # away from bot_list_refresh (03:00) to avoid DB contention (CleanupWorker is heavy).

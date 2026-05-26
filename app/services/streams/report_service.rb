@@ -110,7 +110,10 @@ module Streams
       {
         unique_chatters: latest.unique_chatters_count,
         total_messages: latest.total_messages_count,
-        auth_ratio: latest.auth_ratio&.to_f
+        # TASK-251.6: auth_ratio suppressed (nil) — it's active-chatters/CCV (~0.01–0.08),
+        # not the authenticated/present-chatters share this field implies; surfacing it
+        # misleads (reads as mostly-bots). Re-enable with a present-chatters source (TASK-251.9).
+        auth_ratio: nil
       }
     end
 

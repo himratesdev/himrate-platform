@@ -20,6 +20,10 @@ module Twitch
     class Error < StandardError; end
     class RateLimitError < Error; end
     class AuthError < Error; end
+    # Permanent 400 client error (e.g. malformed/invalid id → "Bad Identifiers"). Distinct from a
+    # transient failure (which returns nil): retrying it won't help. Raised only when a caller opts
+    # in via `raise_on_bad_request:` so it can isolate the offending id from a batch.
+    class BadRequestError < Error; end
 
     def initialize
       @client_id = ENV.fetch("TWITCH_CLIENT_ID") { raise Error, "TWITCH_CLIENT_ID not set" }
@@ -33,17 +37,25 @@ module Twitch
       fetch_app_token
     end
 
-    def get_users(logins: [], ids: [])
+    # raise_on_bad_request: opt-in — when Helix rejects the batch with 400 ("Bad Identifiers"),
+    # raise BadRequestError instead of returning nil, so the caller can isolate the offending id.
+    # Default false keeps the legacy nil-on-error behavior for all other callers.
+    def get_users(logins: [], ids: [], raise_on_bad_request: false)
       params = {}
       params[:login] = logins if logins.any?
       params[:id] = ids if ids.any?
-      get("/users", params)&.dig("data")
+      get("/users", params, raise_on_bad_request: raise_on_bad_request)&.dig("data")
     end
 
-    def get_streams(user_logins: [], user_ids: [])
+    # language / first support the discovery quality-gate (TASK-251.13): top live streams for a
+    # language, ranked by viewers. Helix caps first at 100. Defaults keep existing callers
+    # (MonitoredLiveDetector / StreamMonitor query by user_ids) unchanged.
+    def get_streams(user_logins: [], user_ids: [], language: nil, first: nil)
       params = {}
       params[:user_login] = user_logins if user_logins.any?
       params[:user_id] = user_ids if user_ids.any?
+      params[:language] = language if language
+      params[:first] = first if first
       get("/streams", params)&.dig("data")
     end
 
@@ -71,7 +83,7 @@ module Twitch
 
     # === HTTP ===
 
-    def get(path, params = {}, retries: 0)
+    def get(path, params = {}, retries: 0, raise_on_bad_request: false)
       token = fetch_app_token
       uri = build_uri(path, params)
 
@@ -85,13 +97,19 @@ module Twitch
       case response.status.to_i
       when 200
         JSON.parse(response.body.to_s)
+      when 400
+        # Permanent client error (malformed/invalid id). Opt-in callers raise to isolate the bad
+        # id; default keeps legacy nil behavior (handle_error logs + returns nil) — unchanged.
+        raise BadRequestError, "Twitch Helix 400 #{path}: #{response.body.to_s.truncate(200)}" if raise_on_bad_request
+
+        handle_error(response, path)
       when 401
         invalidate_token
-        retries < 1 ? get(path, params, retries: retries + 1) : handle_error(response, path)
+        retries < 1 ? get(path, params, retries: retries + 1, raise_on_bad_request: raise_on_bad_request) : handle_error(response, path)
       when 429
-        handle_rate_limit(response, path, params, retries)
+        handle_rate_limit(response, path, params, retries, raise_on_bad_request)
       when 500, 502, 503
-        handle_server_error(response, path, params, retries)
+        handle_server_error(response, path, params, retries, raise_on_bad_request)
       else
         handle_error(response, path)
       end
@@ -157,7 +175,7 @@ module Twitch
 
     # === Error handling ===
 
-    def handle_rate_limit(response, path, params, retries)
+    def handle_rate_limit(response, path, params, retries, raise_on_bad_request = false)
       if retries >= MAX_RETRIES
         Rails.logger.error("Twitch Helix rate limit exhausted: #{path} after #{MAX_RETRIES} retries")
         return nil
@@ -172,10 +190,10 @@ module Twitch
 
       Rails.logger.warn("Twitch Helix 429: #{path}, waiting #{wait}s (retry #{retries + 1})")
       sleep(wait)
-      get(path, params, retries: retries + 1)
+      get(path, params, retries: retries + 1, raise_on_bad_request: raise_on_bad_request)
     end
 
-    def handle_server_error(response, path, params, retries)
+    def handle_server_error(response, path, params, retries, raise_on_bad_request = false)
       if retries >= MAX_RETRIES
         Rails.logger.error("Twitch Helix #{response.status}: #{path} after #{MAX_RETRIES} retries")
         nil
@@ -183,7 +201,7 @@ module Twitch
         wait = BACKOFF_BASE * (2**retries)
         Rails.logger.warn("Twitch Helix #{response.status}: #{path}, retry #{retries + 1} in #{wait}s")
         sleep(wait)
-        get(path, params, retries: retries + 1)
+        get(path, params, retries: retries + 1, raise_on_bad_request: raise_on_bad_request)
       end
     end
 

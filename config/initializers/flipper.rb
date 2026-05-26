@@ -87,6 +87,11 @@ module FlipperDefaults
   # но НЕ auto-enabled. Production state управляется отдельно (миграция / admin UI /
   # rake task). Каждая запись = namespaced :flag => "TASK-XXX reference" для traceability.
   HOOK_FLAGS = {
+    channel_prune: "TASK-251.2", # Destructive ChannelPruneWorker (unmonitor banned non-pinned).
+    # OFF by default — enabled per-env only after a dry-run review confirms the prune set.
+    follower_snapshot: "TASK-251.W2a", # FollowerSnapshotWorker: daily Helix follower-count
+    # snapshots → Streamer Reputation Growth #12 / Follower Quality #13. OFF by default —
+    # additive data collection, enabled per-env post-deploy (same pattern as other monitoring workers).
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
     billing_auto_subscription_creation: "BUG-012", # Dev/staging only: ChannelsController#track
     # auto-creates Subscription if missing. Production: flag OFF — Subscription must pre-exist

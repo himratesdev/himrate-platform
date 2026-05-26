@@ -12,6 +12,7 @@ class StreamMonitorWorker
   CYCLE_INTERVAL = 60 # seconds — used by sidekiq-cron, documented here for reference
   TIER2_EVERY = 5     # every 5th cycle = ~5 minutes
   GQL_BATCH_SIZE = 35
+  CHATTERS_WINDOW = 60.minutes # active-chatter window (matches ContextBuilder unique_chatters_60min)
   REDIS_CYCLE_KEY = "monitor:cycle_count"
 
   def perform
@@ -44,19 +45,19 @@ class StreamMonitorWorker
       # Batch GQL for CCV
       ccv_data = fetch_ccv_batch(logins)
 
-      # Chatters count for each
-      chatters_data = fetch_chatters_batch(logins)
+      # TASK-251.6: chatter activity from captured IRC chat (chat_messages), keyed by
+      # stream_id. GQL chatters_count is integrity-protected → empty server-side.
+      chat_data = fetch_chat_activity(batch)
 
       batch.each do |stream|
-        login = stream.channel.login
-        ccv = ccv_data[login]
-        chatters = chatters_data[login]
+        ccv = ccv_data[stream.channel.login]
+        chat = chat_data[stream.id]
 
         save_ccv_snapshot(stream, ccv) if ccv
-        save_chatters_snapshot(stream, ccv, chatters) if chatters
+        save_chatters_snapshot(stream, ccv, chat) if chat && ccv
 
         # TASK-030: Trigger signal computation after data saved
-        SignalComputeWorker.perform_async(stream.id) if ccv || chatters
+        SignalComputeWorker.perform_async(stream.id) if ccv || chat
       end
     end
   end
@@ -90,20 +91,20 @@ class StreamMonitorWorker
     result
   end
 
-  def fetch_chatters_batch(logins)
-    operations = logins.map do |login|
-      { query: Twitch::GqlClient::QUERIES[:chatters_count], variables: { login: login } }
+  # TASK-251.6: derive chatter activity from captured IRC chat (chat_messages) within
+  # CHATTERS_WINDOW — one grouped query pair per batch (no per-channel GQL calls).
+  # GQL chatters_count is integrity-protected (empty server-side). Returns
+  # { stream_id => { unique:, total: } } only for streams that had chat in the window.
+  def fetch_chat_activity(streams)
+    since = CHATTERS_WINDOW.ago
+    base = ChatMessage.where(stream_id: streams.map(&:id), msg_type: "privmsg").where("timestamp > ?", since)
+    uniques = base.group(:stream_id).distinct.count(:username)
+    totals = base.group(:stream_id).count
+    uniques.each_with_object({}) do |(sid, uniq), acc|
+      acc[sid] = { unique: uniq, total: totals[sid] || 0 }
     end
-
-    results = gql.batch(operations)
-    result = {}
-    logins.each_with_index do |login, i|
-      count = results[i]&.dig("data", "channel", "chatters", "count")
-      result[login] = count.to_i if count
-    end
-    result
-  rescue Twitch::GqlClient::Error => e
-    Rails.logger.warn("StreamMonitorWorker: chatters GQL failed (#{e.message})")
+  rescue ActiveRecord::StatementInvalid => e
+    Rails.logger.warn("StreamMonitorWorker: chat activity query failed (#{e.message})")
     {}
   end
 
@@ -115,14 +116,15 @@ class StreamMonitorWorker
     )
   end
 
-  def save_chatters_snapshot(stream, ccv_count, chatters_count)
-    auth_ratio = ccv_count.to_i > 0 ? chatters_count.to_f / ccv_count : nil
+  def save_chatters_snapshot(stream, ccv_count, chat)
+    unique = chat[:unique].to_i
+    auth_ratio = ccv_count.to_i.positive? ? unique.to_f / ccv_count : nil
 
     ChattersSnapshot.create!(
       stream: stream,
       timestamp: Time.current,
-      unique_chatters_count: chatters_count,
-      total_messages_count: 0,
+      unique_chatters_count: unique,
+      total_messages_count: chat[:total].to_i,
       auth_ratio: auth_ratio
     )
   end
