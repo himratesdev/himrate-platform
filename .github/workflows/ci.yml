@@ -245,10 +245,14 @@ jobs:
           GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
           AUTO_TRIGGER_GH_PAT=${{ secrets.AUTO_TRIGGER_GH_PAT }}
           SECRETS
-      # kamal setup vs kamal deploy: выбран setup как idempotent full-boot
-      # (app + proxy + accessories). Safe на subsequent runs (Kamal skips
-      # healthy components). Немного heavier than kamal deploy ~30s на health
-      # checks — acceptable cost для единого mental model entry point.
+      # Routine staging deploy = `kamal deploy` (app роли web/job/irc only), НЕ `kamal setup`.
+      # Was setup (idempotent full-boot). Switched (deploy-fix): на загруженном 3-core VPS
+      # (combat load ~9-11 + ClickHouse accessory #194/#196) setup full-boot перепроверяет/грузит
+      # ВСЕ accessory configs каждый деплой → раздувал deploy-окно → новый web не успевал пройти
+      # healthcheck под нагрузкой → deploy aborted (PR #195 deploy + re-run оба: "target failed to
+      # become healthy within 2m0s"). `kamal deploy` переразворачивает только app-роли (accessories
+      # уже забутены ранее). Изменения accessory config → explicit `kamal accessory reboot <name>`
+      # post-merge (правило accessory-config-change в CLAUDE.md — теперь применимо и к staging).
       #
       # Defense-in-depth: trap EXIT гарантирует cleanup .kamal/secrets.staging
       # после step exit (success OR failure). Runner ephemeral всё равно, но
@@ -256,7 +260,7 @@ jobs:
       - name: Deploy to staging
         run: |
           trap 'rm -f .kamal/secrets.staging' EXIT
-          kamal setup -d staging
+          kamal deploy -d staging
 
   # === Verify Staging Deploy — after deploy-staging ===
   verify-staging:

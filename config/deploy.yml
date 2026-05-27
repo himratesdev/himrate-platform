@@ -5,12 +5,14 @@
 service: himrate
 image: himratesdev/himrate-platform
 
-# BUG-251.17: kamal's default deploy_timeout (30s) is too tight for this app's boot on the
-# single 3-core/8GB VPS. Under live load (load avg ~9.7, some swap), a new web container's
-# eager-load can't bind Puma:3000 within 30s → kamal-proxy health check fails → deploy aborts
-# (BUG-251.16 deploy failed twice on this). 120s gives boot headroom under contention. This is the
-# deploy-time wait only (no runtime effect); the underlying VPS capacity = separate hardware track.
-deploy_timeout: 120
+# BUG-251.17 (30→120) + deploy-fix (120→240): kamal's default deploy_timeout (30s) is too tight for
+# this app's boot on the single 3-core/8GB VPS. Under live combat load (load avg ~9-11) + ClickHouse
+# accessory (#194/#196), a new web container's eager-load can't bind Puma:3000 even within 120s →
+# kamal-proxy health check fails → deploy aborts (observed: PR #195 deploy + re-run BOTH failed at 120s,
+# "target failed to become healthy within 2m0s"). 240s gives boot headroom under sustained contention.
+# Paired with CI kamal setup→deploy (lighter deploy window — see ci.yml). Deploy-time wait only (no
+# runtime effect); underlying VPS capacity = separate hardware track (ClickHouse EPIC TASK-251.14).
+deploy_timeout: 240
 
 servers:
   web:
