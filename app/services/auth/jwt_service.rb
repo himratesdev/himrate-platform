@@ -2,13 +2,17 @@
 
 module Auth
   class JwtService
-    # BUG-251.16: fail fast on a blank signing key. ENV.fetch's default block only fires when
-    # JWT_SECRET is ABSENT — an explicitly empty JWT_SECRET="" would slip through as "", which is
-    # exactly the empty-key condition CVE-2026-45363 abuses. jwt 2.10.3 closes the gem-level bypass;
-    # this guard makes an empty HMAC key impossible at our layer too (defense-in-depth), regardless
-    # of gem version. .presence → nil on blank → boot raises (never run auth with an empty key).
-    SECRET = (ENV.fetch("JWT_SECRET") { Rails.application.secret_key_base }).presence ||
-             raise("JWT signing secret is blank — set JWT_SECRET or Rails secret_key_base")
+    # BUG-251.16: never run auth with a blank HMAC signing key (defense-in-depth for the empty-key
+    # condition CVE-2026-45363 abuses; jwt 2.10.3 also blocks it gem-level). A bare
+    # ENV.fetch("JWT_SECRET") { fallback } only falls back when JWT_SECRET is ABSENT — an explicit
+    # JWT_SECRET="" would slip through as "". resolve_secret treats empty same as absent (→ fallback)
+    # and raises only when NO usable secret exists, so boot fails loud rather than signing with "".
+    def self.resolve_secret(env_value, fallback)
+      (env_value.presence || fallback).presence ||
+        raise("JWT signing secret is blank — set JWT_SECRET or Rails secret_key_base")
+    end
+
+    SECRET = resolve_secret(ENV["JWT_SECRET"], Rails.application.secret_key_base)
     ALGORITHM = "HS256"
 
     ACCESS_TTL = 1.hour
