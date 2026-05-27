@@ -9,6 +9,8 @@ env:
   clear:
     RAILS_ENV: production
     WEB_CONCURRENCY: 2
+    # TASK-251.14: app connects to the production CH database (matches the accessory CLICKHOUSE_DB below).
+    CLICKHOUSE_DATABASE: himrate_production
 
 accessories:
   db:

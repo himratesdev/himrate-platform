@@ -86,10 +86,17 @@ env:
     # BUG-010 PR2 (ADR DEC-3): fine-grained PAT для AutoRemediation::TriggerService → GitHub workflow_dispatch.
     # Имя без `GITHUB_` prefix — зарезервирован GitHub Actions для secrets (HTTP 422). ADR §7 corrigendum.
     - AUTO_TRIGGER_GH_PAT
+    # TASK-251.14: ClickHouse default-user password — app side. (The same secret also passwords the
+    # `clickhouse` accessory's default user; here it lets the app authenticate to it.)
+    - CLICKHOUSE_PASSWORD
   clear:
     RAILS_LOG_TO_STDOUT: true
     RAILS_SERVE_STATIC_FILES: true
     WEB_CONCURRENCY: 2
+    # TASK-251.14: ClickHouse connection (app side). Reached over the Kamal Docker network by the
+    # accessory's full container name. Port defaults to 8123 in Clickhouse::Client; database is
+    # per-destination (config/deploy.{staging,production}.yml CLICKHOUSE_DATABASE).
+    CLICKHOUSE_HOST: himrate-clickhouse
 
 # Accessories: PostgreSQL + Redis + observability stack on the same VPS
 # BUG-010 PR1: +grafana, prometheus, loki, promtail, alertmanager, prometheus-pushgateway
