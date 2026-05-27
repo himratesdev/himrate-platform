@@ -116,7 +116,7 @@ jobs:
     needs: [lint, security, test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    # BUG-251.17b: 15m was too tight once deploy_timeout went to 120s (BUG-251.17). Under live VPS
+    # BUG-251.17b: 15m was too tight once deploy_timeout went to 120s (BUG-251.17; now 240s — deploy-fix). Under live VPS
     # load each role's boot can take several minutes, and kamal rolls every role (web/irc/job/
     # whisper_worker) serially after the image build → total exceeded 15m and GitHub cancelled
     # mid-roll (left whisper_worker on the old SHA). 30m covers build + a slow 4-role serial roll
@@ -245,10 +245,17 @@ jobs:
           GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
           AUTO_TRIGGER_GH_PAT=${{ secrets.AUTO_TRIGGER_GH_PAT }}
           SECRETS
-      # kamal setup vs kamal deploy: выбран setup как idempotent full-boot
-      # (app + proxy + accessories). Safe на subsequent runs (Kamal skips
-      # healthy components). Немного heavier than kamal deploy ~30s на health
-      # checks — acceptable cost для единого mental model entry point.
+      # Routine staging deploy = `kamal deploy` (app роли web/job/whisper_worker/irc only), НЕ `kamal setup`.
+      # Was setup (idempotent full-boot). Switched (deploy-fix): на загруженном 3-core VPS
+      # (combat load ~9-11 + ClickHouse accessory #194/#196) setup full-boot перепроверяет/грузит
+      # ВСЕ accessory configs каждый деплой → раздувал deploy-окно → новый web не успевал пройти
+      # healthcheck под нагрузкой → deploy aborted (PR #195 deploy + re-run оба: "target failed to
+      # become healthy within 2m0s"). `kamal deploy` переразворачивает только app-роли (accessories
+      # уже забутены предыдущими setup-прогонами; clickhouse #194/#196 verified Up на staging).
+      # Следствие setup→deploy: NET-NEW accessory теперь требует explicit `kamal accessory boot <name>`
+      # (setup делал это авто, deploy — нет); изменение config СУЩЕСТВУЮЩЕГО accessory → `kamal accessory
+      # reboot <name>` (требовалось и раньше — setup/deploy не пересоздают запущенный accessory).
+      # Runbook: docs/runbooks/accessory_ops.md (+ правило accessory-config-change в проектном workflow).
       #
       # Defense-in-depth: trap EXIT гарантирует cleanup .kamal/secrets.staging
       # после step exit (success OR failure). Runner ephemeral всё равно, но
@@ -256,7 +263,7 @@ jobs:
       - name: Deploy to staging
         run: |
           trap 'rm -f .kamal/secrets.staging' EXIT
-          kamal setup -d staging
+          kamal deploy -d staging
 
   # === Verify Staging Deploy — after deploy-staging ===
   verify-staging:
@@ -281,8 +288,10 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     # BUG-251.17b: same 30m budget as deploy-staging. Production deploys to the same VPS, inherits
-    # the same root-level deploy_timeout (120s), and rolls the same 4 roles serially — and is in
-    # fact heavier (WEB_CONCURRENCY=2), so it has the same (or worse) exposure to the 15m cancel.
+    # the same root-level deploy_timeout (240s — raised 120→240 by the staging deploy-fix; root-level
+    # key applies to BOTH destinations, so production gets the longer boot headroom too — intentional,
+    # prod is heavier WEB_CONCURRENCY=2), and rolls the same 4 roles serially — same (or worse)
+    # exposure to the 15m cancel. (Production deploy command itself stays `kamal setup` — first-provision.)
     timeout-minutes: 30
     environment: production
     permissions:
