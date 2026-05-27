@@ -86,7 +86,12 @@ jobs:
     needs: [lint, security, test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # BUG-251.17b: 15m was too tight once deploy_timeout went to 120s (BUG-251.17). Under live VPS
+    # load each role's boot can take several minutes, and kamal rolls every role (web/irc/job/
+    # whisper_worker) serially after the image build → total exceeded 15m and GitHub cancelled
+    # mid-roll (left whisper_worker on the old SHA). 30m covers build + a slow 4-role serial roll
+    # under contention. Wall-clock budget only; root cause = VPS capacity (separate hardware track).
+    timeout-minutes: 30
     permissions:
       packages: write
       contents: read
@@ -243,7 +248,10 @@ jobs:
     needs: [lint, security, test]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # BUG-251.17b: same 30m budget as deploy-staging. Production deploys to the same VPS, inherits
+    # the same root-level deploy_timeout (120s), and rolls the same 4 roles serially — and is in
+    # fact heavier (WEB_CONCURRENCY=2), so it has the same (or worse) exposure to the 15m cancel.
+    timeout-minutes: 30
     environment: production
     permissions:
       # Registry auth через dedicated PAT (secrets.KAMAL_REGISTRY_PASSWORD), НЕ
