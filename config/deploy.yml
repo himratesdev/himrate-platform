@@ -120,6 +120,32 @@ accessories:
         REDIS_ARGS: "--appendonly yes"
     directories:
       - himrate_redis:/data
+  # === TASK-251.14: ClickHouse — columnar analytics store (chat + telemetry time-series, dual-DB) ===
+  # Constrained memory — coexists with Postgres on the shared VPS until the measured hardware
+  # migration (ADR DEC-3). config.d/constrained.xml caps CH RAM + sets listen_host; CH is reachable
+  # on the Kamal network as `himrate-clickhouse` (HTTP :8123 / native :9000), host port bound to
+  # 127.0.0.1 only + default user password-protected → internal-only (same model as db/redis).
+  # ⚠️ Accessories are NOT updated by `kamal deploy` — first boot needs
+  #    `kamal accessory boot clickhouse -d staging` (post-merge; PG accessory-config flag).
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.8.14.39 # patch-pinned (LTS 24.8) — deterministic boot/rollback, repo convention
+    host: 194.135.85.159
+    port: "127.0.0.1:8123:8123"
+    env:
+      clear:
+        # Per-destination override in deploy.{staging,production}.yml (himrate_staging /
+        # himrate_production) — staging & prod share this one himrate-clickhouse container on
+        # the VPS, isolated by DB name, exactly like the db accessory. Base = production default.
+        CLICKHOUSE_DB: himrate_production
+      secret:
+        - CLICKHOUSE_PASSWORD
+    files:
+      - clickhouse/config.d/constrained.xml:/etc/clickhouse-server/config.d/constrained.xml
+    directories:
+      - himrate_clickhouse:/var/lib/clickhouse
+    options:
+      memory: 2g
+      ulimit: nofile=262144:262144
   # === BUG-010 Observability Stack ===
   prometheus:
     image: prom/prometheus:v3.0.1
