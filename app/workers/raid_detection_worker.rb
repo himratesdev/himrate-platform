@@ -70,8 +70,8 @@ class RaidDetectionWorker
     raids = unprocessed_raids
     return if raids.empty?
 
-    classified = raids.count { |raid| process_raid(raid) }
-    Rails.logger.info("RaidDetectionWorker: wrote #{classified}/#{raids.size} raid attributions")
+    recorded = raids.count { |raid| process_raid(raid) }
+    Rails.logger.info("RaidDetectionWorker: wrote #{recorded}/#{raids.size} raid attributions")
   end
 
   private
@@ -110,8 +110,11 @@ class RaidDetectionWorker
     true
   rescue ActiveRecord::RecordNotUnique
     false # raced with a concurrent run; already recorded
-  rescue ActiveRecord::RecordInvalid => e
-    Rails.logger.warn("RaidDetectionWorker: #{msg.twitch_msg_id} create failed (#{e.message})")
+  rescue StandardError => e
+    # Isolate a single bad raid (malformed tags / transient query error) so it can't stall the rest
+    # of the ordered batch until it ages past LOOKBACK — same per-unit rescue philosophy as
+    # ContextBuilder. RecordInvalid is a StandardError, so create! validation failures land here too.
+    Rails.logger.warn("RaidDetectionWorker: #{msg.twitch_msg_id} failed (#{e.class}: #{e.message.to_s.truncate(120)})")
     false
   end
 
