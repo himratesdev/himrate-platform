@@ -10,7 +10,9 @@
 # Granularity (user_id, twitch_channel_id, game_id, date): M2 group-by-channel · M3 group-by-game ·
 # M1 SUM · M5 first_seen_at · M4 heatmap (day-of-week из date × hour-of-day из hour_histogram) ·
 # M1 device-сегмент из device_seconds. twitch_channel_id = стабильный ключ; channel_id(uuid)/twitch_login
-# = enrichment (если канал трекается). game_id NOT NULL DEFAULT '' (sentinel «unknown») — избегает
+# = enrichment (если канал трекается). twitch_*-нейминг platform-specific (CR Nit-3) — platform-neutral
+# (platform_channel_id) при multi-platform миграции channels (там ещё нет `platform`; concrete blocker,
+# зеркалит BE-1 + реальную схему channels). game_id NOT NULL DEFAULT '' (sentinel «unknown») — избегает
 # NULL-distinct дублей в UNIQUE при upsert on_conflict.
 # Retention: НЕТ (lifetime — M1 window=all / Spotify-Wrapped). Raw pva_view_events = 2y (160009);
 # rollup = durable lifetime store.

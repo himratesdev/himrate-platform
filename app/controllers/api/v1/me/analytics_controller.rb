@@ -16,7 +16,9 @@ module Api
         def overview
           authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
           window = params[:window]
-          payload = Rails.cache.fetch(cache_key("overview", window), expires_in: 5.minutes) do
+          payload = Rails.cache.fetch(
+            cache_key("overview", window), expires_in: 5.minutes, race_condition_ttl: 10.seconds
+          ) do
             PersonalAnalytics::Api::OverviewService.new(user: current_user, window: window).call
           end
           render json: payload
@@ -35,8 +37,9 @@ module Api
           "pva:#{endpoint}:#{current_user.id}:#{window.presence || 'default'}"
         end
 
+        # UPPER_SNAKE error code (консистентно с NOT_FOUND выше + Api::BaseController codes — CR Nit-2).
         def render_invalid_params(exception)
-          render json: { error: "invalid_params", message: exception.message }, status: :bad_request
+          render json: { error: "INVALID_PARAMS", message: exception.message }, status: :bad_request
         end
       end
     end

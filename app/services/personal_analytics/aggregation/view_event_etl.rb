@@ -53,8 +53,11 @@ module PersonalAnalytics
 
         uuid, login = channels[twitch_channel_id]
         # pva_view_events = append-only (только created_at, нет updated_at — BE-1 миграция 160001).
+        # twitch_login: tracked-канал (channels.login, канонично) ИЛИ payload login (untracked — CR SF-1:
+        # append-only + dedup → login для untracked иначе теряется НАВСЕГДА; читаем payload defensively).
         {
-          user_id: @user_id, twitch_channel_id: twitch_channel_id, channel_id: uuid, twitch_login: login,
+          user_id: @user_id, twitch_channel_id: twitch_channel_id, channel_id: uuid,
+          twitch_login: login || payload["login"].presence,
           game_id: payload["game_id"].presence, started_at: started_at, seconds: payload["duration_sec"].to_i,
           device: clamp_device(payload["device"]), source_event_hash: event.event_hash,
           created_at: Time.current

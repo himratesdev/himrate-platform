@@ -47,6 +47,14 @@ RSpec.describe PersonalAnalytics::Aggregation::ViewEventEtl do
     expect(untracked.twitch_login).to be_nil
   end
 
+  it "falls back to payload login for untracked channels (CR SF-1 — append-only, login would be lost)" do
+    stream_view(channel_id: "888", watched_at: Time.utc(2026, 5, 20, 22, 0, 0), login: "untrackedguy")
+
+    described_class.call(user.id)
+
+    expect(PvaViewEvent.find_by(twitch_channel_id: "888").twitch_login).to eq("untrackedguy")
+  end
+
   it "clamps an unknown device to nil (raw insert bypasses model validation)" do
     stream_view(channel_id: "555", watched_at: Time.utc(2026, 5, 20, 20, 0, 0), device: "smart_fridge")
 
