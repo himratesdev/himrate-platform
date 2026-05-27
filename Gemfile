@@ -19,7 +19,7 @@ gem "tzinfo-data", platforms: %i[ windows jruby ]
 # Project uses Sidekiq 7 + Redis 7 instead (per CLAUDE.md architecture)
 
 # Auth
-gem "jwt", "~> 2.10", ">= 2.10.3" # >= 2.10.3 floor = CVE-2026-45363 (empty-key HMAC bypass) patched
+gem "jwt", "~> 3.2" # >= 2.10.3 floor = CVE-2026-45363 (empty-key HMAC bypass) patched
 gem "http", "~> 5.0"
 
 # Authorization
