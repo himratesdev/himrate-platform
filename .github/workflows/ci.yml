@@ -86,7 +86,12 @@ jobs:
     needs: [lint, security, test]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # BUG-251.17b: 15m was too tight once deploy_timeout went to 120s (BUG-251.17). Under live VPS
+    # load each role's boot can take several minutes, and kamal rolls web→irc→job→whisper_worker
+    # serially after the image build → total exceeded 15m and GitHub cancelled mid-roll (left
+    # whisper_worker on the old SHA). 30m covers build + a slow 4-role serial roll under contention.
+    # Wall-clock budget only; root cause = VPS capacity (separate hardware track).
+    timeout-minutes: 30
     permissions:
       packages: write
       contents: read
