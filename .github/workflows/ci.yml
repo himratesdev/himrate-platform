@@ -245,7 +245,7 @@ jobs:
           GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
           AUTO_TRIGGER_GH_PAT=${{ secrets.AUTO_TRIGGER_GH_PAT }}
           SECRETS
-      # Routine staging deploy = `kamal deploy` (app роли web/job/irc only), НЕ `kamal setup`.
+      # Routine staging deploy = `kamal deploy` (app роли web/job/whisper_worker/irc only), НЕ `kamal setup`.
       # Was setup (idempotent full-boot). Switched (deploy-fix): на загруженном 3-core VPS
       # (combat load ~9-11 + ClickHouse accessory #194/#196) setup full-boot перепроверяет/грузит
       # ВСЕ accessory configs каждый деплой → раздувал deploy-окно → новый web не успевал пройти
@@ -255,7 +255,7 @@ jobs:
       # Следствие setup→deploy: NET-NEW accessory теперь требует explicit `kamal accessory boot <name>`
       # (setup делал это авто, deploy — нет); изменение config СУЩЕСТВУЮЩЕГО accessory → `kamal accessory
       # reboot <name>` (требовалось и раньше — setup/deploy не пересоздают запущенный accessory).
-      # Правило accessory-config-change в CLAUDE.md.
+      # Runbook: docs/runbooks/accessory_ops.md (+ правило accessory-config-change в проектном workflow).
       #
       # Defense-in-depth: trap EXIT гарантирует cleanup .kamal/secrets.staging
       # после step exit (success OR failure). Runner ephemeral всё равно, но
