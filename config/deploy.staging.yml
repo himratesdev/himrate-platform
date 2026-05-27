@@ -9,6 +9,8 @@ env:
   clear:
     RAILS_ENV: staging
     WEB_CONCURRENCY: 1
+    # TASK-251.14: app connects to the staging CH database (matches the accessory CLICKHOUSE_DB below).
+    CLICKHOUSE_DATABASE: himrate_staging
 
 accessories:
   db:

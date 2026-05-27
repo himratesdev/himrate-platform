@@ -54,6 +54,18 @@ jobs:
         ports:
           - 6379:6379
         options: --health-cmd="redis-cli ping" --health-interval=3s --health-timeout=3s --health-retries=10
+      # TASK-251.14: real ClickHouse for the Clickhouse::Client integration specs (project rule:
+      # mocked unit + real integration). Same image tag as the staging/prod accessory; default user
+      # password-protected (mirrors deploy) so the client auth path is exercised for real.
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8.14.39
+        env:
+          CLICKHOUSE_DB: himrate_test
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: himrate_test
+        ports:
+          - 8123:8123
+        options: --health-cmd="clickhouse-client --user default --password himrate_test --query 'SELECT 1'" --health-interval=5s --health-timeout=3s --health-retries=20
     steps:
       - uses: actions/checkout@v4
       - uses: ruby/setup-ruby@v1
@@ -68,6 +80,19 @@ jobs:
         # schema_format = :sql, а structure.sql не committed в репо.
         # db:migrate runs от scratch, structure.sql auto-generated после.
         run: bundle exec rails db:create db:migrate
+      # TASK-251.14: provision the ClickHouse schema (db/clickhouse/*.sql) before RSpec, the CH
+      # analogue of "Setup DB". Idempotent; the integration specs assert chat_messages is queryable.
+      - name: Setup ClickHouse schema
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://himrate_test:himrate_test@localhost:5432/himrate_test
+          REDIS_URL: redis://localhost:6379/0
+          CLICKHOUSE_HOST: localhost
+          CLICKHOUSE_PORT: "8123"
+          CLICKHOUSE_DATABASE: himrate_test
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: himrate_test
+        run: bundle exec rake clickhouse:setup
       - name: Run RSpec
         env:
           RAILS_ENV: test
@@ -79,6 +104,11 @@ jobs:
           GOOGLE_REDIRECT_URI: http://localhost:3000/api/v1/auth/google/callback
           DATABASE_URL: postgres://himrate_test:himrate_test@localhost:5432/himrate_test
           REDIS_URL: redis://localhost:6379/0
+          CLICKHOUSE_HOST: localhost
+          CLICKHOUSE_PORT: "8123"
+          CLICKHOUSE_DATABASE: himrate_test
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: himrate_test
         run: bundle exec rspec
 
   # === Deploy to Staging — on merge to main ===
