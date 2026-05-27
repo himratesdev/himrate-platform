@@ -81,6 +81,7 @@ module FlipperDefaults
     cleanup_worker
     trends_tab
     trends_aggregation_nightly
+    pva
   ].freeze
 
   # Hooks for upcoming features / transitional kill-switches: flag зарегистрирован,
