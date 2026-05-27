@@ -10,7 +10,9 @@ class UserPrivacySetting < ApplicationRecord
   scope :for_user, ->(user) { where(user_id: user.id) }
 
   # GDPR: псевдоним, который видит стример пока display_name_visible = false.
+  # 12 hex = 48 бит энтропии (CR Nit-4): коллизии пренебрежимо малы до миллионов юзеров
+  # (4 hex = 16 бит коллизились уже на ~сотнях — birthday paradox).
   def streamer_facing_alias
-    "User_#{Digest::SHA256.hexdigest(user_id.to_s)[0, 4]}"
+    "User_#{Digest::SHA256.hexdigest(user_id.to_s)[0, 12]}"
   end
 end

@@ -12,6 +12,8 @@ class CreatePvaSupporterStatus < ActiveRecord::Migration[8.0]
   def up
     create_table :pva_supporter_status, id: :uuid do |t|
       t.references :user, null: false, type: :uuid, foreign_key: { on_delete: :cascade }
+      # channel_id/twitch_login = денормализ. Twitch-канал, БЕЗ FK на channels (client-capture
+      # на произвольных каналах — CR Nit-1/Nit-2, rationale в миграции 160001). twitch_login зеркалит channels.login.
       t.uuid :channel_id, null: false
       t.string :twitch_login, limit: 50
       t.string :tier, null: false, limit: 12 # devoted / loyal / regular / active
