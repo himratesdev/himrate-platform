@@ -93,6 +93,15 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-251.W2b: GQL per-chatter profile cache (Account Profile Scoring #11), gated :chatter_profile_enrichment"
       },
+      # TASK-251.B: classify matured raid USERNOTICEs (≥8 min old) into RaidAttribution → Raid
+      # Attribution signal (#9, was blind — RaidWorker EventSub stub never wrote rows). DB-only,
+      # ≤200/run; raids are sparse (~20/h) so this idles after clearing. Gated by :raid_detection.
+      "raid_detection" => {
+        "cron" => "*/5 * * * *", # Every 5 minutes — bounded batch clears the sparse raid backlog
+        "class" => "RaidDetectionWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-251.B: classify captured IRC raids into RaidAttribution (signal #9), gated :raid_detection"
+      },
       # TASK-086 FR-010 (ADR-086 §4.8): daily retention cleanup. 03:15 UTC — staggered
       # away from bot_list_refresh (03:00) to avoid DB contention (CleanupWorker is heavy).
       "cleanup_worker_daily" => {
