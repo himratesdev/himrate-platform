@@ -3,6 +3,7 @@
 FactoryBot.define do
   factory :channel_tenure do
     user
+    twitch_channel_id { "12345" }
     channel_id { SecureRandom.uuid }
     twitch_login { "shroud" }
     sub_tier { 1 }

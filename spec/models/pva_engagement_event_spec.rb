@@ -7,6 +7,7 @@ RSpec.describe PvaEngagementEvent, type: :model do
 
   it { is_expected.to belong_to(:user) }
   it { is_expected.to validate_presence_of(:client_event_id) }
+  it { is_expected.to validate_presence_of(:twitch_channel_id) }
   it { is_expected.to validate_presence_of(:event_type) }
   it { is_expected.to validate_inclusion_of(:event_type).in_array(described_class::EVENT_TYPES) }
   it { is_expected.to validate_inclusion_of(:source).in_array(described_class::SOURCES) }

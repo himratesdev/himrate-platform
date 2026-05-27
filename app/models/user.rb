@@ -20,6 +20,7 @@ class User < ApplicationRecord
   # M15 (GDPR delete, BE-5).
   has_many :pva_view_events
   has_many :pva_view_rollups
+  has_many :pva_chat_activities
   has_many :pva_engagement_events
   has_many :channel_tenures
   has_many :pva_supporter_statuses

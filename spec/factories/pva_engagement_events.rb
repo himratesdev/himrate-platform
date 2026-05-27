@@ -3,6 +3,7 @@
 FactoryBot.define do
   factory :pva_engagement_event do
     user
+    twitch_channel_id { "12345" }
     channel_id { SecureRandom.uuid }
     twitch_login { "xqc" }
     client_event_id { SecureRandom.uuid }
