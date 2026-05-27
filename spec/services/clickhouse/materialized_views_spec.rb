@@ -46,7 +46,7 @@ RSpec.describe "Clickhouse materialized views", :clickhouse do
 
     it "uniqMerge over the whole window = distinct chatters (60min-equivalent read)" do
       agg = client.select(
-        "SELECT countMerge(msg_count) AS c, uniqMerge(unique_chatters) AS u " \
+        "SELECT countMerge(msg_count) AS c, uniqExactMerge(unique_chatters) AS u " \
         "FROM mv_stream_minute_target WHERE stream_id = '#{stream_id}'"
       ).first
       expect(agg["c"].to_i).to eq(5)  # 5 privmsg total (sub + null-stream excluded)
@@ -55,7 +55,7 @@ RSpec.describe "Clickhouse materialized views", :clickhouse do
 
     it "uniqMerge per minute = distinct chatters that minute" do
       per_minute = client.select(
-        "SELECT uniqMerge(unique_chatters) AS u FROM mv_stream_minute_target " \
+        "SELECT uniqExactMerge(unique_chatters) AS u FROM mv_stream_minute_target " \
         "WHERE stream_id = '#{stream_id}' GROUP BY minute ORDER BY minute"
       )
       expect(per_minute.map { |r| r["u"].to_i }).to eq([ 2, 2 ]) # m0={alice,bob}, m1={alice,carol}
