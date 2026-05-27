@@ -25,5 +25,9 @@
          rest of the stack. -->
     <logger>
         <console>1</console>
+        <!-- Drop the inherited file log targets so CH logs ONLY to stdout (→ promtail → Loki),
+             not also to the unmounted, ephemeral /var/log/clickhouse-server. -->
+        <log remove="remove"/>
+        <errorlog remove="remove"/>
     </logger>
 </clickhouse>

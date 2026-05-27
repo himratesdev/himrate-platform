@@ -133,7 +133,10 @@ accessories:
     port: "127.0.0.1:8123:8123"
     env:
       clear:
-        CLICKHOUSE_DB: himrate
+        # Per-destination override in deploy.{staging,production}.yml (himrate_staging /
+        # himrate_production) — staging & prod share this one himrate-clickhouse container on
+        # the VPS, isolated by DB name, exactly like the db accessory. Base = production default.
+        CLICKHOUSE_DB: himrate_production
       secret:
         - CLICKHOUSE_PASSWORD
     files:

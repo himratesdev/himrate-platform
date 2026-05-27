@@ -15,3 +15,7 @@ accessories:
     env:
       clear:
         POSTGRES_DB: himrate_staging
+  clickhouse:
+    env:
+      clear:
+        CLICKHOUSE_DB: himrate_staging
