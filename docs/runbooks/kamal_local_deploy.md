@@ -168,6 +168,18 @@ docker logout ghcr.io
 
 Env var не установлен. Export через один из вариантов A/B/C выше.
 
+**⚠️ Local `kamal accessory boot clickhouse` — сначала `export CLICKHOUSE_PASSWORD`**
+
+`.kamal/secrets-common` — passthrough (`CLICKHOUSE_PASSWORD=$CLICKHOUSE_PASSWORD`). При локальном
+boot ClickHouse-accessory БЕЗ экспортированного `CLICKHOUSE_PASSWORD` контейнер поднимется с
+**пустым паролем default-user**, reachable по Kamal Docker-сети → дыра. CI безопасен (пишет
+`.kamal/secrets.<dest>` из repo secret). Локально:
+```bash
+export CLICKHOUSE_PASSWORD="<strong-value>"   # тот же, что в repo secret CLICKHOUSE_PASSWORD
+kamal accessory boot clickhouse -d staging
+```
+Проверка после boot: passwordless-запрос должен отклоняться (`curl -s localhost:8123 -d 'SELECT 1'` → "Authentication failed").
+
 **Error: `denied` только на pull конкретного package**
 
 Package permissions переопределены на package level:

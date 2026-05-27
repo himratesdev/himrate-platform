@@ -19,4 +19,11 @@
     <!-- Defaults are sized for dedicated hosts (mark_cache 5GB); shrink for the shared box. -->
     <mark_cache_size>268435456</mark_cache_size>
     <uncompressed_cache_size>0</uncompressed_cache_size>
+
+    <!-- Log to stdout so promtail → Loki captures CH logs (CH defaults to file logging under
+         /var/log/clickhouse-server, which isn't mounted/shipped) — observability parity with the
+         rest of the stack. -->
+    <logger>
+        <console>1</console>
+    </logger>
 </clickhouse>

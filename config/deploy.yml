@@ -128,7 +128,7 @@ accessories:
   # ⚠️ Accessories are NOT updated by `kamal deploy` — first boot needs
   #    `kamal accessory boot clickhouse -d staging` (post-merge; PG accessory-config flag).
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8
+    image: clickhouse/clickhouse-server:24.8.14.39 # patch-pinned (LTS 24.8) — deterministic boot/rollback, repo convention
     host: 194.135.85.159
     port: "127.0.0.1:8123:8123"
     env:
