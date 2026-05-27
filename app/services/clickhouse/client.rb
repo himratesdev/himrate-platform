@@ -14,6 +14,10 @@
 # user is password-protected and the host port is bound to 127.0.0.1 only — internal-only, the same
 # model as the db/redis accessories. Call from Sidekiq workers / rake, not the web request cycle:
 # the retry backoff sleeps, and analytic queries can run for seconds.
+#
+# Low-level contract: #execute / #select / #insert interpolate the SQL string and table name
+# verbatim (same as ActiveRecord::Base.connection.execute) — pass only static / internal table names,
+# never user input. Row VALUES in #insert are safely JSON-encoded, so they are not an injection vector.
 
 module Clickhouse
   class Client
@@ -82,7 +86,7 @@ module Clickhouse
     def post(sql, retries: 0)
       response = http_client.post(url, body: sql)
       handle(response, sql, retries)
-    rescue HTTP::TimeoutError => e
+    rescue HTTP::TimeoutError, IO::TimeoutError => e
       raise_or_retry(ConnectionError.new("ClickHouse timeout: #{e.message}"), retries) { post(sql, retries: retries + 1) }
     rescue HTTP::ConnectionError => e
       raise_or_retry(ConnectionError.new("ClickHouse connection error: #{e.message}"), retries) { post(sql, retries: retries + 1) }
