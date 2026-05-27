@@ -15,6 +15,18 @@ class User < ApplicationRecord
   has_many :team_memberships, dependent: :destroy
   has_many :owned_team_memberships, class_name: "TeamMembership", foreign_key: :team_owner_id, dependent: :destroy
 
+  # TASK-113 PVA (BE-1): query-only ассоциации. Без dependent: — User soft-deleted (deleted_at),
+  # AR-cascade не сработал бы; удаление обеспечивают DB on_delete: :cascade (hard-delete) +
+  # M15 (GDPR delete, BE-5).
+  has_many :pva_view_events
+  has_many :pva_engagement_events
+  has_many :channel_tenures
+  has_many :pva_supporter_statuses
+  has_many :pva_weekly_reflections
+  has_many :pva_patterns
+  has_one :pva_cohort
+  has_one :user_privacy_setting
+
   VALID_LOCALES = %w[en ru].freeze
 
   validates :role, inclusion: { in: %w[viewer streamer] }
