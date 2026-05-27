@@ -110,6 +110,11 @@ Rails.application.routes.draw do
 
       # TASK-110 FR-006..007: React fiber chat capture batch ingest
       post "chat/messages", to: "chat_ingest#create"
+
+      # TASK-113 BE-2: Personal Viewer Analytics (self-analytics, JWT + ownership, all-free)
+      namespace :me do
+        get "analytics/overview", to: "analytics#overview"
+      end
     end
   end
 
