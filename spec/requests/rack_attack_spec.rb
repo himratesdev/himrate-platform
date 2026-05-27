@@ -96,6 +96,17 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
       expect(response).not_to have_http_status(429)
     end
 
+    # BUG-251.16: the request-level test above passes whether or not the token actually decodes
+    # (1 request never 429s). Exercise the discriminator directly so a wrong/blank signing secret
+    # (which makes every token fail to decode → per-user limit silently degrades to IP-only) is caught.
+    it "resolves the per-user discriminator to the JWT sub for a valid token" do
+      token = Auth::JwtService.encode_access(user.id)
+      env = Rack::MockRequest.env_for("/api/v1/channels", "HTTP_AUTHORIZATION" => "Bearer #{token}")
+      discriminator = Rack::Attack.throttles["api/user"].block.call(Rack::Attack::Request.new(env))
+
+      expect(discriminator).to eq(user.id)
+    end
+
     it "falls back to IP-only for invalid JWT" do
       headers = { "REMOTE_ADDR" => "6.7.8.9", "Authorization" => "Bearer invalid_token" }
 

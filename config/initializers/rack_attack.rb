@@ -56,7 +56,14 @@ class Rack::Attack
       token = req.get_header("HTTP_AUTHORIZATION")&.delete_prefix("Bearer ")
       if token.present?
         begin
-          payload = JWT.decode(token, ENV.fetch("JWT_SECRET", ""), true, { algorithm: "HS256" }).first
+          # BUG-251.16: single-source the signing secret + algorithm from Auth::JwtService. The old
+          # ENV.fetch("JWT_SECRET", "") defaulted to a blank key (the empty-key vector this fix
+          # removes) AND diverged from how tokens are actually signed — when JWT_SECRET is unset,
+          # JwtService signs with secret_key_base, so decoding with "" here failed every token and
+          # silently dropped the per-user limit back to IP-only. (Per-request lambda → constant is
+          # loaded by call time.)
+          payload = JWT.decode(token, Auth::JwtService::SECRET, true,
+                               { algorithm: Auth::JwtService::ALGORITHM }).first
           payload["sub"]
         rescue JWT::DecodeError, JWT::VerificationError
           nil

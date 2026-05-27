@@ -32,4 +32,28 @@ RSpec.describe Auth::JwtService do
         .to raise_error(Auth::AuthError)
     end
   end
+
+  # BUG-251.16: empty-key HMAC bypass (CVE-2026-45363).
+  describe "empty-key HMAC bypass (CVE-2026-45363)" do
+    it "refuses empty-key HMAC operations at the gem level (jwt >= 2.10.3 patch)" do
+      expect { JWT.encode({ sub: user_id }, "", "HS256") }
+        .to raise_error(JWT::DecodeError, /HMAC key cannot be empty/)
+    end
+
+    describe ".resolve_secret (app-layer blank-key guard)" do
+      it "prefers JWT_SECRET when present" do
+        expect(described_class.resolve_secret("env-secret", "fallback")).to eq("env-secret")
+      end
+
+      it "falls back to secret_key_base when JWT_SECRET is absent or empty" do
+        expect(described_class.resolve_secret(nil, "fallback")).to eq("fallback")
+        expect(described_class.resolve_secret("", "fallback")).to eq("fallback")
+      end
+
+      it "raises when no usable secret exists (never signs with a blank key)" do
+        expect { described_class.resolve_secret("", "") }.to raise_error(/blank/)
+        expect { described_class.resolve_secret(nil, nil) }.to raise_error(/blank/)
+      end
+    end
+  end
 end
