@@ -1,0 +1,22 @@
+<?xml version="1.0"?>
+<!--
+  TASK-251.14: ClickHouse constrained config for the shared 8GB/3-core VPS (ADR DEC-3).
+  CH coexists with Postgres until the measured hardware migration; keep its memory footprint
+  small. CH offloads PG's 11GB chat re-scans, so the net box effect is measured at DSV.
+
+  Networking: listen on the container interface so app containers reach CH over the Kamal
+  Docker network by DNS name (himrate-clickhouse). The host port is bound to 127.0.0.1 only
+  (config/deploy.yml) and the default user is password-protected (CLICKHOUSE_PASSWORD), so CH
+  is not publicly reachable — same internal-only model as the db/redis accessories.
+-->
+<clickhouse>
+    <listen_host>0.0.0.0</listen_host>
+
+    <!-- Cap CH RAM well under the 2g container limit (config/deploy.yml options.memory) so it
+         can't push the already-tight box into heavier swap. Raised at the hardware migration. -->
+    <max_server_memory_usage>1200000000</max_server_memory_usage>
+
+    <!-- Defaults are sized for dedicated hosts (mark_cache 5GB); shrink for the shared box. -->
+    <mark_cache_size>268435456</mark_cache_size>
+    <uncompressed_cache_size>0</uncompressed_cache_size>
+</clickhouse>

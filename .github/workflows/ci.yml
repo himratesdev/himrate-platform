@@ -122,6 +122,7 @@ jobs:
         env:
           RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
           STAGING_DATABASE_URL: ${{ secrets.STAGING_DATABASE_URL }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
@@ -150,7 +151,7 @@ jobs:
         run: |
           set -euo pipefail
           MISSING=()
-          for var in RAILS_MASTER_KEY POSTGRES_PASSWORD STAGING_DATABASE_URL \
+          for var in RAILS_MASTER_KEY POSTGRES_PASSWORD CLICKHOUSE_PASSWORD STAGING_DATABASE_URL \
                      JWT_SECRET SECRET_KEY_BASE \
                      TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET \
                      GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
@@ -171,7 +172,7 @@ jobs:
             printf '::error::  • %s\n' "${MISSING[@]}"
             exit 1
           fi
-          echo "✓ All 25 required secrets present"
+          echo "✓ All 26 required secrets present"
       # File-write approach для Kamal secrets. Эмпирически проверено что
       # Kamal 2.11 корректно работает только с `.kamal/secrets.<destination>`
       # файлом (env-block alone — broken docker login на ghcr, incident
@@ -183,6 +184,7 @@ jobs:
           KAMAL_REGISTRY_PASSWORD=${{ secrets.GITHUB_TOKEN }}
           RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          CLICKHOUSE_PASSWORD=${{ secrets.CLICKHOUSE_PASSWORD }}
           DATABASE_URL=${{ secrets.STAGING_DATABASE_URL }}
           REDIS_URL=redis://himrate-redis:6379/1
           JWT_SECRET=${{ secrets.JWT_SECRET }}
@@ -282,6 +284,7 @@ jobs:
           KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
           RAILS_MASTER_KEY: ${{ secrets.RAILS_MASTER_KEY }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
           SECRET_KEY_BASE: ${{ secrets.SECRET_KEY_BASE }}
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
@@ -308,7 +311,7 @@ jobs:
         run: |
           set -euo pipefail
           MISSING=()
-          for var in KAMAL_REGISTRY_PASSWORD RAILS_MASTER_KEY POSTGRES_PASSWORD \
+          for var in KAMAL_REGISTRY_PASSWORD RAILS_MASTER_KEY POSTGRES_PASSWORD CLICKHOUSE_PASSWORD \
                      JWT_SECRET SECRET_KEY_BASE \
                      TWITCH_CLIENT_ID TWITCH_CLIENT_SECRET \
                      GOOGLE_CLIENT_ID GOOGLE_CLIENT_SECRET \
@@ -329,7 +332,7 @@ jobs:
             printf '::error::  • %s\n' "${MISSING[@]}"
             exit 1
           fi
-          echo "✓ All 25 required secrets present"
+          echo "✓ All 26 required secrets present"
       # W-1 fix: URL-encode POSTGRES_PASSWORD перед DATABASE_URL construction.
       # Python urllib.parse.quote обрабатывает ЛЮБОЙ password (base64 with +/=,
       # special chars, пробелы) — no format constraint на operator. Writes
@@ -357,6 +360,7 @@ jobs:
           KAMAL_REGISTRY_PASSWORD=${{ secrets.KAMAL_REGISTRY_PASSWORD }}
           RAILS_MASTER_KEY=${{ secrets.RAILS_MASTER_KEY }}
           POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
+          CLICKHOUSE_PASSWORD=${{ secrets.CLICKHOUSE_PASSWORD }}
           DATABASE_URL=${DATABASE_URL}
           REDIS_URL=redis://himrate-redis:6379/0
           JWT_SECRET=${{ secrets.JWT_SECRET }}
