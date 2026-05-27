@@ -12,6 +12,7 @@ class PvaViewEvent < ApplicationRecord
   validates :user_id, presence: true
   validates :started_at, presence: true
   validates :seconds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
+  validates :device, inclusion: { in: DEVICES }, allow_nil: true
 
   scope :for_user, ->(user) { where(user_id: user.id) }
   scope :in_window, ->(from, to) { where(started_at: from..to) }
