@@ -28,8 +28,10 @@ module PersonalAnalytics
 
       def group_rows(events)
         now = Time.current
+        # created_at НЕ в payload — DB-default now() на insert, на ON CONFLICT DO UPDATE не трогается
+        # (created_at не дрейфует при идемпотентном recompute; как Trends::Aggregation::DailyBuilder). CR Nit.
         events.group_by { |e| [ e.twitch_channel_id, e.game_id.to_s ] }.map do |(channel, game), evs|
-          rollup_row(channel, game, evs).merge(created_at: now, updated_at: now)
+          rollup_row(channel, game, evs).merge(updated_at: now)
         end
       end
 
