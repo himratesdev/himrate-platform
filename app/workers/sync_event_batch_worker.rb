@@ -56,6 +56,12 @@ class SyncEventBatchWorker
       "SyncEventBatchWorker: user=#{user_id} valid=#{rows.size} accepted=#{inserted.length} " \
       "dropped=#{dropped} duplicates=#{rows.size - inserted.length}"
     )
+
+    # TASK-113 BE-2: триггер PVA viewing-агрегации когда пришли stream_view события (flag-gated :pva,
+    # OFF пока PVA не выпущена). Downstream идемпотентен + advisory-locked → безопасно на каждый sync push.
+    if Flipper.enabled?(:pva) && rows.any? { |r| r[:event_type] == "stream_view" }
+      PersonalAnalytics::ViewAggregationWorker.perform_async(user_id)
+    end
   end
 
   private

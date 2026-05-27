@@ -10,6 +10,8 @@ class PvaViewEvent < ApplicationRecord
   belongs_to :channel, optional: true
 
   validates :user_id, presence: true
+  validates :twitch_channel_id, presence: true
+  validates :source_event_hash, presence: true, length: { is: 64 }
   validates :started_at, presence: true
   validates :seconds, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
   validates :device, inclusion: { in: DEVICES }, allow_nil: true
