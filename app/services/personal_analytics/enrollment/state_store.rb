@@ -66,6 +66,36 @@ module PersonalAnalytics
           state
         end
 
+        # Reset a single source cell back to pending state — used by ColdStartController#retry_source
+        # для banner per-source retry CTA (FR-016 §11.6). Re-enqueueing the corresponding worker
+        # happens в caller (controller) — StateStore only handles the state mutation.
+        # Returns the updated state row, or nil если no enrollment row exists.
+        def reset_source(user_id:, source_key:)
+          raise ArgumentError, "invalid source_key #{source_key.inspect}" unless SOURCE_KEYS.include?(source_key)
+
+          state = PvaEnrollmentBackfillState.find_by(user_id: user_id)
+          return nil unless state
+
+          ActiveRecord::Base.transaction do
+            state.lock!
+            new_sources = (state.sources || {}).deep_dup
+            new_sources[source_key] = {
+              "status" => "pending", "started_at" => nil, "completed_at" => nil,
+              "rows_affected" => 0, "error_class" => nil
+            }
+            state.sources = new_sources
+            state.failed_sources = new_sources.select { |_, v| v["status"] == "failed" }.keys.sort
+            state.overall_status = compute_overall_status(new_sources)
+            # Clear completed_at чтобы recent_completion? skip-logic не triggered после retry —
+            # frontend orchestrator must observe non-terminal state и resume polling.
+            state.completed_at = nil if state.overall_status != "done"
+            state.save!
+          end
+
+          write_redis_hash(user_id, state.sources)
+          state
+        end
+
         # Mark stuck enrollments как partial_timeout. Run from sweep cron (5-min cadence).
         def mark_partial_timeout(state)
           ActiveRecord::Base.transaction do
