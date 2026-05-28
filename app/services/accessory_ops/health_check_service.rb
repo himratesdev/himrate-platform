@@ -40,6 +40,11 @@ module AccessoryOps
       },
       "alertmanager" => ->(host) {
         ssh(host, "curl -sf -m #{TIMEOUT_SECONDS} http://himrate-alertmanager:9093/-/healthy")
+      },
+      # ClickHouse exposes an unauthenticated /ping (returns "Ok.") for liveness — same probe the
+      # app's Clickhouse::Client#ping uses. Internal Kamal-network DNS name + HTTP port 8123.
+      "clickhouse" => ->(host) {
+        ssh(host, "curl -sf -m #{TIMEOUT_SECONDS} http://himrate-clickhouse:8123/ping")
       }
     }.freeze
 

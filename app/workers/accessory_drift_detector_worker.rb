@@ -9,7 +9,7 @@ class AccessoryDriftDetectorWorker
   include Sidekiq::Job
   sidekiq_options queue: :accessory_ops, retry: 3
 
-  ACCESSORIES = %w[db redis grafana prometheus loki alertmanager promtail prometheus-pushgateway].freeze
+  ACCESSORIES = %w[db redis grafana prometheus loki alertmanager promtail prometheus-pushgateway clickhouse].freeze
 
   def perform
     return unless Flipper.enabled?(:accessory_drift_detection)

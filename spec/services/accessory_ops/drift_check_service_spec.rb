@@ -61,5 +61,9 @@ RSpec.describe AccessoryOps::DriftCheckService do
     it "matches CONTAINER_NAMES.keys (allowlist driven by hash)" do
       expect(described_class::ALLOWED_ACCESSORIES).to eq(described_class::CONTAINER_NAMES.keys)
     end
+
+    it "includes clickhouse → himrate-clickhouse (TASK-251.14)" do
+      expect(described_class::CONTAINER_NAMES["clickhouse"]).to eq("himrate-clickhouse")
+    end
   end
 end
