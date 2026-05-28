@@ -16,7 +16,7 @@ RSpec.describe PersonalAnalytics::Enrollment::ExtensionSubsPayloadHandler do
       }.to raise_error(ArgumentError)
     end
 
-    it "upserts ChannelTenure rows + creates Channel stubs" do
+    it "upserts ChannelTenure rows (channel_id nil if Channel canonical entry absent)" do
       payload = {
         "source" => 5,
         "subscriptions" => [

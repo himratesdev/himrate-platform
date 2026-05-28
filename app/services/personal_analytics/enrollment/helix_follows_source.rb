@@ -68,17 +68,25 @@ module PersonalAnalytics
         # entry: { broadcaster_id, broadcaster_login, broadcaster_name, followed_at }
         followed_at = Time.parse(entry["followed_at"])
 
-        PvaFollowedChannel.find_or_initialize_by(
-          user_id: @user_id,
-          twitch_channel_id: entry["broadcaster_id"]
-        ).tap do |row|
-          row.twitch_login = entry["broadcaster_login"]
-          row.display_name = entry["broadcaster_name"]
-          row.followed_at ||= followed_at
-          row.save!
+        # CR iter-1 M3: bounded retry (1) on RecordNotUnique vs unbounded loop. Mirrors pattern
+        # corrected in Auth::TwitchOauth#find_or_create_user. After 1 retry, re-raise → Sidekiq
+        # retry/dead path takes over (BR-013 isolated failure semantics still hold).
+        attempts = 0
+        begin
+          PvaFollowedChannel.find_or_initialize_by(
+            user_id: @user_id,
+            twitch_channel_id: entry["broadcaster_id"]
+          ).tap do |row|
+            row.twitch_login = entry["broadcaster_login"]
+            row.display_name = entry["broadcaster_name"]
+            row.followed_at ||= followed_at
+            row.save!
+          end
+        rescue ActiveRecord::RecordNotUnique
+          attempts += 1
+          raise if attempts > 1
+          retry
         end
-      rescue ActiveRecord::RecordNotUnique
-        retry
       end
 
       def done!(rows_count)

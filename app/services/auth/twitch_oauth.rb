@@ -85,7 +85,7 @@ module Auth
             access_token: tokens[:access_token],
             refresh_token: tokens[:refresh_token],
             expires_at: Time.current + tokens[:expires_in].to_i.seconds,
-            scopes: SCOPES.split(" ")
+            scopes: granted_scopes(tokens)
           )
           user = auth_provider.user
         else
@@ -103,7 +103,7 @@ module Auth
             access_token: tokens[:access_token],
             refresh_token: tokens[:refresh_token],
             expires_at: Time.current + tokens[:expires_in].to_i.seconds,
-            scopes: SCOPES.split(" "),
+            scopes: granted_scopes(tokens),
             is_broadcaster: streamer?(twitch_user[:broadcaster_type])
           )
         end
@@ -118,6 +118,13 @@ module Auth
       @retry_count = (@retry_count || 0) + 1
       raise e if @retry_count > 1
       retry
+    end
+
+    # CR iter-1 S1: persist actually-granted scopes from Twitch (tokens[:scope]) instead of
+    # requested set. Twitch may return subset if user re-consents partially; HelixFollowsSource
+    # scope_granted? now sees reality, avoiding wasted 403 round-trip.
+    def granted_scopes(tokens)
+      tokens[:scope].to_s.split(" ").presence || SCOPES.split(" ")
     end
 
     def determine_role(broadcaster_type)

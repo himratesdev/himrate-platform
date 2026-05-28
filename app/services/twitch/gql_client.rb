@@ -316,6 +316,16 @@ module Twitch
       execute_batch(operations)
     end
 
+    # TASK-113 Δ-1 Wave 1 (FR-016 source #2): batch persisted-query operations (operationName +
+    # sha256Hash + variables). Reuses execute_batch_persisted shell с 429/5xx retry handling.
+    # Each operation: { operationName:, sha256Hash:, variables: }. Returns array (parallel size +
+    # nil for failed items per batch).
+    def batch_persisted_queries(operations)
+      raise ArgumentError, "Batch size #{operations.size} exceeds max #{MAX_BATCH_SIZE}" if operations.size > MAX_BATCH_SIZE
+
+      execute_batch_persisted(operations)
+    end
+
     private
 
     # === HTTP ===
@@ -353,6 +363,37 @@ module Twitch
       Array.new(operations.size)
     rescue HTTP::ConnectionError => e
       Rails.logger.error("Twitch GQL batch connection error: #{e.message}")
+      Array.new(operations.size)
+    end
+
+    # TASK-113 Δ-1 Wave 1: persisted-query batch shell (operationName + sha256Hash + variables).
+    # Same 429/5xx retry semantics as execute_batch. Returns parallel array (size = operations.size).
+    def execute_batch_persisted(operations, retries: 0)
+      body = operations.map do |op|
+        {
+          operationName: op[:operationName],
+          variables: op[:variables] || {},
+          extensions: { persistedQuery: { version: 1, sha256Hash: op[:sha256Hash] } }
+        }
+      end
+      response = http_client.post(GQL_URL, json: body)
+
+      case response.status.to_i
+      when 200
+        parse_batch_response(response)
+      when 429
+        handle_rate_limit(response, retries) { execute_batch_persisted(operations, retries: retries + 1) }
+      when 500, 502, 503
+        handle_server_error(response, retries) { execute_batch_persisted(operations, retries: retries + 1) }
+      else
+        Rails.logger.error("Twitch GQL persisted-batch error #{response.status}: #{response.body.to_s.truncate(200)}")
+        Array.new(operations.size)
+      end
+    rescue HTTP::TimeoutError => e
+      Rails.logger.error("Twitch GQL persisted-batch timeout: #{e.message}")
+      Array.new(operations.size)
+    rescue HTTP::ConnectionError => e
+      Rails.logger.error("Twitch GQL persisted-batch connection error: #{e.message}")
       Array.new(operations.size)
     end
 

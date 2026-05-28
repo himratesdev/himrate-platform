@@ -34,10 +34,21 @@ module PersonalAnalytics
         return done!(0) if logins.empty?
 
         rows_count = 0
+        failed_batches = 0
+        client = Twitch::GqlClient.new
         logins.each_slice(BATCH_SIZE) do |chunk|
-          chunk_result = fetch_batch(chunk)
-          rows_count += apply_updates(chunk_result)
+          chunk_result = fetch_batch(client, chunk)
+          if chunk_result.nil?
+            failed_batches += 1
+          else
+            rows_count += apply_updates(chunk_result)
+          end
         end
+
+        # CR iter-1 M2: distinguish HTTP-failure-all-chunks from empty-response.
+        # If every batch failed → report failed (Sentry + UI retry CTA per §11.6).
+        # If some succeeded → partial state via rows_count > 0; failed_batches logged.
+        return failed!("ChannelShellBatchFailed") if failed_batches.positive? && rows_count.zero?
 
         done!(rows_count)
       rescue StandardError => e
@@ -55,31 +66,25 @@ module PersonalAnalytics
           .uniq
       end
 
-      def fetch_batch(logins)
-        body = logins.map do |login|
-          {
-            operationName: "ChannelShell",
-            variables: { login: login },
-            extensions: { persistedQuery: { version: 1, sha256Hash: CHANNEL_SHELL_HASH } }
-          }
+      # CR iter-1 S4: reuse Twitch::GqlClient#batch_persisted_queries for shared retry/backoff
+      # на 429/5xx + ENV-overridable Client-ID + User-Agent header. Returns nil on transport
+      # failure (caller distinguishes from empty-response per M2 fix).
+      def fetch_batch(client, logins)
+        ops = logins.map do |login|
+          { operationName: "ChannelShell", sha256Hash: CHANNEL_SHELL_HASH, variables: { login: login } }
         end
-
-        response = HTTP
-          .timeout(5)
-          .headers("Client-ID" => "kimne78kx3ncx6brgo4mv6wki5h1ko", "Content-Type" => "text/plain")
-          .post("https://gql.twitch.tv/gql", body: body.to_json)
-
-        return [] unless response.status.success?
-
-        JSON.parse(response.body.to_s)
-      rescue HTTP::TimeoutError, Errno::ECONNREFUSED, JSON::ParserError => e
+        result = client.batch_persisted_queries(ops)
+        return nil if result.nil? || result.all?(&:nil?)
+        result
+      rescue StandardError => e
         Rails.logger.warn("[PVA EnrollmentBackfill] ChannelShell batch failed: #{e.class} #{e.message}")
-        []
+        nil
       end
 
       def apply_updates(batch_result)
         rows = 0
         Array.wrap(batch_result).each do |item|
+          next if item.nil?
           user_data = item.dig("data", "userOrError")
           next unless user_data.is_a?(Hash) && user_data["__typename"] == "User"
 

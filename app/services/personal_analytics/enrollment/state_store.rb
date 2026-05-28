@@ -132,18 +132,24 @@ module PersonalAnalytics
           "pva:backfill:#{user_id}"
         end
 
+        # CR iter-1 M1: use block form per-call. ConnectionPool#with checks out a connection,
+        # yields, returns to pool on exit. Caching @redis = connection-leak + cross-thread
+        # corruption (StateStore singleton, Sidekiq + Puma threads share). Block-per-call ensures
+        # each operation gets a freshly checked-out connection, returned cleanly.
         def write_redis_hash(user_id, sources)
-          return unless redis
+          return unless defined?(Sidekiq)
           payload = sources.transform_values(&:to_json)
-          redis.mapped_hmset(redis_key(user_id), payload)
-          redis.expire(redis_key(user_id), REDIS_TTL)
+          Sidekiq.redis_pool.with do |conn|
+            conn.mapped_hmset(redis_key(user_id), payload)
+            conn.expire(redis_key(user_id), REDIS_TTL)
+          end
         rescue StandardError => e
           Rails.logger.warn("[PVA EnrollmentBackfill] Redis write failed: #{e.class} #{e.message}")
         end
 
         def read_redis_hash(user_id)
-          return nil unless redis
-          raw = redis.hgetall(redis_key(user_id))
+          return nil unless defined?(Sidekiq)
+          raw = Sidekiq.redis_pool.with { |conn| conn.hgetall(redis_key(user_id)) }
           return nil if raw.blank?
           raw.transform_values { |v| JSON.parse(v) rescue v }
         rescue StandardError => e
@@ -160,12 +166,6 @@ module PersonalAnalytics
             "oauth_linked_at" => state.oauth_linked_at.iso8601,
             "failed_sources" => state.failed_sources
           }
-        end
-
-        def redis
-          @redis ||= Sidekiq.redis_pool.with { |conn| conn } if defined?(Sidekiq)
-        rescue StandardError
-          nil
         end
       end
     end

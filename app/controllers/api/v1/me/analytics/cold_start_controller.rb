@@ -36,10 +36,21 @@ module Api
 
           # POST /api/v1/me/analytics/cold_start/subs_payload
           # Body: { source: 4|5, subscriptions: [{...}], captured_at: ISO-8601 }
+          SUBS_PAYLOAD_MAX = 5_000
+
           def subs_payload
             payload = params.permit(:source, :captured_at,
               subscriptions: [ :channel_twitch_id, :channel_login, :channel_display_name,
                               :tier, :cumulative_months, :started_at, :anniversary_at ]).to_h
+
+            # CR iter-1 N1: cap payload size to prevent puma worker stall + WAL bloat.
+            # Twitch UI maxes around few thousand subs even for power users.
+            if Array.wrap(payload["subscriptions"]).size > SUBS_PAYLOAD_MAX
+              render json: { ok: false, error: "PayloadTooLarge",
+                message: "subscriptions exceeds #{SUBS_PAYLOAD_MAX}" },
+                status: :payload_too_large
+              return
+            end
 
             result = PersonalAnalytics::Enrollment::ExtensionSubsPayloadHandler.call(
               user_id: current_user.id, payload: payload
