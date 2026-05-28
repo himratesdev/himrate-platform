@@ -53,10 +53,17 @@ module TrustIndex
         []
       end
 
+      # TASK-251.14d: the 4 chat methods now dispatch via Flipper. PG paths floor `since` to the
+      # minute so PG and the minute-bucketed CH MVs read identically aligned windows (resolves
+      # CR-198 Nit-2). See `dispatch_chat` below for flag semantics.
       def fetch_chat_rate(stream, since)
+        dispatch_chat(:chat_rate, [ stream, since.beginning_of_minute ])
+      end
+
+      def fetch_chat_rate_pg(stream, since)
         ChatMessage
           .where(stream_id: stream.id, msg_type: "privmsg")
-          .where("timestamp > ?", since)
+          .where("timestamp >= ?", since)
           .group("date_trunc('minute', timestamp)")
           .count
           .map { |ts, count| { msg_count: count, timestamp: ts } }
@@ -66,12 +73,20 @@ module TrustIndex
         []
       end
 
+      def fetch_chat_rate_ch(stream, since)
+        Clickhouse::ChatQueries.chat_rate(stream, since)
+      end
+
       # TASK-085 FR-017 (ADR-085 D-7): chat username frequency для Shannon entropy.
       # Used by ChatBehavior signal — entropy < 2.0 → chat_entropy_drop alert.
       def fetch_chat_username_counts(stream, since)
+        dispatch_chat(:chat_username_counts, [ stream, since.beginning_of_minute ])
+      end
+
+      def fetch_chat_username_counts_pg(stream, since)
         ChatMessage
           .where(stream_id: stream.id, msg_type: "privmsg")
-          .where("timestamp > ?", since)
+          .where("timestamp >= ?", since)
           .group(:username)
           .count
       rescue ActiveRecord::StatementInvalid => e
@@ -79,15 +94,27 @@ module TrustIndex
         {}
       end
 
+      def fetch_chat_username_counts_ch(stream, since)
+        Clickhouse::ChatQueries.chat_username_counts(stream, since)
+      end
+
       def fetch_unique_chatters(stream)
+        dispatch_chat(:unique_chatters, [ stream ])
+      end
+
+      def fetch_unique_chatters_pg(stream)
         ChatMessage
           .where(stream_id: stream.id, msg_type: "privmsg")
-          .where("timestamp > ?", 60.minutes.ago)
+          .where("timestamp >= ?", 60.minutes.ago.beginning_of_minute)
           .distinct
           .count(:username)
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: unique_chatters failed (#{e.message})")
         nil
+      end
+
+      def fetch_unique_chatters_ch(stream)
+        Clickhouse::ChatQueries.unique_chatters(stream)
       end
 
       def fetch_bot_scores(stream)
@@ -113,10 +140,17 @@ module TrustIndex
       CROSS_CHANNEL_CHATTER_LIMIT = 500
 
       def fetch_cross_channel(stream)
-        # Get usernames from current stream's chat (limit for performance at 1000+ streams)
+        dispatch_chat(:cross_channel, [ stream ])
+      end
+
+      # TASK-251.14d: ORDER BY username added so the PG path picks the same deterministic 500 as
+      # the CH path (Clickhouse::ChatQueries.cross_channel) — required for 0-divergence dual-read on
+      # high-cardinality streams where the unordered LIMIT 500 was previously arbitrary.
+      def fetch_cross_channel_pg(stream)
         usernames = ChatMessage
           .where(stream_id: stream.id, msg_type: "privmsg")
           .distinct
+          .order(:username)
           .limit(CROSS_CHANNEL_CHATTER_LIMIT)
           .pluck(:username)
 
@@ -131,6 +165,53 @@ module TrustIndex
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: cross_channel failed (#{e.message})")
         {}
+      end
+
+      def fetch_cross_channel_ch(stream)
+        Clickhouse::ChatQueries.cross_channel(stream)
+      end
+
+      # TASK-251.14d: dual-flag dispatch for the 4 chat queries.
+      # - :chat_reads_clickhouse_dual_read ON → run BOTH paths, log per-call divergence, return the
+      #   PG result (safe default). Validation phase: monitor divergence over hours; flip when 0.
+      # - :chat_reads_clickhouse ON (without dual_read) → CH only. Combat: signals offload to the
+      #   minute-rollups (O(1) reads) and the `:signals` backlog drains.
+      # - Both OFF (default) → PG only, unchanged from pre-EPIC behaviour.
+      def dispatch_chat(method, args)
+        if Flipper.enabled?(:chat_reads_clickhouse_dual_read)
+          pg = send("fetch_#{method}_pg", *args)
+          ch = safe_ch(method, args)
+          log_divergence(method, args.first, pg, ch)
+          pg
+        elsif Flipper.enabled?(:chat_reads_clickhouse)
+          send("fetch_#{method}_ch", *args)
+        else
+          send("fetch_#{method}_pg", *args)
+        end
+      end
+
+      def safe_ch(method, args)
+        send("fetch_#{method}_ch", *args)
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder dual-read: CH #{method} failed (#{e.class}) — parity comparison skipped for this call")
+        nil
+      end
+
+      def log_divergence(method, stream, pg, ch)
+        return if ch.nil?           # CH call failed — already warned by safe_ch.
+        return if pg == ch          # exact match — silent.
+
+        Rails.logger.warn("ContextBuilder dual-read divergence: method=#{method} stream_id=#{stream.id} pg=#{summarize(pg)} ch=#{summarize(ch)}")
+      end
+
+      def summarize(value)
+        case value
+        when nil       then "nil"
+        when Integer   then value.to_s
+        when Hash      then "Hash(#{value.size})"
+        when Array     then "Array(#{value.size})"
+        else value.class.name
+        end
       end
 
       def fetch_raids(stream)
