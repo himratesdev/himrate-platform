@@ -60,6 +60,26 @@ RSpec.describe StreamMonitorWorker do
     expect(snapshot.auth_ratio.to_f).to be_within(0.0001).of(3.0 / 500) # ccv 500 from StreamMetadata stub
   end
 
+  # BUG-251.24 regression: bursty chat (60-min unique chatters >> instantaneous CCV) → ratio > 1.
+  # Pre-migration this raised ActiveRecord::RangeError on numeric(5,4) overflow when ratio ≥ 10.
+  # Post-migration the wider numeric(8,4) column accepts values up to 9999.9999 → row saves cleanly.
+  it "stores auth_ratio when bursty chat pushes the ratio above 1.0 (numeric(8,4))" do
+    # Low instantaneous CCV
+    allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_return(
+      [ { "data" => { "user" => { "stream" => { "viewersCount" => 5 } } } } ]
+    )
+    # Many unique chatters over the 60-min window → unique=50, ratio = 50/5 = 10.0
+    50.times do |i|
+      create(:chat_message, stream: stream, channel_login: "teststreamer", username: "user_#{i}", timestamp: Time.current)
+    end
+
+    expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
+
+    snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
+    expect(snapshot.unique_chatters_count).to eq(50)
+    expect(snapshot.auth_ratio.to_f).to be_within(0.0001).of(10.0)
+  end
+
   # TC-011: Helix fallback
   it "falls back to Helix when GQL fails" do
     allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_raise(Twitch::GqlClient::Error, "GQL down")
