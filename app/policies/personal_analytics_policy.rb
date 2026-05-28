@@ -13,6 +13,25 @@ class PersonalAnalyticsPolicy < ApplicationPolicy
     own_analytics?
   end
 
+  # BE-5 (CR nit-1): action-specific policy methods — семантически чётче чем generic :overview?
+  # для PUT/DELETE/POST. Логика идентична own_analytics? (PVA all-free, ownership-only — нет paywall),
+  # но раздельные методы дают spec'ам гранулярную проверку + читаемость в audit-логах.
+  def update_privacy?
+    own_analytics?
+  end
+
+  def delete_account?
+    own_analytics?
+  end
+
+  def export?
+    own_analytics?
+  end
+
+  def download_export?
+    own_analytics?
+  end
+
   private
 
   # record (current_user) == authenticated user → свои данные.

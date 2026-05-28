@@ -164,4 +164,55 @@ RSpec.describe "Api::V1::Me::Analytics", type: :request do
       end
     end
   end
+
+  describe "BE-5 M13 export endpoints" do
+    it "POST /analytics/export returns 202 + job_id + poll_url, enqueues worker" do
+      expect(PersonalAnalytics::ExportWorker).to receive(:perform_async).with(user.id, instance_of(String))
+
+      post "/api/v1/me/analytics/export", headers: auth_headers(user), as: :json
+
+      expect(response).to have_http_status(:accepted)
+      job_id = response.parsed_body["job_id"]
+      expect(job_id).to be_present
+      expect(response.parsed_body["poll_url"]).to eq("/api/v1/me/analytics/export/#{job_id}")
+    end
+
+    it "GET /analytics/export/:id returns 404 when no payload in cache" do
+      get "/api/v1/me/analytics/export/missing-job", headers: auth_headers(user)
+      expect(response).to have_http_status(:not_found)
+      expect(response.parsed_body["error"]).to eq("EXPORT_NOT_READY")
+    end
+
+    it "GET /analytics/export/:id returns archive when ready (owned by user)" do
+      job_id = SecureRandom.uuid
+      Rails.cache.write(PersonalAnalytics::ExportWorker.cache_key(job_id),
+        { user: { id: user.id }, analytics: { view_rollups: [] } }.to_json)
+
+      get "/api/v1/me/analytics/export/#{job_id}", headers: auth_headers(user)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("user", "id")).to eq(user.id)
+    end
+
+    it "GET /analytics/export/:id returns 404 if payload belongs to ANOTHER user (defense-in-depth)" do
+      other = create(:user)
+      job_id = SecureRandom.uuid
+      Rails.cache.write(PersonalAnalytics::ExportWorker.cache_key(job_id),
+        { user: { id: other.id }, analytics: {} }.to_json)
+
+      get "/api/v1/me/analytics/export/#{job_id}", headers: auth_headers(user)
+
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "POST + GET both return 404 when :pva is OFF" do
+      allow(Flipper).to receive(:enabled?).with(:pva).and_return(false)
+
+      post "/api/v1/me/analytics/export", headers: auth_headers(user), as: :json
+      expect(response).to have_http_status(:not_found)
+
+      get "/api/v1/me/analytics/export/any-id", headers: auth_headers(user)
+      expect(response).to have_http_status(:not_found)
+    end
+  end
 end

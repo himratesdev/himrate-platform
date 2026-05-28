@@ -78,6 +78,30 @@ module Api
           end
         end
 
+        # POST /api/v1/me/analytics/export — M13 async JSON archive (FR-012).
+        # 202 + job_id; результат лежит в Rails.cache 24ч и доступен по GET /export/:job_id.
+        def export
+          authorize current_user, :export?, policy_class: PersonalAnalyticsPolicy
+          job_id = SecureRandom.uuid
+          PersonalAnalytics::ExportWorker.perform_async(current_user.id, job_id)
+          render json: { job_id: job_id, status: "queued",
+                         poll_url: "/api/v1/me/analytics/export/#{job_id}" }, status: :accepted
+        end
+
+        # GET /api/v1/me/analytics/export/:id — M13 download archive (FR-012).
+        # 200 + payload если готов; 404 если истёк/не существует; 202 если ещё в очереди (best-effort).
+        def export_download
+          authorize current_user, :download_export?, policy_class: PersonalAnalyticsPolicy
+          raw = Rails.cache.read(PersonalAnalytics::ExportWorker.cache_key(params[:id]))
+          return render(json: { error: "EXPORT_NOT_READY" }, status: :not_found) unless raw
+
+          # Authorization-by-payload: гарантируем что job_id принадлежит текущему юзеру.
+          data = JSON.parse(raw)
+          return render(json: { error: "EXPORT_NOT_READY" }, status: :not_found) if data["user"]&.dig("id") != current_user.id
+
+          render json: data
+        end
+
         # POST /api/v1/me/analytics/engagement — client-capture ingest (M7 discrete events + M6 chat snapshots).
         # Async (Sidekiq) — синхронный ответ не ждёт записи. Idempotent downstream (event_hash dedup /
         # snapshot upsert-replace) → безопасно при ретраях клиента.

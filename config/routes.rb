@@ -111,7 +111,7 @@ Rails.application.routes.draw do
       # TASK-110 FR-006..007: React fiber chat capture batch ingest
       post "chat/messages", to: "chat_ingest#create"
 
-      # TASK-113 BE-2/BE-3/BE-4: Personal Viewer Analytics (self-analytics, JWT + ownership, all-free)
+      # TASK-113 BE-2/BE-3/BE-4/BE-5: Personal Viewer Analytics (self-analytics, JWT + ownership, all-free)
       namespace :me do
         get "analytics/overview", to: "analytics#overview"
         get "analytics/communities", to: "analytics#communities"
@@ -121,7 +121,15 @@ Rails.application.routes.draw do
         get "analytics/patterns", to: "analytics#patterns"
         get "analytics/cohort", to: "analytics#cohort"
         post "analytics/engagement", to: "analytics#engagement"
+        # BE-5 M13 Export (FR-012): async JSON archive (POST + GET /:id download)
+        post "analytics/export", to: "analytics#export"
+        get "analytics/export/:id", to: "analytics#export_download"
+        # BE-5 M15 Privacy
+        get "privacy", to: "privacy#show"
+        put "privacy", to: "privacy#update"
       end
+      # BE-5 M13 minimal soft-delete (PO directive 2026-05-28) — out-of-namespace для чистого DELETE /me
+      delete "me", to: "me/privacy#destroy_account"
     end
   end
 
