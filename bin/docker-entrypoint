@@ -3,6 +3,15 @@
 # If running the rails server then create or migrate existing database
 if [ "${@: -2:1}" == "./bin/rails" ] && [ "${@: -1:1}" == "server" ]; then
   ./bin/rails db:prepare
+
+  # TASK-251.14b: provision the ClickHouse analytics schema (chat_messages + MVs) on the web role,
+  # since the deploy path is `kamal deploy` (no setup hook) and the dual-write (:chat_writes_clickhouse)
+  # needs the tables to exist. Idempotent (CREATE … IF NOT EXISTS). Guarded + time-boxed + non-fatal:
+  # only when CLICKHOUSE_HOST is set, and a CH outage must NEVER block web boot — the dual-write is
+  # best-effort and a missing table is closed by the backfill. `|| echo` keeps `set -e` from aborting.
+  if [ -n "${CLICKHOUSE_HOST}" ]; then
+    timeout 30 ./bin/rails clickhouse:setup || echo "WARN: clickhouse:setup skipped/failed (CH unreachable?) — non-fatal, dual-write is best-effort"
+  fi
 fi
 
 exec "${@}"

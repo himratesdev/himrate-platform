@@ -22,8 +22,9 @@
 module Clickhouse
   class Client
     DEFAULT_PORT = "8123"
-    REQUEST_TIMEOUT = 30 # analytic SELECTs / batch INSERTs run longer than an OLTP call
-    PING_TIMEOUT = 2     # liveness probe must fail fast — no retry/backoff
+    REQUEST_TIMEOUT = 30      # analytic SELECTs / batch INSERTs run longer than an OLTP call
+    PING_TIMEOUT = 2          # liveness probe must fail fast — no retry/backoff
+    BEST_EFFORT_TIMEOUT = 2   # best-effort writes (dual-write mirror) must fail fast — no retry/backoff
     MAX_RETRIES = 3
     BACKOFF_BASE = 1 # seconds
     RETRYABLE_STATUSES = [ 500, 502, 503, 504 ].freeze
@@ -62,12 +63,16 @@ module Clickhouse
     # Batch-insert rows (Array<Hash>) into `table` via JSONEachRow — one JSON object per line. Hash
     # keys must match table column names; omitted columns take their DDL default. Returns the number
     # of rows sent. Empty input is a no-op (no HTTP call).
-    def insert(table, rows)
+    #
+    # best_effort: true — fail fast (short timeout, NO retry/backoff). For the dual-write mirror, where
+    # Postgres is the source of truth and a CH outage must not stall the caller's ingest loop; the
+    # caller rescues the raised error and moves on (gap closed by backfill).
+    def insert(table, rows, best_effort: false)
       return 0 if rows.nil? || rows.empty?
 
       payload = +"INSERT INTO #{table} FORMAT JSONEachRow\n"
       rows.each { |row| payload << "#{JSON.generate(row)}\n" }
-      post(payload)
+      post(payload, best_effort: best_effort)
       rows.size
     end
 
@@ -83,21 +88,28 @@ module Clickhouse
 
     private
 
-    def post(sql, retries: 0)
-      response = http_client.post(url, body: sql)
-      handle(response, sql, retries)
+    def post(sql, retries: 0, best_effort: false)
+      response = http_client(best_effort ? BEST_EFFORT_TIMEOUT : REQUEST_TIMEOUT).post(url, body: sql)
+      handle(response, sql, retries, best_effort: best_effort)
     rescue HTTP::TimeoutError, IO::TimeoutError => e
-      raise_or_retry(ConnectionError.new("ClickHouse timeout: #{e.message}"), retries) { post(sql, retries: retries + 1) }
+      err = ConnectionError.new("ClickHouse timeout: #{e.message}")
+      raise err if best_effort
+
+      raise_or_retry(err, retries) { post(sql, retries: retries + 1) }
     rescue HTTP::ConnectionError => e
-      raise_or_retry(ConnectionError.new("ClickHouse connection error: #{e.message}"), retries) { post(sql, retries: retries + 1) }
+      err = ConnectionError.new("ClickHouse connection error: #{e.message}")
+      raise err if best_effort
+
+      raise_or_retry(err, retries) { post(sql, retries: retries + 1) }
     end
 
-    def handle(response, sql, retries)
+    def handle(response, sql, retries, best_effort: false)
       status = response.status.to_i
       return response.body.to_s if status == 200
 
       # 5xx → transient, retry with backoff. 4xx → query/auth error, fail fast (no retry).
-      if RETRYABLE_STATUSES.include?(status) && retries < MAX_RETRIES
+      # best_effort → never retry (caller must not be stalled by a CH outage).
+      if !best_effort && RETRYABLE_STATUSES.include?(status) && retries < MAX_RETRIES
         backoff(retries)
         return post(sql, retries: retries + 1)
       end
@@ -116,8 +128,8 @@ module Clickhouse
       sleep(BACKOFF_BASE * (2**retries))
     end
 
-    def http_client
-      HTTP.timeout(REQUEST_TIMEOUT).headers(
+    def http_client(timeout = REQUEST_TIMEOUT)
+      HTTP.timeout(timeout).headers(
         "X-ClickHouse-User" => @user,
         "X-ClickHouse-Key" => @password,
         "X-ClickHouse-Database" => @database

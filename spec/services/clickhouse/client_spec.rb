@@ -113,6 +113,13 @@ RSpec.describe Clickhouse::Client do
 
         expect { client.execute("SELECT 1") }.to raise_error(Clickhouse::ConnectionError, /connection error/)
       end
+
+      it "best_effort insert fails fast — no retry on a 5xx" do
+        stub = stub_request(:post, url).to_return(status: 503, body: "busy")
+
+        expect { client.insert("t", [ { a: 1 } ], best_effort: true) }.to raise_error(Clickhouse::QueryError, /HTTP 503/)
+        expect(stub).to have_been_requested.once # single attempt, no backoff/retry
+      end
     end
 
     it "reads connection settings from ENV when not given explicitly" do
