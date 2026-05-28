@@ -10,7 +10,12 @@ class PvaEnrollmentBackfillState < ApplicationRecord
   belongs_to :user
 
   STATUSES = %w[pending in_progress partial done partial_timeout failed].freeze
-  SOURCE_KEYS = %w[source_1 source_2 source_3 source_4 source_5].freeze
+  # CR iter-3 S1: Wave 1 declares ONLY active sources (#1 Helix follows, #2 anon GQL, #5
+  # extension subs payload). Sources #3 (CH chat backfill) + #4 (GQL self-subs replay) =
+  # deferred per ADR v3.0 wave-doctrine. Including them в SOURCE_KEYS triggered partial_timeout
+  # для каждого юзера (no workers exist → sweep marked them failed:EnrollmentTimeout after 10min).
+  # Wave 2 migration адds source_3/source_4 keys + backfill for existing rows.
+  SOURCE_KEYS = %w[source_1 source_2 source_5].freeze
 
   validates :overall_status, inclusion: { in: STATUSES }
   validates :user_id, uniqueness: true

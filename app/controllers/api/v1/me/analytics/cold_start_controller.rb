@@ -15,7 +15,9 @@ module Api
           # PVA all-free — ownership через JWT (current_user), нет Pundit policy paywall.
           skip_after_action :verify_authorized
 
-          rescue_from ArgumentError, with: :render_invalid_source
+          # CR iter-3 N4: точечный rescue domain-specific error class (не общий ArgumentError).
+          rescue_from PersonalAnalytics::Enrollment::ExtensionSubsPayloadHandler::InvalidSourceError,
+            with: :render_invalid_source
 
           # GET /api/v1/me/analytics/cold_start/state
           def state

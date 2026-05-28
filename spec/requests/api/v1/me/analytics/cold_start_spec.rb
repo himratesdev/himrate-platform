@@ -27,7 +27,7 @@ RSpec.describe "Api::V1::Me::Analytics::ColdStart" do
       expect(response).to have_http_status(:ok)
       body = JSON.parse(response.body)
       expect(body["overall_status"]).to eq("pending")
-      expect(body["sources"].keys).to match_array(%w[source_1 source_2 source_3 source_4 source_5])
+      expect(body["sources"].keys).to match_array(%w[source_1 source_2 source_5])
     end
   end
 

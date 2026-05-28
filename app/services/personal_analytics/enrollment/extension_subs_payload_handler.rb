@@ -20,6 +20,11 @@
 module PersonalAnalytics
   module Enrollment
     class ExtensionSubsPayloadHandler
+      # CR iter-3 N4: domain-specific error class, не общий ArgumentError. Controller's
+      # rescue_from теперь точечно ловит InvalidSourceError; другие ArgumentError bubble up
+      # к стандартному Rails error handler (Sentry-trackable).
+      class InvalidSourceError < StandardError; end
+
       Result = Struct.new(:rows_affected, :error_class, keyword_init: true)
 
       def self.call(user_id:, payload:)
@@ -36,7 +41,7 @@ module PersonalAnalytics
         # ArgumentError inside rescue → secondary StateStore.update_source(source_key: nil)
         # raised a second ArgumentError that masked the real "invalid source 99" Sentry trace.
         source_key = source_key_for(@payload["source"])
-        raise ArgumentError, "invalid source #{@payload['source']}" unless source_key
+        raise InvalidSourceError, "invalid source #{@payload['source']}" unless source_key
 
         StateStore.update_source(user_id: @user_id, source_key: source_key,
           payload: { status: "in_progress", started_at: Time.current.iso8601 })
@@ -49,9 +54,9 @@ module PersonalAnalytics
         StateStore.update_source(user_id: @user_id, source_key: source_key,
           payload: { status: "done", completed_at: Time.current.iso8601, rows_affected: rows_count })
         Result.new(rows_affected: rows_count)
-      rescue ArgumentError
+      rescue InvalidSourceError
         # Re-raise — controller's rescue_from renders InvalidSource. Don't write StateStore
-        # without resolved source_key (would itself raise; CR iter-1 S5 fix).
+        # without resolved source_key (would itself raise; CR iter-1 S5 fix preserved).
         raise
       rescue StandardError => e
         Sentry.capture_exception(e) if defined?(Sentry)

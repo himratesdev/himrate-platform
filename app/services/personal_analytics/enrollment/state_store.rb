@@ -136,6 +136,8 @@ module PersonalAnalytics
         # yields, returns to pool on exit. Caching @redis = connection-leak + cross-thread
         # corruption (StateStore singleton, Sidekiq + Puma threads share). Block-per-call ensures
         # each operation gets a freshly checked-out connection, returned cleanly.
+        # Used by update_source/initiate/mark_partial_timeout — write-only path для Wave 1.
+        # (read_redis_hash removed CR iter-3 N2 после CR iter-2 N2 PG-only simplification.)
         def write_redis_hash(user_id, sources)
           return unless defined?(Sidekiq)
           payload = sources.transform_values(&:to_json)
@@ -145,27 +147,6 @@ module PersonalAnalytics
           end
         rescue StandardError => e
           Rails.logger.warn("[PVA EnrollmentBackfill] Redis write failed: #{e.class} #{e.message}")
-        end
-
-        def read_redis_hash(user_id)
-          return nil unless defined?(Sidekiq)
-          raw = Sidekiq.redis_pool.with { |conn| conn.hgetall(redis_key(user_id)) }
-          return nil if raw.blank?
-          raw.transform_values { |v| JSON.parse(v) rescue v }
-        rescue StandardError => e
-          Rails.logger.warn("[PVA EnrollmentBackfill] Redis read failed: #{e.class} #{e.message}")
-          nil
-        end
-
-        def read_metadata_from_pg(user_id)
-          state = PvaEnrollmentBackfillState.find_by(user_id: user_id)
-          return nil unless state
-          {
-            "overall_status" => state.overall_status,
-            "completed_at" => state.completed_at&.iso8601,
-            "oauth_linked_at" => state.oauth_linked_at.iso8601,
-            "failed_sources" => state.failed_sources
-          }
         end
       end
     end

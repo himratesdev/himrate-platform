@@ -17,7 +17,7 @@ RSpec.describe PersonalAnalytics::Enrollment::StateStore do
       expect(status).to eq(:created)
       expect(state).to be_persisted
       expect(state.overall_status).to eq("pending")
-      expect(state.sources.keys).to match_array(%w[source_1 source_2 source_3 source_4 source_5])
+      expect(state.sources.keys).to match_array(%w[source_1 source_2 source_5])
     end
 
     it "reuses recent (<30d) state row + returns :reused" do
@@ -65,7 +65,7 @@ RSpec.describe PersonalAnalytics::Enrollment::StateStore do
     end
 
     it "computes overall_status=done когда all sources done" do
-      %w[source_1 source_2 source_3 source_4 source_5].each do |key|
+      %w[source_1 source_2 source_5].each do |key|
         described_class.update_source(user_id: user.id, source_key: key,
           payload: { status: "done", completed_at: Time.current.iso8601 })
       end

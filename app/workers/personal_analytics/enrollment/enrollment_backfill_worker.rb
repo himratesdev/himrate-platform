@@ -21,7 +21,9 @@ module PersonalAnalytics
       include Sidekiq::Job
       sidekiq_options queue: :pva_critical, retry: 3, dead: false
 
-      def perform(user_id, force: false)
+      # CR iter-3 N3: positional arg (Sidekiq does not reliably round-trip kwargs через
+      # perform_async → JSON → worker). Default false для Twitch callback hook.
+      def perform(user_id, force = false)
         return unless Flipper.enabled?(:pva)
 
         state, status = PersonalAnalytics::Enrollment::StateStore.initiate(user_id: user_id, force: force)

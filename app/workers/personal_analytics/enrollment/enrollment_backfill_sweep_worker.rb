@@ -8,7 +8,8 @@ module PersonalAnalytics
   module Enrollment
     class EnrollmentBackfillSweepWorker
       include Sidekiq::Job
-      sidekiq_options queue: :default, retry: 1
+      # CR iter-3 N1: align queue with cron schedule (:monitoring) — was :default.
+      sidekiq_options queue: :monitoring, retry: 1
 
       def perform
         return unless Flipper.enabled?(:pva)
