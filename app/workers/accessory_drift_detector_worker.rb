@@ -14,10 +14,22 @@ class AccessoryDriftDetectorWorker
   def perform
     return unless Flipper.enabled?(:accessory_drift_detection)
 
+    @skipped_count = 0
     AccessoryHostsConfig.destinations.each do |destination|
       ACCESSORIES.each do |accessory|
         check_pair(destination: destination, accessory: accessory)
       end
+    end
+
+    # BUG-025: aggregate :skipped log marker — one INFO line per cycle summarizing the count.
+    # DriftCheckService emits a WARN per (destination, accessory) pair when config is unreadable
+    # (up to N_destinations × M_accessories warns per cycle until ops mounts the file — intentional,
+    # surfaces the problem repeatedly at WARN level). This INFO marker is the greppable aggregate.
+    if @skipped_count.positive?
+      Rails.logger.info(
+        "AccessoryDriftDetectorWorker: drift detection skipped for #{@skipped_count} pair(s) " \
+        "(config/deploy.yml not mounted in container — see DriftCheckService warning; BUG-025)"
+      )
     end
   end
 
@@ -30,6 +42,13 @@ class AccessoryDriftDetectorWorker
       close_event!(open_event) if open_event
     when :mismatch
       handle_mismatch!(destination: destination, accessory: accessory, result: result, open_event: open_event)
+    when :skipped
+      # BUG-025: config/deploy.yml not present in container → DriftCheckService cannot read the
+      # declared image. No state change — do NOT close `open_event` (drift detection is paused for
+      # this cycle, NOT "resolved" — falsely closing would lose visibility into a real ongoing drift
+      # the moment the config becomes unreadable). DriftCheckService logs the root-cause warning;
+      # we only bump the per-cycle counter for the aggregate log marker in #perform.
+      @skipped_count += 1
     end
   rescue StandardError => e
     Rails.logger.error("AccessoryDriftDetectorWorker: #{destination}/#{accessory} — #{e.class}: #{e.message}")

@@ -132,6 +132,15 @@ namespace :accessory_ops do
     status = args[:status] || "healthy"
 
     drift = AccessoryOps::DriftCheckService.call(destination: destination, accessory: accessory)
+    # BUG-025: distinguish `:skipped` (config/deploy.yml not present → DriftCheckService short-
+    # circuits without SSH probe) from `:mismatch` with runtime probe failure. Both cases leave
+    # `runtime_image` blank, but the operator action is different: `:skipped` → mount the config,
+    # `:mismatch` with blank runtime → investigate SSH/docker probe.
+    if drift.drift_state == :skipped
+      warn "state_refresh_skipped reason=config_unavailable destination=#{destination} accessory=#{accessory} (BUG-025)"
+      exit 1
+    end
+
     image = drift.runtime_image
     if image.blank?
       warn "state_refresh_failed runtime_image_unknown destination=#{destination} accessory=#{accessory}"

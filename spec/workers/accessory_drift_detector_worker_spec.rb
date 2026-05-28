@@ -86,4 +86,67 @@ RSpec.describe AccessoryDriftDetectorWorker do
       expect { worker.perform }.to raise_error(StandardError, "ssh failed")
     end
   end
+
+  # BUG-025: graceful skip when config/deploy.yml is not mounted in the app container.
+  # Pre-fix the service raised Errno::ENOENT every cycle → Sidekiq retry 3× → DLQ (474 entries
+  # accumulated). Worker now silently no-ops on the :skipped drift_state + logs aggregate marker.
+  describe "skipped path (BUG-025)" do
+    before do
+      allow(AccessoryOps::DriftCheckService).to receive(:call).and_return(
+        AccessoryOps::DriftCheckService::Result.new(
+          drift_state: :skipped, declared_image: nil, runtime_image: nil
+        )
+      )
+    end
+
+    it "does NOT raise (no Sidekiq retry / DLQ)" do
+      expect { worker.perform }.not_to raise_error
+    end
+
+    it "does NOT create an event, push an alert, or trigger remediation" do
+      expect(AccessoryDriftEvent).not_to receive(:create!)
+      expect(AlertmanagerNotifier).not_to receive(:push)
+      allow(AccessoryOps::AutoRemediation::TriggerService).to receive(:call)
+      worker.perform
+      expect(AccessoryOps::AutoRemediation::TriggerService).not_to have_received(:call)
+    end
+
+    it "does NOT close an existing open event (paused, not resolved)" do
+      open_event = AccessoryDriftEvent.create!(
+        destination: "staging", accessory: "redis",
+        declared_image: "redis:7.4-alpine", runtime_image: "redis:7.2-alpine",
+        detected_at: 1.hour.ago, status: "open"
+      )
+      worker.perform
+      expect(open_event.reload.status).to eq("open")
+      expect(open_event.resolved_at).to be_nil
+    end
+
+    it "logs an aggregate :skipped marker once per cycle" do
+      # Use allow → action → have_received (not `expect → receive`). `expect(Rails.logger)
+      # .to receive(:info).with(/regex/)` partial-mocks `:info` and falsely fails the moment
+      # another info-log is added to `#perform`.
+      allow(Rails.logger).to receive(:info)
+      worker.perform
+      expect(Rails.logger).to have_received(:info).with(
+        /drift detection skipped for 1 pair\(s\) .*BUG-025/
+      ).once
+    end
+  end
+
+  # Regression guard: aggregate marker MUST NOT fire on a clean :match cycle. Catches a future
+  # bug where the `if @skipped_count.positive?` gate is dropped and the marker becomes
+  # unconditionally logged as "0 pair(s)" on every cron tick.
+  describe "aggregate :skipped marker NOT logged on non-skip cycles (BUG-025 regression guard)" do
+    it "does not emit the aggregate marker когда все pairs matched" do
+      allow(AccessoryOps::DriftCheckService).to receive(:call).and_return(
+        AccessoryOps::DriftCheckService::Result.new(
+          drift_state: :match, declared_image: "redis:7.4-alpine", runtime_image: "redis:7.4-alpine"
+        )
+      )
+      allow(Rails.logger).to receive(:info)
+      worker.perform
+      expect(Rails.logger).not_to have_received(:info).with(/drift detection skipped for/)
+    end
+  end
 end
