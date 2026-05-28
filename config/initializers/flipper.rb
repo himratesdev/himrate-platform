@@ -20,6 +20,9 @@ begin
   redis_adapter = Flipper::Adapters::Redis.new(redis_instance)
 rescue Redis::CannotConnectError, Redis::TimeoutError => e
   Rails.logger.error("Flipper: Redis unavailable (#{e.message}), using ActiveRecord only")
+  redis_instance = nil # CR-iter1 #2: short-circuit pause-override probe on Redis-down
+  # — without this each ALL_FLAGS loop iter would re-attempt the broken Redis +
+  # raise/rescue ~18× (1s connect_timeout × 18 flags = ~18s added to cold-start boot).
   redis_adapter = nil
 end
 
@@ -60,7 +63,39 @@ end
 # Single source of truth for all feature flags.
 # Paywall enforcement = Pundit policies. Flipper = kill switches only.
 # Default state = enabled. Disable only in emergency.
+#
+# Tactical pause-override (BUG-251.21): for multi-hour disable that must survive Rails boot
+# (backfill, batch migration, maintenance windows), set Redis key
+#   flipper:pause_override:<flag_name> = "<reason>"
+# The boot loop below respects this key by calling Flipper.disable for that flag and skipping
+# the auto-enable. The pause persists across container restarts and deploys until explicit DEL.
+# See `bin/rails flipper:pause:*` and docs/runbooks/flipper_tactical_pause.md.
 module FlipperDefaults
+  PAUSE_KEY_PREFIX = "flipper:pause_override"
+
+  # Returns the pause-override reason string (or nil if no key / Redis error). The boot loop
+  # uses the nil-or-string return to decide pause-vs-enable AND emit the reason in the audit
+  # log — one Redis GET per flag instead of two probes (EXISTS + GET; CR-iter1 #1).
+  #
+  # Returns nil on any Redis error (degraded mode — pause check fails OPEN, flag auto-enables
+  # as today). This is intentional: a flaky Redis at boot must not silently leave critical
+  # production flags disabled.
+  def self.pause_override_reason(flag, redis)
+    return nil if redis.nil?
+
+    redis.get("#{PAUSE_KEY_PREFIX}:#{flag}")
+  rescue Redis::BaseError => e
+    Rails.logger.warn("Flipper: pause-override Redis probe failed for #{flag} (#{e.message}) — falling back to auto-enable")
+    nil
+  end
+
+  # Convenience predicate kept for spec/external callers — thin wrapper over the GET-based
+  # `.pause_override_reason`. Boot loop calls `.pause_override_reason` directly to avoid the
+  # extra method dispatch (no semantic difference, both fail open on Redis error).
+  def self.pause_override_active?(flag, redis)
+    !pause_override_reason(flag, redis).nil?
+  end
+
   ALL_FLAGS = %i[
     pundit_authorization
     bot_raid_chain
@@ -122,11 +157,23 @@ end
 
 # On every boot: ensure all flags exist and are enabled.
 # No manual steps. No "one-time scripts". Deploy = correct state.
-# Emergency disable: Flipper.disable(:flag) holds until next deploy.
-# When the fix is deployed → container restarts → flag back to enabled. Correct behavior.
+#
+# Two disable mechanisms — semantically distinct:
+#   (a) `Flipper.disable(:flag)` (no pause key) — emergency kill switch. Holds until next deploy.
+#       Container restart → initializer re-enables. Correct for "vent the steam, ship the fix."
+#   (b) Pause-override key `flipper:pause_override:<flag>` — multi-hour tactical pause. Survives
+#       all boots (web/sidekiq/runner/rake/deploy) until explicit DEL. Correct for backfills,
+#       batch migrations, planned maintenance. See `bin/rails flipper:pause:*`.
 FlipperDefaults::ALL_FLAGS.each do |flag|
   Flipper.add(flag)
-  Flipper.enable(flag)
+  # Single Redis GET per flag — nil = no pause (auto-enable), any string = paused (disable + log).
+  pause_reason = FlipperDefaults.pause_override_reason(flag, redis_instance)
+  if pause_reason
+    Flipper.disable(flag)
+    Rails.logger.info("Flipper: pause-override active for #{flag} (reason: #{pause_reason.inspect}) — skipping auto-enable")
+  else
+    Flipper.enable(flag)
+  end
 end
 
 # Hook flags: только add — НЕ enable. Оставляем OFF until feature ships.
