@@ -421,7 +421,6 @@ module Twitch
         display_name: user["displayName"],
         created_at: user["createdAt"],
         description: user["description"],
-        profile_view_count: user["profileViewCount"],
         profile_image_url: user["profileImageURL"],
         chat_color: user["chatColor"],
         is_partner: user.dig("roles", "isPartner"),
@@ -485,7 +484,7 @@ module Twitch
         query BotCheck($login: String!) {
           user(login: $login) {
             id login displayName createdAt description
-            profileViewCount profileImageURL(width: 70)
+            profileImageURL(width: 70)
             chatColor
             roles { isPartner isAffiliate }
             followers { totalCount }
@@ -572,7 +571,7 @@ module Twitch
         query ViewerCard($login: String!) {
           user(login: $login) {
             id login displayName createdAt description
-            profileViewCount profileImageURL(width: 70)
+            profileImageURL(width: 70)
             chatColor
             roles { isPartner isAffiliate }
             followers { totalCount }

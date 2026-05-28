@@ -18,8 +18,9 @@ class ChatterProfileRefreshWorker
 
   # Columns updated on a re-fetch (excludes login = unique key; created_at/updated_at are managed
   # by record_timestamps so created_at is preserved and updated_at is bumped automatically).
+  # TASK-251.20: profile_view_count dropped — Twitch deprecated profileViewCount GQL field.
   UPDATE_COLUMNS = %i[twitch_user_id twitch_created_at followers_count follows_count
-                      profile_view_count fetched_at].freeze
+                      fetched_at].freeze
 
   def perform
     return unless Flipper.enabled?(:stream_monitor) && Flipper.enabled?(:chatter_profile_enrichment)
@@ -76,8 +77,7 @@ class ChatterProfileRefreshWorker
       twitch_user_id: profile[:id],
       twitch_created_at: parse_time(profile[:created_at]),
       followers_count: profile[:followers_count],
-      follows_count: profile[:follows_count],
-      profile_view_count: profile[:profile_view_count]
+      follows_count: profile[:follows_count]
     }
   end
 

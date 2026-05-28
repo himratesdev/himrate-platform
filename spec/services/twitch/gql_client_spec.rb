@@ -27,7 +27,8 @@ RSpec.describe Twitch::GqlClient do
       expect(result[:follows_count]).to eq(42)
       expect(result[:videos_count]).to eq(150)
       expect(result[:has_clips]).to be true
-      expect(result[:profile_view_count]).to eq(150_000)
+      # TASK-251.20: profile_view_count dropped — Twitch deprecated profileViewCount GQL field.
+      expect(result).not_to have_key(:profile_view_count)
     end
 
     it "returns nil for non-existent user (TC-002)" do
@@ -536,11 +537,12 @@ RSpec.describe Twitch::GqlClient do
   end
 
   def bot_check_response(login, live: false)
+    # TASK-251.20: profileViewCount removed — Twitch deprecated the field (always nil in production).
     {
       data: { user: {
         id: "12345", login: login, displayName: login,
         createdAt: "2013-06-03T22:00:00Z", description: "Pro gamer",
-        profileViewCount: 150_000, profileImageURL: "https://img.twitch.tv/#{login}.jpg",
+        profileImageURL: "https://img.twitch.tv/#{login}.jpg",
         chatColor: "#FF0000",
         roles: { isPartner: true, isAffiliate: false },
         followers: { totalCount: 9_500_000 }, follows: { totalCount: 42 },

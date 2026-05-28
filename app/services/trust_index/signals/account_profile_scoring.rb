@@ -10,8 +10,10 @@ module TrustIndex
       # TASK-251.W2b: only genuine bot-account traits count as flags. Streamer-presence flags
       # (description/banner/videos/last_broadcast nulls) were dropped from the scorer — they are
       # normal for viewers (not content creators) and falsely flagged ~50% of real chatters.
+      # TASK-251.20: profile_view_zero dropped — Twitch deprecated profileViewCount (always nil on
+      # 100% of 144k+ chatter_profiles rows). Signal never fired in practice.
       PROFILE_KEYS = %w[
-        profile_view_zero followers_zero account_age_7d account_age_30d
+        followers_zero account_age_7d account_age_30d
         follows_zero follows_excessive
       ].freeze
 
