@@ -72,4 +72,34 @@ RSpec.describe "Api::V1::Me::Analytics", type: :request do
       end
     end
   end
+
+  describe "read endpoints (M6/M7/M9)" do
+    it "communities returns 200 cold" do
+      get "/api/v1/me/analytics/communities", headers: auth_headers(user)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("data", "communities")).to eq([])
+    end
+
+    it "engagement_log returns 200 cold" do
+      get "/api/v1/me/analytics/engagement_log", headers: auth_headers(user)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("data", "entries")).to eq([])
+    end
+
+    it "supporter returns 200 cold" do
+      get "/api/v1/me/analytics/supporter", headers: auth_headers(user)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("data", "supporters")).to eq([])
+    end
+
+    it "communities returns 400 for an invalid window" do
+      get "/api/v1/me/analytics/communities", params: { window: "bogus" }, headers: auth_headers(user)
+      expect(response).to have_http_status(:bad_request)
+    end
+
+    it "engagement_log returns 400 for an invalid type" do
+      get "/api/v1/me/analytics/engagement_log", params: { type: "bogus" }, headers: auth_headers(user)
+      expect(response).to have_http_status(:bad_request)
+    end
+  end
 end

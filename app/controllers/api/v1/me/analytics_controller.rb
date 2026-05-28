@@ -12,18 +12,41 @@ module Api
         before_action :authenticate_user!
         before_action :ensure_pva_enabled
 
-        rescue_from PersonalAnalytics::Api::OverviewService::InvalidWindow, with: :render_invalid_params
+        rescue_from PersonalAnalytics::Api::OverviewService::InvalidWindow,
+          PersonalAnalytics::Api::CommunitiesService::InvalidWindow,
+          PersonalAnalytics::Api::EngagementLogService::InvalidType,
+          with: :render_invalid_params
 
-        # GET /api/v1/me/analytics/overview?window=7d|30d|90d|365d|all
+        # GET /api/v1/me/analytics/overview?window=7d|30d|90d|365d|all (M1-M5)
         def overview
           authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
-          window = params[:window]
-          payload = Rails.cache.fetch(
-            cache_key("overview", window), expires_in: 5.minutes, race_condition_ttl: 10.seconds
-          ) do
-            PersonalAnalytics::Api::OverviewService.new(user: current_user, window: window).call
+          render_cached("overview", params[:window]) do
+            PersonalAnalytics::Api::OverviewService.new(user: current_user, window: params[:window]).call
           end
-          render json: payload
+        end
+
+        # GET /api/v1/me/analytics/communities?window=... (M6)
+        def communities
+          authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
+          render_cached("communities", params[:window]) do
+            PersonalAnalytics::Api::CommunitiesService.new(user: current_user, window: params[:window]).call
+          end
+        end
+
+        # GET /api/v1/me/analytics/engagement_log?type=sub|cheer|follow|hype_contribution (M7)
+        def engagement_log
+          authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
+          render_cached("engagement_log", params[:type]) do
+            PersonalAnalytics::Api::EngagementLogService.new(user: current_user, type: params[:type]).call
+          end
+        end
+
+        # GET /api/v1/me/analytics/supporter (M9 tier + M8 tenure)
+        def supporter
+          authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
+          render_cached("supporter", nil) do
+            PersonalAnalytics::Api::SupporterService.new(user: current_user).call
+          end
         end
 
         # POST /api/v1/me/analytics/engagement — client-capture ingest (M7 discrete events + M6 chat snapshots).
@@ -53,8 +76,10 @@ module Api
           render json: { error: "NOT_FOUND" }, status: :not_found
         end
 
-        def cache_key(endpoint, window)
-          "pva:#{endpoint}:#{current_user.id}:#{window.presence || 'default'}"
+        # Redis hot-cache (SRS §9, 5 мин + race_condition_ttl). Ключ = endpoint + user + suffix (window/type).
+        def render_cached(endpoint, suffix)
+          key = "pva:#{endpoint}:#{current_user.id}:#{suffix.presence || 'default'}"
+          render json: Rails.cache.fetch(key, expires_in: 5.minutes, race_condition_ttl: 10.seconds) { yield }
         end
 
         # UPPER_SNAKE error code (консистентно с NOT_FOUND выше + Api::BaseController codes — CR Nit-2).
