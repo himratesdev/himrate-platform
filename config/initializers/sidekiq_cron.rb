@@ -137,6 +137,12 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-113 M11: weekly recompute PVA behavioral patterns (gated :pva; throttled fan-out → PatternsWorker per user, rule-based v1)"
       },
+      "pva_cohort_weekly" => {
+        "cron" => "15 5 * * 1", # Mondays 05:15 UTC (15 min после patterns)
+        "class" => "PersonalAnalytics::CohortSchedulerWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-113 M12: weekly recompute PVA co-watch cohort (gated :pva; throttled fan-out → CohortWorker per user with Twitch OAuth)"
+      },
       # BUG-010 PR2: Accessory Operations Platform schedules
       "accessory_drift_detector" => {
         "cron" => "0 * * * *", # Hourly at :00
