@@ -15,6 +15,7 @@ module Api
         rescue_from PersonalAnalytics::Api::OverviewService::InvalidWindow,
           PersonalAnalytics::Api::CommunitiesService::InvalidWindow,
           PersonalAnalytics::Api::EngagementLogService::InvalidType,
+          PersonalAnalytics::Api::ReflectionService::InvalidWeek,
           with: :render_invalid_params
 
         # GET /api/v1/me/analytics/overview?window=7d|30d|90d|365d|all (M1-M5)
@@ -48,6 +49,32 @@ module Api
           authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
           render_cached("supporter", nil) do
             PersonalAnalytics::Api::SupporterService.new(user: current_user).call
+          end
+        end
+
+        # GET /api/v1/me/analytics/reflection?week=YYYY-MM-DD&archive=true (M10)
+        def reflection
+          authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
+          render_cached("reflection", "#{params[:week]}:#{params[:archive]}") do
+            PersonalAnalytics::Api::ReflectionService.new(
+              user: current_user, week: params[:week], archive: params[:archive]
+            ).call
+          end
+        end
+
+        # GET /api/v1/me/analytics/patterns (M11)
+        def patterns
+          authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
+          render_cached("patterns", nil) do
+            PersonalAnalytics::Api::PatternsService.new(user: current_user).call
+          end
+        end
+
+        # GET /api/v1/me/analytics/cohort (M12)
+        def cohort
+          authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
+          render_cached("cohort", nil) do
+            PersonalAnalytics::Api::CohortService.new(user: current_user).call
           end
         end
 

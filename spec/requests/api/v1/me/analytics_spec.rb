@@ -104,4 +104,64 @@ RSpec.describe "Api::V1::Me::Analytics", type: :request do
       expect(response).to have_http_status(:bad_request)
     end
   end
+
+  describe "BE-4 insight read endpoints (M10/M11/M12)" do
+    it "reflection returns 200 cold when no row" do
+      get "/api/v1/me/analytics/reflection", headers: auth_headers(user)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("data", "reflection")).to be_nil
+      expect(response.parsed_body.dig("meta", "cold_start")).to be(true)
+    end
+
+    it "reflection returns the row for ?week=YYYY-MM-DD" do
+      monday = Date.new(2026, 5, 18)
+      create(:pva_weekly_reflection, user: user, week_start: monday, narrative: "Hi")
+
+      get "/api/v1/me/analytics/reflection", params: { week: monday.iso8601 }, headers: auth_headers(user)
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("data", "reflection", "narrative")).to eq("Hi")
+    end
+
+    it "reflection returns 400 for malformed ?week=" do
+      get "/api/v1/me/analytics/reflection", params: { week: "not-a-date" }, headers: auth_headers(user)
+      expect(response).to have_http_status(:bad_request)
+    end
+
+    it "reflection ?archive=true returns the week list" do
+      create(:pva_weekly_reflection, user: user, week_start: Date.new(2026, 5, 11))
+      create(:pva_weekly_reflection, user: user, week_start: Date.new(2026, 5, 18))
+
+      get "/api/v1/me/analytics/reflection", params: { archive: true }, headers: auth_headers(user)
+
+      expect(response).to have_http_status(:ok)
+      weeks = response.parsed_body.dig("data", "archive").map { |w| w["week_start"] }
+      expect(weeks).to eq([ "2026-05-18", "2026-05-11" ]) # DESC
+    end
+
+    it "patterns returns 200 cold when no rows" do
+      get "/api/v1/me/analytics/patterns", headers: auth_headers(user)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("data", "patterns")).to eq([])
+      expect(response.parsed_body.dig("meta", "cold_start")).to be(true)
+    end
+
+    it "cohort returns 200 cold when no row" do
+      get "/api/v1/me/analytics/cohort", headers: auth_headers(user)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("data", "suggestions")).to eq([])
+      expect(response.parsed_body.dig("meta", "cold_start")).to be(true)
+    end
+
+    context "when :pva is off" do
+      before { allow(Flipper).to receive(:enabled?).with(:pva).and_return(false) }
+
+      it "reflection/patterns/cohort all return 404" do
+        %w[reflection patterns cohort].each do |endpoint|
+          get "/api/v1/me/analytics/#{endpoint}", headers: auth_headers(user)
+          expect(response).to have_http_status(:not_found), "expected 404 for #{endpoint}"
+        end
+      end
+    end
+  end
 end

@@ -111,12 +111,15 @@ Rails.application.routes.draw do
       # TASK-110 FR-006..007: React fiber chat capture batch ingest
       post "chat/messages", to: "chat_ingest#create"
 
-      # TASK-113 BE-2: Personal Viewer Analytics (self-analytics, JWT + ownership, all-free)
+      # TASK-113 BE-2/BE-3/BE-4: Personal Viewer Analytics (self-analytics, JWT + ownership, all-free)
       namespace :me do
         get "analytics/overview", to: "analytics#overview"
         get "analytics/communities", to: "analytics#communities"
         get "analytics/engagement_log", to: "analytics#engagement_log"
         get "analytics/supporter", to: "analytics#supporter"
+        get "analytics/reflection", to: "analytics#reflection"
+        get "analytics/patterns", to: "analytics#patterns"
+        get "analytics/cohort", to: "analytics#cohort"
         post "analytics/engagement", to: "analytics#engagement"
       end
     end
