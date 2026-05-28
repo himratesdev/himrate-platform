@@ -49,6 +49,8 @@ The two disable mechanisms — semantically distinct:
 bin/rails flipper:pause:list
 
 # Set a pause-override (FLAG + REASON required; reason becomes the audit trail)
+#   ⚠ Rake parses bracket args by comma → reason MUST NOT contain commas. If the reason
+#     needs commas, use redis-cli directly (see "redis-cli" subsection below).
 bin/rails 'flipper:pause:set[signal_compute,TASK-251.14 backfill]'
 
 # Clear one pause-override
@@ -64,7 +66,7 @@ bin/rails flipper:pause:flags
 ### redis-cli (when Rails is unavailable or for one-off ops)
 
 ```bash
-# Set
+# Set — use this form when the reason must contain commas (the rake task above truncates).
 docker exec himrate-redis redis-cli -n 1 SET flipper:pause_override:signal_compute "TASK-251.14 backfill"
 
 # Inspect
@@ -76,6 +78,8 @@ docker exec himrate-redis redis-cli -n 1 DEL flipper:pause_override:signal_compu
 ```
 
 > **Important: Redis key format.** Flipper itself stores per-flag state as a Redis hash named after the bare flag (e.g. `signal_compute` with field `boolean`). The pause-override mechanism uses a separate namespace `flipper:pause_override:*` — distinct keys, distinct semantics. Do not mix them.
+>
+> **CR-iter1 #5:** The `redis-cli HDEL <flag> boolean` shown in §1 below is a Flipper-internal storage detail (verified against `flipper 1.4.x` as bundled in this repo). If we bump the Flipper major version and the gem renames the gate field, prefer the gem-agnostic `bin/rails runner 'Flipper.disable(:<flag>)'` form instead — same effect on the running workers without depending on the storage layout.
 
 ## Operational scenarios
 
@@ -87,9 +91,10 @@ Goal: free Postgres I/O for the backfill by stopping `SignalComputeWorker` from 
 # 1) Set the pause-override (survives across rake spawns / runner probes / cron / deploys)
 bin/rails 'flipper:pause:set[signal_compute,TASK-251.14 backfill]'
 
-# 2) Take effect on the currently running Sidekiq workers — they re-read Flipper state per job,
-#    so deleting the in-memory boolean field forces an immediate re-check on the next job grab.
-docker exec himrate-redis redis-cli -n 1 HDEL signal_compute boolean
+# 2) Take effect on the currently running Sidekiq workers (they re-read Flipper state per job).
+#    Prefer the gem-agnostic Rails form — same effect, no dependency on the Flipper storage layout
+#    (the `redis-cli HDEL <flag> boolean` form works for `flipper 1.4.x` but rots on major bumps).
+docker exec <web-container> ./bin/rails runner 'Flipper.disable(:signal_compute)'
 
 # 3) Verify in a fresh Rails session — boot would normally re-enable, but the pause holds.
 docker exec <web-container> ./bin/rails runner 'puts Flipper.enabled?(:signal_compute)'

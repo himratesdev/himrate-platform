@@ -33,23 +33,33 @@ namespace :flipper do
     end
 
     desc "Set a pause-override for a flag (survives Rails boot until cleared). " \
-         "Usage: rake 'flipper:pause:set[signal_compute,backfill TASK-251.14]'"
+         "Usage: rake 'flipper:pause:set[signal_compute,backfill TASK-251.14]'. " \
+         "CR-iter1 #4: Rake parses bracket args by comma — reasons must NOT contain commas " \
+         "(use Rails-free `redis-cli -n 1 SET flipper:pause_override:<flag> \"reason, with commas\"` instead)."
     task :set, %i[flag reason] => :environment do |_, args|
       flag, reason = args.values_at(:flag, :reason)
       abort "Usage: rake 'flipper:pause:set[FLAG,REASON]'" if flag.blank?
       abort "✗ Reason must be provided (audit trail for operators)" if reason.blank?
 
       flag_sym = flag.to_sym
-      known = FlipperDefaults::ALL_FLAGS.include?(flag_sym) ||
-              FlipperDefaults::HOOK_FLAGS.key?(flag_sym)
-      abort "✗ Unknown flag: #{flag}. Run `rake flipper:pause:flags` to list known flags." unless known
+      in_all_flags = FlipperDefaults::ALL_FLAGS.include?(flag_sym)
+      in_hook_flags = FlipperDefaults::HOOK_FLAGS.key?(flag_sym)
+      abort "✗ Unknown flag: #{flag}. Run `rake flipper:pause:flags` to list known flags." unless in_all_flags || in_hook_flags
 
       redis = Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
       key = "#{FlipperDefaults::PAUSE_KEY_PREFIX}:#{flag}"
       redis.set(key, reason)
       puts "✓ pause-override SET: #{key} = #{reason.inspect}"
-      puts "  Next Rails boot will respect this. To take effect immediately on running"
-      puts "  workers, also run: redis-cli -n 1 HDEL #{flag} boolean"
+      if in_hook_flags
+        # CR-iter1 #3: prevent confusion — HOOK_FLAGS aren't auto-enabled by the initializer,
+        # so the pause key has no effect at boot (the flag stays OFF either way).
+        puts "  ⚠ note: #{flag} is in HOOK_FLAGS — it is never auto-enabled, so the pause-override"
+        puts "    key has no effect at boot. Use `Flipper.disable(:#{flag})` to keep it OFF on the"
+        puts "    running workers, or delete this key with `rake 'flipper:pause:clear[#{flag}]'`."
+      else
+        puts "  Next Rails boot will respect this. To take effect immediately on running"
+        puts "  workers, also run: bin/rails runner 'Flipper.disable(:#{flag})'"
+      end
     rescue Redis::BaseError => e
       abort "✗ Redis unreachable: #{e.message}"
     end

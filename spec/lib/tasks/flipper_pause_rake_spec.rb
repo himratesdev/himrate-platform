@@ -63,10 +63,23 @@ RSpec.describe "flipper:pause rake tasks" do
       expect(redis.get(key)).to eq("TASK-251.14 backfill")
     end
 
-    it "accepts HOOK_FLAGS keys as well (operator flexibility)" do
+    it "accepts HOOK_FLAGS keys as well (operator flexibility) and warns that pause has no boot effect" do
+      # CR-iter1 #3: HOOK_FLAGS aren't auto-enabled at boot, so the pause-override key
+      # is harmless but doesn't change anything. The operator UX should make that explicit.
       expect { Rake::Task["flipper:pause:set"].invoke("trends_pdf_export", "hold for QA") }
-        .to output(/pause-override SET/).to_stdout
+        .to output(
+          a_string_matching(/pause-override SET/).and(
+            a_string_matching(/trends_pdf_export is in HOOK_FLAGS.*never auto-enabled.*no effect at boot/m)
+          )
+        ).to_stdout
       expect(redis.get("#{FlipperDefaults::PAUSE_KEY_PREFIX}:trends_pdf_export")).to eq("hold for QA")
+    end
+
+    it "for an ALL_FLAGS flag shows the gem-agnostic Rails immediate-effect hint (not redis-cli HDEL)" do
+      # CR-iter1 #5: prefer `Flipper.disable(:flag)` via runner over `HDEL <flag> boolean` —
+      # the latter depends on Flipper's storage layout (rots on a major gem bump).
+      expect { Rake::Task["flipper:pause:set"].invoke("signal_compute", "TASK-251.14 backfill") }
+        .to output(a_string_matching(/bin\/rails runner.*Flipper\.disable\(:signal_compute\)/)).to_stdout
     end
 
     it "overwrites an existing pause-override (last-write-wins)" do

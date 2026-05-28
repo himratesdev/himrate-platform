@@ -45,7 +45,7 @@ RSpec.describe FlipperDefaults, "pause-override" do
 
     it "returns false on Redis::BaseError and logs a warning (fail open)" do
       broken = instance_double(Redis)
-      allow(broken).to receive(:exists?).and_raise(Redis::CannotConnectError, "boom")
+      allow(broken).to receive(:get).and_raise(Redis::CannotConnectError, "boom")
       expect(Rails.logger).to receive(:warn).with(/pause-override Redis probe failed for #{flag}/)
       expect(described_class.pause_override_active?(flag, broken)).to be false
     end
@@ -71,10 +71,20 @@ RSpec.describe FlipperDefaults, "pause-override" do
       expect(described_class.pause_override_reason(flag, nil)).to be_nil
     end
 
-    it "returns nil on Redis::BaseError (silent fail — caller logs)" do
+    it "returns nil on Redis::BaseError + logs a warn (fail open — single warn, not duplicated by .pause_override_active?)" do
       broken = instance_double(Redis)
       allow(broken).to receive(:get).and_raise(Redis::CannotConnectError, "boom")
+      expect(Rails.logger).to receive(:warn).with(/pause-override Redis probe failed for #{flag}/)
       expect(described_class.pause_override_reason(flag, broken)).to be_nil
+    end
+  end
+
+  describe "single GET per call (CR-iter1 #1: collapse 2 RTTs → 1)" do
+    it "uses a single Redis GET, not GET+EXISTS" do
+      probe = instance_double(Redis)
+      allow(probe).to receive(:get).with(key).and_return("reason")
+      expect(probe).not_to receive(:exists?)
+      expect(described_class.pause_override_reason(flag, probe)).to eq("reason")
     end
   end
 
