@@ -56,37 +56,12 @@ class ChatMessageWorker
     return unless Flipper.enabled?(:chat_writes_clickhouse)
 
     # best_effort: true → short timeout, no retry — a CH outage must not stall the drain loop.
-    Clickhouse.client.insert("chat_messages", records.map { |record| clickhouse_row(record) }, best_effort: true)
+    # Row mapping delegated to Clickhouse::ChatRow (TASK-251.14c): single source of truth shared
+    # with the historical backfill so live mirror + backfill produce byte-identical rows.
+    Clickhouse.client.insert("chat_messages", records.map { |record| Clickhouse::ChatRow.from_pg(record) }, best_effort: true)
   rescue StandardError => e
     # Log the error class only — the message can echo CH response-body fragments.
     Rails.logger.warn("ChatMessageWorker: ClickHouse mirror failed (#{e.class}) — Postgres is source of truth, gap backfilled later")
-  end
-
-  # Map a Postgres insert hash (parse_message) to a ClickHouse chat_messages row: nils coalesced to
-  # the columns' non-nullable defaults, booleans → UInt8, the raw_tags Hash → a JSON string, and the
-  # Time → ClickHouse DateTime64 text. stream_id stays nil → CH NULL; inserted_at is omitted (CH
-  # DEFAULT now()).
-  def clickhouse_row(rec)
-    {
-      stream_id: rec[:stream_id],
-      channel_login: rec[:channel_login].to_s,
-      username: rec[:username].to_s,
-      msg_type: rec[:msg_type].to_s,
-      subscriber_status: rec[:subscriber_status].to_s,
-      user_type: rec[:user_type].to_s,
-      is_first_msg: rec[:is_first_msg] ? 1 : 0,
-      returning_chatter: rec[:returning_chatter] ? 1 : 0,
-      vip: rec[:vip] ? 1 : 0,
-      bits_used: rec[:bits_used].to_i,
-      display_name: rec[:display_name].to_s,
-      badge_info: rec[:badge_info].to_s,
-      color: rec[:color].to_s,
-      twitch_msg_id: rec[:twitch_msg_id].to_s,
-      message_text: rec[:message_text].to_s,
-      emotes: rec[:emotes].to_s,
-      raw_tags: rec[:raw_tags].is_a?(String) ? rec[:raw_tags] : JSON.generate(rec[:raw_tags] || {}),
-      timestamp: rec[:timestamp].utc.strftime("%Y-%m-%d %H:%M:%S.%3N")
-    }
   end
 
   # Restore a drained batch to the tail (oldest-first FIFO preserved) so Sidekiq retry

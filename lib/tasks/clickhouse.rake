@@ -29,4 +29,58 @@ namespace :clickhouse do
 
     puts "✓ ClickHouse reachable @ #{c.host}:#{c.port}/#{c.database}"
   end
+
+  # TASK-251.14c: one-shot full backfill of historical Postgres chat_messages into ClickHouse, up to
+  # a T0 watermark (the timestamp at which the live dual-write was enabled in this env). Post-T0
+  # rows are already covered by ChatMessageWorker#mirror_to_clickhouse, so the cutoff prevents
+  # duplicates with the live mirror. Idempotent + resumable (Redis cursor); kill-switch via Flipper
+  # :chat_backfill_running — flip OFF to pause cleanly (cursor preserved).
+  #
+  # ⚠️ Pick T0 with a safety margin past the IRC queue drain (≈ enable_time + 2× drain cadence,
+  # ≥ 2–3 min in practice). Setting T0 = enable_time exactly leaves a small window where messages
+  # with tmi-sent-ts < enable_time were still queued in Redis at enable, get mirrored to CH AFTER
+  # enable, AND match `timestamp < T0` here → duplicates (the raw table is MergeTree, no engine-
+  # level dedup). PR-1d gates on a duplicate-twitch_msg_id spot-check before flipping reads.
+  desc "Backfill historical chat_messages PG → CH up to T0 watermark (resumable; gated by :chat_backfill_running). See app/services/clickhouse/chat_backfill.rb for the T0 safety-margin guidance"
+  task :backfill_chat, %i[t0_iso batch_size sleep_seconds] => :environment do |_, args|
+    if args.t0_iso.blank?
+      abort "Usage: rake 'clickhouse:backfill_chat[T0_ISO,BATCH_SIZE,SLEEP_S]' " \
+            "(e.g. clickhouse:backfill_chat[2026-05-28T03:31:10Z,5000,0.5] — enable_time + ~2min)"
+    end
+
+    begin
+      t0 = Time.parse(args.t0_iso)
+    rescue ArgumentError
+      abort "✗ T0 must be ISO8601 (e.g. 2026-05-28T03:29:10Z), got: #{args.t0_iso}"
+    end
+    abort "✗ T0 (#{t0.iso8601}) is in the future — backfill watermark must be the dual-write enable time, in the past" if t0 > Time.current
+
+    unless Flipper.enabled?(:chat_backfill_running)
+      abort "✗ Flipper :chat_backfill_running is OFF — enable it before running the backfill " \
+            "(`Flipper.enable(:chat_backfill_running)` is the kill-switch; flip OFF mid-run to pause)"
+    end
+
+    batch_size = (args.batch_size || Clickhouse::ChatBackfill::DEFAULT_BATCH_SIZE).to_i
+    sleep_seconds = (args.sleep_seconds || Clickhouse::ChatBackfill::DEFAULT_SLEEP_SECONDS).to_f
+
+    result = Clickhouse::ChatBackfill.call(t0: t0, batch_size: batch_size, sleep_seconds: sleep_seconds)
+    puts "ChatBackfill: status=#{result.status} rows=#{result.rows_processed} batches=#{result.batches} elapsed=#{result.elapsed_seconds}s"
+    abort "✗ backfill ended with status=#{result.status}" unless %w[done paused].include?(result.status)
+  end
+
+  # NB: status="running" can be stale if a previous run was SIGKILLed (no chance to write the final
+  # status); cross-check with the live process / Flipper kill-switch state before assuming an active
+  # backfill is in flight. Re-running the rake task is always safe (cursor-resumable).
+  desc "Show ClickHouse chat-backfill progress (Redis state — read-only)"
+  task backfill_chat_status: :environment do
+    redis = Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
+    prefix = Clickhouse::ChatBackfill::REDIS_PREFIX
+    puts "t0:             #{redis.get("#{prefix}:t0") || '(unset)'}"
+    puts "cursor_id:      #{redis.get("#{prefix}:cursor_id") || '(unset — will start at NULL_UUID)'}"
+    puts "rows_processed: #{redis.get("#{prefix}:rows_processed") || '0'}"
+    puts "status:         #{redis.get("#{prefix}:status") || '(never run)'} (may be stale if a prior run was SIGKILLed)"
+    last_error = redis.get("#{prefix}:last_error")
+    puts "last_error:     #{last_error}" if last_error
+    puts "flipper :chat_backfill_running: #{Flipper.enabled?(:chat_backfill_running)}"
+  end
 end
