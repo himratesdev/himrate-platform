@@ -62,4 +62,36 @@ RSpec.describe "Api::V1::Me::Privacy", type: :request do
       expect(response.parsed_body.dig("data", "consent_log").size).to eq(1)
     end
   end
+
+  describe "DELETE /api/v1/me (M13 minimal soft-delete)" do
+    it "soft-deletes user + revokes sessions + returns 204" do
+      Session.create!(user: user, token: SecureRandom.hex(16), expires_at: 1.day.from_now)
+
+      delete "/api/v1/me", headers: auth_headers(user)
+
+      expect(response).to have_http_status(:no_content)
+      expect(user.reload.deleted_at).to be_present
+      expect(Session.where(user_id: user.id).count).to eq(0)
+    end
+
+    it "next authenticated request returns 401 (User.active excludes soft-deleted)" do
+      delete "/api/v1/me", headers: auth_headers(user)
+      get "/api/v1/me/privacy", headers: auth_headers(user)
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "returns 404 when :pva is OFF" do
+      allow(Flipper).to receive(:enabled?).with(:pva).and_return(false)
+      delete "/api/v1/me", headers: auth_headers(user)
+      expect(response).to have_http_status(:not_found)
+    end
+
+    it "is idempotent — second DELETE on already-deleted user → 401 (excluded by User.active)" do
+      delete "/api/v1/me", headers: auth_headers(user)
+      delete "/api/v1/me", headers: auth_headers(user)
+
+      expect(response).to have_http_status(:unauthorized)
+    end
+  end
 end

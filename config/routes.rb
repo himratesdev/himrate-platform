@@ -128,6 +128,8 @@ Rails.application.routes.draw do
         get "privacy", to: "privacy#show"
         put "privacy", to: "privacy#update"
       end
+      # BE-5 M13 minimal soft-delete (PO directive 2026-05-28) — out-of-namespace для чистого DELETE /me
+      delete "me", to: "me/privacy#destroy_account"
     end
   end
 
