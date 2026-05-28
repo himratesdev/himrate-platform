@@ -165,12 +165,9 @@ RSpec.describe Clickhouse::ChatBackfill do
       skip "ClickHouse not reachable" unless real_client.ping
       allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true)
     end
-
-    after do
-      real_client.execute("ALTER TABLE chat_messages DELETE WHERE stream_id = '#{stream_id}'")
-    rescue Clickhouse::Error
-      nil
-    end
+    # No after-cleanup: each example uses a unique stream_id (factory-generated UUID), so the rows
+    # this spec inserts don't interfere with any other spec's queries (they all filter by stream_id).
+    # The CI ClickHouse service is ephemeral; local runs skip the example entirely.
 
     it "round-trips Postgres rows into real ClickHouse with the exact rowset and order" do
       pre = Array.new(3) do |i|
