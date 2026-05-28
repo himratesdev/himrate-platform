@@ -148,8 +148,12 @@ module TrustIndex
       # CR-206 Should-2: capture-once `24.hours.ago` here and pass the absolute timestamp to both
       # leaves. Three separate "now" references (Rails clock + CH server-side `now()` × 2) would
       # drift across the 24h boundary, breaking the parity gate.
+      # CR-206 iter-2 nit (sub-second asymmetry): zero out µs so PG (Time, µs precision) and CH
+      # (`toDateTime('YYYY-MM-DD HH:MM:SS')`, second precision) filter at the same resolution —
+      # otherwise rows landing in the µs±1 band at exactly the 24h edge can produce phantom 1-row
+      # deltas in the dual-read divergence log.
       def fetch_cross_channel(stream)
-        dispatch_chat(:cross_channel, [ stream, 24.hours.ago ])
+        dispatch_chat(:cross_channel, [ stream, 24.hours.ago.change(usec: 0) ])
       end
 
       # TASK-251.14d: ORDER BY username added so the PG path picks the same deterministic 500 as
