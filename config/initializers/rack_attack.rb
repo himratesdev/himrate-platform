@@ -44,6 +44,12 @@ class Rack::Attack
     req.ip if req.path.match?(%r{/api/v1/channels/.+/request_tracking}) && req.post?
   end
 
+  # TASK-113 BE-5 (CR Nit-3): PVA export — heavy async job (MAX_RECORDS_PER_TABLE × N таблиц).
+  # 5/hour достаточно для real GDPR-запросов + предотвращает DOS через flood of export-jobs.
+  throttle("pva_export/ip", limit: 5, period: 1.hour) do |req|
+    req.ip if req.path == "/api/v1/me/analytics/export" && req.post?
+  end
+
   # General API per IP
   throttle("api/ip", limit: 60, period: 1.minute) do |req|
     req.ip if req.path.start_with?("/api/") && !req.options?

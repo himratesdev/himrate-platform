@@ -24,4 +24,22 @@ RSpec.describe PersonalAnalytics::Privacy::ConsentLogger do
     log = UserPrivacySetting.find_by(user_id: user.id).consent_log
     expect(log.map { |e| e["action"] }).to eq([ "toggles_updated", "account_deleted" ])
   end
+
+  # CR Nit-2 (BE-5): idempotent log при Sidekiq retry.
+  it "is idempotent with unique_keys — second log with same job_id does NOT duplicate" do
+    described_class.log!(user, action: "export_completed", job_id: "abc-123", unique_keys: [ :job_id ])
+    described_class.log!(user, action: "export_completed", job_id: "abc-123", unique_keys: [ :job_id ])
+
+    log = UserPrivacySetting.find_by(user_id: user.id).consent_log
+    expect(log.size).to eq(1)
+  end
+
+  it "allows different job_ids under same action (separate entries)" do
+    described_class.log!(user, action: "export_completed", job_id: "abc-123", unique_keys: [ :job_id ])
+    described_class.log!(user, action: "export_completed", job_id: "def-456", unique_keys: [ :job_id ])
+
+    log = UserPrivacySetting.find_by(user_id: user.id).consent_log
+    expect(log.size).to eq(2)
+    expect(log.map { |e| e["job_id"] }).to contain_exactly("abc-123", "def-456")
+  end
 end

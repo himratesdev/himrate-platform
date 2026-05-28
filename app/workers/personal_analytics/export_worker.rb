@@ -23,7 +23,10 @@ module PersonalAnalytics
 
       Rails.cache.write(self.class.cache_key(job_id), data.to_json, expires_in: EXPORT_TTL)
       user = User.find_by(id: user_id)
-      PersonalAnalytics::Privacy::ConsentLogger.log!(user, action: "export_completed", job_id: job_id) if user
+      # CR Nit-2: unique_keys=[:job_id] → Sidekiq retry после успешного cache.write + падения log
+      # НЕ дублирует 'export_completed' в consent_log (idempotency на boundary).
+      PersonalAnalytics::Privacy::ConsentLogger.log!(user, action: "export_completed",
+        job_id: job_id, unique_keys: [ :job_id ]) if user
     end
   end
 end

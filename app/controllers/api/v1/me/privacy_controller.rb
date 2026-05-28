@@ -24,7 +24,7 @@ module Api
 
         # PUT /api/v1/me/privacy
         def update
-          authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
+          authorize current_user, :update_privacy?, policy_class: PersonalAnalyticsPolicy
           toggles = params[:toggles].respond_to?(:to_unsafe_h) ? params[:toggles].to_unsafe_h.to_hash : params[:toggles]
           PersonalAnalytics::Privacy::UpdateService.new(user: current_user, toggles: toggles).call
           render json: PersonalAnalytics::Api::PrivacyService.new(user: current_user).call
@@ -34,7 +34,7 @@ module Api
         # PO directive 2026-05-28: НЕ cascade-уничтожаем PVA-данные; User.deleted_at + revoke sessions.
         # Next request → 401 UNAUTHORIZED (authenticate_user! использует User.active).
         def destroy_account
-          authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
+          authorize current_user, :delete_account?, policy_class: PersonalAnalyticsPolicy
           PersonalAnalytics::Account::DeletionService.call(current_user)
           head :no_content
         end

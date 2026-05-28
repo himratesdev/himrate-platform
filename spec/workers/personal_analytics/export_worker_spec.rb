@@ -38,4 +38,15 @@ RSpec.describe PersonalAnalytics::ExportWorker do
     expect { described_class.new.perform(SecureRandom.uuid, job_id) }.not_to raise_error
     expect(Rails.cache.read(described_class.cache_key(job_id))).to be_nil
   end
+
+  # CR Nit-2 (BE-5): Sidekiq retry idempotency.
+  it "retry-safe: re-running with same job_id does NOT duplicate consent_log entry" do
+    described_class.new.perform(user.id, job_id)
+    described_class.new.perform(user.id, job_id) # simulate retry
+
+    entries = UserPrivacySetting.find_by(user_id: user.id).consent_log
+                                .select { |e| e["action"] == "export_completed" }
+    expect(entries.size).to eq(1)
+    expect(entries.first["job_id"]).to eq(job_id)
+  end
 end
