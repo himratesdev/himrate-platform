@@ -46,10 +46,10 @@ en:
         body: "Games/chill ratio flips from %{weekday_ratio} on weekdays to %{weekend_ratio} on weekends."
       growth_recent:
         title: "You watch more than a month ago"
-        body: "Last 30 days — %{delta_pct}%% time vs. the previous 30. Gradual acceleration."
+        body: "Last 30 days — %{delta_pct}%% more time than the previous 30. Gradual acceleration."
       decline_recent:
         title: "You watch less than a month ago"
-        body: "Last 30 days — %{delta_pct}%% of the previous 30. Looks like a seasonal slowdown."
+        body: "Last 30 days — %{delta_pct}%% less time than the previous 30. Looks like a seasonal slowdown."
     cohort:
       caption: "Anonymous cohort · similar viewers also watch (you haven't tried):"
       pct_label: "%{pct}%% of similar viewers watch often"

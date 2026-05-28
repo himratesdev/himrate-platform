@@ -131,6 +131,12 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-113 M10: weekly recompute PVA reflection narrative (gated :pva; throttled fan-out → WeeklyReflectionWorker per user, last completed week)"
       },
+      "pva_patterns_weekly" => {
+        "cron" => "0 5 * * 1", # Mondays 05:00 UTC (15 min после reflection)
+        "class" => "PersonalAnalytics::PatternsSchedulerWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-113 M11: weekly recompute PVA behavioral patterns (gated :pva; throttled fan-out → PatternsWorker per user, rule-based v1)"
+      },
       # BUG-010 PR2: Accessory Operations Platform schedules
       "accessory_drift_detector" => {
         "cron" => "0 * * * *", # Hourly at :00
