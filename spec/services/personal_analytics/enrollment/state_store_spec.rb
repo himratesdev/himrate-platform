@@ -6,9 +6,9 @@ RSpec.describe PersonalAnalytics::Enrollment::StateStore do
   let(:user) { create(:user) }
 
   before do
-    # Stub Redis to avoid touching real Sidekiq pool in tests.
+    # Stub Redis-write to avoid touching real Sidekiq pool в tests.
+    # read_redis_hash removed CR iter-3 N2 (PG-only read path).
     allow(described_class).to receive(:write_redis_hash).and_return(nil)
-    allow(described_class).to receive(:read_redis_hash).and_return(nil)
   end
 
   describe ".initiate" do

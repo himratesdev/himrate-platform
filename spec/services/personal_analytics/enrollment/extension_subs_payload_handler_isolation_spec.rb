@@ -10,11 +10,11 @@ RSpec.describe PersonalAnalytics::Enrollment::ExtensionSubsPayloadHandler do
   before { PersonalAnalytics::Enrollment::StateStore.initiate(user_id: user.id) }
 
   describe ".call invalid source — ArgumentError isolation" do
-    it "raises ArgumentError without calling StateStore.update_source" do
+    it "raises InvalidSourceError without calling StateStore.update_source" do
       expect(PersonalAnalytics::Enrollment::StateStore).not_to receive(:update_source)
       expect {
         described_class.call(user_id: user.id, payload: { "source" => 99, "subscriptions" => [] })
-      }.to raise_error(ArgumentError, /invalid source/)
+      }.to raise_error(described_class::InvalidSourceError, /invalid source/)
     end
   end
 

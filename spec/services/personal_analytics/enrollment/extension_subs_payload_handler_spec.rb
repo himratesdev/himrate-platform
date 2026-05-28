@@ -13,7 +13,7 @@ RSpec.describe PersonalAnalytics::Enrollment::ExtensionSubsPayloadHandler do
     it "rejects invalid source" do
       expect {
         described_class.call(user_id: user.id, payload: { "source" => 99, "subscriptions" => [] })
-      }.to raise_error(ArgumentError)
+      }.to raise_error(described_class::InvalidSourceError)
     end
 
     it "upserts ChannelTenure rows (channel_id nil if Channel canonical entry absent)" do
