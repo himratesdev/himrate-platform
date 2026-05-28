@@ -148,7 +148,7 @@ RSpec.describe ChatMessageWorker do
 
     before do
       allow(Clickhouse).to receive(:client).and_return(ch_client)
-      allow(ch_client).to receive(:insert) { |_table, rows| captured.replace(rows) }
+      allow(ch_client).to receive(:insert) { |_table, rows, **| captured.replace(rows) }
       allow(Flipper).to receive(:enabled?).and_call_original
     end
 
@@ -170,9 +170,23 @@ RSpec.describe ChatMessageWorker do
         push_message(sample_message(username: "user2"))
 
         expect { worker.perform }.to change(ChatMessage, :count).by(2)
-        expect(ch_client).to have_received(:insert).with("chat_messages", anything)
+        expect(ch_client).to have_received(:insert).with("chat_messages", anything, best_effort: true)
         expect(captured.size).to eq(2)
         expect(captured.map { |r| r[:channel_login] }).to all(eq("testchannel"))
+      end
+
+      it "mirrors only the rows Postgres actually persisted (fallback skips invalid → no CH-superset)" do
+        push_message(sample_message(username: "good"))
+        push_message(sample_message(username: "bad"))
+        # Force the per-record fallback, then make only the "bad" record fail PG validation.
+        allow(ChatMessage).to receive(:insert_all).and_raise(ActiveRecord::StatementInvalid, "boom")
+        allow(ChatMessage).to receive(:create!).and_call_original
+        allow(ChatMessage).to receive(:create!).with(hash_including(username: "bad"))
+                                               .and_raise(ActiveRecord::RecordInvalid.new(ChatMessage.new))
+
+        worker.perform
+
+        expect(captured.map { |r| r[:username] }).to eq([ "good" ])
       end
 
       it "maps each row to the ClickHouse shape (bool→UInt8, raw_tags→JSON, ts→DateTime64 text, nil→\"\")" do

@@ -12,6 +12,12 @@
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
 
+    <!-- TASK-251.14b: pin the server timezone to UTC. DateTime64 columns without an explicit tz are
+         parsed/rendered in the server tz; the dual-write sends naive UTC timestamp strings and the MVs
+         bucket by toStartOfMinute, so an explicit UTC removes any reliance on the image default and
+         guarantees true 0-divergence vs Postgres (DEC-7) regardless of base-image changes. -->
+    <timezone>UTC</timezone>
+
     <!-- Cap CH RAM well under the 2g container limit (config/deploy.yml options.memory) so it
          can't push the already-tight box into heavier swap. Raised at the hardware migration. -->
     <max_server_memory_usage>1200000000</max_server_memory_usage>

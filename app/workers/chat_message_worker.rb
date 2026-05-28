@@ -38,8 +38,8 @@ class ChatMessageWorker
   def insert_batch(raw)
     records = raw.filter_map { |json| parse_message(json) }
     if records.any?
-      batch_insert(records)         # Postgres — source of truth
-      mirror_to_clickhouse(records) # ClickHouse — best-effort dual-write (never raises)
+      persisted = batch_insert(records) # Postgres — source of truth; returns rows actually written
+      mirror_to_clickhouse(persisted)   # ClickHouse — best-effort mirror of exactly what PG wrote
     end
     records.size
   rescue StandardError => e
@@ -52,11 +52,14 @@ class ChatMessageWorker
   # is validated per env). NEVER raises — a CH failure must not requeue the batch (that would
   # double-write Postgres) nor block ingest; the gap is closed by the backfill (PR 1c).
   def mirror_to_clickhouse(records)
+    return if records.empty?
     return unless Flipper.enabled?(:chat_writes_clickhouse)
 
-    Clickhouse.client.insert("chat_messages", records.map { |record| clickhouse_row(record) })
+    # best_effort: true → short timeout, no retry — a CH outage must not stall the drain loop.
+    Clickhouse.client.insert("chat_messages", records.map { |record| clickhouse_row(record) }, best_effort: true)
   rescue StandardError => e
-    Rails.logger.warn("ChatMessageWorker: ClickHouse mirror failed (#{e.message}) — Postgres is source of truth, gap backfilled later")
+    # Log the error class only — the message can echo CH response-body fragments.
+    Rails.logger.warn("ChatMessageWorker: ClickHouse mirror failed (#{e.class}) — Postgres is source of truth, gap backfilled later")
   end
 
   # Map a Postgres insert hash (parse_message) to a ClickHouse chat_messages row: nils coalesced to
@@ -135,22 +138,25 @@ class ChatMessageWorker
     nil
   end
 
+  # Returns the records actually persisted to Postgres so the ClickHouse mirror reflects exactly what
+  # PG holds (no CH-superset divergence). Bulk path writes all; fallback returns the written subset.
   def batch_insert(records)
     ChatMessage.insert_all(records)
+    records
   rescue ActiveRecord::StatementInvalid => e
     Rails.logger.error("ChatMessageWorker: batch INSERT failed (#{e.message}), trying individual inserts")
     individual_insert(records)
   end
 
   def individual_insert(records)
-    inserted = 0
-    records.each do |record|
+    persisted = records.each_with_object([]) do |record, kept|
       ChatMessage.create!(record)
-      inserted += 1
+      kept << record
     rescue ActiveRecord::RecordInvalid => e
       Rails.logger.warn("ChatMessageWorker: skip invalid record (#{e.message})")
     end
-    Rails.logger.info("ChatMessageWorker: individual insert #{inserted}/#{records.size}")
+    Rails.logger.info("ChatMessageWorker: individual insert #{persisted.size}/#{records.size}")
+    persisted
   end
 
   def resolve_stream_id(channel_login)
