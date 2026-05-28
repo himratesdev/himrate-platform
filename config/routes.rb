@@ -121,6 +121,9 @@ Rails.application.routes.draw do
         get "analytics/patterns", to: "analytics#patterns"
         get "analytics/cohort", to: "analytics#cohort"
         post "analytics/engagement", to: "analytics#engagement"
+        # BE-5 M13 Export (FR-012): async JSON archive (POST + GET /:id download)
+        post "analytics/export", to: "analytics#export"
+        get "analytics/export/:id", to: "analytics#export_download"
         # BE-5 M15 Privacy
         get "privacy", to: "privacy#show"
         put "privacy", to: "privacy#update"
