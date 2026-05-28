@@ -13,7 +13,8 @@ class RevenueBaseline < ApplicationRecord
     "loki" => 0.0,
     "alertmanager" => 0.0,
     "promtail" => 0.0,
-    "prometheus-pushgateway" => 0.0
+    "prometheus-pushgateway" => 0.0,
+    "clickhouse" => 0.0 # TASK-251.14: analytics store — no direct revenue weight pre-launch
   }.freeze
 
   validates :period_start, :period_end, :daily_revenue_usd, :calculated_at, presence: true

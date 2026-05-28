@@ -61,7 +61,8 @@ RSpec.describe RevenueBaseline, type: :model do
       expect(described_class::DEFAULT_WEIGHTS).to include(
         "db" => 1.0, "redis" => 0.8,
         "grafana" => 0.0, "prometheus" => 0.0, "loki" => 0.0,
-        "alertmanager" => 0.0, "promtail" => 0.0, "prometheus-pushgateway" => 0.0
+        "alertmanager" => 0.0, "promtail" => 0.0, "prometheus-pushgateway" => 0.0,
+        "clickhouse" => 0.0
       )
     end
   end

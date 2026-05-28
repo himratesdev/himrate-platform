@@ -35,12 +35,21 @@ RSpec.describe AccessoryOps::HealthCheckService do
       expect(result).not_to be_healthy
       expect(result.raw_output).to include("Errno::ECONNREFUSED")
     end
+
+    it "probes ClickHouse via its unauthenticated /ping endpoint (TASK-251.14)" do
+      captured = nil
+      allow(Open3).to receive(:capture2e) { |*cmd| captured = cmd.last; [ "Ok.\n", instance_double(Process::Status, exitstatus: 0) ] }
+
+      result = described_class.call(destination: "production", accessory: "clickhouse")
+      expect(result).to be_healthy
+      expect(captured).to include("http://himrate-clickhouse:8123/ping")
+    end
   end
 
   describe "HEALTH_COMMANDS strategy hash" do
-    it "covers all 8 supported accessories" do
+    it "covers all 9 supported accessories (incl. clickhouse)" do
       expect(described_class::HEALTH_COMMANDS.keys).to match_array(
-        %w[db redis grafana prometheus prometheus-pushgateway loki promtail alertmanager]
+        %w[db redis grafana prometheus prometheus-pushgateway loki promtail alertmanager clickhouse]
       )
     end
   end

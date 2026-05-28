@@ -26,7 +26,8 @@ module AccessoryOps
       "loki"                    => "himrate-loki",
       "alertmanager"            => "himrate-alertmanager",
       "promtail"                => "himrate-promtail",
-      "prometheus-pushgateway"  => "himrate-prometheus-pushgateway"
+      "prometheus-pushgateway"  => "himrate-prometheus-pushgateway",
+      "clickhouse"              => "himrate-clickhouse"
     }.freeze
     ALLOWED_ACCESSORIES = CONTAINER_NAMES.keys.freeze
     ALLOWED_DESTINATIONS = %w[staging production].freeze
