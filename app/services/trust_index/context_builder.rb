@@ -53,9 +53,13 @@ module TrustIndex
         []
       end
 
-      # TASK-251.14d: the 4 chat methods now dispatch via Flipper. PG paths floor `since` to the
-      # minute so PG and the minute-bucketed CH MVs read identically aligned windows (resolves
-      # CR-198 Nit-2). See `dispatch_chat` below for flag semantics.
+      # TASK-251.14d: the 4 chat methods now dispatch via Flipper. To keep PG↔CH at TRUE 0-divergence
+      # all windowed cutoffs are computed ONCE per public call here (in the dispatch wrapper) and
+      # passed by absolute value to both leaves — otherwise PG and CH each evaluate their own
+      # `60.minutes.ago` / `24.hours.ago` and drift by ms-to-seconds at the minute boundary, which
+      # surfaces phantom divergence and breaks the "flip when divergence stable at 0" gate. PG paths
+      # also use `timestamp >= floor` so the minute-bucketed MVs read identically aligned windows
+      # (closes CR-198 Nit-2 + CR-206 Should-1/2). See `dispatch_chat` below for flag semantics.
       def fetch_chat_rate(stream, since)
         dispatch_chat(:chat_rate, [ stream, since.beginning_of_minute ])
       end
@@ -98,14 +102,16 @@ module TrustIndex
         Clickhouse::ChatQueries.chat_username_counts(stream, since)
       end
 
+      # CR-206 Should-1: capture-once `60.minutes.ago.beginning_of_minute` here so PG and CH leaves
+      # share the same absolute cutoff (no drift at the minute boundary between the two queries).
       def fetch_unique_chatters(stream)
-        dispatch_chat(:unique_chatters, [ stream ])
+        dispatch_chat(:unique_chatters, [ stream, 60.minutes.ago.beginning_of_minute ])
       end
 
-      def fetch_unique_chatters_pg(stream)
+      def fetch_unique_chatters_pg(stream, since)
         ChatMessage
           .where(stream_id: stream.id, msg_type: "privmsg")
-          .where("timestamp >= ?", 60.minutes.ago.beginning_of_minute)
+          .where("timestamp >= ?", since)
           .distinct
           .count(:username)
       rescue ActiveRecord::StatementInvalid => e
@@ -113,8 +119,8 @@ module TrustIndex
         nil
       end
 
-      def fetch_unique_chatters_ch(stream)
-        Clickhouse::ChatQueries.unique_chatters(stream)
+      def fetch_unique_chatters_ch(stream, since)
+        Clickhouse::ChatQueries.unique_chatters(stream, since)
       end
 
       def fetch_bot_scores(stream)
@@ -139,14 +145,17 @@ module TrustIndex
       # Limited to stream's chatters to keep query bounded.
       CROSS_CHANNEL_CHATTER_LIMIT = 500
 
+      # CR-206 Should-2: capture-once `24.hours.ago` here and pass the absolute timestamp to both
+      # leaves. Three separate "now" references (Rails clock + CH server-side `now()` × 2) would
+      # drift across the 24h boundary, breaking the parity gate.
       def fetch_cross_channel(stream)
-        dispatch_chat(:cross_channel, [ stream ])
+        dispatch_chat(:cross_channel, [ stream, 24.hours.ago ])
       end
 
       # TASK-251.14d: ORDER BY username added so the PG path picks the same deterministic 500 as
       # the CH path (Clickhouse::ChatQueries.cross_channel) — required for 0-divergence dual-read on
       # high-cardinality streams where the unordered LIMIT 500 was previously arbitrary.
-      def fetch_cross_channel_pg(stream)
+      def fetch_cross_channel_pg(stream, since)
         usernames = ChatMessage
           .where(stream_id: stream.id, msg_type: "privmsg")
           .distinct
@@ -158,7 +167,7 @@ module TrustIndex
 
         ChatMessage
           .where(username: usernames)
-          .where("timestamp > ?", 24.hours.ago)
+          .where("timestamp > ?", since)
           .group(:username)
           .distinct
           .count(:channel_login)
@@ -167,8 +176,8 @@ module TrustIndex
         {}
       end
 
-      def fetch_cross_channel_ch(stream)
-        Clickhouse::ChatQueries.cross_channel(stream)
+      def fetch_cross_channel_ch(stream, since)
+        Clickhouse::ChatQueries.cross_channel(stream, since)
       end
 
       # TASK-251.14d: dual-flag dispatch for the 4 chat queries.

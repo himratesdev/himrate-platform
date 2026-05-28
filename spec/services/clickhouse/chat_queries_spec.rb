@@ -49,43 +49,54 @@ RSpec.describe Clickhouse::ChatQueries do
   end
 
   describe ".unique_chatters" do
-    it "queries mv_stream_minute_target via uniqExactMerge (last 60 min) and returns the Integer" do
+    let(:since) { Time.utc(2026, 5, 28, 11, 30) }
+
+    it "queries mv_stream_minute_target via uniqExactMerge for the supplied window" do
       expect(ch).to receive(:select).with(
         a_string_matching(/uniqExactMerge\(unique_chatters\)/)
           .and(a_string_matching(/FROM mv_stream_minute_target/))
+          .and(a_string_matching(/minute >= '2026-05-28 11:30:00'/))
       ).and_return([ { "u" => "42" } ])
 
-      expect(described_class.unique_chatters(stream)).to eq(42)
+      expect(described_class.unique_chatters(stream, since)).to eq(42)
     end
 
     it "returns nil when CH returns no rows (parity with PG rescue path returning nil)" do
       allow(ch).to receive(:select).and_return([])
-      expect(described_class.unique_chatters(stream)).to be_nil
+      expect(described_class.unique_chatters(stream, since)).to be_nil
     end
   end
 
   describe ".cross_channel" do
-    it "fetches stream's usernames (ORDER BY username) then distinct channel count (rolling 24h)" do
+    let(:since) { Time.utc(2026, 5, 27, 12, 30, 45) }
+
+    it "fetches usernames (ORDER BY) then uniqExact(channel_login) over the supplied window" do
       expect(ch).to receive(:select).with(a_string_matching(/SELECT DISTINCT username.*ORDER BY username.*LIMIT 500/m))
                                     .and_return([ { "username" => "alice" }, { "username" => "bob" } ])
       expect(ch).to receive(:select).with(
         a_string_matching(/uniqExact\(channel_login\)/)
           .and(a_string_matching(/IN \('alice','bob'\)/))
-          .and(a_string_matching(/now\(\) - INTERVAL 24 HOUR/))
+          .and(a_string_matching(/timestamp > toDateTime\('2026-05-27 12:30:45'\)/))
       ).and_return([ { "username" => "alice", "c" => "3" }, { "username" => "bob", "c" => "1" } ])
 
-      expect(described_class.cross_channel(stream)).to eq("alice" => 3, "bob" => 1)
+      expect(described_class.cross_channel(stream, since)).to eq("alice" => 3, "bob" => 1)
     end
 
     it "returns {} when the stream has no chatters (skips the second query)" do
       expect(ch).to receive(:select).once.and_return([])
-      expect(described_class.cross_channel(stream)).to eq({})
+      expect(described_class.cross_channel(stream, since)).to eq({})
     end
 
-    it "escapes single quotes in usernames to prevent SQL breakage" do
+    it "escapes single quotes in usernames" do
       expect(ch).to receive(:select).and_return([ { "username" => "o'reilly" } ])
       expect(ch).to receive(:select).with(a_string_matching(/IN \('o''reilly'\)/)).and_return([])
-      described_class.cross_channel(stream)
+      described_class.cross_channel(stream, since)
+    end
+
+    it "escapes backslashes in usernames (CR-206 Should-3 — CH single-quoted strings honour `\\`)" do
+      expect(ch).to receive(:select).and_return([ { "username" => "back\\slash" } ])
+      expect(ch).to receive(:select).with(a_string_matching(/IN \('back\\\\slash'\)/)).and_return([])
+      described_class.cross_channel(stream, since)
     end
   end
 
@@ -127,13 +138,14 @@ RSpec.describe Clickhouse::ChatQueries do
       expect(counts[(m0 + 60.seconds).to_i]).to eq(1)
     end
 
-    it "unique_chatters returns the merged uniqExact over the 60-min window" do
+    it "unique_chatters returns the merged uniqExact over the supplied window" do
+      since = t.beginning_of_minute - 60.minutes
       insert([
                { username: "u1", timestamp: t.beginning_of_minute - 5.minutes },
                { username: "u2", timestamp: t.beginning_of_minute - 3.minutes },
                { username: "u1", timestamp: t.beginning_of_minute - 1.minutes } # repeat — uniqExact=2
              ])
-      expect(described_class.unique_chatters(stream)).to eq(2)
+      expect(described_class.unique_chatters(stream, since)).to eq(2)
     end
   end
 end

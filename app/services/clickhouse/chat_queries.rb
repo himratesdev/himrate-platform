@@ -31,7 +31,12 @@ module Clickhouse
         WHERE stream_id = '#{stream.id}' AND minute >= '#{since_min}'
         GROUP BY minute ORDER BY minute
       SQL
-      rows.map { |r| { msg_count: r["c"].to_i, timestamp: Time.utc(*r["minute"].split(/[-:\s]/).map(&:to_i)) } }
+      # Parse the minute string explicitly as UTC: appending " UTC" forces Time.parse to interpret
+      # the wall-clock as UTC instead of the process's local TZ (the CH server is UTC-pinned by
+      # `<timezone>UTC</timezone>` in constrained.xml, so the raw string is always UTC). Tolerates
+      # CH format drift (sub-second / future formatting changes) without the brittleness of the
+      # split-by-delimiter approach. CR-206 Nit-5.
+      rows.map { |r| { msg_count: r["c"].to_i, timestamp: Time.parse("#{r['minute']} UTC") } }
     rescue Clickhouse::Error => e
       Rails.logger.warn("Clickhouse::ChatQueries: chat_rate failed (#{e.class})")
       []
@@ -52,9 +57,11 @@ module Clickhouse
       {}
     end
 
-    # Mirrors PG fetch_unique_chatters output: Integer count of distinct chatters in the last 60 min.
-    def unique_chatters(stream)
-      since_min = 60.minutes.ago.utc.strftime("%Y-%m-%d %H:%M:00")
+    # Mirrors PG fetch_unique_chatters: Integer count of distinct chatters since the given cutoff
+    # (caller passes an absolute timestamp — captured once by the dispatch wrapper so PG and CH
+    # share the exact same window; CR-206 Should-1).
+    def unique_chatters(stream, since)
+      since_min = since.utc.strftime("%Y-%m-%d %H:%M:00")
       rows = Clickhouse.client.select(<<~SQL)
         SELECT uniqExactMerge(unique_chatters) AS u
         FROM mv_stream_minute_target
@@ -66,11 +73,14 @@ module Clickhouse
       nil
     end
 
-    # Mirrors PG fetch_cross_channel output: { username => distinct_channel_count } over rolling 24h.
-    # RAW scan (not an MV) so the 24h window is exact (0-divergence vs PG). uniqExact gives an exact
-    # count (matches PG's COUNT(DISTINCT)). The ORDER BY username + LIMIT picks the same usernames as
-    # the matching PG query so the result-set keys align in dual-read.
-    def cross_channel(stream)
+    # Mirrors PG fetch_cross_channel output: { username => distinct_channel_count } over the window
+    # ending now and starting at the caller-supplied `since` (an absolute Time, captured once by the
+    # dispatch wrapper — CR-206 Should-2: three independent `now()` references would drift across
+    # the 24h edge). RAW scan (not an MV) so the window is exact (0-divergence vs PG); uniqExact
+    # matches PG's COUNT(DISTINCT). ORDER BY username + LIMIT picks the same deterministic 500 as
+    # the PG path.
+    def cross_channel(stream, since)
+      since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
       username_rows = Clickhouse.client.select(<<~SQL)
         SELECT DISTINCT username
         FROM chat_messages
@@ -81,18 +91,25 @@ module Clickhouse
       usernames = username_rows.map { |r| r["username"] }
       return {} if usernames.empty?
 
-      quoted = usernames.map { |u| "'#{u.gsub("'", "''")}'" }.join(",")
+      quoted = usernames.map { |u| "'#{escape_string_literal(u)}'" }.join(",")
       rows = Clickhouse.client.select(<<~SQL)
         SELECT username, uniqExact(channel_login) AS c
         FROM chat_messages
         WHERE username IN (#{quoted}) AND msg_type = 'privmsg'
-          AND timestamp > now() - INTERVAL 24 HOUR
+          AND timestamp > toDateTime('#{since_ts}')
         GROUP BY username
       SQL
       rows.to_h { |r| [ r["username"], r["c"].to_i ] }
     rescue Clickhouse::Error => e
       Rails.logger.warn("Clickhouse::ChatQueries: cross_channel failed (#{e.class})")
       {}
+    end
+
+    # ClickHouse string-literal escape: backslash first (CH single-quoted strings honor C-style
+    # escapes), then single-quote. Block-form gsub avoids the gsub-replacement back-reference
+    # interpretation that bites the naive `gsub('\\', '\\\\')` form. CR-206 Should-3.
+    def escape_string_literal(value)
+      value.gsub(/[\\']/) { |c| c == "\\" ? "\\\\" : "''" }
     end
   end
 end
