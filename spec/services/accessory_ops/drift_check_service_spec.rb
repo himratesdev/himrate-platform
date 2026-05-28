@@ -46,6 +46,23 @@ RSpec.describe AccessoryOps::DriftCheckService do
       }.to raise_error(ArgumentError, /invalid accessory/)
     end
 
+    # BUG-025: graceful skip when config/deploy.yml is not present inside the container
+    # (the file lives on the host for Kamal; only mounted volumes are visible at runtime).
+    # Pre-fix the rescue path was missing → Errno::ENOENT raised every cycle → Sidekiq DLQ.
+    it "returns :skipped когда config/deploy.yml отсутствует в контейнере (ENOENT)" do
+      allow(YAML).to receive(:load_file).with(
+        described_class::DEPLOY_YML, permitted_classes: [ Symbol ]
+      ).and_raise(Errno::ENOENT.new(described_class::DEPLOY_YML.to_s))
+      # SSH should NOT run when we already know the declared side is unavailable (no point comparing).
+      expect(Open3).not_to receive(:capture2e)
+
+      result = described_class.call(destination: "production", accessory: "redis")
+
+      expect(result.drift_state).to eq(:skipped)
+      expect(result.declared_image).to be_nil
+      expect(result.runtime_image).to be_nil
+    end
+
     it "uses CONTAINER_NAMES literal lookup в SSH command" do
       expect(Open3).to receive(:capture2e) do |*args|
         # Last positional arg = remote shell command

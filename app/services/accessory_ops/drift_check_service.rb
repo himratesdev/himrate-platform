@@ -34,7 +34,17 @@ module AccessoryOps
 
     def self.call(destination:, accessory:)
       validate_inputs!(destination, accessory)
-      declared = declared_image_for(accessory)
+      declared, declared_status = declared_image_for(accessory)
+
+      # BUG-025: `config/deploy.yml` is NOT mounted into the app container (it lives on the host
+      # for Kamal). Inside the Sidekiq job container `YAML.load_file` raised Errno::ENOENT every
+      # cron tick → Sidekiq retried 3× into DLQ (474 entries accumulated pre-fix). Treat the
+      # config-unreadable case as `:skipped` so the worker (and dashboards) can show "drift
+      # detection unavailable" instead of falsely flagging every accessory as `:mismatch`.
+      # Volume-mounting `config/deploy.yml` into the container is a follow-up improvement
+      # (option (a) in the bug report).
+      return Result.new(drift_state: :skipped, declared_image: nil, runtime_image: nil) if declared_status == :config_unavailable
+
       runtime = runtime_image_for(destination: destination, accessory: accessory)
 
       state = if declared.nil? || runtime.nil? || declared != runtime
@@ -46,9 +56,18 @@ module AccessoryOps
       Result.new(drift_state: state, declared_image: declared, runtime_image: runtime)
     end
 
+    # Returns [image_or_nil, status] where status is one of:
+    #   :ok                  — deploy.yml read; image is the declared value (may be nil if accessory entry absent)
+    #   :config_unavailable  — deploy.yml not present in the container filesystem (BUG-025)
     def self.declared_image_for(accessory)
       yaml = YAML.load_file(DEPLOY_YML, permitted_classes: [ Symbol ])
-      yaml.dig("accessories", accessory, "image")
+      [ yaml.dig("accessories", accessory, "image"), :ok ]
+    rescue Errno::ENOENT
+      Rails.logger.warn(
+        "DriftCheckService: config/deploy.yml not present in container (#{DEPLOY_YML}); drift detection skipped " \
+        "(BUG-025). Mount the file or rely on workflow_dispatch reboot path for declared-image authority."
+      )
+      [ nil, :config_unavailable ]
     end
 
     def self.runtime_image_for(destination:, accessory:)
