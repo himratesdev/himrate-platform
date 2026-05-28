@@ -5,7 +5,9 @@ module Auth
     AUTHORIZE_URL = "https://id.twitch.tv/oauth2/authorize"
     TOKEN_URL = "https://id.twitch.tv/oauth2/token"
     USER_URL = "https://api.twitch.tv/helix/users"
-    SCOPES = "user:read:email channel:read:subscriptions"
+    # TASK-113 Δ-1 Wave 1 (FR-016 source #1): user:read:follows для Helix GET /channels/followed.
+    # Existing users (pre-scope-update) → 403 on source #1; graceful empty per BR-013.
+    SCOPES = "user:read:email channel:read:subscriptions user:read:follows"
 
     def initialize
       @client_id = ENV.fetch("TWITCH_CLIENT_ID")
@@ -83,7 +85,7 @@ module Auth
             access_token: tokens[:access_token],
             refresh_token: tokens[:refresh_token],
             expires_at: Time.current + tokens[:expires_in].to_i.seconds,
-            scopes: SCOPES.split(" ")
+            scopes: granted_scopes(tokens)
           )
           user = auth_provider.user
         else
@@ -101,7 +103,7 @@ module Auth
             access_token: tokens[:access_token],
             refresh_token: tokens[:refresh_token],
             expires_at: Time.current + tokens[:expires_in].to_i.seconds,
-            scopes: SCOPES.split(" "),
+            scopes: granted_scopes(tokens),
             is_broadcaster: streamer?(twitch_user[:broadcaster_type])
           )
         end
@@ -116,6 +118,13 @@ module Auth
       @retry_count = (@retry_count || 0) + 1
       raise e if @retry_count > 1
       retry
+    end
+
+    # CR iter-1 S1: persist actually-granted scopes from Twitch (tokens[:scope]) instead of
+    # requested set. Twitch may return subset if user re-consents partially; HelixFollowsSource
+    # scope_granted? now sees reality, avoiding wasted 403 round-trip.
+    def granted_scopes(tokens)
+      tokens[:scope].to_s.split(" ").presence || SCOPES.split(" ")
     end
 
     def determine_role(broadcaster_type)

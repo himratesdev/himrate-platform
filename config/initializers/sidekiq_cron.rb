@@ -173,6 +173,15 @@ Sidekiq.configure_server do |config|
         "class" => "CostAttribution::DailyAggregatorWorker",
         "queue" => "accessory_ops",
         "description" => "Aggregate downtime cost (dormant pre-launch — revenue_baseline empty)"
+      },
+      # TASK-113 Δ-1 Wave 1 (FR-016 OQ-8, CR iter-2 M1): mark stuck enrollments partial_timeout.
+      # Without this cron the sweep worker never runs → partial_timeout state unreachable,
+      # retry CTA in SRS §11.6 never fires.
+      "pva_enrollment_backfill_sweep" => {
+        "cron" => "*/5 * * * *", # Every 5 min
+        "class" => "PersonalAnalytics::Enrollment::EnrollmentBackfillSweepWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-113 Δ-1 Wave 1 (FR-016 OQ-8): sweep stuck enrollments >10min → partial_timeout"
       }
     }
 

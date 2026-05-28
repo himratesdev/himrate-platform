@@ -11,10 +11,11 @@ RSpec.describe "Static configuration" do
       )
     end
 
-    it "contains 8 queues" do
+    it "contains 11 queues" do
       # TASK-110 v1.2 (CR S-7): whisper_transcripts НЕ в shared :queues — обрабатывается
       # ТОЛЬКО dedicated whisper_worker role (deploy.yml) для CPU isolation concurrency=1.
-      expect(config[:queues].size).to eq(8)
+      # TASK-113 Δ-1 Wave 1 (FR-016): pva_critical / pva_helix / pva_gql_anon (8 → 11).
+      expect(config[:queues].size).to eq(11)
     end
 
     it "includes required queue names" do

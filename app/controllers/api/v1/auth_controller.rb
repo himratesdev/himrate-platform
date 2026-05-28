@@ -55,6 +55,13 @@ module Api
         access_token = Auth::JwtService.encode_access(user.id)
         refresh_token = Auth::JwtService.encode_refresh(user.id)
 
+        # TASK-113 Δ-1 Wave 1 (FR-016): trigger cold-start enrollment backfill async на
+        # successful Twitch OAuth link. Worker idempotent (BR-015: skip if recent <30d).
+        # Flag-gated :pva (no-op если flag off).
+        if Flipper.enabled?(:pva)
+          PersonalAnalytics::Enrollment::EnrollmentBackfillWorker.perform_async(user.id)
+        end
+
         render json: {
           access_token: access_token,
           refresh_token: refresh_token,
