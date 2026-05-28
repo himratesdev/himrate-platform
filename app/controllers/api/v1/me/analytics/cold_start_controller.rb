@@ -1,0 +1,54 @@
+# frozen_string_literal: true
+
+# TASK-113 Δ-1 Wave 1 (FR-016): cold-start enrollment state + extension payload endpoints.
+# Two routes:
+#   - GET  /api/v1/me/analytics/cold_start/state           — frontend polling (5s cadence)
+#   - POST /api/v1/me/analytics/cold_start/subs_payload    — extension sources #4 / #5 ingest
+#
+# Auth: JWT Bearer (current_user). Pundit ownership only — NO paywall (PVA all-free per BR-002 v1.1).
+module Api
+  module V1
+    module Me
+      module Analytics
+        class ColdStartController < ApplicationController
+          before_action :authenticate_user!
+
+          # GET /api/v1/me/analytics/cold_start/state
+          def state
+            state = PersonalAnalytics::Enrollment::StateStore.read_state(user_id: current_user.id)
+            if state.nil?
+              render json: { overall_status: "not_started", sources: {} }
+              return
+            end
+
+            render json: {
+              overall_status: state["overall_status"],
+              oauth_linked_at: state["oauth_linked_at"],
+              completed_at: state["completed_at"],
+              failed_sources: state["failed_sources"] || [],
+              sources: PvaEnrollmentBackfillState::SOURCE_KEYS.each_with_object({}) { |k, h| h[k] = state[k] }
+            }
+          end
+
+          # POST /api/v1/me/analytics/cold_start/subs_payload
+          # Body: { source: 4|5, subscriptions: [{...}], captured_at: ISO-8601 }
+          def subs_payload
+            payload = params.permit(:source, :captured_at,
+              subscriptions: [ :channel_twitch_id, :channel_login, :channel_display_name,
+                              :tier, :cumulative_months, :started_at, :anniversary_at ]).to_h
+
+            result = PersonalAnalytics::Enrollment::ExtensionSubsPayloadHandler.call(
+              user_id: current_user.id, payload: payload
+            )
+
+            if result.error_class
+              render json: { ok: false, error: result.error_class }, status: :unprocessable_entity
+            else
+              render json: { ok: true, rows_affected: result.rows_affected }
+            end
+          end
+        end
+      end
+    end
+  end
+end

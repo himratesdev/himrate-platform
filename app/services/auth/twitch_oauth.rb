@@ -5,7 +5,9 @@ module Auth
     AUTHORIZE_URL = "https://id.twitch.tv/oauth2/authorize"
     TOKEN_URL = "https://id.twitch.tv/oauth2/token"
     USER_URL = "https://api.twitch.tv/helix/users"
-    SCOPES = "user:read:email channel:read:subscriptions"
+    # TASK-113 Δ-1 Wave 1 (FR-016 source #1): user:read:follows для Helix GET /channels/followed.
+    # Existing users (pre-scope-update) → 403 on source #1; graceful empty per BR-013.
+    SCOPES = "user:read:email channel:read:subscriptions user:read:follows"
 
     def initialize
       @client_id = ENV.fetch("TWITCH_CLIENT_ID")
