@@ -31,13 +31,13 @@ module PersonalAnalytics
     def build_row(user_id, snapshot, channels)
       twitch_channel_id = snapshot[:channel_id].to_s
       observed_at = parse_time(snapshot[:observed_at])
-      return drop(user_id, snapshot) if twitch_channel_id.blank? || observed_at.nil?
+      return drop(user_id, snapshot) unless Ingest.valid_channel_id?(twitch_channel_id) && observed_at
 
       uuid, login = channels[twitch_channel_id]
       now = Time.current
       { user_id: user_id, twitch_channel_id: twitch_channel_id, channel_id: uuid,
-        twitch_login: login || snapshot[:login].presence, sub_tier: clamp_tier(snapshot[:sub_tier]),
-        months: [ snapshot[:months].to_i, 0 ].max, streak: [ snapshot[:streak].to_i, 0 ].max,
+        twitch_login: Ingest.truncate_login(login || snapshot[:login]), sub_tier: clamp_tier(snapshot[:sub_tier]),
+        months: Ingest.clamp_int(snapshot[:months]), streak: Ingest.clamp_int(snapshot[:streak]),
         anniversary_at: parse_date(snapshot[:anniversary_at]), observed_at: observed_at,
         created_at: now, updated_at: now }
     end

@@ -41,8 +41,9 @@ RSpec.describe PersonalAnalytics::EngagementIngestWorker do
     expect(untracked.twitch_login).to eq("untrackedguy")
   end
 
-  it "drops invalid events (bad type / missing channel)" do
-    described_class.new.perform(user.id, [ event(event_type: "bogus"), event(channel_id: "") ])
+  it "drops invalid events (bad type / missing+oversized channel / non-uuid client_event_id)" do
+    described_class.new.perform(user.id, [ event(event_type: "bogus"), event(channel_id: ""),
+                                           event(channel_id: "9" * 40), event(client_event_id: "not-a-uuid") ])
 
     expect(PvaEngagementEvent.where(user_id: user.id)).to be_empty
   end

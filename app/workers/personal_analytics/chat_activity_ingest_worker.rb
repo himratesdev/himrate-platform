@@ -30,12 +30,12 @@ module PersonalAnalytics
       date = parse_date(snapshot[:date])
       first_seen = parse_time(snapshot[:first_seen_at])
       last_seen = parse_time(snapshot[:last_seen_at])
-      return drop(user_id, snapshot) if twitch_channel_id.blank? || date.nil? || first_seen.nil? || last_seen.nil?
+      return drop(user_id, snapshot) unless Ingest.valid_channel_id?(twitch_channel_id) && date && first_seen && last_seen
 
       uuid, login = channels[twitch_channel_id]
       { user_id: user_id, twitch_channel_id: twitch_channel_id, channel_id: uuid,
-        twitch_login: login || snapshot[:login].presence, date: date,
-        message_count: [ snapshot[:message_count].to_i, 0 ].max, emote_counts: sanitize_emotes(snapshot[:emote_counts]),
+        twitch_login: Ingest.truncate_login(login || snapshot[:login]), date: date,
+        message_count: Ingest.clamp_int(snapshot[:message_count]), emote_counts: sanitize_emotes(snapshot[:emote_counts]),
         first_seen_at: first_seen, last_seen_at: last_seen, updated_at: Time.current }
     end
 

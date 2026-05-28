@@ -31,7 +31,7 @@ module PersonalAnalytics
       uuid, login = channels[event[:channel_id].to_s]
       now = Time.current
       { user_id: user_id, twitch_channel_id: event[:channel_id].to_s, channel_id: uuid,
-        twitch_login: login || event[:login].presence, client_event_id: event[:client_event_id].to_s,
+        twitch_login: Ingest.truncate_login(login || event[:login]), client_event_id: event[:client_event_id].to_s,
         event_type: event[:event_type], amount: clamp_amount(event[:amount]),
         anonymous: truthy?(event[:anonymous]), source: "client_capture", occurred_at: parse_time(event[:occurred_at]),
         event_hash: PvaEngagementEvent.compute_hash(user_id: user_id, client_event_id: event[:client_event_id].to_s),
@@ -41,7 +41,7 @@ module PersonalAnalytics
     # client_event_id пишется в uuid-колонку → битый формат рушит весь insert_all batch (CR SF-2).
     # Воркер = validation boundary: дропаем (а не падаем) на невалидном UUID.
     def valid?(event)
-      event[:channel_id].to_s.present? && event[:client_event_id].to_s.match?(UUID_FORMAT) &&
+      Ingest.valid_channel_id?(event[:channel_id]) && event[:client_event_id].to_s.match?(UUID_FORMAT) &&
         parse_time(event[:occurred_at]) && PvaEngagementEvent::EVENT_TYPES.include?(event[:event_type])
     end
 
@@ -50,10 +50,7 @@ module PersonalAnalytics
     end
 
     def clamp_amount(value)
-      return nil if value.blank?
-
-      amount = value.to_i
-      amount.negative? ? nil : amount
+      value.blank? ? nil : Ingest.clamp_int(value)
     end
 
     def truthy?(value)
