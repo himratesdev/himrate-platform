@@ -1,0 +1,81 @@
+# TASK-113 PVA (Personal Viewer Analytics) — RU.
+# Source of truth: _tasks/TASK-113/wireframe-task-113.html (Frame 16). Тексты verbatim из wireframe.
+# Тематические клаузы (одно предложение = один ключ) + плюрализация через PersonalAnalytics::RussianPlural —
+# native rails-i18n не установлен (Gemfile проверен), композиция нарратива на стороне Builder.
+ru:
+  pva:
+    reflection:
+      # M10 narrative фрагменты (Builder склеивает в одну строку через пробел; ровно как в wireframe).
+      narrative:
+        total: "На этой неделе ты провёл %{hours_minutes} на Twitch%{delta_clause}."
+        delta_more: " (на %{amount} больше прошлой)"
+        delta_less: " (на %{amount} меньше прошлой)"
+        top_streamer: "Больше всего — у %{login}: %{hours_minutes} за %{sessions}."
+        new_channels: "Открыл %{channels}."
+        peak: "Пик активности — %{period} %{weekday}."
+        empty: "На этой неделе ты не провёл время на Twitch." # safety; обычно строка не создаётся (worker skip)
+      peak_period:
+        morning: "утро"     # 06:00-11:59
+        day: "день"         # 12:00-17:59
+        evening: "вечер"    # 18:00-23:59
+        night: "ночь"       # 00:00-05:59
+      weekday_genitive:
+        mon: "понедельника"
+        tue: "вторника"
+        wed: "среды"
+        thu: "четверга"
+        fri: "пятницы"
+        sat: "субботы"
+        sun: "воскресенья"
+      # M10 moments worth noting (jsonb [{icon, text}]). icon = lucide-style key; UI рендерит свой свг.
+      moments:
+        anniversary: "%{date} — твоя %{months_form} подписка у %{login}!" # «21-я месячная»
+        new_channel_repeat: "Открыл %{login} впервые — вернулся %{visits} за неделю."
+        new_channel_once: "Открыл %{login} впервые на этой неделе."
+        hype_train: "Участвовал в Hype Train у %{login} — на %{pct}%% от среднего."
+    patterns:
+      # M11 v1 rule-based (rhythm + content); sentiment отдельный card позже (sentiment_enabled-hook).
+      type:
+        rhythm: "Паттерн · ритм"
+        content: "Паттерн · контент"
+      rhythm_weekday_evening:
+        title: "Ты смотришь больше после рабочих дней"
+        body: "Активность в пн-вт-ср вечером выше на %{pct}%%, чем в выходные днём. Похоже на способ декомпрессии."
+        actionable: "Если хочешь сократить — попробуй планировать стримы заранее, а не открывать «что попало» после работы."
+      rhythm_weekend_morning:
+        title: "Выходные ты начинаешь рано"
+        body: "В сб-вс с %{start_hour}:00 ты в эфире больше, чем в будни. Похоже на ритуал утреннего просмотра."
+      content_weekend_chill:
+        title: "В выходные — больше IRL/Music, меньше игр"
+        body: "Соотношение игры/чилл flips с %{weekday_ratio} в будни до %{weekend_ratio} в выходные."
+      growth_recent:
+        title: "Ты смотришь больше, чем месяц назад"
+        body: "За последние 30 дней — на %{delta_pct}%% больше времени, чем за предыдущие 30. Постепенное ускорение."
+      decline_recent:
+        title: "Ты смотришь меньше, чем месяц назад"
+        body: "За последние 30 дней — на %{delta_pct}%% меньше времени, чем за предыдущие 30. Похоже на сезонное снижение."
+    cohort:
+      # M12 v1 co-watch overlap. suggestions jsonb [{login, display_name, pct}].
+      caption: "Анонимная когорта · похожие смотрят (ты не пробовал):"
+      pct_label: "%{pct}%% похожих зрителей смотрит часто"
+      empty: "Когорта появится позже — нам нужно больше данных о твоих просмотрах."
+    months_form:
+      one: "%{count}-я месячная" # 1, 21, 31… (Russian: ends in 1 but not 11)
+      few: "%{count}-я месячная" # 2-4 — та же форма прилагательного (порядковое)
+      many: "%{count}-я месячная" # 5-20 — порядковое не меняется
+    sessions_form:
+      one: "%{count} сессию"   # 1 сессию
+      few: "%{count} сессии"   # 2-4 сессии
+      many: "%{count} сессий"  # 5+ сессий
+    new_channels_form:
+      one: "%{count} новый канал"
+      few: "%{count} новых канала"
+      many: "%{count} новых каналов"
+    visits_form:
+      one: "%{count} раз"   # 1 раз
+      few: "%{count} раза"  # 2-4 раза
+      many: "%{count} раз"  # 5+ раз
+    hours_minutes:
+      h_m: "%{h}ч %{m}м"
+      h: "%{h}ч"
+      m: "%{m}м"
