@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe PersonalAnalytics::Reflection::ReflectionBuilder do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:user) { create(:user, locale: "ru") }
   let(:monday) { Date.new(2026, 5, 18) } # Mon
   let(:sunday) { monday + 6 }            # Sun 2026-05-24
@@ -93,6 +95,32 @@ RSpec.describe PersonalAnalytics::Reflection::ReflectionBuilder do
     described_class.call(user.id, week_start: monday)
 
     expect(PvaWeeklyReflection.where(user_id: user.id, week_start: monday).count).to eq(1)
+  end
+
+  it "EN anniversary moment reads naturally (CR nit-2 fix: no «21st-monthly»)" do
+    user.update!(locale: "en")
+    rollup(twitch_channel_id: "1", login: "shroud", date: monday, total_seconds: 3600)
+    create(:channel_tenure, user: user, twitch_channel_id: "1", twitch_login: "shroud",
+      months: 21, anniversary_at: monday + 3)
+
+    described_class.call(user.id, week_start: monday)
+
+    cake = PvaWeeklyReflection.find_by(user_id: user.id).moments.find { |m| m["icon"] == "cake" }
+    expect(cake["text"]).to include("21-month sub anniversary").and include("shroud")
+  end
+
+  it "default_week_start returns Monday of the last fully-completed ISO week (uniform for all wday)" do
+    # Lock-in CR nit-1 fix: НЕ spec-кейс для Sun-branch — единая формула, всегда «Mon strictly before today».
+    [ Date.new(2026, 5, 25), # Mon → prev Mon May 18
+      Date.new(2026, 5, 27), # Wed → prev Mon May 18
+      Date.new(2026, 5, 24)  # Sun → prev-prev Mon May 11 (Sun strictly before today is May 17)
+    ].each do |today_value|
+      travel_to(today_value) do
+        ws = described_class.default_week_start
+        expect(ws.wday).to eq(1), "wday expected Mon for today=#{today_value}, got #{ws} (wday=#{ws.wday})"
+        expect(ws + 6).to be < today_value, "week ending #{ws + 6} must be strictly before today=#{today_value}"
+      end
+    end
   end
 
   it "normalizes a non-Monday week_start to the same ISO week's Monday" do

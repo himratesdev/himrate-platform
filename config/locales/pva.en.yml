@@ -26,7 +26,7 @@ en:
         sat: "Saturday"
         sun: "Sunday"
       moments:
-        anniversary: "%{date} — your %{months_form} subscription with %{login}!"
+        anniversary: "%{date} — your %{months_form} sub anniversary with %{login}!"
         new_channel_repeat: "Discovered %{login} — came back %{visits} this week."
         new_channel_once: "Discovered %{login} for the first time this week."
         hype_train: "Joined Hype Train with %{login} — %{pct}%% above average."
@@ -55,9 +55,9 @@ en:
       pct_label: "%{pct}%% of similar viewers watch often"
       empty: "Cohort will appear later — we need more data about your viewing."
     months_form:
-      one: "%{count}st-monthly"  # 1st (we don't auto-suffix; en/ru parity)
-      few: "%{count}-monthly"
-      many: "%{count}-monthly"
+      one: "%{count}-month"   # «21-month sub anniversary» — grammatical, ordinal-suffix avoided (no rails-i18n)
+      few: "%{count}-month"
+      many: "%{count}-month"
     sessions_form:
       one: "%{count} session"
       few: "%{count} sessions"

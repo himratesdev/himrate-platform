@@ -28,12 +28,13 @@ module PersonalAnalytics
         @week_end = @week_start + 6
       end
 
-      # Default = последняя завершённая неделя (понедельник предыдущей ISO-недели). Воркер запускается
-      # понедельником утром → считаем неделю Пн-Вс ДО сегодняшнего Пн.
+      # Default = последняя ПОЛНОСТЬЮ завершённая ISO-неделя (Пн..Вс ДО сегодняшнего дня). Воркер
+      # запускается понедельником → today.wday=1 → days_back=7 → прошлый Пн (неделя только что
+      # закончилась). Единая формула для всех wday (без spec-кейса для воскресенья — semantically
+      # «week ending strictly before today», CR nit-1 cosmetic-fix).
       def self.default_week_start
         today = Date.current
-        days_to_prev_monday = today.wday.zero? ? 6 : (today.wday + 6) % 7 + 7
-        today - days_to_prev_monday
+        Date.current - ((today.wday + 6) % 7 + 7)
       end
 
       def call
