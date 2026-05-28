@@ -12,6 +12,10 @@ module Api
       module Analytics
         class ColdStartController < Api::BaseController
           before_action :authenticate_user!
+          # PVA all-free — ownership через JWT (current_user), нет Pundit policy paywall.
+          skip_after_action :verify_authorized
+
+          rescue_from ArgumentError, with: :render_invalid_source
 
           # GET /api/v1/me/analytics/cold_start/state
           def state
@@ -46,6 +50,13 @@ module Api
             else
               render json: { ok: true, rows_affected: result.rows_affected }
             end
+          end
+
+          private
+
+          def render_invalid_source(error)
+            render json: { ok: false, error: "InvalidSource", message: error.message },
+              status: :unprocessable_entity
           end
         end
       end
