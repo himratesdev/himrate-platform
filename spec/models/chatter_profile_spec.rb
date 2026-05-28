@@ -13,16 +13,18 @@ RSpec.describe ChatterProfile do
   describe "#to_scorer_profile" do
     it "maps cached columns to the symbol-keyed hash Scorer#score_profile reads (bot-trait fields only)" do
       created = 5.days.ago
+      # TASK-251.20: profile_view_count dropped (Twitch deprecated profileViewCount).
       cp = ChatterProfile.create!(
         login: "u1", twitch_user_id: "42", twitch_created_at: created,
-        followers_count: 0, follows_count: 1500, profile_view_count: 0, fetched_at: Time.current
+        followers_count: 0, follows_count: 1500, fetched_at: Time.current
       )
 
       p = cp.to_scorer_profile
       expect(p[:created_at]).to be_within(1.second).of(created)
       expect(p[:followers_count]).to eq(0)
       expect(p[:follows_count]).to eq(1500)
-      expect(p[:profile_view_count]).to eq(0)
+      # profile_view_count column dropped — no longer in scorer profile hash.
+      expect(p).not_to have_key(:profile_view_count)
       # Streamer-presence fields are no longer scored, so they are not stored/returned.
       expect(p).not_to have_key(:description)
       expect(p).not_to have_key(:banner_image_url)

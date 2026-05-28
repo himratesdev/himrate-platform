@@ -8,12 +8,15 @@
 # Signal weights from BFT:
 #   Definitive (1.0): 2+ bot databases, 100+ channels/day
 #   Very High (0.95): 1 bot database
-#   High (0.60-0.70): CV timing, entropy, profileViewCount=0, followers=0, createdAt<7d
+#   High (0.60-0.70): CV timing, entropy, followers=0, createdAt<7d
 #   Medium (0.30-0.40): createdAt<30d, follows=0, follows>1000, 0 custom emotes
 #   Anti-bot (negative): mod/VIP whitelist, subscriber, returning-chatter, prediction/poll, hype train
 # TASK-251.W2b: streamer-presence profile flags (description=null, bannerImageURL=null, videos=0,
 #   lastBroadcast=null) were CALIBRATED OUT of score_profile — they are normal for viewers (not
 #   content creators) and false-flagged ~50% of real chatters as suspicious.
+# TASK-251.20: profile_view_zero signal DROPPED. Twitch deprecated `profileViewCount` GQL field —
+#   verified 100% NULL across 144,797 chatter_profiles rows on staging (zero not-null values).
+#   The `profile[:profile_view_count]&.zero?` predicate is always falsy on nil → signal never fired.
 
 module BotDetection
   class Scorer
@@ -40,8 +43,9 @@ module BotDetection
     #   chat_stats: { message_count:, cv_timing:, entropy:, has_custom_emotes: },
     #   known_bot: { bot:, confidence:, sources: },
     #   cross_channel_count: Integer,
-    #   profile: { created_at:, profile_view_count:, followers_count:, follows_count: } (optional —
-    #              genuine bot-account traits only; streamer-presence fields were dropped, TASK-251.W2b)
+    #   profile: { created_at:, followers_count:, follows_count: } (optional —
+    #              genuine bot-account traits only; streamer-presence fields were dropped, TASK-251.W2b;
+    #              profile_view_count was dropped, TASK-251.20 — Twitch deprecated profileViewCount)
     # }
     def score(username, stream_context)
       components = {}
@@ -165,12 +169,7 @@ module BotDetection
       components[:profile_present] = { value: true, weight: 0.0, contribution: 0.0 }
 
       # High signals
-      if profile[:profile_view_count]&.zero?
-        weight = 0.65
-        components[:profile_view_zero] = { value: 0, weight: weight, contribution: weight }
-        total += weight
-      end
-
+      # TASK-251.20: profile_view_zero dropped (Twitch deprecated profileViewCount; always nil).
       if profile[:followers_count]&.zero?
         weight = 0.65
         components[:followers_zero] = { value: 0, weight: weight, contribution: weight }

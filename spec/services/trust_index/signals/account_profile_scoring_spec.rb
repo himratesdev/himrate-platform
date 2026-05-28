@@ -15,12 +15,13 @@ RSpec.describe TrustIndex::Signals::AccountProfileScoring do
   # numerator = those with >=3 genuine bot-account flags. Clean profiled viewers (0 flags) count
   # in the denominator, not as suspicious.
   it "is suspicious-count over ALL profiled chatters (clean viewers included in denominator)" do
+    # TASK-251.20: profile_view_zero dropped (Twitch deprecated profileViewCount).
     scores = [
-      { components: { "profile_present" => {}, "profile_view_zero" => {}, "followers_zero" => {}, "account_age_7d" => {} } }, # 3 flags → suspicious
-      { components: { "profile_present" => {}, "followers_zero" => {}, "account_age_7d" => {}, "follows_zero" => {} } },        # 3 flags → suspicious
+      { components: { "profile_present" => {}, "followers_zero" => {}, "account_age_7d" => {}, "follows_zero" => {} } }, # 3 flags → suspicious
+      { components: { "profile_present" => {}, "followers_zero" => {}, "account_age_30d" => {}, "follows_excessive" => {} } }, # 3 flags → suspicious
       { components: { "profile_present" => {}, "followers_zero" => {} } },  # 1 flag → not
       { components: { "profile_present" => {} } },                          # clean profiled viewer → denom only
-      { components: { "profile_present" => {} } }                          # clean profiled viewer → denom only
+      { components: { "profile_present" => {} } }                           # clean profiled viewer → denom only
     ]
     result = signal.calculate(bot_scores: scores)
     expect(result.metadata[:profile_suspicious]).to eq(2)
@@ -37,7 +38,8 @@ RSpec.describe TrustIndex::Signals::AccountProfileScoring do
   end
 
   it "returns 0 when no profiled chatter has 3+ flags" do
-    scores = Array.new(10) { { components: { "profile_present" => {}, "profile_view_zero" => {} } } }
+    # TASK-251.20: profile_view_zero dropped (Twitch deprecated profileViewCount).
+    scores = Array.new(10) { { components: { "profile_present" => {}, "followers_zero" => {} } } }
     result = signal.calculate(bot_scores: scores)
     expect(result.value).to eq(0.0)
   end

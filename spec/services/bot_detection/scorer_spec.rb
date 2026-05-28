@@ -77,7 +77,6 @@ RSpec.describe BotDetection::Scorer do
       ctx = base_context.merge(
         profile: {
           created_at: 3.days.ago,
-          profile_view_count: 0,
           followers_count: 0,
           follows_count: 0,
           description: nil,
@@ -88,7 +87,7 @@ RSpec.describe BotDetection::Scorer do
       )
       result = scorer.score("empty_profile", ctx)
       expect(result.score).to be >= 0.60
-      expect(result.components).to include(:profile_view_zero, :followers_zero, :account_age_7d)
+      expect(result.components).to include(:followers_zero, :account_age_7d)
     end
   end
 

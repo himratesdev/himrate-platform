@@ -18,8 +18,9 @@ RSpec.describe ChatterProfileRefreshWorker do
   end
 
   def profile(login:, created_at: "2020-01-01T00:00:00Z", followers: 100)
+    # TASK-251.20: profile_view_count dropped (Twitch deprecated profileViewCount).
     { id: "id_#{login}", login: login, created_at: created_at, followers_count: followers,
-      follows_count: 50, profile_view_count: 10 }
+      follows_count: 50 }
   end
 
   it "skips when either flag is disabled" do
@@ -37,7 +38,6 @@ RSpec.describe ChatterProfileRefreshWorker do
     cp = ChatterProfile.find_by(login: "alice")
     expect(cp.followers_count).to eq(0)
     expect(cp.follows_count).to eq(50)
-    expect(cp.profile_view_count).to eq(10)
     expect(cp.twitch_user_id).to eq("id_alice")
     expect(cp.twitch_created_at).to be_present
     expect(cp.fetched_at).to be_present
