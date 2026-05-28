@@ -42,6 +42,8 @@ module PersonalAnalytics
           payload: { status: "in_progress", started_at: Time.current.iso8601 })
 
         subscriptions = Array.wrap(@payload["subscriptions"])
+        # CR iter-2 N3: pre-resolve Channel UUIDs in single SELECT (was N+1: 3 queries per row).
+        @channel_id_by_twitch = preload_channel_ids(subscriptions)
         rows_count = subscriptions.sum { |sub| upsert_subscription(sub) ? 1 : 0 }
 
         StateStore.update_source(user_id: @user_id, source_key: source_key,
@@ -68,6 +70,12 @@ module PersonalAnalytics
         end
       end
 
+      def preload_channel_ids(subscriptions)
+        ids = subscriptions.filter_map { |s| s["channel_twitch_id"].to_s.presence }.uniq
+        return {} if ids.empty?
+        Channel.where(twitch_id: ids).pluck(:twitch_id, :id).to_h
+      end
+
       def upsert_subscription(sub)
         twitch_channel_id = sub["channel_twitch_id"].to_s
         return false if twitch_channel_id.blank?
@@ -76,13 +84,14 @@ module PersonalAnalytics
         # channel_id (uuid) = optional enrichment FK для Channel. Optional resolve Channel canonical
         # entry — если канал не в нашем `channels`, channel_id remains nil (BE-3 client-capture
         # rationale: viewer follows ARBITRARY channels, most не curated).
-        channel = Channel.find_by(twitch_id: twitch_channel_id)
+        # CR iter-2 N3: lookup from preloaded hash (single SELECT pre-resolved channel_ids).
+        channel_id = @channel_id_by_twitch[twitch_channel_id]
 
         ChannelTenure.find_or_initialize_by(
           user_id: @user_id, twitch_channel_id: twitch_channel_id
         ).tap do |ct|
           ct.assign_attributes(
-            channel_id: channel&.id,
+            channel_id: channel_id,
             twitch_login: sub["channel_login"],
             sub_tier: parse_tier(sub["tier"]),
             months: sub["cumulative_months"].to_i,
@@ -93,8 +102,12 @@ module PersonalAnalytics
           ct.save!
         end
         true
-      rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique => e
-        Rails.logger.warn("[PVA EnrollmentBackfill] Subscription upsert failed for #{twitch_channel_id}: #{e.message}")
+      # CR iter-2 S1: include Date::Error (< ArgumentError) explicitly so malformed
+      # anniversary_at on one row does not escape per-row rescue → would hit outer
+      # ArgumentError re-raise (S5 path), leaving state stuck in_progress + controller
+      # returning misleading InvalidSource. Per-row isolation preserved (BR-013).
+      rescue ActiveRecord::RecordInvalid, ActiveRecord::RecordNotUnique, Date::Error => e
+        Rails.logger.warn("[PVA EnrollmentBackfill] Subscription upsert failed for #{twitch_channel_id}: #{e.class} #{e.message}")
         false
       end
 

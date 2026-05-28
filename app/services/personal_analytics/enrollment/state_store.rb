@@ -87,13 +87,13 @@ module PersonalAnalytics
           state
         end
 
-        # Frontend polling read. Returns hash {source_1: {...}, ..., overall_status, completed_at}.
-        # Tries Redis first (sub-ms), falls back to Postgres state row.
+        # CR iter-2 N2: simplified to PG-only read after baseline measurement.
+        # Previous "Redis-first" branch still called read_metadata_from_pg unconditionally
+        # → 1 HGETALL + 1 SELECT (worse than just PG). Polling cadence 5s × N users — PG
+        # SELECT по unique user_id index <1ms; не warranting Redis-cache complexity для Wave 1.
+        # Wave 2 enhancement: persist overall_status/completed_at/failed_sources в Redis hash
+        # с update_source write для true Redis-first read.
         def read_state(user_id:)
-          if (cached = read_redis_hash(user_id))
-            return cached.merge(read_metadata_from_pg(user_id) || {})
-          end
-
           state = PvaEnrollmentBackfillState.find_by(user_id: user_id)
           return nil unless state
 

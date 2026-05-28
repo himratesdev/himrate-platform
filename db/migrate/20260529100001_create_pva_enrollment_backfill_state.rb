@@ -34,10 +34,10 @@ class CreatePvaEnrollmentBackfillState < ActiveRecord::Migration[8.0]
 
     add_index :pva_enrollment_backfill_state, :user_id, unique: true,
       name: "idx_pva_enrollment_backfill_state_user_id"
+    # CR iter-2 N1 acknowledgement: completed_at idx dropped (no query filters by it alone).
+    # Stuck sweep queries `(overall_status, oauth_linked_at)` per stuck scope.
     add_index :pva_enrollment_backfill_state, %i[overall_status oauth_linked_at],
       name: "idx_pva_enrollment_backfill_state_status_linked"
-    add_index :pva_enrollment_backfill_state, :completed_at,
-      name: "idx_pva_enrollment_backfill_state_completed_at"
   end
 
   def down
