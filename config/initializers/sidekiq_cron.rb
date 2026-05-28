@@ -125,6 +125,12 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-113 M9: weekly recompute PVA supporter status (gated :pva; throttled fan-out → SupporterStatusWorker per user)"
       },
+      "pva_weekly_reflection" => {
+        "cron" => "45 4 * * 1", # Mondays 04:45 UTC (15 min после supporter — без overlap)
+        "class" => "PersonalAnalytics::WeeklyReflectionSchedulerWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-113 M10: weekly recompute PVA reflection narrative (gated :pva; throttled fan-out → WeeklyReflectionWorker per user, last completed week)"
+      },
       # BUG-010 PR2: Accessory Operations Platform schedules
       "accessory_drift_detector" => {
         "cron" => "0 * * * *", # Hourly at :00

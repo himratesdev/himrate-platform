@@ -1,0 +1,76 @@
+# TASK-113 PVA (Personal Viewer Analytics) — EN.
+# Mirror of pva.ru.yml; English has simpler pluralization (one/other) but we keep the {one,few,many}
+# keys for compatibility with RussianPlural helper — EN reads from `one` (count == 1) or `many` else.
+en:
+  pva:
+    reflection:
+      narrative:
+        total: "You spent %{hours_minutes} on Twitch this week%{delta_clause}."
+        delta_more: " (%{amount} more than last week)"
+        delta_less: " (%{amount} less than last week)"
+        top_streamer: "Most of it — with %{login}: %{hours_minutes} over %{sessions}."
+        new_channels: "Discovered %{channels}."
+        peak: "Peak activity — %{period} on %{weekday}."
+        empty: "No Twitch activity this week."
+      peak_period:
+        morning: "morning"
+        day: "afternoon"
+        evening: "evening"
+        night: "night"
+      weekday_genitive:
+        mon: "Monday"
+        tue: "Tuesday"
+        wed: "Wednesday"
+        thu: "Thursday"
+        fri: "Friday"
+        sat: "Saturday"
+        sun: "Sunday"
+      moments:
+        anniversary: "%{date} — your %{months_form} subscription with %{login}!"
+        new_channel_repeat: "Discovered %{login} — came back %{visits} this week."
+        new_channel_once: "Discovered %{login} for the first time this week."
+        hype_train: "Joined Hype Train with %{login} — %{pct}%% above average."
+    patterns:
+      type:
+        rhythm: "Pattern · rhythm"
+        content: "Pattern · content"
+      rhythm_weekday_evening:
+        title: "You watch more after workdays"
+        body: "Activity on Mon-Tue-Wed evenings is %{pct}%% higher than weekend afternoons. Looks like a decompression pattern."
+        actionable: "If you want to cut down — try planning streams ahead instead of opening «whatever» after work."
+      rhythm_weekend_morning:
+        title: "You start weekends early"
+        body: "On Sat-Sun from %{start_hour}:00 you're online more than on weekdays. Looks like a morning ritual."
+      content_weekend_chill:
+        title: "Weekends — more IRL/Music, less games"
+        body: "Games/chill ratio flips from %{weekday_ratio} on weekdays to %{weekend_ratio} on weekends."
+      growth_recent:
+        title: "You watch more than a month ago"
+        body: "Last 30 days — %{delta_pct}%% time vs. the previous 30. Gradual acceleration."
+      decline_recent:
+        title: "You watch less than a month ago"
+        body: "Last 30 days — %{delta_pct}%% of the previous 30. Looks like a seasonal slowdown."
+    cohort:
+      caption: "Anonymous cohort · similar viewers also watch (you haven't tried):"
+      pct_label: "%{pct}%% of similar viewers watch often"
+      empty: "Cohort will appear later — we need more data about your viewing."
+    months_form:
+      one: "%{count}st-monthly"  # 1st (we don't auto-suffix; en/ru parity)
+      few: "%{count}-monthly"
+      many: "%{count}-monthly"
+    sessions_form:
+      one: "%{count} session"
+      few: "%{count} sessions"
+      many: "%{count} sessions"
+    new_channels_form:
+      one: "%{count} new channel"
+      few: "%{count} new channels"
+      many: "%{count} new channels"
+    visits_form:
+      one: "%{count} time"
+      few: "%{count} times"
+      many: "%{count} times"
+    hours_minutes:
+      h_m: "%{h}h %{m}m"
+      h: "%{h}h"
+      m: "%{m}m"
