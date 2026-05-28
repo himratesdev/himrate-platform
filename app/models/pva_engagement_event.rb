@@ -13,6 +13,7 @@ class PvaEngagementEvent < ApplicationRecord
 
   validates :user_id, presence: true
   validates :client_event_id, presence: true
+  validates :twitch_channel_id, presence: true
   validates :event_type, presence: true, inclusion: { in: EVENT_TYPES }
   validates :source, presence: true, inclusion: { in: SOURCES }
   validates :event_hash, presence: true, length: { is: 64 }, uniqueness: { scope: :user_id }

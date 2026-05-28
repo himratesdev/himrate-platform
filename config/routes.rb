@@ -114,6 +114,10 @@ Rails.application.routes.draw do
       # TASK-113 BE-2: Personal Viewer Analytics (self-analytics, JWT + ownership, all-free)
       namespace :me do
         get "analytics/overview", to: "analytics#overview"
+        get "analytics/communities", to: "analytics#communities"
+        get "analytics/engagement_log", to: "analytics#engagement_log"
+        get "analytics/supporter", to: "analytics#supporter"
+        post "analytics/engagement", to: "analytics#engagement"
       end
     end
   end

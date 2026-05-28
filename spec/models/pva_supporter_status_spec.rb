@@ -6,7 +6,7 @@ RSpec.describe PvaSupporterStatus, type: :model do
   subject { build(:pva_supporter_status) }
 
   it { is_expected.to belong_to(:user) }
-  it { is_expected.to validate_presence_of(:channel_id) }
+  it { is_expected.to validate_presence_of(:twitch_channel_id) }
   it { is_expected.to validate_presence_of(:tier) }
   it { is_expected.to validate_inclusion_of(:tier).in_array(described_class::TIERS) }
   it { is_expected.to validate_presence_of(:computed_at) }

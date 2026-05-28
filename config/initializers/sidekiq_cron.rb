@@ -119,6 +119,12 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "Nightly safety-net: re-aggregate yesterday's trends_daily_aggregates for channels that streamed (idempotent fan-out → AggregationWorker)"
       },
+      "pva_supporter_status_weekly" => {
+        "cron" => "30 4 * * 1", # Mondays 04:30 UTC (weekly, off-peak)
+        "class" => "PersonalAnalytics::SupporterStatusSchedulerWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-113 M9: weekly recompute PVA supporter status (gated :pva; throttled fan-out → SupporterStatusWorker per user)"
+      },
       # BUG-010 PR2: Accessory Operations Platform schedules
       "accessory_drift_detector" => {
         "cron" => "0 * * * *", # Hourly at :00

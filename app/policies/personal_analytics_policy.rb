@@ -8,6 +8,11 @@ class PersonalAnalyticsPolicy < ApplicationPolicy
     own_analytics?
   end
 
+  # Client-capture ingest своих данных (M7 events + M6 chat).
+  def ingest?
+    own_analytics?
+  end
+
   private
 
   # record (current_user) == authenticated user → свои данные.

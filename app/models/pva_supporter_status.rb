@@ -11,7 +11,8 @@ class PvaSupporterStatus < ApplicationRecord
   belongs_to :user
 
   validates :user_id, presence: true
-  validates :channel_id, presence: true, uniqueness: { scope: :user_id }
+  # twitch_channel_id = стабильный ключ (BE-3 client-capture refine); channel_id(uuid) = nullable enrichment.
+  validates :twitch_channel_id, presence: true, uniqueness: { scope: :user_id }
   validates :tier, presence: true, inclusion: { in: TIERS }
   validates :computed_at, presence: true
 
