@@ -105,8 +105,11 @@ jobs:
           mkdir -p ~/.ssh
           echo "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          # BUG-021: SSH config applies to any host (staging + production may resolve to
+          # the same VPS today or to different hosts post-Launch). The actual ssh target
+          # is parameterized per-step via $SSH_HOST resolved in the next step.
           cat >> ~/.ssh/config <<SSH_CONFIG
-          Host 194.135.85.159
+          Host *
             StrictHostKeyChecking accept-new
             IdentityFile ~/.ssh/id_ed25519
             ServerAliveInterval 15
@@ -114,6 +117,39 @@ jobs:
             ConnectTimeout 30
           SSH_CONFIG
           chmod 600 ~/.ssh/config
+
+      # BUG-021: resolve the SSH target host per ${{ inputs.destination }} once, expose
+      # as a step output, and consume via env: SSH_HOST in every subsequent ssh step.
+      # Today staging + production share a single VPS (config/deploy.yml comment:
+      # "Staging + Production on single VPS (194.135.85.159)"); when production moves to
+      # its own host post-Launch, set the PRODUCTION_SSH_HOST repo secret and this step
+      # picks it up automatically — no further workflow changes needed.
+      - name: Resolve target SSH host
+        id: ssh_host
+        env:
+          DESTINATION: ${{ inputs.destination }}
+          PRODUCTION_SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
+          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+        run: |
+          set -euo pipefail
+          case "${DESTINATION}" in
+            staging)
+              HOST="${STAGING_SSH_HOST:-194.135.85.159}"
+              ;;
+            production)
+              HOST="${PRODUCTION_SSH_HOST:-194.135.85.159}"
+              ;;
+            *)
+              echo "::error::Unknown destination: ${DESTINATION}"
+              exit 1
+              ;;
+          esac
+          echo "host=${HOST}" >> "$GITHUB_OUTPUT"
+          # Also expose as SSH_HOST in $GITHUB_ENV so subsequent steps consume it as a
+          # regular env var without per-step env mapping — keeps the ssh call sites
+          # uniform across the 6 ssh-using steps below.
+          echo "SSH_HOST=${HOST}" >> "$GITHUB_ENV"
+          echo "::notice::Resolved ${DESTINATION} SSH host: ${HOST}"
 
       # BUG-020: Kamal names app containers `<service>-<role>-<destination>-<sha>`
       # (e.g. himrate-web-staging-5ec75ae...), NOT a static `himrate-web`. Resolve the
@@ -129,7 +165,7 @@ jobs:
           # keeps `pipefail` propagating a non-zero `docker ps` / ssh exit so a failed
           # Docker query on the host fails this step loudly instead of silently yielding
           # an empty NAME (which would otherwise be misreported as "no container found").
-          NAME=$(ssh "root@194.135.85.159" \
+          NAME=$(ssh "root@${SSH_HOST}" \
             "docker ps --filter label=service=himrate --filter label=role=web --filter label=destination=${DESTINATION} --format '{{.Names}}'" | head -1)
           if [ -z "$NAME" ]; then
             echo "::error::No running himrate web container found on host for destination='${DESTINATION}' (expected labels service=himrate,role=web,destination=${DESTINATION})"
@@ -223,7 +259,7 @@ jobs:
           # mapping per BR-007: human-triggered manual ops record как "restart"; drift detector
           # auto-remediation already записал свой downtime в TriggerService path.
           SOURCE="restart"
-          EVENT_ID=$(ssh "root@194.135.85.159" \
+          EVENT_ID=$(ssh "root@${SSH_HOST}" \
             "docker exec ${WEB_CONTAINER} bin/rails 'accessory_ops:downtime:start[${DESTINATION},${ACCESSORY},${SOURCE}]'" \
             | tail -1)
           echo "event_id=${EVENT_ID}" >> "$GITHUB_OUTPUT"
@@ -256,7 +292,7 @@ jobs:
           WEB_CONTAINER: ${{ steps.web.outputs.name }}
         run: |
           set -euo pipefail
-          ssh "root@194.135.85.159" \
+          ssh "root@${SSH_HOST}" \
             "docker exec ${WEB_CONTAINER} bin/rails 'accessory_ops:health_verify[${DESTINATION},${ACCESSORY},300]'"
 
       # PR3 FR-122..124: на healthy verdict — refresh AccessoryState (read runtime image
@@ -269,7 +305,7 @@ jobs:
           ACCESSORY: ${{ inputs.accessory }}
           WEB_CONTAINER: ${{ steps.web.outputs.name }}
         run: |
-          ssh "root@194.135.85.159" \
+          ssh "root@${SSH_HOST}" \
             "docker exec ${WEB_CONTAINER} bin/rails 'accessory_ops:state:refresh[${DESTINATION},${ACCESSORY},healthy]'"
 
       # PR3 FR hooks: close downtime event с ended_at — duration_seconds auto-computed
@@ -282,7 +318,7 @@ jobs:
           WEB_CONTAINER: ${{ steps.web.outputs.name }}
         run: |
           if [ -n "${EVENT_ID:-}" ]; then
-            ssh "root@194.135.85.159" \
+            ssh "root@${SSH_HOST}" \
               "docker exec ${WEB_CONTAINER} bin/rails 'accessory_ops:downtime:end[${EVENT_ID}]'"
           fi
 
@@ -329,7 +365,7 @@ jobs:
             --arg summary "$SUMMARY" \
             --arg description "$DESCRIPTION" \
             '{event_type:$event_type, severity:$severity, destination:$destination, accessory:$accessory, summary:$summary, description:$description}')
-          printf '%s' "$PAYLOAD" | ssh "root@194.135.85.159" \
+          printf '%s' "$PAYLOAD" | ssh "root@${SSH_HOST}" \
             "docker exec -i ${WEB_CONTAINER} bin/rails accessory_ops:notify"
 
       # FR-005: audit annotation на success.
