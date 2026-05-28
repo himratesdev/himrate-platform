@@ -32,12 +32,20 @@ RSpec.describe PvaEnrollmentBackfillState do
       expect(state.recent_completion?).to be false
     end
 
-    it "returns true when completed within 30 days" do
+    it "returns true when overall_status=done + completed within 30 days" do
+      state.overall_status = "done"
       state.completed_at = 5.days.ago
       expect(state.recent_completion?).to be true
     end
 
+    it "returns false when failed/partial (CR iter-4 N2 defense-in-depth)" do
+      state.overall_status = "partial"
+      state.completed_at = 5.days.ago
+      expect(state.recent_completion?).to be false
+    end
+
     it "returns false when completed > 30 days ago" do
+      state.overall_status = "done"
       state.completed_at = 31.days.ago
       expect(state.recent_completion?).to be false
     end
