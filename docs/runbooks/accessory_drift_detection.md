@@ -21,12 +21,14 @@
 3. Per destination iterate accessories (read из `config/deploy.yml`)
 4. Per accessory:
    - Read declared image из `config/deploy.yml` (parse YAML)
+     - **`Errno::ENOENT` → drift_state `:skipped`** (BUG-025): файл не смонтирован в app/job контейнер; SSH probe short-circuit'ит (без waste runtime calls). Worker аггрегирует и пишет одну INFO-строку `drift detection skipped for N pair(s)` за cycle. Open events НЕ закрываются (видимость in-flight drift сохраняется — pause ≠ resolve).
    - Read runtime image: `kamal accessory details -d <destination> --output=json` (per ADR DEC-25)
    - Compare:
      - **Match** + open drift_event existing → close event (resolved_at, MTTR computed)
      - **Match** + no open event → no-op
      - **Mismatch** + no open event → open new drift_event, send Telegram alert (production only per BR-011), set Prometheus gauge=1
      - **Mismatch** + open event existing → idempotent NO new alert (per BR-008)
+     - **Skipped** (config_unavailable) → no event mutation; aggregate INFO marker `drift detection skipped for N pair(s)`. Detection paused, NOT resolved. (BUG-025)
 
 ### Idempotency
 
@@ -126,6 +128,23 @@ Worker NOT triggered by manual operations. Worker scans declared vs runtime — 
 ### New accessory added
 
 PR adding accessory к `deploy.yml` MUST also update workflow enum в `accessory-ops.yml` (per ADR DEC-9 process). Worker reads accessory list dynamically from deploy.yml — no code change needed.
+
+### `config/deploy.yml` not mounted in container (BUG-025)
+
+**Symptom**: aggregate INFO в логах `AccessoryDriftDetectorWorker: drift detection skipped for N pair(s) (config/deploy.yml not mounted in container — see DriftCheckService warning; BUG-025)`. Возможно также WARN per pair `DriftCheckService: config/deploy.yml not present in container ... drift detection skipped`.
+
+**Root cause**: `config/deploy.yml` живёт на Kamal хосте, но НЕ смонтирован в app/job контейнер по умолчанию. Pre-fix: `YAML.load_file` raised `Errno::ENOENT` → Sidekiq retry 3× → DLQ (накопил 474 entries pre-BUG-025 fix). Post-fix: `DriftCheckService` returns `Result(drift_state: :skipped)` gracefully → worker no-ops + aggregate marker.
+
+**Impact**: drift detection paused. Existing open events НЕ закрываются (видимость в реальный drift сохраняется). Auto-remediation не триггерится (нет события).
+
+**Operator action**: вернуть detection функциональной — смонтировать `config/deploy.yml` в контейнер. Опции:
+- (a) Volume mount: добавить mount в `config/deploy.yml` (Kamal `web.volumes:` или per-role) указывая на host-file. Caveat: deploy.yml содержит env.secret references → exposure surface.
+- (b) ConfigMap-style: отдельный sanitized YAML (только accessory image declarations, без secrets) смонтировать в `/rails/config/declared_accessories.yml`; правка `DriftCheckService::DEPLOY_YML` указать туда. Чище separation.
+- (c) Workflow-only path: drift detection ТОЛЬКО через manual `accessory-ops workflow_dispatch` (где deploy.yml доступен из CI checkout), per-hour cron убрать. Trade-off: human-in-loop monitoring.
+
+**Until fixed**: workflow stays operational (Sidekiq DLQ no longer accumulating); detection coverage paused but visible через aggregate marker grep.
+
+**Related BUG**: https://www.notion.so/363838370e5481fdb1aaff855de4ee4d
 
 ## Related
 

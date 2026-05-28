@@ -3,8 +3,10 @@
 # BUG-010 PR2 (ADR DEC-25, FR-133/134): drift detection via `kamal accessory details`.
 # More portable к future Kamal API changes than raw `docker inspect`.
 #
-# Returns Result struct: drift_state (:match | :mismatch), declared_image, runtime_image.
-# Caller (AccessoryDriftDetectorWorker) handles event lifecycle.
+# Returns Result struct: drift_state (:match | :mismatch | :skipped), declared_image, runtime_image.
+# `:skipped` (BUG-025): config/deploy.yml not present in container; SSH probe short-circuited.
+# Caller (AccessoryDriftDetectorWorker) handles event lifecycle — on `:skipped` it does NOT
+# close open events (preserves visibility into an in-flight real drift while detection is paused).
 
 require "open3"
 require "yaml"
