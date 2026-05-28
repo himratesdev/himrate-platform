@@ -100,6 +100,52 @@ RSpec.describe MonitoredLiveDetectorWorker do
     worker.perform
   end
 
+  # BUG-251.19: regression test. Partial Helix batch failure used to falsely register
+  # offline-misses for channels in the failed sub-batch, debouncing them to closed after
+  # 3 cycles even when they were live (incident: partner channel nix went ghost). The fix
+  # tracks the set of twitch_ids actually queried successfully; close-reconciliation skips
+  # un-queried channels entirely.
+  it "does NOT increment offline-miss for channels whose Helix sub-batch failed (partial-batch)" do
+    stub_const("MonitoredLiveDetectorWorker::HELIX_BATCH_SIZE", 1)
+
+    success_channel = create(:channel, twitch_id: "111", login: "covered", is_monitored: true)
+    failed_channel  = create(:channel, twitch_id: "222", login: "ghosted", is_monitored: true)
+    create(:stream, channel: success_channel, ended_at: nil) # open stream — both channels look "active" in DB
+    create(:stream, channel: failed_channel,  ended_at: nil)
+
+    # Pluck order matters: get_streams is called once per twitch_id (BATCH_SIZE=1). First batch
+    # (twitch_id "111") returns a live response; second batch (twitch_id "222") returns nil = failed.
+    allow(helix).to receive(:get_streams) do |user_ids:|
+      user_ids == [ "111" ] ? [] : nil # both queried, "111" returned empty (live-set empty), "222" failed
+    end
+    allow(redis).to receive(:incr).and_return(99) # would trip threshold immediately if registered
+
+    # success_channel ("111") IS in queried set + empty live result → register_offline_miss (first miss
+    # ever — but allow(redis).to receive(:incr).and_return(99) trips the debounce, so it WILL close).
+    expect(StreamOfflineWorker).to receive(:perform_async).once.with(
+      { "broadcaster_user_id" => "111", "broadcaster_user_login" => "covered" },
+      "live_detector"
+    )
+    # failed_channel ("222") is NOT in queried set → MUST be skipped (no incr, no close).
+    expect(redis).not_to receive(:incr).with("live_detector:offline_misses:#{failed_channel.id}")
+    expect(StreamOfflineWorker).not_to receive(:perform_async).with(
+      hash_including("broadcaster_user_id" => "222"),
+      anything
+    )
+
+    worker.perform
+  end
+
+  it "logs a partial-failure marker when at least one Helix sub-batch failed" do
+    stub_const("MonitoredLiveDetectorWorker::HELIX_BATCH_SIZE", 1)
+    create(:channel, twitch_id: "111", login: "covered", is_monitored: true)
+    create(:channel, twitch_id: "222", login: "ghosted", is_monitored: true)
+    allow(helix).to receive(:get_streams) { |user_ids:| user_ids == [ "111" ] ? [] : nil }
+
+    expect(Rails.logger).to receive(:info).with(/partial: 1 channels in failed Helix sub-batch/)
+    worker.perform
+  end
+
   it "ignores non-monitored channels (no monitored set → no Helix call)" do
     create(:channel, twitch_id: "111", login: "unmonitored", is_monitored: false)
     expect(helix).not_to receive(:get_streams)

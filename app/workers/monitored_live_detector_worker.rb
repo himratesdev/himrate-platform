@@ -29,35 +29,46 @@ class MonitoredLiveDetectorWorker
   def perform
     return unless Flipper.enabled?(:stream_monitor)
 
-    live_by_twitch_id = fetch_live_streams
+    live_by_twitch_id, queried_twitch_ids, total_monitored = fetch_live_streams
     return if live_by_twitch_id.nil? # every Helix batch failed — skip cycle, change nothing
 
     open_new_streams(live_by_twitch_id)
-    close_ended_streams(live_by_twitch_id)
+    close_ended_streams(live_by_twitch_id, queried_twitch_ids)
 
-    Rails.logger.info("MonitoredLiveDetectorWorker: #{live_by_twitch_id.size} live among monitored")
+    unqueried = total_monitored - queried_twitch_ids.size
+    partial = unqueried.positive? ? " (partial: #{unqueried} channels in failed Helix sub-batch(es) — skipped this cycle)" : ""
+    Rails.logger.info("MonitoredLiveDetectorWorker: #{live_by_twitch_id.size} live among #{queried_twitch_ids.size} queried#{partial}")
   end
 
   private
 
-  # { twitch_id => helix_stream_hash } for currently-live monitored channels.
-  # Returns nil if EVERY batch failed, so the caller skips close-reconciliation
-  # (no data ≠ everyone offline). A partial failure just leaves that batch's
-  # channels untouched this cycle.
+  # Returns [live_by_twitch_id, queried_twitch_ids, total_monitored]:
+  #   * live_by_twitch_id — { twitch_id => helix_stream_hash } for currently-live monitored channels
+  #     (only from batches that succeeded; un-queried channels never appear here).
+  #   * queried_twitch_ids — Set of twitch_ids in successful batches only. Channels in FAILED
+  #     sub-batches are absent → close_ended_streams skips them (un-queried ≠ offline; BUG-251.19).
+  #   * total_monitored — size of the monitored set this cycle (cheap to pass through vs. a second
+  #     query just for the partial-failure log marker).
+  #
+  # Returns [nil, nil, nil] if EVERY batch failed (no signal at all → caller skips the cycle entirely).
+  # On partial failure, returns the live map + queried set so close-reconciliation runs only
+  # against channels we actually have authoritative live/offline information for.
   def fetch_live_streams
     ids = Channel.monitored.active.pluck(:twitch_id).compact
-    return {} if ids.empty?
+    return [ {}, Set.new, 0 ] if ids.empty?
 
     live = {}
+    queried = Set.new
     any_success = false
     ids.each_slice(HELIX_BATCH_SIZE) do |batch|
       data = helix.get_streams(user_ids: batch)
       next if data.nil?
 
       any_success = true
+      queried.merge(batch)
       data.each { |s| live[s["user_id"]] = s }
     end
-    any_success ? live : nil
+    any_success ? [ live, queried, ids.size ] : [ nil, nil, nil ]
   end
 
   # Live channels without an open Stream → delegate to StreamOnlineWorker (its
@@ -81,8 +92,18 @@ class MonitoredLiveDetectorWorker
   end
 
   # Monitored channels with an open Stream that are no longer live → debounced close.
-  def close_ended_streams(live_by_twitch_id)
+  # BUG-251.19: scope close-reconciliation to channels in queried_twitch_ids ONLY.
+  # Channels in a FAILED Helix sub-batch are absent from both the live map and the queried set
+  # → must be treated as "no information this cycle", NOT as offline. Without this filter, a
+  # partial Helix batch failure would falsely increment offline-miss counters for un-queried
+  # channels and (after debounce) close their open streams. Self-heals on next cycle when the
+  # batch succeeds (channel re-enters queried set; if still live → reset_misses, if truly
+  # offline → counter resumes incrementing).
+  def close_ended_streams(live_by_twitch_id, queried_twitch_ids)
+    return if queried_twitch_ids.empty?
+
     Channel.monitored.active
+           .where(twitch_id: queried_twitch_ids.to_a)
            .joins(:streams).where(streams: { ended_at: nil })
            .distinct.find_each do |channel|
       live_by_twitch_id.key?(channel.twitch_id) ? reset_misses(channel) : register_offline_miss(channel)
