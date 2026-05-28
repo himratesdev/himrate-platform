@@ -65,15 +65,17 @@ module PersonalAnalytics
         twitch_channel_id = sub["channel_twitch_id"].to_s
         return false if twitch_channel_id.blank?
 
-        # Resolve canonical Channel UUID. Channel model validates twitch_id + login presence.
-        # Use SQL find_or_create_by with explicit login fallback (cannot be nil per validation).
-        login = sub["channel_login"].presence || "twitch_#{twitch_channel_id}"
-        channel = Channel.find_by(twitch_id: twitch_channel_id) ||
-                  Channel.create!(twitch_id: twitch_channel_id, login: login,
-                    display_name: sub["channel_display_name"])
+        # ChannelTenure: twitch_channel_id = STABLE key (BE-3 refine, unique scope user_id);
+        # channel_id (uuid) = optional enrichment FK для Channel. Optional resolve Channel canonical
+        # entry — если канал не в нашем `channels`, channel_id remains nil (BE-3 client-capture
+        # rationale: viewer follows ARBITRARY channels, most не curated).
+        channel = Channel.find_by(twitch_id: twitch_channel_id)
 
-        ChannelTenure.find_or_initialize_by(user_id: @user_id, channel_id: channel.id).tap do |ct|
+        ChannelTenure.find_or_initialize_by(
+          user_id: @user_id, twitch_channel_id: twitch_channel_id
+        ).tap do |ct|
           ct.assign_attributes(
+            channel_id: channel&.id,
             twitch_login: sub["channel_login"],
             sub_tier: parse_tier(sub["tier"]),
             months: sub["cumulative_months"].to_i,
