@@ -10,7 +10,7 @@ module Api
   module V1
     module Me
       module Analytics
-        class ColdStartController < ApplicationController
+        class ColdStartController < Api::BaseController
           before_action :authenticate_user!
 
           # GET /api/v1/me/analytics/cold_start/state

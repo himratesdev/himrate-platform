@@ -66,8 +66,9 @@ module PersonalAnalytics
         return false if twitch_channel_id.blank?
 
         # Resolve canonical Channel UUID (channel_tenure requires channel_id FK per BE-1 migration).
-        channel = Channel.find_or_create_by!(platform: "twitch", platform_channel_id: twitch_channel_id) do |c|
-          c.login = sub["channel_login"]
+        login = sub["channel_login"].presence || "twitch_#{twitch_channel_id}"
+        channel = Channel.find_or_create_by!(twitch_id: twitch_channel_id) do |c|
+          c.login = login
           c.display_name = sub["channel_display_name"]
         end
 
