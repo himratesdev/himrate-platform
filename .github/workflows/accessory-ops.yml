@@ -143,6 +143,13 @@ jobs:
         env:
           KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          # BUG-251.18: CLICKHOUSE_PASSWORD must be in the minimal subset. The `clickhouse`
+          # accessory's default user is password-protected via this secret; omitting it means
+          # `kamal accessory boot/reboot clickhouse` rewrites the user with an EMPTY password
+          # (the Docker entrypoint sets CLICKHOUSE_PASSWORD="" on the new container), which
+          # silently breaks app→CH auth (the /ping liveness probe is unauthenticated, so the
+          # workflow's post-action health-verify still passes — the bug is invisible there).
+          CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
           TELEGRAM_OPS_BOT_TOKEN: ${{ secrets.TELEGRAM_OPS_BOT_TOKEN }}
           TELEGRAM_CRITICAL_CHAT_ID: ${{ secrets.TELEGRAM_CRITICAL_CHAT_ID }}
           TELEGRAM_OPS_CHAT_ID: ${{ secrets.TELEGRAM_OPS_CHAT_ID }}
@@ -154,7 +161,7 @@ jobs:
         run: |
           set -euo pipefail
           MISSING=()
-          for var in KAMAL_REGISTRY_PASSWORD POSTGRES_PASSWORD \
+          for var in KAMAL_REGISTRY_PASSWORD POSTGRES_PASSWORD CLICKHOUSE_PASSWORD \
                      TELEGRAM_OPS_BOT_TOKEN TELEGRAM_CRITICAL_CHAT_ID \
                      TELEGRAM_OPS_CHAT_ID TELEGRAM_INFO_CHAT_ID \
                      GRAFANA_ADMIN_USER GRAFANA_ADMIN_PASSWORD \
@@ -174,6 +181,7 @@ jobs:
           DESTINATION: ${{ inputs.destination }}
           KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
           TELEGRAM_OPS_BOT_TOKEN: ${{ secrets.TELEGRAM_OPS_BOT_TOKEN }}
           TELEGRAM_CRITICAL_CHAT_ID: ${{ secrets.TELEGRAM_CRITICAL_CHAT_ID }}
           TELEGRAM_OPS_CHAT_ID: ${{ secrets.TELEGRAM_OPS_CHAT_ID }}
@@ -186,6 +194,7 @@ jobs:
           cat > ".kamal/secrets.${DESTINATION}" <<SECRETS
           KAMAL_REGISTRY_PASSWORD=${KAMAL_REGISTRY_PASSWORD}
           POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
           TELEGRAM_OPS_BOT_TOKEN=${TELEGRAM_OPS_BOT_TOKEN}
           TELEGRAM_CRITICAL_CHAT_ID=${TELEGRAM_CRITICAL_CHAT_ID}
           TELEGRAM_OPS_CHAT_ID=${TELEGRAM_OPS_CHAT_ID}
