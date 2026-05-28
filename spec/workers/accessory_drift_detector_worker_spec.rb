@@ -123,10 +123,30 @@ RSpec.describe AccessoryDriftDetectorWorker do
     end
 
     it "logs an aggregate :skipped marker once per cycle" do
-      expect(Rails.logger).to receive(:info).with(
-        /drift detection skipped for 1 pair\(s\) .*BUG-025/
-      )
+      # CR Nit-1: `allow → action → have_received` is non-brittle.
+      # `expect(Rails.logger).to receive(:info).with(/regex/)` mocks ALL info-calls inside
+      # `worker.perform` and falsely fails the moment anyone adds another info-log in this method.
+      allow(Rails.logger).to receive(:info)
       worker.perform
+      expect(Rails.logger).to have_received(:info).with(
+        /drift detection skipped for 1 pair\(s\) .*BUG-025/
+      ).once
+    end
+  end
+
+  # CR Nit-2 regression guard: the aggregate marker MUST NOT fire when no pairs were skipped
+  # (clean :match cycle). Catches a future bug where the `if @skipped_count.positive?` gate is
+  # dropped and the marker becomes unconditionally logged as "0 pair(s)" on every cron tick.
+  describe "aggregate :skipped marker NOT logged on non-skip cycles (BUG-025 regression guard)" do
+    it "does not emit the aggregate marker когда все pairs matched" do
+      allow(AccessoryOps::DriftCheckService).to receive(:call).and_return(
+        AccessoryOps::DriftCheckService::Result.new(
+          drift_state: :match, declared_image: "redis:7.4-alpine", runtime_image: "redis:7.4-alpine"
+        )
+      )
+      allow(Rails.logger).to receive(:info)
+      worker.perform
+      expect(Rails.logger).not_to have_received(:info).with(/drift detection skipped for/)
     end
   end
 end
