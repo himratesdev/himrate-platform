@@ -101,6 +101,9 @@ module FlipperDefaults
     chat_writes_clickhouse: "TASK-251.14b", # Dual-write ChatMessageWorker → ClickHouse (best-effort;
     # Postgres stays source of truth). OFF by default — enable per-env only after ingest-parity is
     # validated. Read migration (ContextBuilder → CH) is a separate flag :chat_reads_clickhouse (1d).
+    chat_backfill_running: "TASK-251.14c", # Kill-switch for `rake clickhouse:backfill_chat`. OFF by
+    # default — operator flips ON to start the one-shot backfill, OFF to pause cleanly (the loop
+    # exits at the next batch boundary with the Redis cursor preserved → re-running resumes).
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
     billing_auto_subscription_creation: "BUG-012", # Dev/staging only: ChannelsController#track
     # auto-creates Subscription if missing. Production: flag OFF — Subscription must pre-exist
