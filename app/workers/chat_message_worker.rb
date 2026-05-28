@@ -37,11 +37,53 @@ class ChatMessageWorker
   # batch_insert (per-record), so only connection/unexpected errors reach the rescue here.
   def insert_batch(raw)
     records = raw.filter_map { |json| parse_message(json) }
-    batch_insert(records) if records.any?
+    if records.any?
+      batch_insert(records)         # Postgres — source of truth
+      mirror_to_clickhouse(records) # ClickHouse — best-effort dual-write (never raises)
+    end
     records.size
   rescue StandardError => e
     requeue(raw)
     raise e
+  end
+
+  # TASK-251.14b: mirror the just-inserted batch into ClickHouse (the analytics store being migrated
+  # to). Postgres stays the source of truth; gated by :chat_writes_clickhouse (OFF until ingest-parity
+  # is validated per env). NEVER raises — a CH failure must not requeue the batch (that would
+  # double-write Postgres) nor block ingest; the gap is closed by the backfill (PR 1c).
+  def mirror_to_clickhouse(records)
+    return unless Flipper.enabled?(:chat_writes_clickhouse)
+
+    Clickhouse.client.insert("chat_messages", records.map { |record| clickhouse_row(record) })
+  rescue StandardError => e
+    Rails.logger.warn("ChatMessageWorker: ClickHouse mirror failed (#{e.message}) — Postgres is source of truth, gap backfilled later")
+  end
+
+  # Map a Postgres insert hash (parse_message) to a ClickHouse chat_messages row: nils coalesced to
+  # the columns' non-nullable defaults, booleans → UInt8, the raw_tags Hash → a JSON string, and the
+  # Time → ClickHouse DateTime64 text. stream_id stays nil → CH NULL; inserted_at is omitted (CH
+  # DEFAULT now()).
+  def clickhouse_row(rec)
+    {
+      stream_id: rec[:stream_id],
+      channel_login: rec[:channel_login].to_s,
+      username: rec[:username].to_s,
+      msg_type: rec[:msg_type].to_s,
+      subscriber_status: rec[:subscriber_status].to_s,
+      user_type: rec[:user_type].to_s,
+      is_first_msg: rec[:is_first_msg] ? 1 : 0,
+      returning_chatter: rec[:returning_chatter] ? 1 : 0,
+      vip: rec[:vip] ? 1 : 0,
+      bits_used: rec[:bits_used].to_i,
+      display_name: rec[:display_name].to_s,
+      badge_info: rec[:badge_info].to_s,
+      color: rec[:color].to_s,
+      twitch_msg_id: rec[:twitch_msg_id].to_s,
+      message_text: rec[:message_text].to_s,
+      emotes: rec[:emotes].to_s,
+      raw_tags: rec[:raw_tags].is_a?(String) ? rec[:raw_tags] : JSON.generate(rec[:raw_tags] || {}),
+      timestamp: rec[:timestamp].utc.strftime("%Y-%m-%d %H:%M:%S.%3N")
+    }
   end
 
   # Restore a drained batch to the tail (oldest-first FIFO preserved) so Sidekiq retry
