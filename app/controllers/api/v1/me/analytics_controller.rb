@@ -36,8 +36,10 @@ module Api
         # GET /api/v1/me/analytics/engagement_log?type=sub|cheer|follow|hype_contribution (M7)
         def engagement_log
           authorize current_user, :overview?, policy_class: PersonalAnalyticsPolicy
-          render_cached("engagement_log", params[:type]) do
-            PersonalAnalytics::Api::EngagementLogService.new(user: current_user, type: params[:type]).call
+          render_cached("engagement_log", "#{params[:type]}:#{params[:before]}") do
+            PersonalAnalytics::Api::EngagementLogService.new(
+              user: current_user, type: params[:type], before: params[:before]
+            ).call
           end
         end
 
@@ -56,9 +58,12 @@ module Api
           authorize current_user, :ingest?, policy_class: PersonalAnalyticsPolicy
           events = batch_param(:events)
           chat_activity = batch_param(:chat_activity)
+          tenure = batch_param(:tenure)
           PersonalAnalytics::EngagementIngestWorker.perform_async(current_user.id, events) if events.any?
           PersonalAnalytics::ChatActivityIngestWorker.perform_async(current_user.id, chat_activity) if chat_activity.any?
-          render json: { queued: { events: events.size, chat_activity: chat_activity.size } }, status: :accepted
+          PersonalAnalytics::TenureIngestWorker.perform_async(current_user.id, tenure) if tenure.any?
+          render json: { queued: { events: events.size, chat_activity: chat_activity.size, tenure: tenure.size } },
+            status: :accepted
         end
 
         private

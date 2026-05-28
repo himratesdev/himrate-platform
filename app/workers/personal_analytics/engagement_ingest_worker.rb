@@ -10,12 +10,14 @@ module PersonalAnalytics
     include Sidekiq::Job
     sidekiq_options queue: :default, retry: 3
 
+    UUID_FORMAT = /\A\h{8}-\h{4}-\h{4}-\h{4}-\h{12}\z/
+
     def perform(user_id, events)
-      events = Array(events)
+      events = Array(events).map { |event| normalize(event) }
       return if events.empty?
 
-      channels = ChannelEnrichment.resolve(events.map { |event| normalize(event)[:channel_id] })
-      rows = events.filter_map { |event| build_row(user_id, normalize(event), channels) }
+      channels = ChannelEnrichment.resolve(events.map { |event| event[:channel_id] })
+      rows = events.filter_map { |event| build_row(user_id, event, channels) }
       return if rows.empty?
 
       PvaEngagementEvent.insert_all(rows, unique_by: %i[user_id event_hash])
@@ -36,8 +38,10 @@ module PersonalAnalytics
         created_at: now, updated_at: now }
     end
 
+    # client_event_id пишется в uuid-колонку → битый формат рушит весь insert_all batch (CR SF-2).
+    # Воркер = validation boundary: дропаем (а не падаем) на невалидном UUID.
     def valid?(event)
-      event[:channel_id].to_s.present? && event[:client_event_id].to_s.present? &&
+      event[:channel_id].to_s.present? && event[:client_event_id].to_s.match?(UUID_FORMAT) &&
         parse_time(event[:occurred_at]) && PvaEngagementEvent::EVENT_TYPES.include?(event[:event_type])
     end
 

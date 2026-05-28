@@ -47,7 +47,8 @@ RSpec.describe "Api::V1::Me::Analytics", type: :request do
       { events: [ { client_event_id: SecureRandom.uuid, event_type: "cheer", channel_id: "555",
                     amount: 100, occurred_at: Time.current.iso8601 } ],
         chat_activity: [ { channel_id: "555", date: "2026-05-28", message_count: 12,
-                           first_seen_at: Time.current.iso8601, last_seen_at: Time.current.iso8601 } ] }
+                           first_seen_at: Time.current.iso8601, last_seen_at: Time.current.iso8601 } ],
+        tenure: [ { channel_id: "555", months: 18, sub_tier: 2, observed_at: Time.current.iso8601 } ] }
     end
 
     it "requires authentication" do
@@ -61,6 +62,7 @@ RSpec.describe "Api::V1::Me::Analytics", type: :request do
       expect(response).to have_http_status(:accepted)
       expect(response.parsed_body.dig("queued", "events")).to eq(1)
       expect(response.parsed_body.dig("queued", "chat_activity")).to eq(1)
+      expect(response.parsed_body.dig("queued", "tenure")).to eq(1)
     end
 
     context "when the :pva flag is off" do

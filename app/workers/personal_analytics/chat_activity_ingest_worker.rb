@@ -10,13 +10,14 @@ module PersonalAnalytics
     sidekiq_options queue: :default, retry: 3
 
     MAX_EMOTE_KEYS = 50
+    MAX_EMOTE_KEY_LEN = 100
 
     def perform(user_id, snapshots)
-      snapshots = Array(snapshots)
+      snapshots = Array(snapshots).map { |snap| normalize(snap) }
       return if snapshots.empty?
 
-      channels = ChannelEnrichment.resolve(snapshots.map { |snap| normalize(snap)[:channel_id] })
-      rows = snapshots.filter_map { |snap| build_row(user_id, normalize(snap), channels) }
+      channels = ChannelEnrichment.resolve(snapshots.map { |snap| snap[:channel_id] })
+      rows = snapshots.filter_map { |snap| build_row(user_id, snap, channels) }
       return if rows.empty?
 
       PvaChatActivity.upsert_all(rows, unique_by: %i[user_id twitch_channel_id date])
@@ -38,11 +39,14 @@ module PersonalAnalytics
         first_seen_at: first_seen, last_seen_at: last_seen, updated_at: Time.current }
     end
 
-    # {emote => count}, ключи cap'нуты (DoS guard), значения → non-negative int.
+    # {emote => count}: non-negative int, ТОП-N по частоте (не по порядку вставки — CR Nit-3),
+    # ключ cap'нут по длине (DoS guard).
     def sanitize_emotes(value)
       return {} unless value.is_a?(Hash)
 
-      value.first(MAX_EMOTE_KEYS).to_h { |emote, count| [ emote.to_s, [ count.to_i, 0 ].max ] }
+      value.transform_values { |count| [ count.to_i, 0 ].max }
+           .sort_by { |_emote, count| -count }.first(MAX_EMOTE_KEYS)
+           .to_h { |emote, count| [ emote.to_s[0, MAX_EMOTE_KEY_LEN], count ] }
     end
 
     def normalize(snapshot)

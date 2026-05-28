@@ -9,9 +9,10 @@ module PersonalAnalytics
 
       class InvalidType < StandardError; end
 
-      def initialize(user:, type: nil)
+      def initialize(user:, type: nil, before: nil)
         @user = user
         @type = type.presence
+        @before = parse_time(before)
         raise InvalidType, "Unknown type '#{@type}'" if @type && !PvaEngagementEvent::EVENT_TYPES.include?(@type)
       end
 
@@ -19,14 +20,30 @@ module PersonalAnalytics
         events = scoped.order(occurred_at: :desc).limit(LIMIT).to_a
         channels = Channel.where(twitch_id: events.map(&:twitch_channel_id).uniq).index_by(&:twitch_id)
         { data: { entries: events.map { |event| entry(event, channels[event.twitch_channel_id]) } },
-          meta: { type: @type, count: events.size } }
+          meta: { type: @type, count: events.size, next_cursor: next_cursor(events) } }
       end
 
       private
 
+      # Курсор-пагинация: next_cursor = occurred_at последнего события при полной странице → FE передаёт
+      # его как ?before= для следующей страницы (вся хронология достижима, не только последние LIMIT).
       def scoped
         relation = PvaEngagementEvent.where(user_id: @user.id)
-        @type ? relation.where(event_type: @type) : relation
+        relation = relation.where(event_type: @type) if @type
+        relation = relation.where(occurred_at: ...@before) if @before
+        relation
+      end
+
+      def next_cursor(events)
+        events.size == LIMIT ? events.last.occurred_at.iso8601 : nil
+      end
+
+      def parse_time(value)
+        return nil if value.blank?
+
+        Time.iso8601(value.to_s)
+      rescue ArgumentError
+        nil
       end
 
       def entry(event, channel)
