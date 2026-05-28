@@ -143,6 +143,23 @@ RSpec.describe "accessory_ops rake tasks" do
         Rake::Task["accessory_ops:state:refresh"].invoke("staging", "redis")
       }.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
     end
+
+    # BUG-025: state:refresh must exit 1 + emit a state_refresh_skipped marker (distinct from
+    # the :mismatch + nil runtime_image branch) when DriftCheckService short-circuits на
+    # :skipped (config/deploy.yml not mounted). Different operator action: mount config vs
+    # investigate SSH/docker probe.
+    it "exits 1 с state_refresh_skipped когда DriftCheckService returns :skipped (BUG-025)" do
+      allow(AccessoryOps::DriftCheckService).to receive(:call).and_return(
+        AccessoryOps::DriftCheckService::Result.new(
+          drift_state: :skipped, declared_image: nil, runtime_image: nil
+        )
+      )
+      expect(AccessoryOps::StateService).not_to receive(:update_after_health_check)
+      expect {
+        Rake::Task["accessory_ops:state:refresh"].invoke("staging", "redis")
+      }.to raise_error(SystemExit) { |e| expect(e.status).to eq(1) }
+        .and output(/state_refresh_skipped reason=config_unavailable/).to_stderr
+    end
   end
 
   describe "accessory_ops:downtime:start" do

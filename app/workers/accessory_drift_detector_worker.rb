@@ -21,10 +21,10 @@ class AccessoryDriftDetectorWorker
       end
     end
 
-    # BUG-025: aggregate :skipped log marker — one line per cycle instead of N×accessory warnings.
-    # The detailed root-cause warning is already emitted once-per-cycle by DriftCheckService when
-    # the config-unreadable code path fires. This counter is observability: grep
-    # "drift detection skipped" → see "N/M pairs unable to check declared image this cycle".
+    # BUG-025: aggregate :skipped log marker — one INFO line per cycle summarizing the count.
+    # DriftCheckService emits a WARN per (destination, accessory) pair when config is unreadable
+    # (up to N_destinations × M_accessories warns per cycle until ops mounts the file — intentional,
+    # surfaces the problem repeatedly at WARN level). This INFO marker is the greppable aggregate.
     if @skipped_count.positive?
       Rails.logger.info(
         "AccessoryDriftDetectorWorker: drift detection skipped for #{@skipped_count} pair(s) " \
@@ -48,7 +48,7 @@ class AccessoryDriftDetectorWorker
       # this cycle, NOT "resolved" — falsely closing would lose visibility into a real ongoing drift
       # the moment the config becomes unreadable). DriftCheckService logs the root-cause warning;
       # we only bump the per-cycle counter for the aggregate log marker in #perform.
-      @skipped_count = @skipped_count.to_i + 1
+      @skipped_count += 1
     end
   rescue StandardError => e
     Rails.logger.error("AccessoryDriftDetectorWorker: #{destination}/#{accessory} — #{e.class}: #{e.message}")
