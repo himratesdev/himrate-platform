@@ -114,6 +114,10 @@ module PersonalAnalytics
           end
         end
 
+        # CR iter-4 N3: "partial" wins over "pending" в mixed scenarios.
+        # Если есть done + failed но ещё pending source_5 (extension-driven, может прийти позже),
+        # mark partial + completed_at сразу — sweep marks late stuck sources через mark_partial_timeout
+        # после 10-min threshold (BR-013 isolated failure + UI retry CTA path).
         def compute_overall_status(sources)
           statuses = sources.values.map { |s| s["status"] }
           return "failed" if statuses.all? { |s| s == "failed" }

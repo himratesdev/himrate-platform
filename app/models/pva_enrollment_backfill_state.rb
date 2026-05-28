@@ -26,8 +26,9 @@ class PvaEnrollmentBackfillState < ApplicationRecord
   }
 
   # Returns true if previous backfill is recent enough to skip re-enrollment (BR-015: skip <30 days).
+  # CR iter-4 N2: gate also on overall_status == "done" — failed/partial/partial_timeout states
+  # с completed_at set должны allow retry, не reuse (frontend retry CTA path).
   def recent_completion?
-    return false unless completed_at
-    completed_at > 30.days.ago
+    completed_at.present? && overall_status == "done" && completed_at > 30.days.ago
   end
 end

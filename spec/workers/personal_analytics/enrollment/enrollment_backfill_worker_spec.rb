@@ -39,7 +39,9 @@ RSpec.describe PersonalAnalytics::Enrollment::EnrollmentBackfillWorker do
       )
 
       expect(PersonalAnalytics::Enrollment::HelixFollowsBackfillWorker).to receive(:perform_async).with(user.id)
-      described_class.new.perform(user.id, force: true)
+      # CR iter-4 N1: positional arg matching production perform_async contract (kwargs не
+      # round-trip через Sidekiq JSON serialization).
+      described_class.new.perform(user.id, true)
     end
   end
 
