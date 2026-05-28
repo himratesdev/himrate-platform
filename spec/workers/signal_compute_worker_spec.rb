@@ -8,6 +8,9 @@ RSpec.describe SignalComputeWorker do
   let(:stream) { Stream.create!(channel: channel, started_at: 1.hour.ago, game_name: "Just Chatting") }
 
   before do
+    # Permissive default for unrelated flags — keeps the spec stable as new flags are introduced
+    # (e.g. TASK-251.14d adds :chat_reads_clickhouse_dual_read used by ContextBuilder downstream).
+    allow(Flipper).to receive(:enabled?).and_return(false)
     allow(Flipper).to receive(:enabled?).with(:signal_compute).and_return(true)
 
     # Seed minimal configs
