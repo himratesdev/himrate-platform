@@ -127,9 +127,10 @@ Rails.application.routes.draw do
         # BE-5 M15 Privacy
         get "privacy", to: "privacy#show"
         put "privacy", to: "privacy#update"
-        # TASK-113 Δ-1 Wave 1 (FR-016): cold-start enrollment backfill state + extension payload.
+        # TASK-113 Δ-1 Wave 1 (FR-016): cold-start enrollment backfill state + extension payload + per-source retry.
         get "analytics/cold_start/state", to: "analytics/cold_start#state"
         post "analytics/cold_start/subs_payload", to: "analytics/cold_start#subs_payload"
+        post "analytics/cold_start/retry", to: "analytics/cold_start#retry_source"
       end
       # BE-5 M13 minimal soft-delete (PO directive 2026-05-28) — out-of-namespace для чистого DELETE /me
       delete "me", to: "me/privacy#destroy_account"

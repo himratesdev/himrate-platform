@@ -64,4 +64,74 @@ RSpec.describe "Api::V1::Me::Analytics::ColdStart" do
       expect(response).to have_http_status(:unprocessable_entity)
     end
   end
+
+  describe "POST /api/v1/me/analytics/cold_start/retry" do
+    it "returns 401 без auth" do
+      post "/api/v1/me/analytics/cold_start/retry"
+      expect(response).to have_http_status(:unauthorized)
+    end
+
+    it "rejects invalid source key" do
+      post "/api/v1/me/analytics/cold_start/retry",
+        params: { source: "invalid" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      body = JSON.parse(response.body)
+      expect(body["error"]).to eq("InvalidSource")
+    end
+
+    it 'для "all": resets state + enqueues parent EnrollmentBackfillWorker' do
+      PersonalAnalytics::Enrollment::StateStore.initiate(user_id: user.id)
+      expect(PersonalAnalytics::Enrollment::EnrollmentBackfillWorker).to receive(:perform_async)
+        .with(user.id, true)
+
+      post "/api/v1/me/analytics/cold_start/retry",
+        params: { source: "all" }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      expect(body["ok"]).to be true
+      expect(body["retried"]).to eq("all")
+    end
+
+    it 'для source_1: resets source cell + enqueues HelixFollowsBackfillWorker' do
+      PersonalAnalytics::Enrollment::StateStore.initiate(user_id: user.id)
+      PersonalAnalytics::Enrollment::StateStore.update_source(
+        user_id: user.id, source_key: "source_1",
+        payload: { status: "failed", error_class: "TestFailure" }
+      )
+      expect(PersonalAnalytics::Enrollment::HelixFollowsBackfillWorker).to receive(:perform_async).with(user.id)
+
+      post "/api/v1/me/analytics/cold_start/retry",
+        params: { source: "source_1" }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+
+      state = PvaEnrollmentBackfillState.find_by(user_id: user.id)
+      expect(state.sources["source_1"]["status"]).to eq("pending")
+      expect(state.sources["source_1"]["error_class"]).to be_nil
+    end
+
+    it 'для source_5 (extension-driven): resets state без backend worker enqueue' do
+      PersonalAnalytics::Enrollment::StateStore.initiate(user_id: user.id)
+      # Critical assertion: no worker enqueue
+      expect(PersonalAnalytics::Enrollment::HelixFollowsBackfillWorker).not_to receive(:perform_async)
+      expect(PersonalAnalytics::Enrollment::GqlChannelShellBatchWorker).not_to receive(:perform_async)
+      expect(PersonalAnalytics::Enrollment::EnrollmentBackfillWorker).not_to receive(:perform_async)
+
+      post "/api/v1/me/analytics/cold_start/retry",
+        params: { source: "source_5" }, headers: headers, as: :json
+      expect(response).to have_http_status(:ok)
+      body = JSON.parse(response.body)
+      expect(body["retried"]).to eq("source_5")
+
+      state = PvaEnrollmentBackfillState.find_by(user_id: user.id)
+      expect(state.sources["source_5"]["status"]).to eq("pending")
+    end
+
+    it "rejects retry если no enrollment state exists (per-source path)" do
+      post "/api/v1/me/analytics/cold_start/retry",
+        params: { source: "source_1" }, headers: headers, as: :json
+      expect(response).to have_http_status(:unprocessable_entity)
+      body = JSON.parse(response.body)
+      expect(body["error"]).to eq("NoEnrollmentState")
+    end
+  end
 end
