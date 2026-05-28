@@ -135,7 +135,7 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           cat >> ~/.ssh/config <<SSH_CONFIG
-          Host 194.135.85.159
+          Host *
             StrictHostKeyChecking accept-new
             IdentityFile ~/.ssh/id_ed25519
             ServerAliveInterval 15
@@ -309,7 +309,7 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
           cat >> ~/.ssh/config <<SSH_CONFIG
-          Host 194.135.85.159
+          Host *
             StrictHostKeyChecking accept-new
             IdentityFile ~/.ssh/id_ed25519
             ServerAliveInterval 15

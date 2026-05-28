@@ -71,8 +71,12 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s' "$SSH_KEY" > ~/.ssh/id_ed25519
           chmod 600 ~/.ssh/id_ed25519
+          # BUG-021 CR-iter1 N-2: universalize SSH-config block (StrictHostKeyChecking
+          # accept-new, IdentityFile, keepalives, ConnectTimeout) so the same tuning applies
+          # to any future host the workflow targets. visual-qa-seed.yml remains
+          # staging-only by header-comment design — only the SSH-config block widens.
           cat >> ~/.ssh/config <<'SSH_CONFIG'
-          Host 194.135.85.159
+          Host *
             StrictHostKeyChecking accept-new
             IdentityFile ~/.ssh/id_ed25519
             ServerAliveInterval 15
