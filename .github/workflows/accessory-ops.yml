@@ -118,38 +118,27 @@ jobs:
           SSH_CONFIG
           chmod 600 ~/.ssh/config
 
-      # BUG-021: resolve the SSH target host per ${{ inputs.destination }} once, expose
-      # as a step output, and consume via env: SSH_HOST in every subsequent ssh step.
-      # Today staging + production share a single VPS (config/deploy.yml comment:
-      # "Staging + Production on single VPS (194.135.85.159)"); when production moves to
-      # its own host post-Launch, set the PRODUCTION_SSH_HOST repo secret and this step
-      # picks it up automatically — no further workflow changes needed.
+      # BUG-021: resolve the SSH target host per ${{ inputs.destination }} once and consume
+      # via $SSH_HOST in every subsequent ssh step. CR-iter1 S-1: read from the canonical
+      # multi-VPS host map (`config/accessory_hosts.yml`, BUG-010 PR2 ADR DEC-30..33) —
+      # SAME source of truth that AccessoryOps services + AccessoryDriftDetectorWorker
+      # consult on the Rails side. This prevents post-Launch drift where the app-side
+      # multi-VPS scaling lands in `accessory_hosts.yml` but the workflow keeps ssh'ing
+      # to a decommissioned host because nobody synced repo secrets.
       - name: Resolve target SSH host
-        id: ssh_host
         env:
           DESTINATION: ${{ inputs.destination }}
-          PRODUCTION_SSH_HOST: ${{ secrets.PRODUCTION_SSH_HOST }}
-          STAGING_SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
         run: |
           set -euo pipefail
-          case "${DESTINATION}" in
-            staging)
-              HOST="${STAGING_SSH_HOST:-194.135.85.159}"
-              ;;
-            production)
-              HOST="${PRODUCTION_SSH_HOST:-194.135.85.159}"
-              ;;
-            *)
-              echo "::error::Unknown destination: ${DESTINATION}"
-              exit 1
-              ;;
-          esac
-          echo "host=${HOST}" >> "$GITHUB_OUTPUT"
-          # Also expose as SSH_HOST in $GITHUB_ENV so subsequent steps consume it as a
-          # regular env var without per-step env mapping — keeps the ssh call sites
-          # uniform across the 6 ssh-using steps below.
+          HOST=$(ruby -ryaml -e 'puts YAML.load_file("config/accessory_hosts.yml").fetch(ENV.fetch("DESTINATION")).first')
+          if [ -z "${HOST}" ]; then
+            echo "::error::No host in config/accessory_hosts.yml for destination=${DESTINATION}"
+            exit 1
+          fi
+          # Expose as SSH_HOST in $GITHUB_ENV so subsequent steps consume it as a regular
+          # env var without per-step env mapping — keeps the 6 ssh call sites uniform.
           echo "SSH_HOST=${HOST}" >> "$GITHUB_ENV"
-          echo "::notice::Resolved ${DESTINATION} SSH host: ${HOST}"
+          echo "::notice::Resolved ${DESTINATION} SSH host: ${HOST} (from config/accessory_hosts.yml)"
 
       # BUG-020: Kamal names app containers `<service>-<role>-<destination>-<sha>`
       # (e.g. himrate-web-staging-5ec75ae...), NOT a static `himrate-web`. Resolve the
