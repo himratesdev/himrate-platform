@@ -1,37 +1,79 @@
 # frozen_string_literal: true
 
-# TASK-028 FR-001: Auth Ratio signal.
-# chatters.count / CCV, normalized by category threshold. Low auth ratio = view-only bots.
+# TASK-028 FR-001 + BUG-251.30: Auth Ratio signal #1.
 #
-# TASK-251.6 — ABSTAINS server-side. This signal's expected_min≈0.65 calibration assumes
-# "chatters PRESENT in chat" (≈ viewers connected to chat, historically ~0.5–1.0 of CCV).
-# That count came from GQL chatters/CommunityTab, which is integrity-protected and NOT
-# available server-side, and from the extension's browser-context ingest (gql_data), which
-# is not yet wired. The only server-side chatter data is ACTIVE chat-senders (chat_messages,
-# ~0.01–0.08 of CCV — measured on staging) — feeding that at 0.65 would yield value≈0.9 for
-# EVERY channel = false view-bot flag (harmful + legal-sensitive). So we abstain rather than
-# misfire. chatter_ccv_ratio (#2) already covers active-chatters/CCV at a calibrated threshold.
+# Compute: (chatters_present_total / latest_ccv) — share of registered users actually
+# present in chat (broadcasters + moderators + vips + staff + viewers from CommunityTab)
+# divided by total concurrent viewer count.
 #
-# TASK-251.9 re-scope decision — KEEP this signal (do NOT retire, do NOT recalibrate onto
-# active-chatters: that would merely duplicate chatter_ccv_ratio #2). It is a DISTINCT signal:
-# the share of CCV PRESENT/connected in chat (whether or not they type) vs #2's actively-typing
-# share — present-vs-silent catches view-only inflation that #2 structurally cannot. Its only
-# viable source is the extension's browser-context present-chatters/community ingest (gql_data;
-# integrity-blocked server-side). It stays abstaining until that ingest is wired, and the compute
-# path is built TOGETHER with the gql_data feature — no source means nothing to compute now, so
-# we do not add a speculative compute path. Re-activation tracked under TASK-C1 (TI v2 signals).
+# Concept: viewbots that ONLY connect to the video stream (skip IRC entirely) depress this
+# ratio. Genuine human viewers either join chat to read messages OR aren't logged in (which
+# is fine — anonymous viewers naturally absent from chatters list).
+#
+# Source: `app/services/trust_index/context_builder.rb` injects `:chatters_present_total`
+# from the latest `ChattersSnapshot.chatters_present_total` (populated every 60s by
+# `StreamMonitorWorker#poll_tier1` via `Twitch::GqlClient#community_tab`).
+#
+# Distinct from Signal #2 (chatter_ccv_ratio):
+#   - #1 (this signal): PRESENCE in chat (whether they typed or not) / CCV
+#   - #2: ACTIVE TYPERS (people who sent privmsg) / CCV
+# Two views catch different bot classes: video-only viewbots fail #1; chat-quiet-viewbots
+# also fail #2; clean silent audiences (Dota/CS/Chess) pass both at calibrated thresholds.
+#
+# History:
+#   - TASK-251.6: signal abstained server-side because CommunityTab was integrity-gated
+#     under web Client-ID `kimne78kx3ncx6brgo4mv6wki5h1ko`.
+#   - TASK-251.9: KEEP decision (distinct from #2 — present-vs-silent class of bot).
+#   - BUG-251.30 (2026-05-29): Wave-3 Android Client-ID `kd1unb4b3q4t58fwlpcbzcbnm76a8fp`
+#     bypasses Kasada integrity → CommunityTab works server-side. Abstain removed.
+#     ChattersPresenceSnapshot semantics reflected in conservative recalibrated thresholds
+#     (paired migration `20260529110002_recalibrate_auth_ratio_...`).
+#     Multi-channel empirical recalibration tracked under BUG-251.33.
 
 module TrustIndex
   module Signals
     class AuthRatio < BaseSignal
+      DEFAULT_EXPECTED_MIN = 0.03
+
       def name = "Auth Ratio"
       def signal_type = "auth_ratio"
 
       def calculate(context)
         ccv = context[:latest_ccv]
-        return insufficient(reason: "no_ccv") unless ccv&.positive?
+        chatters_present = context[:chatters_present_total]
+        category = context[:category] || "default"
+        stream_duration_min = context[:stream_duration_min] || 0
 
-        insufficient(reason: "chatters_present_unavailable_server_side")
+        return insufficient(reason: "no_ccv") unless ccv&.positive?
+        return insufficient(reason: "no_chatters_present_data") if chatters_present.nil?
+
+        ratio = chatters_present.to_f / ccv
+        params = config_params(category)
+        expected_min = params["expected_min"]&.to_f || DEFAULT_EXPECTED_MIN
+
+        # Continuous score: ratio >= expected_min → 0.0 (no alert), else linearly scaled
+        # to 1.0 when ratio = 0 (all viewers anonymous = max suspicion).
+        value = ratio >= expected_min ? 0.0 : (expected_min - ratio) / expected_min
+
+        confidence = if stream_duration_min >= 30 && ccv >= 50
+                       1.0
+        elsif stream_duration_min >= 10
+                       0.5
+        else
+                       0.2
+        end
+
+        result(
+          value: value,
+          confidence: confidence,
+          metadata: {
+            ratio: ratio.round(4),
+            expected_min: expected_min,
+            chatters_present: chatters_present,
+            ccv: ccv,
+            category: category
+          }
+        )
       end
     end
   end

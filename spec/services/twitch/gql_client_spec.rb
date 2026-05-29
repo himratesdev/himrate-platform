@@ -101,23 +101,44 @@ RSpec.describe Twitch::GqlClient do
   # === FR-003: CommunityTab ===
 
   describe "#community_tab" do
-    it "returns viewer list with roles (TC-005)" do
+    it "returns viewer list with all role buckets (TC-005, BUG-251.30 extended)" do
       stub_gql_request(body_includes: "CommunityTab", response: {
         data: { channel: { chatters: {
           broadcasters: [ { login: "streamer" } ],
-          moderators: [ { login: "mod1" } ],
+          moderators: [ { login: "mod1" }, { login: "mod2" } ],
           vips: [ { login: "vip1" } ],
-          viewers: [ { login: "viewer1" }, { login: "viewer2" } ],
-          count: 5
+          staff: [],
+          viewers: [ { login: "viewer1" }, { login: "viewer2" }, { login: "viewer3" } ],
+          count: 7
         } } }
       })
 
       result = client.community_tab(channel_login: "streamer")
       expect(result[:broadcasters]).to eq(%w[streamer])
-      expect(result[:moderators]).to eq(%w[mod1])
+      expect(result[:moderators]).to eq(%w[mod1 mod2])
       expect(result[:vips]).to eq(%w[vip1])
-      expect(result[:viewers]).to eq(%w[viewer1 viewer2])
-      expect(result[:count]).to eq(5)
+      expect(result[:staff]).to eq([])
+      expect(result[:viewers]).to eq(%w[viewer1 viewer2 viewer3])
+      expect(result[:count]).to eq(7)
+      # BUG-251.30: convenience accessors for downstream (AuthRatio + profile enrichment)
+      expect(result[:total_present]).to eq(7) # 1 + 2 + 1 + 0 + 3
+      expect(result[:all_logins]).to eq(%w[streamer mod1 mod2 vip1 viewer1 viewer2 viewer3])
+    end
+
+    it "tolerates missing role keys (older Twitch responses without staff)" do
+      stub_gql_request(body_includes: "CommunityTab", response: {
+        data: { channel: { chatters: {
+          broadcasters: [ { login: "s" } ],
+          moderators: nil,
+          vips: nil,
+          viewers: [ { login: "v" } ],
+          count: 2
+        } } }
+      })
+
+      result = client.community_tab(channel_login: "s")
+      expect(result[:total_present]).to eq(2)
+      expect(result[:all_logins]).to eq(%w[s v])
     end
 
     it "returns nil when integrity check fails" do
@@ -499,8 +520,16 @@ RSpec.describe Twitch::GqlClient do
                    headers: { "Content-Type" => "application/json" })
 
       default_client.view_count(channel_login: "test")
+      # BUG-251.30: DEFAULT_CLIENT_ID switched from web `kimne78kx3ncx6brgo4mv6wki5h1ko`
+      # (integrity-gated) to Android `kd1unb4b3q4t58fwlpcbzcbnm76a8fp` (bypasses Kasada).
       expect(WebMock).to have_requested(:post, gql_url)
-        .with(headers: { "Client-ID" => "kimne78kx3ncx6brgo4mv6wki5h1ko" })
+        .with(headers: { "Client-ID" => "kd1unb4b3q4t58fwlpcbzcbnm76a8fp" })
+    end
+
+    it "DEFAULT_CLIENT_ID points to Android client (BUG-251.30)" do
+      # Static guardrail: prevents accidental revert to web Client-ID which would re-trigger
+      # integrity-gate on community_tab / socialMedias / hasPrime / etc.
+      expect(Twitch::GqlClient::DEFAULT_CLIENT_ID).to eq("kd1unb4b3q4t58fwlpcbzcbnm76a8fp")
     end
   end
 
