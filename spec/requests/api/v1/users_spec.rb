@@ -25,6 +25,40 @@ RSpec.describe "Users API", type: :request do
       get "/api/v1/user/me"
       expect(response).to have_http_status(:unauthorized)
     end
+
+    # BUG-USER-PAYLOAD-TWITCH-LINKED (2026-05-29, CR iter-1 S-1) regression — /user/me must
+    # expose the same twitch_linked/twitch_login/google_linked flags as auth callback. Extension
+    # SidePanel rehydrates auth state through this endpoint after side-panel reopen; if these
+    # flags are missing, twitchLinked defaults false and «Привяжите Twitch» banner returns.
+    describe "twitch_linked / twitch_login / google_linked parity with auth callback" do
+      it "exposes flags when only Twitch is linked" do
+        AuthProvider.create!(user: user, provider: "twitch", provider_id: "100",
+          access_token: "at", refresh_token: "rt", is_broadcaster: false)
+        get "/api/v1/user/me", headers: headers
+        data = response.parsed_body["data"]
+        expect(data["twitch_linked"]).to eq(true)
+        expect(data["twitch_login"]).to eq("testuser")
+        expect(data["google_linked"]).to eq(false)
+      end
+
+      it "exposes flags when only Google is linked" do
+        AuthProvider.create!(user: user, provider: "google", provider_id: "200",
+          access_token: "at", refresh_token: "rt", is_broadcaster: false)
+        get "/api/v1/user/me", headers: headers
+        data = response.parsed_body["data"]
+        expect(data["twitch_linked"]).to eq(false)
+        expect(data["twitch_login"]).to be_nil
+        expect(data["google_linked"]).to eq(true)
+      end
+
+      it "exposes flags when no providers are linked (defensive)" do
+        get "/api/v1/user/me", headers: headers
+        data = response.parsed_body["data"]
+        expect(data["twitch_linked"]).to eq(false)
+        expect(data["twitch_login"]).to be_nil
+        expect(data["google_linked"]).to eq(false)
+      end
+    end
   end
 
   describe "PATCH /api/v1/user/me" do
