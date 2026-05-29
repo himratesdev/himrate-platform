@@ -18,7 +18,16 @@ class StreamOnlineWorker
     Rails.logger.info("StreamOnlineWorker: stream.online for #{broadcaster_login} (#{broadcaster_id})")
 
     channel = find_or_create_channel(broadcaster_id, broadcaster_login)
-    return if active_stream_exists?(channel)
+
+    # BUG-251.29: even when DB shows an already-active stream row, idempotently re-publish
+    # IRC join. Previously we returned early — leaving IRC out of sync when (a) the existing
+    # row was stale (real Twitch session ended without offline reaching us, then channel went
+    # live again), or (b) IrcMonitor was restarted mid-session and dropped its in-memory set.
+    # IrcMonitor#subscribe is idempotent (returns :already_joined harmlessly).
+    if active_stream_exists?(channel)
+      publish_irc_join(broadcaster_login)
+      return
+    end
 
     stream = merge_or_create_stream(channel, event_data)
 
@@ -39,7 +48,9 @@ class StreamOnlineWorker
 
   def active_stream_exists?(channel)
     exists = channel.streams.where(ended_at: nil).exists?
-    Rails.logger.info("StreamOnlineWorker: active stream already exists, skipping") if exists
+    # BUG-251.29: log changed from "skipping" to "publishing IRC join idempotently" —
+    # reflects new behaviour where we continue to ensure IRC capture even on existing row.
+    Rails.logger.info("StreamOnlineWorker: active stream already exists for ##{channel.login}, publishing IRC join idempotently") if exists
     exists
   end
 

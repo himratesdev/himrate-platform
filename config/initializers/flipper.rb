@@ -131,6 +131,9 @@ module FlipperDefaults
     # profile cache → Account Profile Scoring (#11). OFF by default — additive, enabled per-env.
     raid_detection: "TASK-251.B", # RaidDetectionWorker: classify captured IRC raid USERNOTICEs into
     # RaidAttribution → Raid Attribution signal (#9). OFF by default — additive, enabled per-env.
+    stale_stream_sweep: "BUG-251.29", # StaleStreamSweepWorker: close Stream rows with ended_at NULL
+    # but no CCV activity in last 30 min. OFF by default — operator enables post-deploy after
+    # confirming no false-close on legitimately live channels (e.g., dual-check against Helix).
     pva: "TASK-113", # Personal Viewer Analytics (BE-1..BE-5 + FE). OFF by default — фича шипится
     # инкрементально и ещё НЕ выпущена; enable per-env только после полного ship + verify (CR SF-3).
     chat_writes_clickhouse: "TASK-251.14b", # Dual-write ChatMessageWorker → ClickHouse (best-effort;

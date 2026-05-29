@@ -15,11 +15,17 @@ module Twitch
   class IrcMonitor
     IRC_HOST = "irc.chat.twitch.tv"
     IRC_PORT = 6697
-    # Single anon connection holds the live monitored set. Raised 100→300 (TASK-251.5):
-    # at 100 the detector's 168+ live channels thrashed JOIN/PART. Shard across
-    # connections (follow-up) when the live set approaches a single socket's practical limit.
-    MAX_CHANNELS = 300
-    JOIN_THROTTLE_LIMIT = 20     # max JOINs per throttle window
+    # Single anon connection holds the live monitored set. Capacity raised across releases:
+    # 100→300 (TASK-251.5) when detector's 168+ live channels thrashed at 100. BUG-251.29
+    # (2026-05-29) raised 300→1000 default: justcooman live-subscribe reproduce showed
+    # capacity at 240 active streams + queue → silently rejected new JOIN commands. Twitch
+    # IRC has no documented per-connection channel cap and community libs (e.g. tmi.js,
+    # Twitch DropsMiner) report stable behavior at 1000+. ENV override for emergency tuning.
+    MAX_CHANNELS = ENV.fetch("IRC_MAX_CHANNELS", "1000").to_i
+    # BUG-251.29: bumped 20→40 in-flight (kept 30s window) to keep up with bigger MAX_CHANNELS
+    # — drain rate now ~80 JOINs/min vs ~40 previously. Twitch tolerates ~50 JOIN/30s on
+    # anon connections.
+    JOIN_THROTTLE_LIMIT = ENV.fetch("IRC_JOIN_THROTTLE_LIMIT", "40").to_i
     JOIN_THROTTLE_WINDOW = 30    # seconds
     REDIS_QUEUE_KEY = "irc:chat_messages"
     REDIS_COMMANDS_CHANNEL = "irc:commands"
@@ -82,14 +88,25 @@ module Twitch
     # burst of subscribe calls never blocks the reader (TASK-251.5).
     def subscribe(channel_login)
       login = channel_login.to_s.downcase.delete_prefix("#")
-      @join_mutex.synchronize do
-        return :already_joined if @channels.include?(login)
-        return :capacity_full if @channels.size >= MAX_CHANNELS
-
-        @channels.add(login)
-        @pending_joins << login unless @pending_joins.include?(login)
+      result, current_size = @join_mutex.synchronize do
+        if @channels.include?(login)
+          [ :already_joined, @channels.size ]
+        elsif @channels.size >= MAX_CHANNELS
+          [ :capacity_full, @channels.size ]
+        else
+          @channels.add(login)
+          @pending_joins << login unless @pending_joins.include?(login)
+          [ :queued, @channels.size ]
+        end
       end
-      :queued
+      # BUG-251.29: verbose log so capacity issues surface in logs instead of silent failures.
+      case result
+      when :capacity_full
+        Rails.logger.warn("IrcMonitor: subscribe(#{login}) -> capacity_full (#{current_size}/#{MAX_CHANNELS})")
+      when :queued
+        Rails.logger.info("IrcMonitor: subscribe(#{login}) -> queued (#{current_size}/#{MAX_CHANNELS})")
+      end
+      result
     end
 
     # Unsubscribe from a channel (PART). Also cancels a pending JOIN if not yet sent.
@@ -199,6 +216,9 @@ module Twitch
           update_heartbeat
           flush_memory_buffer
           @on_periodic_check&.call
+          # BUG-251.29: if command listener thread crashed silently, restart it so we
+          # don't go deaf to JOIN/PART commands.
+          ensure_command_listener_alive
           @last_heartbeat_at = Time.current
         end
       end
@@ -358,28 +378,55 @@ module Twitch
     # === Redis Pub/Sub Command Listener ===
     # Allows StreamOnlineWorker/StreamOfflineWorker to send JOIN/PART commands.
 
+    # BUG-251.29: command listener thread tracked + health-monitored so a silent crash
+    # (e.g., StandardError outside Redis::BaseError) doesn't leave us deaf to JOIN commands.
+    # listen_loop periodically calls #ensure_command_listener_alive to restart if dead.
     def start_command_listener
-      Thread.new do
+      @command_listener_thread = Thread.new do
+        Rails.logger.info("IrcMonitor: command listener thread started (tid=#{Thread.current.object_id})")
         command_redis = Redis.new(url: redis_url)
         command_redis.subscribe(REDIS_COMMANDS_CHANNEL) do |on|
+          on.subscribe do |_, _|
+            Rails.logger.info("IrcMonitor: subscribed to Redis channel #{REDIS_COMMANDS_CHANNEL}")
+          end
           on.message do |_channel, message|
             handle_command(message)
           end
         end
       rescue Redis::BaseError => e
-        Rails.logger.error("IrcMonitor: command listener error (#{e.message})")
+        Rails.logger.error("IrcMonitor: command listener Redis error (#{e.message}) — restarting")
         sleep(5)
         retry if @running
+      rescue StandardError => e
+        # BUG-251.29: previously uncaught — silent thread death left us unable to receive JOIN
+        # commands. Now logged and re-raised so ensure_command_listener_alive can restart.
+        Rails.logger.error("IrcMonitor: command listener fatal #{e.class}: #{e.message}")
+        Rails.logger.error(e.backtrace.first(10).join("\n"))
+        raise
       end
+    end
+
+    def ensure_command_listener_alive
+      return if @command_listener_thread&.alive?
+
+      Rails.logger.error("IrcMonitor: command listener thread is dead — restarting")
+      start_command_listener
     end
 
     def handle_command(message)
       data = JSON.parse(message)
-      case data["action"]
+      action = data["action"]
+      login = data["channel_login"]
+      Rails.logger.info("IrcMonitor: handle_command action=#{action} login=#{login}")
+      case action
       when "join"
-        subscribe(data["channel_login"])
+        result = subscribe(login)
+        Rails.logger.info("IrcMonitor: handle_command join(#{login}) -> #{result}")
       when "part"
-        unsubscribe(data["channel_login"])
+        result = unsubscribe(login)
+        Rails.logger.info("IrcMonitor: handle_command part(#{login}) -> #{result}")
+      else
+        Rails.logger.warn("IrcMonitor: handle_command unknown action=#{action}")
       end
     rescue JSON::ParserError => e
       Rails.logger.warn("IrcMonitor: invalid command (#{e.message})")
