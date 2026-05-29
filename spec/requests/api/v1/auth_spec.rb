@@ -52,6 +52,19 @@ RSpec.describe "Auth API", type: :request do
       expect(body["user"]["username"]).to eq("teststreamer")
       expect(body["user"]["role"]).to eq("viewer")
     end
+
+    # BUG-USER-PAYLOAD-TWITCH-LINKED (2026-05-29) regression — extension SidePanel banner
+    # «Привяжите Twitch для точной аналитики» reads authState.twitchLinked. Pre-fix payload
+    # omitted twitch_linked / twitch_login / google_linked → SidePanel defaulted false →
+    # banner shown to every Twitch-logged-in user on tracked channels. Lock the new shape.
+    it "exposes twitch_linked / twitch_login / google_linked в user payload" do
+      get "/api/v1/auth/twitch/callback", params: { code: "auth_code", state: "test_state_123" }
+
+      body = JSON.parse(response.body)
+      expect(body["user"]["twitch_linked"]).to eq(true)
+      expect(body["user"]["twitch_login"]).to eq("teststreamer")
+      expect(body["user"]["google_linked"]).to eq(false)
+    end
   end
 
   # T-003: Callback creates user + auth_provider
