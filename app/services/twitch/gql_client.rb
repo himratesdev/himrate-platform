@@ -75,6 +75,8 @@ module Twitch
       staff = parse_chatter_list(chatters.dig("staff"))
       viewers = parse_chatter_list(chatters.dig("viewers"))
 
+      sum_present = broadcasters.size + moderators.size + vips.size + staff.size + viewers.size
+
       {
         broadcasters: broadcasters,
         moderators: moderators,
@@ -82,10 +84,11 @@ module Twitch
         staff: staff,
         viewers: viewers,
         count: chatters["count"],
-        # BUG-251.30: total registered users present in chat (sum across all role buckets).
-        # Used by AuthRatio signal #1 (chatters_present_total / latest_ccv) and
-        # ChatterProfileEnrichment downstream (G-2 ViewerCard + G-1 UserFollowing per login).
-        total_present: broadcasters.size + moderators.size + vips.size + staff.size + viewers.size,
+        # BUG-251.30: total registered users present in chat. CR-iter2 N3 — prefer Twitch's
+        # authoritative `chatters.count` (uncapped) over the sum of role arrays (capped at the
+        # 100-entry viewers[] ceiling on big channels). Falls back to sum only when count is
+        # absent. Keeps non-worker callers consistent with the worker's calibration baseline.
+        total_present: chatters["count"]&.to_i || sum_present,
         all_logins: broadcasters + moderators + vips + staff + viewers
       }
     end
