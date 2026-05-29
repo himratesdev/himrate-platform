@@ -73,18 +73,31 @@ RSpec.describe "Api::V1::SyncController", type: :request do
       end
     end
 
-    # TC-3: BUG-251.34 — actual Sidekiq strict_args validation.
-    # This is the round-trip belt-and-braces: even if our type expectations above slipped, this
-    # confirms the args literally survive Sidekiq's JSON-safety check. Without the fix this raises.
-    it "passes Sidekiq strict_args JSON-safety check on enqueue — BUG-251.34" do
+    # TC-3: BUG-251.34 (CR iter1 Should-4) — recursive HWIA absence is the strict_args contract.
+    # The prior assertion (`JSON.parse(args.to_json) == args`) was a false-positive: HWIA implements
+    # `==` against plain Hash, so the round-trip passes even if HWIA leaks through. Walking the
+    # args tree for any HWIA instance is the only reliable check.
+    it "enqueued args contain ZERO ActiveSupport::HashWithIndifferentAccess recursively — BUG-251.34" do
       post "/api/v1/sync/events", params: { events: [ valid_event ] }, headers: headers, as: :json
 
-      job = SyncEventBatchWorker.jobs.first
-      args = job["args"]
+      args = SyncEventBatchWorker.jobs.first["args"]
+      offending_path = find_hwia(args)
+      expect(offending_path).to be_nil, "expected no HashWithIndifferentAccess in args tree, found at: #{offending_path}"
+    end
 
-      # Re-encode through JSON and reparse — no information should be lost; equals identity.
-      reparsed = JSON.parse(args.to_json)
-      expect(reparsed).to eq(args)
+    # TC-3b: belt-and-braces — actual Sidekiq.client_push invocation runs verify_json under
+    # strict_args. If args contain HWIA the client raises ArgumentError. Even with
+    # Sidekiq::Testing.fake!, normalize_item runs strict_args validation before the testing
+    # intercept. This is the literal failure mode in production.
+    it "passes Sidekiq::Client.push strict_args validation without raising — BUG-251.34" do
+      Sidekiq.strict_args!(true) # idempotent; explicit guard against future test-env override
+
+      post "/api/v1/sync/events", params: { events: [ valid_event ] }, headers: headers, as: :json
+      args = SyncEventBatchWorker.jobs.first["args"]
+
+      expect {
+        Sidekiq::Client.push("class" => SyncEventBatchWorker.to_s, "args" => args, "queue" => "default")
+      }.not_to raise_error
     end
 
     # TC-4: batched payload (multiple events) — all normalized.
@@ -141,5 +154,26 @@ RSpec.describe "Api::V1::SyncController", type: :request do
   def auth_headers(user)
     token = Auth::JwtService.encode_access(user.id)
     { "Authorization" => "Bearer #{token}" }
+  end
+
+  # BUG-251.34 (CR iter1 Should-4): recursively walks the args tree looking for any
+  # ActiveSupport::HashWithIndifferentAccess instance. Returns the path to the offender as a
+  # human-readable string (e.g. `[1]["payload"]["channel_id"]`) or nil if none found. Used in
+  # TC-3 because HWIA `==` against plain Hash makes JSON round-trip equality a false-positive.
+  def find_hwia(obj, path = "")
+    return path if obj.is_a?(ActiveSupport::HashWithIndifferentAccess)
+    case obj
+    when Hash
+      obj.each do |k, v|
+        r = find_hwia(v, "#{path}[#{k.inspect}]")
+        return r if r
+      end
+    when Array
+      obj.each_with_index do |v, i|
+        r = find_hwia(v, "#{path}[#{i}]")
+        return r if r
+      end
+    end
+    nil
   end
 end
