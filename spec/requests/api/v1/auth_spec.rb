@@ -230,4 +230,75 @@ RSpec.describe "Auth API", type: :request do
       expect(JSON.parse(response.body)["error"]).to eq("INVALID_REDIRECT_URI")
     end
   end
+
+  # BUG-OAUTH-MV3: Chrome MV3 extension OAuth callback redirect flow.
+  # POST /api/v1/auth/twitch accepts extension_redirect (chromiumapp.org URL); when
+  # provided, twitch_callback 302-redirects к нему с tokens encoded в URL payload.
+  describe "Chrome MV3 extension OAuth flow (extension_redirect)" do
+    let(:ext_redirect) { "https://gnnhhopjghkjdbjafhefmbckakbjkabp.chromiumapp.org/" }
+
+    it "POST /auth/twitch caches extension_redirect when supplied" do
+      post "/api/v1/auth/twitch", params: { extension_redirect: ext_redirect }
+      expect(response).to have_http_status(:ok)
+      state = JSON.parse(response.body)["state"]
+      cached = Rails.cache.read("pkce:#{state}")
+      expect(cached[:extension_redirect]).to eq(ext_redirect)
+    end
+
+    it "POST /auth/twitch rejects malformed extension_redirect (silently — caches nil)" do
+      post "/api/v1/auth/twitch", params: { extension_redirect: "https://evil.example.com/" }
+      expect(response).to have_http_status(:ok)
+      state = JSON.parse(response.body)["state"]
+      cached = Rails.cache.read("pkce:#{state}")
+      expect(cached[:extension_redirect]).to be_nil
+    end
+
+    it "POST /auth/twitch rejects wrong-length chromiumapp.org id (silently)" do
+      bad = "https://short.chromiumapp.org/"
+      post "/api/v1/auth/twitch", params: { extension_redirect: bad }
+      expect(response).to have_http_status(:ok)
+      state = JSON.parse(response.body)["state"]
+      cached = Rails.cache.read("pkce:#{state}")
+      expect(cached[:extension_redirect]).to be_nil
+    end
+
+    it "GET /auth/twitch/callback redirects к extension_redirect с base64 payload когда cached" do
+      Rails.cache.write(
+        "pkce:ext_state",
+        {
+          code_verifier: "test_verifier",
+          redirect_uri: ENV.fetch("TWITCH_REDIRECT_URI"),
+          extension_redirect: ext_redirect
+        },
+        expires_in: 10.minutes
+      )
+
+      stub_request(:post, "https://id.twitch.tv/oauth2/token")
+        .to_return(
+          status: 200,
+          body: { access_token: "twitch_access", refresh_token: "twitch_refresh", expires_in: 14400, scope: %w[user:read:email] }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      stub_request(:get, "https://api.twitch.tv/helix/users")
+        .to_return(
+          status: 200,
+          body: { data: [ { id: "twitch_user_999", login: "ext_test_user", email: "ext@test.com", display_name: "Ext Test" } ] }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      get "/api/v1/auth/twitch/callback", params: { code: "test_code", state: "ext_state" }
+
+      expect(response).to have_http_status(:found) # 302
+      location = response.headers["Location"]
+      expect(location).to start_with(ext_redirect)
+      expect(location).to include("payload=")
+
+      payload_param = Rack::Utils.parse_query(URI(location).query)["payload"]
+      decoded = JSON.parse(Base64.urlsafe_decode64(payload_param))
+      expect(decoded["access_token"]).to be_present
+      expect(decoded["refresh_token"]).to be_present
+      expect(decoded["user"]["username"]).to eq("ext_test_user")
+    end
+  end
 end

@@ -6,16 +6,28 @@ module Api
       skip_after_action :verify_authorized
 
       # FR-001: POST /api/v1/auth/twitch
+      # BUG-OAUTH-MV3 fix: accepts optional `extension_redirect` param (Chrome MV3
+      # chromiumapp.org URL via chrome.identity.getRedirectURL()). When provided, the
+      # callback handler will 302-redirect к этому URL с tokens encoded в query string,
+      # enabling chrome.identity.launchWebAuthFlow к resolve with tokens directly,
+      # eliminating the double-call architectural mismatch (extension can't make a second
+      # call because state cache был consumed на first call).
       def twitch
         redirect_uri = validated_redirect_uri(ENV.fetch("TWITCH_REDIRECT_URI"))
         return unless redirect_uri
+
+        extension_redirect = sanitize_extension_redirect(params[:extension_redirect])
 
         oauth = Auth::TwitchOauth.new
         result = oauth.authorize_url(redirect_uri: redirect_uri)
 
         Rails.cache.write(
           "pkce:#{result[:state]}",
-          { code_verifier: result[:code_verifier], redirect_uri: redirect_uri },
+          {
+            code_verifier: result[:code_verifier],
+            redirect_uri: redirect_uri,
+            extension_redirect: extension_redirect
+          },
           expires_in: 10.minutes
         )
 
@@ -62,17 +74,35 @@ module Api
           PersonalAnalytics::Enrollment::EnrollmentBackfillWorker.perform_async(user.id)
         end
 
+        user_payload = {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          tier: user.tier
+        }
+
+        # BUG-OAUTH-MV3 fix: Chrome extension MV3 flow — if init request supplied
+        # extension_redirect (chromiumapp.org URL), 302-redirect там с tokens encoded
+        # в query string. chrome.identity.launchWebAuthFlow resolves with this URL,
+        # extension parses tokens directly — no double-call architectural mismatch.
+        if cached[:extension_redirect].present?
+          token_payload = {
+            access_token: access_token,
+            refresh_token: refresh_token,
+            expires_in: 3600,
+            user: user_payload
+          }
+          encoded = Base64.urlsafe_encode64(token_payload.to_json, padding: false)
+          redirect_to "#{cached[:extension_redirect]}?payload=#{encoded}", allow_other_host: true
+          return
+        end
+
         render json: {
           access_token: access_token,
           refresh_token: refresh_token,
           expires_in: 3600,
-          user: {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            role: user.role,
-            tier: user.tier
-          }
+          user: user_payload
         }
       rescue ActiveRecord::RecordNotUnique
         Rails.logger.warn("Cross-provider email collision: #{request.path}")
@@ -215,6 +245,21 @@ module Api
           error: "INVALID_REDIRECT_URI",
           message: I18n.t("auth.errors.invalid_redirect_uri")
         }, status: :bad_request
+        nil
+      end
+
+      # BUG-OAUTH-MV3: validate Chrome MV3 extension chromiumapp.org redirect URL.
+      # chrome.identity.getRedirectURL() returns https://<extension-id>.chromiumapp.org/
+      # (alphanumeric extension ID, 32 chars). Reject anything else to prevent open
+      # redirect attacks через the OAuth callback path.
+      EXTENSION_REDIRECT_PATTERN = %r{\Ahttps://[a-z]{32}\.chromiumapp\.org/?\z}
+
+      def sanitize_extension_redirect(value)
+        return nil if value.blank?
+        value = value.to_s.strip
+        return value if EXTENSION_REDIRECT_PATTERN.match?(value)
+
+        Rails.logger.warn("Rejected extension_redirect: #{value.inspect}")
         nil
       end
     end
