@@ -45,22 +45,40 @@ class StaleStreamSweepWorker
 
     enqueued = 0
     skipped = 0
+    missing_channel = 0
+    errors = 0
     candidates.each do |stream_id, channel_id, started_at|
       latest_ccv_ts = CcvSnapshot.where(stream_id: stream_id).maximum(:timestamp)
 
-      # Stale if no CCV at all (started > MIN_STREAM_AGE ago) OR last CCV older than cutoff.
-      stale = latest_ccv_ts.nil? || latest_ccv_ts < cutoff
+      # CR-iter2 SF-1: symmetric STALE_THRESHOLD check on BOTH branches. A stream with no
+      # CCV at all is only considered stale once `started_at` is older than the same 30-min
+      # threshold (was MIN_STREAM_AGE=10min, which closed brand-new streams that simply hadn't
+      # received their first CCV yet). Now the docstring's "30 consecutive missed cycles"
+      # guarantee holds uniformly.
+      stale = if latest_ccv_ts.nil?
+                started_at < cutoff
+              else
+                latest_ccv_ts < cutoff
+              end
       unless stale
         skipped += 1
         next
       end
 
-      enqueued += 1 if enqueue_offline(stream_id, channel_id, started_at, latest_ccv_ts)
+      enqueue_result = enqueue_offline(stream_id, channel_id, started_at, latest_ccv_ts)
+      case enqueue_result
+      when :enqueued      then enqueued += 1
+      when :missing_channel then missing_channel += 1
+      end
     rescue StandardError => e
+      errors += 1
       Rails.logger.error("StaleStreamSweepWorker: failed to enqueue offline for stream_id=#{stream_id} (#{e.class}: #{e.message})")
     end
 
-    Rails.logger.info("StaleStreamSweepWorker: scanned=#{candidates.size} enqueued=#{enqueued} skipped=#{skipped}")
+    Rails.logger.info(
+      "StaleStreamSweepWorker: scanned=#{candidates.size} enqueued=#{enqueued} " \
+      "skipped=#{skipped} missing_channel=#{missing_channel} errors=#{errors}"
+    )
   end
 
   private
@@ -68,11 +86,12 @@ class StaleStreamSweepWorker
   # CR-iter1 MF-1: delegate to StreamOfflineWorker so finalize_stream fills peak_ccv/avg_ccv/
   # duration_ms + triggers BotScoring/PostStream. Payload shape matches MonitoredLiveDetectorWorker
   # (broadcaster_user_id + broadcaster_user_login) — non-EventSub callers are supported.
+  # CR-iter2 Nit-3: returns a category symbol so perform can count missing_channel separately.
   def enqueue_offline(stream_id, channel_id, started_at, last_ccv_ts)
     twitch_id, login = Channel.where(id: channel_id).pick(:twitch_id, :login)
     unless twitch_id && login
       Rails.logger.warn("StaleStreamSweepWorker: missing twitch_id/login for channel_id=#{channel_id} (stream_id=#{stream_id})")
-      return false
+      return :missing_channel
     end
 
     StreamOfflineWorker.perform_async(
@@ -83,6 +102,6 @@ class StaleStreamSweepWorker
       "StaleStreamSweepWorker: enqueued offline-close stream_id=#{stream_id} channel=#{login} " \
       "started_at=#{started_at.iso8601} last_ccv=#{last_ccv_ts&.iso8601 || 'none'}"
     )
-    true
+    :enqueued
   end
 end

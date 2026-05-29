@@ -87,12 +87,38 @@ RSpec.describe StaleStreamSweepWorker do
   end
 
   describe "missing channel guard" do
-    it "skips and warns when channel has no twitch_id" do
-      stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
-      channel.update_columns(twitch_id: nil)
+    # CR-iter2 SF-2: previous spec used `channel.update_columns(twitch_id: nil)` against the
+    # NOT NULL column → ActiveRecord::NotNullViolation, not the intended guard hit. Test the
+    # real-world surface (channel row dropped post-pluck) via a Channel.where stub that returns
+    # [nil, nil] for the pick — same as if Channel.delete had happened between the pluck and
+    # the per-candidate iteration.
+    it "skips and warns when channel pick returns nil tuple" do
+      create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
+      relation = double("Channel relation")
+      allow(Channel).to receive(:where).and_call_original
+      allow(Channel).to receive(:where).with(id: channel.id).and_return(relation)
+      allow(relation).to receive(:pick).with(:twitch_id, :login).and_return([ nil, nil ])
 
       expect(StreamOfflineWorker).not_to receive(:perform_async)
       expect(Rails.logger).to receive(:warn).with(/missing twitch_id\/login/)
+      worker.perform
+    end
+  end
+
+  # CR-iter2 SF-1: stale window symmetry — both "no CCV" and "stale CCV" use STALE_THRESHOLD.
+  describe "symmetric STALE_THRESHOLD on no-CCV branch" do
+    it "does NOT enqueue a no-CCV stream that's between MIN_STREAM_AGE and STALE_THRESHOLD old" do
+      # 15 min old (older than MIN_STREAM_AGE=10min but younger than STALE_THRESHOLD=30min).
+      create(:stream, channel: channel, started_at: 15.minutes.ago, ended_at: nil)
+
+      expect(StreamOfflineWorker).not_to receive(:perform_async)
+      worker.perform
+    end
+
+    it "enqueues a no-CCV stream older than STALE_THRESHOLD" do
+      create(:stream, channel: channel, started_at: 45.minutes.ago, ended_at: nil)
+
+      expect(StreamOfflineWorker).to receive(:perform_async)
       worker.perform
     end
   end
