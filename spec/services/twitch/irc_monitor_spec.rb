@@ -54,6 +54,28 @@ RSpec.describe Twitch::IrcMonitor do
     it "default MAX_CHANNELS is at least 1000 (BUG-251.29)" do
       expect(described_class::MAX_CHANNELS).to be >= 1000
     end
+
+    # CR-iter1 SF-1: these 3 tests were accidentally moved into the
+    # `#ensure_command_listener_alive` describe in the initial commit — restored here.
+
+    # TC-010: PART channel (drops desired state + cancels pending)
+    it "unsubscribes from a channel" do
+      monitor.subscribe("xqc")
+      result = monitor.unsubscribe("xqc")
+
+      expect(result).to eq(:ok)
+      expect(monitor.channels).not_to include("xqc")
+      expect(monitor.pending_joins).not_to include("xqc")
+    end
+
+    it "returns :not_joined for unsubscribe of unknown channel" do
+      expect(monitor.unsubscribe("unknown")).to eq(:not_joined)
+    end
+
+    it "normalizes channel names (lowercase, no #)" do
+      monitor.subscribe("#XQC")
+      expect(monitor.channels).to include("xqc")
+    end
   end
 
   # BUG-251.29: handle_command logs every received command + result.
@@ -63,9 +85,10 @@ RSpec.describe Twitch::IrcMonitor do
       allow(ssl_socket).to receive(:write)
       monitor.instance_variable_set(:@ssl_socket, ssl_socket)
 
-      expect(Rails.logger).to receive(:info).with(/handle_command action=join login=xqc/).ordered
-      # subscribe inner logs ('subscribe(xqc) -> queued') + handle_command outer log
+      # CR-iter1 SF-4: allow (loose default) first, expect (specific assertion) after —
+      # trailing allow would clobber the strict expectation.
       allow(Rails.logger).to receive(:info)
+      expect(Rails.logger).to receive(:info).with(/handle_command action=join login=xqc/)
 
       monitor.send(:handle_command, { action: "join", channel_login: "xqc" }.to_json)
     end
@@ -94,25 +117,6 @@ RSpec.describe Twitch::IrcMonitor do
 
       expect(monitor).not_to receive(:start_command_listener)
       monitor.send(:ensure_command_listener_alive)
-    end
-
-    # TC-010: PART channel (drops desired state + cancels pending)
-    it "unsubscribes from a channel" do
-      monitor.subscribe("xqc")
-      result = monitor.unsubscribe("xqc")
-
-      expect(result).to eq(:ok)
-      expect(monitor.channels).not_to include("xqc")
-      expect(monitor.pending_joins).not_to include("xqc")
-    end
-
-    it "returns :not_joined for unsubscribe of unknown channel" do
-      expect(monitor.unsubscribe("unknown")).to eq(:not_joined)
-    end
-
-    it "normalizes channel names (lowercase, no #)" do
-      monitor.subscribe("#XQC")
-      expect(monitor.channels).to include("xqc")
     end
   end
 

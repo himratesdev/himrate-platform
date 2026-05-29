@@ -8,92 +8,92 @@ RSpec.describe StaleStreamSweepWorker do
 
   before do
     allow(Flipper).to receive(:enabled?).with(:stale_stream_sweep).and_return(true)
-    allow(ENV).to receive(:fetch).and_call_original
-    allow(ENV).to receive(:fetch).with("REDIS_URL", anything).and_return("redis://localhost:6379/1")
   end
 
   describe "with flag OFF" do
     it "no-ops" do
       allow(Flipper).to receive(:enabled?).with(:stale_stream_sweep).and_return(false)
-      stream = create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: nil)
+      create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: nil)
 
+      expect(StreamOfflineWorker).not_to receive(:perform_async)
       worker.perform
-      expect(stream.reload.ended_at).to be_nil
     end
   end
 
   describe "stale criteria" do
-    it "closes a stream older than MIN_STREAM_AGE with no CCV snapshots" do
-      stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
+    it "enqueues StreamOfflineWorker for a stream older than MIN_STREAM_AGE with no CCV" do
+      create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
 
-      worker.perform
-
-      stream.reload
-      expect(stream.ended_at).to be_present
-    end
-
-    it "closes a stream whose latest CCV snapshot is older than STALE_THRESHOLD" do
-      stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
-      create(:ccv_snapshot, stream: stream, timestamp: 45.minutes.ago, ccv_count: 100)
-
-      worker.perform
-
-      stream.reload
-      expect(stream.ended_at).to be_present
-      # ended_at should match the last known CCV timestamp (preserves accuracy of stream window)
-      expect(stream.ended_at).to be_within(1.second).of(45.minutes.ago)
-    end
-
-    it "does NOT close a stream with recent CCV snapshot" do
-      stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
-      create(:ccv_snapshot, stream: stream, timestamp: 5.minutes.ago, ccv_count: 100)
-
-      worker.perform
-
-      expect(stream.reload.ended_at).to be_nil
-    end
-
-    it "does NOT close a freshly-started stream (younger than MIN_STREAM_AGE)" do
-      stream = create(:stream, channel: channel, started_at: 5.minutes.ago, ended_at: nil)
-
-      worker.perform
-
-      expect(stream.reload.ended_at).to be_nil
-    end
-
-    it "ignores already-closed streams" do
-      stream = create(:stream, channel: channel, started_at: 4.hours.ago, ended_at: 1.hour.ago)
-      original_ended = stream.ended_at
-
-      worker.perform
-
-      expect(stream.reload.ended_at.to_i).to eq(original_ended.to_i)
-    end
-  end
-
-  describe "IRC PART publication" do
-    it "publishes a PART command for each closed stream" do
-      stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
-
-      redis_spy = instance_double(Redis)
-      allow(Redis).to receive(:new).and_return(redis_spy)
-      expect(redis_spy).to receive(:publish).with(
-        "irc:commands",
-        { action: "part", channel_login: channel.login }.to_json
+      expect(StreamOfflineWorker).to receive(:perform_async).with(
+        { "broadcaster_user_id" => "ssw1", "broadcaster_user_login" => "ssw_chan" },
+        "stale_sweep"
       )
 
       worker.perform
-      expect(stream.reload.ended_at).to be_present
     end
 
-    it "does NOT raise if Redis publish fails (graceful)" do
-      create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
+    it "enqueues offline for a stream whose latest CCV snapshot is older than STALE_THRESHOLD" do
+      stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
+      create(:ccv_snapshot, stream: stream, timestamp: 45.minutes.ago, ccv_count: 100)
 
-      redis_spy = instance_double(Redis)
-      allow(Redis).to receive(:new).and_return(redis_spy)
-      allow(redis_spy).to receive(:publish).and_raise(Redis::ConnectionError.new("down"))
+      expect(StreamOfflineWorker).to receive(:perform_async).with(
+        hash_including("broadcaster_user_login" => "ssw_chan"),
+        "stale_sweep"
+      )
 
-      expect { worker.perform }.not_to raise_error
+      worker.perform
+    end
+
+    it "does NOT enqueue for a stream with recent CCV snapshot" do
+      stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
+      create(:ccv_snapshot, stream: stream, timestamp: 5.minutes.ago, ccv_count: 100)
+
+      expect(StreamOfflineWorker).not_to receive(:perform_async)
+      worker.perform
+    end
+
+    it "does NOT enqueue a freshly-started stream (younger than MIN_STREAM_AGE)" do
+      create(:stream, channel: channel, started_at: 5.minutes.ago, ended_at: nil)
+
+      expect(StreamOfflineWorker).not_to receive(:perform_async)
+      worker.perform
+    end
+
+    it "ignores already-closed streams" do
+      create(:stream, channel: channel, started_at: 4.hours.ago, ended_at: 1.hour.ago)
+
+      expect(StreamOfflineWorker).not_to receive(:perform_async)
+      worker.perform
+    end
+
+    # CR-iter1 SF-2: oldest stale rows must be picked first so backlog drains predictably.
+    it "processes the oldest stale streams first (ORDER BY started_at ASC)" do
+      channel2 = create(:channel, twitch_id: "ssw2", login: "ssw_chan2")
+      # newer first to verify ORDER BY actually prefers the older one
+      create(:stream, channel: channel2, started_at: 1.hour.ago, ended_at: nil)
+      old_stream = create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: nil)
+
+      enqueued = []
+      allow(StreamOfflineWorker).to receive(:perform_async) do |payload, _source|
+        enqueued << payload["broadcaster_user_login"]
+      end
+
+      stub_const("#{described_class}::BATCH_LIMIT", 10)
+      worker.perform
+
+      expect(enqueued.first).to eq("ssw_chan") # the older row
+      expect(enqueued).to contain_exactly("ssw_chan", "ssw_chan2")
+    end
+  end
+
+  describe "missing channel guard" do
+    it "skips and warns when channel has no twitch_id" do
+      stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
+      channel.update_columns(twitch_id: nil)
+
+      expect(StreamOfflineWorker).not_to receive(:perform_async)
+      expect(Rails.logger).to receive(:warn).with(/missing twitch_id\/login/)
+      worker.perform
     end
   end
 end
