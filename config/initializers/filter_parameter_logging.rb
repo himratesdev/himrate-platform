@@ -8,3 +8,12 @@
 Rails.application.config.filter_parameters += [
   :passw, :email, :secret, :token, :_key, :crypt, :salt, :certificate, :otp, :ssn, :cvv, :cvc
 ]
+
+# BUG-OAUTH-MV3 (CR iter-1 MF-1): redact chromiumapp.org redirect URLs from Rails'
+# `ActionController::Redirecting` "Redirected to <URL>" log line. Without this filter,
+# the redirect target — which carries Base64-encoded JWT payload в query string for
+# Chrome MV3 extension auth flow — would be written к Loki / on-disk logs at INFO
+# level. config.filter_parameters does NOT touch URL strings in redirect log lines —
+# config.filter_redirect is the right primitive. Pattern matches against full URL;
+# pinning host = chromiumapp.org (canonical для chrome.identity.getRedirectURL()).
+Rails.application.config.filter_redirect += [ /chromiumapp\.org/ ]

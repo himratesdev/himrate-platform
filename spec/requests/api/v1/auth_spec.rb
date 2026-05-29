@@ -262,6 +262,24 @@ RSpec.describe "Auth API", type: :request do
       expect(cached[:extension_redirect]).to be_nil
     end
 
+    it 'filter_redirect config matches chromiumapp.org pattern (MF-1 regression guard)' do
+      # MF-1 regression: Rails `ActionController::Redirecting` writes "Redirected to <URL>"
+      # via `instrument_redirect`. Rails applies `config.filter_redirect` patterns at emit
+      # time, replacing matching URLs с "[FILTERED]". Without the chromiumapp.org pattern,
+      # the JWT payload в redirect query string lands в Loki / on-disk logs.
+      #
+      # Asserts the pattern is registered AND would actually match a real
+      # chrome.identity.getRedirectURL()-shape URL. ActionDispatch performs substitution
+      # at log emit time using Regexp#match? on `Location` header. If регулярка stops
+      # matching → log line leaks payload.
+      patterns = Rails.application.config.filter_redirect
+      chromiumapp_pattern = patterns.find { |p| p.is_a?(Regexp) && p.source.include?("chromiumapp") }
+      expect(chromiumapp_pattern).to be_present, "filter_redirect missing chromiumapp.org pattern"
+
+      sample_url = "https://gnnhhopjghkjdbjafhefmbckakbjkabp.chromiumapp.org/?payload=eyJhY2Nlc3NfdG9rZW4iOiJleEpoYkdjaSJ9"
+      expect(chromiumapp_pattern).to match(sample_url)
+    end
+
     it "GET /auth/twitch/callback redirects к extension_redirect с base64 payload когда cached" do
       Rails.cache.write(
         "pkce:ext_state",

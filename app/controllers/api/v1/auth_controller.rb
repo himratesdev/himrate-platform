@@ -5,6 +5,12 @@ module Api
     class AuthController < Api::BaseController
       skip_after_action :verify_authorized
 
+      # BUG-OAUTH-MV3 (CR iter-1 N1+N2): Chrome extension ID = 32 chars from
+      # MPDecimal alphabet [a-p] (not [a-z]) — letters q–z are not producible by Chrome's
+      # extension key→ID derivation. Constant at class top per Rails convention (visibility
+      # modifier `private` had no effect on constants, but placement matters для clarity).
+      EXTENSION_REDIRECT_PATTERN = %r{\Ahttps://[a-p]{32}\.chromiumapp\.org/?\z}
+
       # FR-001: POST /api/v1/auth/twitch
       # BUG-OAUTH-MV3 fix: accepts optional `extension_redirect` param (Chrome MV3
       # chromiumapp.org URL via chrome.identity.getRedirectURL()). When provided, the
@@ -247,12 +253,6 @@ module Api
         }, status: :bad_request
         nil
       end
-
-      # BUG-OAUTH-MV3: validate Chrome MV3 extension chromiumapp.org redirect URL.
-      # chrome.identity.getRedirectURL() returns https://<extension-id>.chromiumapp.org/
-      # (alphanumeric extension ID, 32 chars). Reject anything else to prevent open
-      # redirect attacks через the OAuth callback path.
-      EXTENSION_REDIRECT_PATTERN = %r{\Ahttps://[a-z]{32}\.chromiumapp\.org/?\z}
 
       def sanitize_extension_redirect(value)
         return nil if value.blank?
