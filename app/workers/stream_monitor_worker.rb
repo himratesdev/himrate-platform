@@ -218,15 +218,18 @@ class StreamMonitorWorker
     return unless data
 
     config = channel.channel_protection_config || channel.build_channel_protection_config
+    # BUG-251.32: removed deprecated fields from update set (email/phone verification mode +
+    # minimum_account_age + restrict_first_time_chatters — Twitch dropped accountVerificationOptions
+    # subtype). New consolidated boolean: `verified_account_required` (chatSettings.requireVerifiedAccount).
+    # Legacy columns left at their DB defaults (email_verification_required / phone_verification_required /
+    # restrict_first_time_chatters: null:false default:false; minimum_account_age_minutes: nullable);
+    # they are no longer used by CPS scoring — historical rows readable, new rows untouched.
     config.update!(
       followers_only_duration_min: data[:followers_only_duration_minutes],
       slow_mode_seconds: data[:slow_mode_duration_seconds],
       emote_only_enabled: data[:emote_only_mode] || false,
       subs_only_enabled: data[:subscriber_only_mode] || false,
-      email_verification_required: data[:email_verification_mode] == "REQUIRED",
-      phone_verification_required: data[:phone_verification_mode] == "REQUIRED",
-      minimum_account_age_minutes: data[:minimum_account_age_minutes],
-      restrict_first_time_chatters: data[:restrict_first_timers] || false,
+      verified_account_required: data[:require_verified_account] || false,
       last_checked_at: Time.current
     )
   rescue ActiveRecord::RecordInvalid => e
