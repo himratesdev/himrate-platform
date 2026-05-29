@@ -101,4 +101,30 @@ RSpec.describe PersonalAnalytics::Enrollment::StateStore do
       expect(state.sources["source_1"]["error_class"]).to eq("EnrollmentTimeout")
     end
   end
+
+  # BUG-PVA-REDIS-HMSET (2026-05-29) — redis-rb 5.x dropped `mapped_hmset`. The pre-fix
+  # call raised `ERR unknown command 'mapped_hmset'`, was swallowed by the rescue, and PG
+  # carried the state — functionally non-blocking but generated log noise on every
+  # mutation. Modern API: `hset(key, hash)` accepts a single Hash argument. Pin the call
+  # shape so the legacy method cannot be silently reintroduced.
+  describe ".write_redis_hash (private — call shape)" do
+    it "calls conn.hset with the full payload hash (NOT mapped_hmset)" do
+      # Un-stub так что real impl runs against the conn double.
+      allow(described_class).to receive(:write_redis_hash).and_call_original
+
+      fake_conn = instance_double("Redis")
+      expect(fake_conn).to receive(:hset)
+        .with("pva:backfill:#{user.id}", instance_of(Hash))
+      expect(fake_conn).to receive(:expire)
+        .with("pva:backfill:#{user.id}", PersonalAnalytics::Enrollment::StateStore::REDIS_TTL)
+      expect(fake_conn).not_to receive(:mapped_hmset)
+
+      # Stub Sidekiq.redis_pool to yield our double.
+      pool_double = instance_double("ConnectionPool")
+      allow(pool_double).to receive(:with).and_yield(fake_conn)
+      allow(Sidekiq).to receive(:redis_pool).and_return(pool_double)
+
+      described_class.initiate(user_id: user.id)
+    end
+  end
 end
