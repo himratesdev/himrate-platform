@@ -44,11 +44,27 @@ RSpec.describe StreamOnlineWorker do
     expect(Channel.find_by(twitch_id: "99999").login).to eq("newstreamer")
   end
 
-  # TC-003: Duplicate → skip
-  it "skips if active stream already exists" do
+  # TC-003: Duplicate → skip creating row (but still publish IRC join idempotently — BUG-251.29).
+  it "skips creating new Stream if active stream already exists" do
     create(:stream, channel: channel, ended_at: nil)
 
     expect { worker.perform(event_data) }.not_to change(Stream, :count)
+  end
+
+  # BUG-251.29: previously returned early without publishing IRC join → IRC stayed out of sync
+  # when the existing row was stale (Twitch session ended without offline reaching us) OR
+  # IrcMonitor was restarted mid-session and dropped its in-memory set.
+  it "still publishes IRC join idempotently when active stream exists (BUG-251.29)" do
+    create(:stream, channel: channel, ended_at: nil)
+
+    redis_spy = instance_double(Redis)
+    allow(Redis).to receive(:new).and_return(redis_spy)
+    expect(redis_spy).to receive(:publish).with(
+      "irc:commands",
+      { action: "join", channel_login: channel.login }.to_json
+    )
+
+    worker.perform(event_data)
   end
 
   # TC-004: Stream merge

@@ -44,6 +44,16 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-251.2: unmonitor banned non-pinned channels (gated by :channel_prune, OFF until reviewed)"
       },
+      # BUG-251.29: stale-stream sweep. Closes Stream rows with ended_at NULL but no CCV
+      # activity in the last 30 min. Complements MonitoredLiveDetector (Helix-based) for the
+      # residual stale-row case (EventSub stream.offline missed AND Helix sweep partial fail).
+      # Gated by :stale_stream_sweep HOOK_FLAG (enabled per-env post-deploy review).
+      "stale_stream_sweep" => {
+        "cron" => "*/15 * * * *", # every 15 minutes
+        "class" => "StaleStreamSweepWorker",
+        "queue" => "monitoring",
+        "description" => "BUG-251.29: close streams with ended_at NULL but no CCV in last 30 min (gated by :stale_stream_sweep)"
+      },
       "live_bot_scoring" => {
         # TASK-251.15: */10 → */30 bridge. LiveBotScoring triggers force=true SignalCompute (skips the
         # throttle) for every live stream — at hundreds of concurrent streams that forced inflow was a

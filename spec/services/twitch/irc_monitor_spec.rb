@@ -41,6 +41,61 @@ RSpec.describe Twitch::IrcMonitor do
       expect(monitor.channels.size).to eq(described_class::MAX_CHANNELS)
     end
 
+    # BUG-251.29: capacity_full now logs a warning (was silent → invisible drops in production).
+    it "logs a warning when subscribe hits capacity_full (BUG-251.29)" do
+      described_class::MAX_CHANNELS.times { |i| monitor.subscribe("channel#{i}") }
+
+      expect(Rails.logger).to receive(:warn).with(/capacity_full/)
+      monitor.subscribe("overflow")
+    end
+
+    # BUG-251.29: default capacity raised 300 → 1000 (single anon connection holds the live set
+    # without the silent-drop pattern observed at 300 with 240+ active streams + pending queue).
+    it "default MAX_CHANNELS is at least 1000 (BUG-251.29)" do
+      expect(described_class::MAX_CHANNELS).to be >= 1000
+    end
+  end
+
+  # BUG-251.29: handle_command logs every received command + result.
+  describe "#handle_command logging (BUG-251.29)" do
+    it "logs received JOIN command + result" do
+      ssl_socket = instance_double(OpenSSL::SSL::SSLSocket, closed?: false)
+      allow(ssl_socket).to receive(:write)
+      monitor.instance_variable_set(:@ssl_socket, ssl_socket)
+
+      expect(Rails.logger).to receive(:info).with(/handle_command action=join login=xqc/).ordered
+      # subscribe inner logs ('subscribe(xqc) -> queued') + handle_command outer log
+      allow(Rails.logger).to receive(:info)
+
+      monitor.send(:handle_command, { action: "join", channel_login: "xqc" }.to_json)
+    end
+
+    it "warns on unknown action" do
+      expect(Rails.logger).to receive(:warn).with(/unknown action=spam/)
+      monitor.send(:handle_command, { action: "spam", channel_login: "x" }.to_json)
+    end
+  end
+
+  # BUG-251.29: command_listener_alive restarts a dead thread.
+  describe "#ensure_command_listener_alive (BUG-251.29)" do
+    it "restarts a dead command listener thread" do
+      dead_thread = instance_double(Thread, alive?: false)
+      monitor.instance_variable_set(:@command_listener_thread, dead_thread)
+
+      expect(Rails.logger).to receive(:error).with(/dead/)
+      expect(monitor).to receive(:start_command_listener)
+
+      monitor.send(:ensure_command_listener_alive)
+    end
+
+    it "no-op when listener thread is alive" do
+      live_thread = instance_double(Thread, alive?: true)
+      monitor.instance_variable_set(:@command_listener_thread, live_thread)
+
+      expect(monitor).not_to receive(:start_command_listener)
+      monitor.send(:ensure_command_listener_alive)
+    end
+
     # TC-010: PART channel (drops desired state + cancels pending)
     it "unsubscribes from a channel" do
       monitor.subscribe("xqc")
