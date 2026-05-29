@@ -172,11 +172,19 @@ module PersonalAnalytics
         # each operation gets a freshly checked-out connection, returned cleanly.
         # Used by update_source/initiate/mark_partial_timeout — write-only path для Wave 1.
         # (read_redis_hash removed CR iter-3 N2 после CR iter-2 N2 PG-only simplification.)
+        #
+        # BUG-PVA-REDIS-HMSET (2026-05-29): redis-rb 5.x (and the redis-client driver Sidekiq 7
+        # uses) dropped the legacy `mapped_hmset(key, hash)` helper. Calls raised
+        # `ERR unknown command 'mapped_hmset'` and were swallowed by the rescue below, leaving
+        # the PG-only fallback to carry state. Functionally non-blocking но генерил log noise
+        # on every state mutation (5x per enrollment) — visible в staging Sidekiq logs after
+        # TASK-113 Δ-1 Wave 1 deploy. Modern API: `hset(key, hash)` accepts a Hash of
+        # field→value pairs in a single call.
         def write_redis_hash(user_id, sources)
           return unless defined?(Sidekiq)
           payload = sources.transform_values(&:to_json)
           Sidekiq.redis_pool.with do |conn|
-            conn.mapped_hmset(redis_key(user_id), payload)
+            conn.hset(redis_key(user_id), payload)
             conn.expire(redis_key(user_id), REDIS_TTL)
           end
         rescue StandardError => e
