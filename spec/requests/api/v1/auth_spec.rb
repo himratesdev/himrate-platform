@@ -52,6 +52,50 @@ RSpec.describe "Auth API", type: :request do
       expect(body["user"]["username"]).to eq("teststreamer")
       expect(body["user"]["role"]).to eq("viewer")
     end
+
+    # BUG-USER-PAYLOAD-TWITCH-LINKED (2026-05-29) regression — extension SidePanel banner
+    # «Привяжите Twitch для точной аналитики» reads authState.twitchLinked. Pre-fix payload
+    # omitted twitch_linked / twitch_login / google_linked → SidePanel defaulted false →
+    # banner shown to every Twitch-logged-in user on tracked channels. Lock the new shape.
+    it "exposes twitch_linked / twitch_login / google_linked в user payload" do
+      get "/api/v1/auth/twitch/callback", params: { code: "auth_code", state: "test_state_123" }
+
+      body = JSON.parse(response.body)
+      expect(body["user"]["twitch_linked"]).to eq(true)
+      expect(body["user"]["twitch_login"]).to eq("teststreamer")
+      expect(body["user"]["google_linked"]).to eq(false)
+    end
+  end
+
+  # CR iter-1 suggestion: mirror Google flow regression to lock contract symmetry.
+  # build_user_payload is applied symmetrically в auth_controller.rb; this test pins it.
+  describe "GET /api/v1/auth/google/callback (happy path)" do
+    before do
+      Rails.cache.write("google_state:gstate", { redirect_uri: ENV.fetch("GOOGLE_REDIRECT_URI") })
+
+      stub_request(:post, "https://oauth2.googleapis.com/token")
+        .to_return(
+          status: 200,
+          body: { access_token: "google_at", refresh_token: "google_rt", expires_in: 3600 }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      stub_request(:get, "https://www.googleapis.com/oauth2/v3/userinfo")
+        .to_return(
+          status: 200,
+          body: { sub: "google-12345", email: "gtest@example.com", name: "GTest Name" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+    end
+
+    it "exposes google_linked=true and twitch_linked=false на Google-only signup" do
+      get "/api/v1/auth/google/callback", params: { code: "gcode", state: "gstate" }
+
+      body = JSON.parse(response.body)
+      expect(body["user"]["twitch_linked"]).to eq(false)
+      expect(body["user"]["twitch_login"]).to be_nil
+      expect(body["user"]["google_linked"]).to eq(true)
+    end
   end
 
   # T-003: Callback creates user + auth_provider

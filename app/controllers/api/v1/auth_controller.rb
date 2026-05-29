@@ -80,13 +80,7 @@ module Api
           PersonalAnalytics::Enrollment::EnrollmentBackfillWorker.perform_async(user.id)
         end
 
-        user_payload = {
-          id: user.id,
-          username: user.username,
-          email: user.email,
-          role: user.role,
-          tier: user.tier
-        }
+        user_payload = build_user_payload(user)
 
         # BUG-OAUTH-MV3 fix: Chrome extension MV3 flow — if init request supplied
         # extension_redirect (chromiumapp.org URL), 302-redirect там с tokens encoded
@@ -175,13 +169,7 @@ module Api
           access_token: access_token,
           refresh_token: refresh_token,
           expires_in: 3600,
-          user: {
-            id: user.id,
-            username: user.username,
-            email: user.email,
-            role: user.role,
-            tier: user.tier
-          }
+          user: build_user_payload(user)
         }
       rescue ActiveRecord::RecordNotUnique
         Rails.logger.warn("Cross-provider email collision: #{request.path}")
@@ -261,6 +249,33 @@ module Api
 
         Rails.logger.warn("Rejected extension_redirect: #{value.inspect}")
         nil
+      end
+
+      # BUG-USER-PAYLOAD-TWITCH-LINKED (2026-05-29): the extension's SidePanel expects
+      # `twitch_linked` flag on the auth state to decide whether to render the
+      # «Привяжите Twitch для точной аналитики» banner. Pre-fix payload omitted this
+      # field, so the banner defaulted to `twitchLinked: false` and was shown
+      # unconditionally to every logged-in user on a tracked channel — even those who
+      # logged in *through Twitch*. PO reproduced on himych (twitch_id 241581609,
+      # OAuth via Twitch, banner still showing).
+      # Single canonical payload shape for Twitch + Google flows. `twitch_linked` /
+      # `google_linked` derived from auth_providers. `twitch_login` = User#username when
+      # Twitch is linked (set from twitch_user[:login] в TwitchOauth#find_or_create_user);
+      # nil for Google-only users (username derived from email).
+      def build_user_payload(user)
+        providers = user.auth_providers.to_a # eager-load via association cache; ≤2 rows expected
+        twitch_provider = providers.find { |ap| ap.provider == "twitch" }
+        google_provider = providers.find { |ap| ap.provider == "google" }
+        {
+          id: user.id,
+          username: user.username,
+          email: user.email,
+          role: user.role,
+          tier: user.tier,
+          twitch_linked: twitch_provider.present?,
+          twitch_login: twitch_provider.present? ? user.username : nil,
+          google_linked: google_provider.present?
+        }
       end
     end
   end
