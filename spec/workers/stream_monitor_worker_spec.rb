@@ -195,17 +195,20 @@ RSpec.describe StreamMonitorWorker do
     expect(stream.ccv_snapshots.order(timestamp: :desc).first.ccv_count).to eq(300)
   end
 
-  # TC-012: Tier 2 ChatRoomState
+  # TC-012 + BUG-251.32: Tier 2 ChatRoomState — now writes the consolidated
+  # `verified_account_required` field (chatSettings.requireVerifiedAccount); the legacy
+  # email/phone/minimum_account_age/restrict_first_time fields are no longer in the GQL
+  # response (Twitch removed accountVerificationOptions subtype) and are left untouched on
+  # ChannelProtectionConfig.
   it "updates ChatRoomState on Tier 2 cycle" do
     allow(gql).to receive(:chat_room_state).and_return({
       followers_only_duration_minutes: 10,
       slow_mode_duration_seconds: 30,
       emote_only_mode: false,
       subscriber_only_mode: false,
-      email_verification_mode: "REQUIRED",
-      phone_verification_mode: "REQUIRED",
-      minimum_account_age_minutes: 1440,
-      restrict_first_timers: true
+      block_links: true,
+      chat_delay_ms: 0,
+      require_verified_account: true
     })
 
     Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
@@ -215,7 +218,7 @@ RSpec.describe StreamMonitorWorker do
     expect(config).to be_present
     expect(config.followers_only_duration_min).to eq(10)
     expect(config.slow_mode_seconds).to eq(30)
-    expect(config.email_verification_required).to be true
+    expect(config.verified_account_required).to be true
   end
 
   # TC-013: Tier 2 Predictions

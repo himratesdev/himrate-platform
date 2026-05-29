@@ -159,15 +159,20 @@ module Twitch
       }
     end
 
-    # FR-007: Chat room state (for Channel Protection Score)
+    # FR-007 + BUG-251.32: Chat room state (for Channel Protection Score).
+    # Twitch removed `Channel.accountVerificationOptions` type entirely (verified live 2026-05-29
+    # via introspection: "Cannot query field 'accountVerificationOptions' on type 'Channel'").
+    # The previous query failed for every channel since the schema migration happened, leaving
+    # ChannelProtectionConfig NULL → CPS signal returned `reason: no_config` perma-skip.
+    # Updated query drops the dead subtype; `requireVerifiedAccount` on chatSettings consolidates
+    # email/phone verification booleans into a single field. ChannelProtectionConfig retains
+    # legacy columns as deprecated-but-readable (NULL for new rows; historical rows untouched).
     def chat_room_state(channel_login:)
       return nil if channel_login.blank?
 
       result = execute(QUERIES[:chat_room_state], { login: channel_login })
       settings = result&.dig("data", "user", "chatSettings")
       return nil unless settings
-
-      verification = result&.dig("data", "user", "channel", "accountVerificationOptions") || {}
 
       {
         followers_only_duration_minutes: settings["followersOnlyDurationMinutes"],
@@ -176,11 +181,7 @@ module Twitch
         emote_only_mode: settings["isEmoteOnlyModeEnabled"],
         block_links: settings["blockLinks"],
         chat_delay_ms: settings["chatDelayMs"],
-        require_verified_account: settings["requireVerifiedAccount"],
-        email_verification_mode: verification["emailVerificationMode"],
-        phone_verification_mode: verification["phoneVerificationMode"],
-        minimum_account_age_minutes: verification["minimumAccountAgeInMinutes"],
-        restrict_first_timers: verification["shouldRestrictFirstTimeChatters"]
+        require_verified_account: settings["requireVerifiedAccount"]
       }
     end
 
@@ -614,6 +615,9 @@ module Twitch
         }
       GQL
 
+      # BUG-251.32: dropped dead `channel.accountVerificationOptions` block — Twitch removed
+      # the subtype entirely. requireVerifiedAccount on chatSettings now consolidates
+      # email/phone/min-age verification into one boolean.
       chat_room_state: <<~GQL.squish,
         query ChatRoomState($login: String!) {
           user(login: $login) {
@@ -625,14 +629,6 @@ module Twitch
               blockLinks
               chatDelayMs
               requireVerifiedAccount
-            }
-            channel {
-              accountVerificationOptions {
-                emailVerificationMode
-                phoneVerificationMode
-                minimumAccountAgeInMinutes
-                shouldRestrictFirstTimeChatters
-              }
             }
           }
         }

@@ -30,67 +30,66 @@ module TrustIndex
 
       private
 
+      # BUG-251.32: recalibrated CPS components matching the post-schema-shift fields Twitch
+      # actually exposes today (chatSettings.requireVerifiedAccount replaces the removed
+      # email/phone/min-age/restrict-first-timer subtype). Legacy boolean columns
+      # (email_verification_required / phone_verification_required / minimum_account_age_minutes /
+      # restrict_first_time_chatters) still readable on historical rows for back-compat but no
+      # longer drive new CPS scoring — they always read as defaults (false / 0) for new rows.
+      #
+      # Weights re-anchored to total 100:
+      #   follower-only mode:        0/15/30
+      #   subscriber-only mode:      20
+      #   slow mode:                 0/5/10/15
+      #   emote-only mode:           5
+      #   verified_account_required: 30
+      #   ───────────────────────────
+      #   max                       100
       def compute_cps(config)
         score = 0
 
-        # Phone verification (25 pts)
-        score += 25 if config.phone_verification_required
+        # Verified-account required (chatSettings.requireVerifiedAccount, 30 pts)
+        score += 30 if config.verified_account_required
 
-        # Email verification (20 pts)
-        score += 20 if config.email_verification_required
-
-        # Follower-only mode (0/5/15 pts)
+        # Follower-only mode (0/15/30 pts) — duration_min nil = no FO; 0 = FO any duration;
+        # any positive = stricter FO window
         fol = config.followers_only_duration_min
         score += if fol.nil? || fol < 0
                    0
         elsif fol == 0
-                   5
-        else
                    15
+        else
+                   30
         end
 
-        # Minimum account age (0/5/10/15 pts)
-        age = config.minimum_account_age_minutes || 0
-        score += if age <= 0
+        # Subscriber-only mode (20 pts)
+        score += 20 if config.subs_only_enabled
+
+        # Slow mode (0/5/10/15 pts)
+        slow = config.slow_mode_seconds || 0
+        score += if slow <= 0
                    0
-        elsif age < 60
+        elsif slow <= 10
                    5
-        elsif age < 1440
+        elsif slow <= 30
                    10
         else
                    15
         end
 
-        # Subscriber-only mode (10 pts)
-        score += 10 if config.subs_only_enabled
-
-        # Slow mode (0/3/5/8 pts)
-        slow = config.slow_mode_seconds || 0
-        score += if slow <= 0
-                   0
-        elsif slow <= 10
-                   3
-        elsif slow <= 30
-                   5
-        else
-                   8
-        end
-
-        # Restrict first-time chatters (7 pts)
-        score += 7 if config.restrict_first_time_chatters
+        # Emote-only mode (5 pts)
+        score += 5 if config.emote_only_enabled
 
         [ score, 100 ].min
       end
 
       def cps_breakdown(config)
         {
-          phone_verification: config.phone_verification_required,
-          email_verification: config.email_verification_required,
+          verified_account_required: config.verified_account_required,
           followers_only: config.followers_only_duration_min,
-          min_account_age: config.minimum_account_age_minutes,
           subs_only: config.subs_only_enabled,
           slow_mode: config.slow_mode_seconds,
-          restrict_first_timers: config.restrict_first_time_chatters
+          emote_only: config.emote_only_enabled
         }
       end
     end
