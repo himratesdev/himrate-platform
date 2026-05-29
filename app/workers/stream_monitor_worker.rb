@@ -12,6 +12,10 @@ class StreamMonitorWorker
   CYCLE_INTERVAL = 60 # seconds — used by sidekiq-cron, documented here for reference
   TIER2_EVERY = 5     # every 5th cycle = ~5 minutes
   GQL_BATCH_SIZE = 35
+  # BUG-251.30 CR-iter1 Should-1: poll_tier1 issues 2 ops per login (StreamMetadata +
+  # CommunityTab). Split slice so the combined batch stays ≤ MAX_BATCH_SIZE (35) — 17 logins
+  # × 2 ops = 34 ops per batch. One round-trip per slice instead of two.
+  TIER1_SLICE_SIZE = GQL_BATCH_SIZE / 2
   CHATTERS_WINDOW = 60.minutes # active-chatter window (matches ContextBuilder unique_chatters_60min)
   REDIS_CYCLE_KEY = "monitor:cycle_count"
 
@@ -39,25 +43,21 @@ class StreamMonitorWorker
   # === Tier 1: CCV + Chatters ===
 
   def poll_tier1(streams)
-    streams.each_slice(GQL_BATCH_SIZE) do |batch|
+    streams.each_slice(TIER1_SLICE_SIZE) do |batch|
       logins = batch.map { |s| s.channel.login }
 
-      # Batch GQL for CCV
-      ccv_data = fetch_ccv_batch(logins)
+      # BUG-251.30 CR-iter1 Should-1: ONE mixed-operation GQL POST per slice (was two —
+      # one for CCV + one for CommunityTab). Twitch accepts heterogeneous query batches.
+      # Each login contributes [StreamMetadata, CommunityTab] pair (interleaved) so we can
+      # demux by position. fetch_ccv_helix_fallback only triggered when the COMBINED batch
+      # raises (transport / rescue path); per-item nils in the response array are normal
+      # partial failures and demuxed to {} entries.
+      ccv_data, chatters_present_data = fetch_ccv_and_chatters_batch(logins)
 
       # TASK-251.6: chatter activity from captured IRC chat (chat_messages), keyed by
-      # stream_id. GQL chatters_count was integrity-protected under web Client-ID — empty
-      # server-side. BUG-251.30 swapped to Android Client-ID which bypasses Kasada; we now
-      # ALSO fetch community_tab presence (lurkers + chat-connected lurkers + active typers
-      # all visible), used by AuthRatio signal #1. Active-typer chat_data from IRC remains
-      # the chatter_ccv_ratio signal #2 input (distinct concept: typers vs presence).
+      # stream_id. Active-typer chat_data from IRC is the chatter_ccv_ratio signal #2 input;
+      # community_tab presence above feeds AuthRatio signal #1 (distinct: typers vs presence).
       chat_data = fetch_chat_activity(batch)
-
-      # BUG-251.30: registered users present in chat (broadcasters + moderators + vips + staff +
-      # viewers). Source = GQL CommunityTab (single integrity-bypassed call per login). Used by
-      # AuthRatio signal #1 to compute chatters_present_total / latest_ccv. Falls back to {}
-      # on rate-limit / 5xx — ChattersSnapshot still written with active-typer columns only.
-      chatters_present_data = fetch_chatters_present_batch(logins)
 
       batch.each do |stream|
         ccv = ccv_data[stream.channel.login]
@@ -73,19 +73,33 @@ class StreamMonitorWorker
     end
   end
 
-  # BUG-251.30: batched community_tab fetch. Each operation = single channel CommunityTab
-  # query with login variable. Twitch caps viewers[] at 100 per response (G-3 follow-up
-  # BUG-251.31 — pagination iteration). Returns { login => presence_hash } only for streams
-  # where chatters object was non-nil.
-  def fetch_chatters_present_batch(logins)
-    operations = logins.map do |login|
-      { query: Twitch::GqlClient::QUERIES[:community_tab], variables: { login: login } }
+  # BUG-251.30 CR-iter1 Should-1: combined StreamMetadata + CommunityTab batch.
+  # Returns [ccv_data, chatters_present_data] keyed by channel login.
+  #
+  # Note on `total_present`: prefers Twitch's authoritative `chatters["count"]` (which
+  # reflects the true total — Twitch returns count even when the `viewers` array is capped
+  # at 100). Falls back to sum-of-role-arrays only when `count` is absent (older response
+  # shapes). This keeps calibration stable when BUG-251.31 ships viewer pagination.
+  def fetch_ccv_and_chatters_batch(logins)
+    operations = logins.flat_map do |login|
+      [
+        { query: Twitch::GqlClient::QUERIES[:stream_metadata], variables: { login: login } },
+        { query: Twitch::GqlClient::QUERIES[:community_tab], variables: { login: login } }
+      ]
     end
 
-    results = gql.batch(operations)
-    result = {}
+    results = gql.batch(operations) || []
+    ccv = {}
+    chatters_present = {}
+
     logins.each_with_index do |login, i|
-      chatters = results[i]&.dig("data", "channel", "chatters")
+      stream_metadata = results[i * 2]
+      community_tab = results[(i * 2) + 1]
+
+      viewers_count = stream_metadata&.dig("data", "user", "stream", "viewersCount")
+      ccv[login] = viewers_count.to_i if viewers_count
+
+      chatters = community_tab&.dig("data", "channel", "chatters")
       next unless chatters
 
       bcasters = parse_chatters_array(chatters["broadcasters"])
@@ -93,9 +107,10 @@ class StreamMonitorWorker
       vips = parse_chatters_array(chatters["vips"])
       staff = parse_chatters_array(chatters["staff"])
       viewers = parse_chatters_array(chatters["viewers"])
+      sum_present = bcasters.size + mods.size + vips.size + staff.size + viewers.size
 
-      result[login] = {
-        total_present: bcasters.size + mods.size + vips.size + staff.size + viewers.size,
+      chatters_present[login] = {
+        total_present: chatters["count"]&.to_i || sum_present,
         broadcasters_count: bcasters.size,
         moderators_count: mods.size,
         vips_count: vips.size,
@@ -104,33 +119,21 @@ class StreamMonitorWorker
         logins: bcasters + mods + vips + staff + viewers
       }
     end
-    result
+
+    [ ccv, chatters_present ]
   rescue Twitch::GqlClient::Error => e
-    Rails.logger.warn("StreamMonitorWorker: community_tab batch failed (#{e.message})")
-    {}
+    # execute_batch returns nil-padded results on per-item failures (never raises) — this
+    # rescue covers true transport failure of the whole call. Preserve CCV via Helix fallback;
+    # community_tab has no Helix equivalent → empty presence map (AuthRatio gracefully reports
+    # :no_chatters_present_data via ContextBuilder).
+    Rails.logger.warn("StreamMonitorWorker: combined GQL batch failed (#{e.message}), CCV → Helix fallback")
+    [ fetch_ccv_helix_fallback(logins), {} ]
   end
 
   def parse_chatters_array(list)
     return [] unless list.is_a?(Array)
 
     list.map { |u| u["login"] }.compact
-  end
-
-  def fetch_ccv_batch(logins)
-    operations = logins.map do |login|
-      { query: Twitch::GqlClient::QUERIES[:stream_metadata], variables: { login: login } }
-    end
-
-    results = gql.batch(operations)
-    result = {}
-    logins.each_with_index do |login, i|
-      viewers = results[i]&.dig("data", "user", "stream", "viewersCount")
-      result[login] = viewers.to_i if viewers
-    end
-    result
-  rescue Twitch::GqlClient::Error => e
-    Rails.logger.warn("StreamMonitorWorker: GQL batch failed (#{e.message}), trying Helix fallback")
-    fetch_ccv_helix_fallback(logins)
   end
 
   def fetch_ccv_helix_fallback(logins)

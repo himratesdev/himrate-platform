@@ -16,14 +16,15 @@ RSpec.describe StreamMonitorWorker do
     allow(Twitch::GqlClient).to receive(:new).and_return(gql)
     allow(Twitch::HelixClient).to receive(:new).and_return(helix)
 
-    # Default batch stubs
-    allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_return(
-      [ { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } } ]
-    )
-    # BUG-251.30: CommunityTab batch — default empty so existing CCV/chat tests are
-    # unaffected. Dedicated specs below stub specific responses.
-    allow(gql).to receive(:batch).with(array_including(hash_including(query: /CommunityTab/))).and_return(
-      [ { "data" => { "channel" => { "chatters" => nil } } } ]
+    # BUG-251.30 CR-iter1 Should-1: poll_tier1 now issues ONE mixed-operation gql.batch call
+    # per slice (StreamMetadata + CommunityTab interleaved, two ops per login). Default stub
+    # returns interleaved [stream_metadata, community_tab] for a single-login slice; specific
+    # tests below override with custom interleaved responses.
+    allow(gql).to receive(:batch).and_return(
+      [
+        { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } },     # stream_metadata
+        { "data" => { "channel" => { "chatters" => nil } } }                       # community_tab default
+      ]
     )
     # TASK-251.6: chatters now come from chat_messages, not GQL ChattersCount.
 
@@ -69,9 +70,12 @@ RSpec.describe StreamMonitorWorker do
   # Pre-migration this raised ActiveRecord::RangeError on numeric(5,4) overflow when ratio ≥ 10.
   # Post-migration the wider numeric(8,4) column accepts values up to 9999.9999 → row saves cleanly.
   it "stores auth_ratio when bursty chat pushes the ratio above 1.0 (numeric(8,4))" do
-    # Low instantaneous CCV
-    allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_return(
-      [ { "data" => { "user" => { "stream" => { "viewersCount" => 5 } } } } ]
+    # Low instantaneous CCV — interleaved single-login response: [metadata, community_tab].
+    allow(gql).to receive(:batch).and_return(
+      [
+        { "data" => { "user" => { "stream" => { "viewersCount" => 5 } } } },
+        { "data" => { "channel" => { "chatters" => nil } } }
+      ]
     )
     # Many unique chatters over the 60-min window → unique=50, ratio = 50/5 = 10.0
     50.times do |i|
@@ -85,23 +89,29 @@ RSpec.describe StreamMonitorWorker do
     expect(snapshot.auth_ratio.to_f).to be_within(0.0001).of(10.0)
   end
 
-  # BUG-251.30: populate chatters_present_total + viewer_logins from CommunityTab batch.
-  it "persists CommunityTab presence (chatters_present_total + role breakdown + viewer_logins)" do
-    allow(gql).to receive(:batch).with(array_including(hash_including(query: /CommunityTab/))).and_return(
-      [ { "data" => { "channel" => { "chatters" => {
-        "broadcasters" => [ { "login" => "teststreamer" } ],
-        "moderators" => [ { "login" => "mod1" }, { "login" => "mod2" } ],
-        "vips" => [ { "login" => "vip1" } ],
-        "staff" => [],
-        "viewers" => [ { "login" => "v1" }, { "login" => "v2" }, { "login" => "v3" } ],
-        "count" => 7
-      } } } } ]
+  # BUG-251.30: populate chatters_present_total (from chatters.count, BUG-251.30 CR-iter1 Should-2)
+  # + role-breakdown counts + viewer_logins from the combined community_tab leg of the batch.
+  it "persists CommunityTab presence (chatters_present_total from chatters.count + role breakdown + viewer_logins)" do
+    allow(gql).to receive(:batch).and_return(
+      [
+        { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } },
+        { "data" => { "channel" => { "chatters" => {
+          "broadcasters" => [ { "login" => "teststreamer" } ],
+          "moderators" => [ { "login" => "mod1" }, { "login" => "mod2" } ],
+          "vips" => [ { "login" => "vip1" } ],
+          "staff" => [],
+          "viewers" => [ { "login" => "v1" }, { "login" => "v2" }, { "login" => "v3" } ],
+          "count" => 250  # Twitch's authoritative total — larger than sum of capped arrays
+        } } } }
+      ]
     )
 
     expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
 
     snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
-    expect(snapshot.chatters_present_total).to eq(7) # 1+2+1+0+3
+    # BUG-251.30 CR-iter1 Should-2: prefer Twitch's chatters.count over sum-of-roles (which is
+    # capped when viewers[] hits the 100-entry limit on big channels — would be 7 here vs 250 true).
+    expect(snapshot.chatters_present_total).to eq(250)
     expect(snapshot.broadcasters_count).to eq(1)
     expect(snapshot.moderators_count).to eq(2)
     expect(snapshot.vips_count).to eq(1)
@@ -110,15 +120,39 @@ RSpec.describe StreamMonitorWorker do
     expect(snapshot.viewer_logins).to eq(%w[teststreamer mod1 mod2 vip1 v1 v2 v3])
   end
 
+  # BUG-251.30 CR-iter1 Should-2: when Twitch omits chatters.count (older response shape),
+  # fall back to sum of role arrays — calibration tolerates pre-Should-2 baseline.
+  it "falls back to sum-of-roles for chatters_present_total when chatters.count is absent" do
+    allow(gql).to receive(:batch).and_return(
+      [
+        { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } },
+        { "data" => { "channel" => { "chatters" => {
+          "broadcasters" => [ { "login" => "teststreamer" } ],
+          "moderators" => [ { "login" => "mod1" } ],
+          "vips" => [], "staff" => [],
+          "viewers" => [ { "login" => "v1" }, { "login" => "v2" } ]
+          # no "count" key
+        } } } }
+      ]
+    )
+
+    worker.perform
+    snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
+    expect(snapshot.chatters_present_total).to eq(4) # 1 + 1 + 0 + 0 + 2
+  end
+
   # BUG-251.30: presence-only path (no IRC chat captured) still writes ChattersSnapshot.
   it "saves snapshot when only presence (no IRC chat) — null-safe active-typer columns" do
-    allow(gql).to receive(:batch).with(array_including(hash_including(query: /CommunityTab/))).and_return(
-      [ { "data" => { "channel" => { "chatters" => {
-        "broadcasters" => [ { "login" => "teststreamer" } ],
-        "moderators" => [], "vips" => [], "staff" => [],
-        "viewers" => [ { "login" => "lurker1" } ],
-        "count" => 2
-      } } } } ]
+    allow(gql).to receive(:batch).and_return(
+      [
+        { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } },
+        { "data" => { "channel" => { "chatters" => {
+          "broadcasters" => [ { "login" => "teststreamer" } ],
+          "moderators" => [], "vips" => [], "staff" => [],
+          "viewers" => [ { "login" => "lurker1" } ],
+          "count" => 2
+        } } } }
+      ]
     )
 
     expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
@@ -130,10 +164,16 @@ RSpec.describe StreamMonitorWorker do
     expect(snapshot.auth_ratio).to be_nil # no IRC typers
   end
 
-  # BUG-251.30: CommunityTab batch failure does NOT break CCV/chat persistence — graceful.
-  it "tolerates community_tab batch error — CCV/chat persistence unaffected" do
-    allow(gql).to receive(:batch).with(array_including(hash_including(query: /CommunityTab/))).and_raise(
-      Twitch::GqlClient::Error, "community_tab batch down"
+  # BUG-251.30: CommunityTab data nil (per-item partial fail) does NOT break CCV persistence.
+  # After CR-iter1 Should-1 refactor, there's no separate community_tab batch call — instead
+  # the COMBINED batch returns metadata-ok + chatters-nil, and the worker writes the snapshot
+  # with active-typer columns only and a NULL chatters_present_total.
+  it "tolerates per-item community_tab failure (chatters nil) — CCV/chat persistence unaffected" do
+    allow(gql).to receive(:batch).and_return(
+      [
+        { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } },
+        { "data" => { "channel" => { "chatters" => nil } } }
+      ]
     )
     create(:chat_message, stream: stream, channel_login: "teststreamer", username: "u1", timestamp: Time.current)
 
@@ -145,9 +185,10 @@ RSpec.describe StreamMonitorWorker do
     expect(snapshot.unique_chatters_count).to eq(1)
   end
 
-  # TC-011: Helix fallback
-  it "falls back to Helix when GQL fails" do
-    allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_raise(Twitch::GqlClient::Error, "GQL down")
+  # TC-011: Helix fallback. BUG-251.30 CR-iter1: combined batch raise → CCV resolved via Helix,
+  # chatters_present empty (no Helix equivalent for CommunityTab presence).
+  it "falls back to Helix when combined GQL batch fails" do
+    allow(gql).to receive(:batch).and_raise(Twitch::GqlClient::Error, "GQL down")
     allow(helix).to receive(:get_streams).and_return([ { "user_login" => "teststreamer", "viewer_count" => 300 } ])
 
     expect { worker.perform }.to change { stream.ccv_snapshots.count }.by(1)
