@@ -18,7 +18,12 @@ module Api
         events = Array(params[:events]).first(MAX_BATCH_SIZE)
         return render(json: { error: "invalid_events", message: "events array required" }, status: :bad_request) if events.empty?
 
-        SyncEventBatchWorker.perform_async(current_user.id, events.map(&:to_unsafe_h))
+        # BUG-251.34: Sidekiq 7 strict_args rejects ActiveSupport::HashWithIndifferentAccess (what
+        # ActionController::Parameters#to_unsafe_h returns). deep_stringify_keys yields a plain
+        # Hash<String,_> that satisfies strict_args and round-trips identically through JSON.
+        # The worker re-wraps via #with_indifferent_access (line 18) so accessor semantics are preserved.
+        normalized_events = events.map { |e| e.to_unsafe_h.deep_stringify_keys }
+        SyncEventBatchWorker.perform_async(current_user.id, normalized_events)
 
         # S-8 (CR): honest async contract — worker применяет insert_all on_conflict_do_nothing,
         # реальный accepted ≤ submitted (duplicates skipped FR-023). НЕ обещаем accepted/errors
