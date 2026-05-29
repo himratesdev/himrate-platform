@@ -221,7 +221,9 @@ class StreamMonitorWorker
     # BUG-251.32: removed deprecated fields from update set (email/phone verification mode +
     # minimum_account_age + restrict_first_time_chatters — Twitch dropped accountVerificationOptions
     # subtype). New consolidated boolean: `verified_account_required` (chatSettings.requireVerifiedAccount).
-    # Legacy columns left as-is for historical rows; new rows write NULL.
+    # Legacy columns left at their DB defaults (email_verification_required / phone_verification_required /
+    # restrict_first_time_chatters: null:false default:false; minimum_account_age_minutes: nullable);
+    # they are no longer used by CPS scoring — historical rows readable, new rows untouched.
     config.update!(
       followers_only_duration_min: data[:followers_only_duration_minutes],
       slow_mode_seconds: data[:slow_mode_duration_seconds],

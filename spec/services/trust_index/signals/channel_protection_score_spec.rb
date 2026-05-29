@@ -73,6 +73,13 @@ RSpec.describe TrustIndex::Signals::ChannelProtectionScore do
       expect(result.metadata[:cps]).to eq(30)
     end
 
+    # CR-iter1 Suggestion-5: Twitch returns -1 when follower-only mode is OFF (sentinel value,
+    # not nil). Ensure the < 0 guard short-circuits to 0 pts.
+    it "followers_only_duration_min = -1 (Twitch OFF sentinel) contributes 0 pts" do
+      result = signal.calculate(channel_protection_config: make_config(followers_only_duration_min: -1))
+      expect(result.metadata[:cps]).to eq(0)
+    end
+
     it "subs_only_enabled contributes 20 pts" do
       result = signal.calculate(channel_protection_config: make_config(subs_only_enabled: true))
       expect(result.metadata[:cps]).to eq(20)
