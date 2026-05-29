@@ -57,9 +57,9 @@ class StaleStreamSweepWorker
       # guarantee holds uniformly.
       stale = if latest_ccv_ts.nil?
                 started_at < cutoff
-              else
+      else
                 latest_ccv_ts < cutoff
-              end
+      end
       unless stale
         skipped += 1
         next
