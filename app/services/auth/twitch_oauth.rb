@@ -123,8 +123,23 @@ module Auth
     # CR iter-1 S1: persist actually-granted scopes from Twitch (tokens[:scope]) instead of
     # requested set. Twitch may return subset if user re-consents partially; HelixFollowsSource
     # scope_granted? now sees reality, avoiding wasted 403 round-trip.
+    #
+    # BUG-TWITCH-SCOPE-ARRAY (2026-05-29): Twitch's POST /oauth2/token returns `scope`
+    # as a JSON Array, not space-separated string. Original .to_s.split(" ") мутil Array
+    # к "[\"a\", \"b\"]" then split on inner space → 3 broken strings with bracket fragments.
+    # himych user (production probe 2026-05-29) had MissingFollowsScope despite
+    # user:read:follows granted because lookup matched literal "\"user:read:follows\"]"
+    # not "user:read:follows". Now handle Array, String, и nil cases explicitly.
     def granted_scopes(tokens)
-      tokens[:scope].to_s.split(" ").presence || SCOPES.split(" ")
+      raw = tokens[:scope]
+      case raw
+      when Array
+        raw.map(&:to_s).compact_blank
+      when String
+        raw.split(" ").compact_blank.presence || SCOPES.split(" ")
+      else
+        SCOPES.split(" ")
+      end
     end
 
     def determine_role(broadcaster_type)
