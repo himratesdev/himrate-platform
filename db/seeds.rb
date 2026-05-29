@@ -28,31 +28,39 @@ if defined?(SignalConfiguration)
   # rubocop:disable Metrics/BlockLength
   signal_configs = [
     # === Auth Ratio (Signal #1) — BFT §5.1 ===
-    { signal_type: "auth_ratio", category: "just_chatting", param_name: "expected_min", param_value: 0.75 },
+    # BUG-251.30: recalibrated expected_min for CommunityTab presence semantics (was anchored on
+    # chat-widget presence, ~50-100% of CCV; CommunityTab returns narrower subset ~5-15% on
+    # organic streams — see paired migration `20260529110002_recalibrate_auth_ratio_...`).
+    # Migration + seed kept in sync.
+    { signal_type: "auth_ratio", category: "just_chatting", param_name: "expected_min", param_value: 0.050 },
     { signal_type: "auth_ratio", category: "just_chatting", param_name: "expected_max", param_value: 0.90 },
-    { signal_type: "auth_ratio", category: "esports", param_name: "expected_min", param_value: 0.58 },
+    { signal_type: "auth_ratio", category: "esports", param_name: "expected_min", param_value: 0.010 },
     { signal_type: "auth_ratio", category: "esports", param_name: "expected_max", param_value: 0.74 },
-    { signal_type: "auth_ratio", category: "gaming", param_name: "expected_min", param_value: 0.65 },
+    { signal_type: "auth_ratio", category: "gaming", param_name: "expected_min", param_value: 0.025 },
     { signal_type: "auth_ratio", category: "gaming", param_name: "expected_max", param_value: 0.80 },
-    { signal_type: "auth_ratio", category: "irl", param_name: "expected_min", param_value: 0.70 },
+    { signal_type: "auth_ratio", category: "irl", param_name: "expected_min", param_value: 0.040 },
     { signal_type: "auth_ratio", category: "irl", param_name: "expected_max", param_value: 0.85 },
-    { signal_type: "auth_ratio", category: "music", param_name: "expected_min", param_value: 0.60 },
+    { signal_type: "auth_ratio", category: "music", param_name: "expected_min", param_value: 0.020 },
     { signal_type: "auth_ratio", category: "music", param_name: "expected_max", param_value: 0.78 },
-    { signal_type: "auth_ratio", category: "default", param_name: "expected_min", param_value: 0.65 },
+    { signal_type: "auth_ratio", category: "default", param_name: "expected_min", param_value: 0.030 },
     { signal_type: "auth_ratio", category: "default", param_name: "expected_max", param_value: 0.80 },
 
     # === Chatter-to-CCV Ratio (Signal #2) — BFT §5.2 ===
-    { signal_type: "chatter_ccv_ratio", category: "just_chatting", param_name: "expected_ratio_min", param_value: 0.20 },
+    # BUG-251.33: expected_ratio_min recalibrated for silent-audience categories (esports
+    # Dota/CS/LoL, music, irl) — see paired migration
+    # `20260529130001_recalibrate_chatter_ccv_ratio_for_silent_audience_categories`.
+    # Migration + seed kept in sync so a fresh `db:seed` after migration is a noop.
+    { signal_type: "chatter_ccv_ratio", category: "just_chatting", param_name: "expected_ratio_min", param_value: 0.150 },
     { signal_type: "chatter_ccv_ratio", category: "just_chatting", param_name: "expected_ratio_max", param_value: 0.33 },
-    { signal_type: "chatter_ccv_ratio", category: "esports", param_name: "expected_ratio_min", param_value: 0.02 },
+    { signal_type: "chatter_ccv_ratio", category: "esports", param_name: "expected_ratio_min", param_value: 0.005 },
     { signal_type: "chatter_ccv_ratio", category: "esports", param_name: "expected_ratio_max", param_value: 0.067 },
-    { signal_type: "chatter_ccv_ratio", category: "gaming", param_name: "expected_ratio_min", param_value: 0.10 },
+    { signal_type: "chatter_ccv_ratio", category: "gaming", param_name: "expected_ratio_min", param_value: 0.040 },
     { signal_type: "chatter_ccv_ratio", category: "gaming", param_name: "expected_ratio_max", param_value: 0.20 },
-    { signal_type: "chatter_ccv_ratio", category: "irl", param_name: "expected_ratio_min", param_value: 0.125 },
+    { signal_type: "chatter_ccv_ratio", category: "irl", param_name: "expected_ratio_min", param_value: 0.080 },
     { signal_type: "chatter_ccv_ratio", category: "irl", param_name: "expected_ratio_max", param_value: 0.25 },
-    { signal_type: "chatter_ccv_ratio", category: "music", param_name: "expected_ratio_min", param_value: 0.067 },
+    { signal_type: "chatter_ccv_ratio", category: "music", param_name: "expected_ratio_min", param_value: 0.030 },
     { signal_type: "chatter_ccv_ratio", category: "music", param_name: "expected_ratio_max", param_value: 0.15 },
-    { signal_type: "chatter_ccv_ratio", category: "default", param_name: "expected_ratio_min", param_value: 0.10 },
+    { signal_type: "chatter_ccv_ratio", category: "default", param_name: "expected_ratio_min", param_value: 0.040 },
     { signal_type: "chatter_ccv_ratio", category: "default", param_name: "expected_ratio_max", param_value: 0.20 },
 
     # === Signal Weights (weight_in_ti for all 11 signals) ===
