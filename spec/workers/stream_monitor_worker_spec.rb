@@ -20,6 +20,11 @@ RSpec.describe StreamMonitorWorker do
     allow(gql).to receive(:batch).with(array_including(hash_including(query: /StreamMetadata/))).and_return(
       [ { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } } ]
     )
+    # BUG-251.30: CommunityTab batch — default empty so existing CCV/chat tests are
+    # unaffected. Dedicated specs below stub specific responses.
+    allow(gql).to receive(:batch).with(array_including(hash_including(query: /CommunityTab/))).and_return(
+      [ { "data" => { "channel" => { "chatters" => nil } } } ]
+    )
     # TASK-251.6: chatters now come from chat_messages, not GQL ChattersCount.
 
     # Tier 2 stubs
@@ -78,6 +83,66 @@ RSpec.describe StreamMonitorWorker do
     snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
     expect(snapshot.unique_chatters_count).to eq(50)
     expect(snapshot.auth_ratio.to_f).to be_within(0.0001).of(10.0)
+  end
+
+  # BUG-251.30: populate chatters_present_total + viewer_logins from CommunityTab batch.
+  it "persists CommunityTab presence (chatters_present_total + role breakdown + viewer_logins)" do
+    allow(gql).to receive(:batch).with(array_including(hash_including(query: /CommunityTab/))).and_return(
+      [ { "data" => { "channel" => { "chatters" => {
+        "broadcasters" => [ { "login" => "teststreamer" } ],
+        "moderators" => [ { "login" => "mod1" }, { "login" => "mod2" } ],
+        "vips" => [ { "login" => "vip1" } ],
+        "staff" => [],
+        "viewers" => [ { "login" => "v1" }, { "login" => "v2" }, { "login" => "v3" } ],
+        "count" => 7
+      } } } } ]
+    )
+
+    expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
+
+    snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
+    expect(snapshot.chatters_present_total).to eq(7) # 1+2+1+0+3
+    expect(snapshot.broadcasters_count).to eq(1)
+    expect(snapshot.moderators_count).to eq(2)
+    expect(snapshot.vips_count).to eq(1)
+    expect(snapshot.staff_count).to eq(0)
+    expect(snapshot.viewers_count_present).to eq(3)
+    expect(snapshot.viewer_logins).to eq(%w[teststreamer mod1 mod2 vip1 v1 v2 v3])
+  end
+
+  # BUG-251.30: presence-only path (no IRC chat captured) still writes ChattersSnapshot.
+  it "saves snapshot when only presence (no IRC chat) — null-safe active-typer columns" do
+    allow(gql).to receive(:batch).with(array_including(hash_including(query: /CommunityTab/))).and_return(
+      [ { "data" => { "channel" => { "chatters" => {
+        "broadcasters" => [ { "login" => "teststreamer" } ],
+        "moderators" => [], "vips" => [], "staff" => [],
+        "viewers" => [ { "login" => "lurker1" } ],
+        "count" => 2
+      } } } } ]
+    )
+
+    expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
+
+    snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
+    expect(snapshot.chatters_present_total).to eq(2)
+    expect(snapshot.unique_chatters_count).to eq(0)
+    expect(snapshot.total_messages_count).to eq(0)
+    expect(snapshot.auth_ratio).to be_nil # no IRC typers
+  end
+
+  # BUG-251.30: CommunityTab batch failure does NOT break CCV/chat persistence — graceful.
+  it "tolerates community_tab batch error — CCV/chat persistence unaffected" do
+    allow(gql).to receive(:batch).with(array_including(hash_including(query: /CommunityTab/))).and_raise(
+      Twitch::GqlClient::Error, "community_tab batch down"
+    )
+    create(:chat_message, stream: stream, channel_login: "teststreamer", username: "u1", timestamp: Time.current)
+
+    expect { worker.perform }.to change { stream.ccv_snapshots.count }.by(1)
+      .and change { stream.chatters_snapshots.count }.by(1)
+
+    snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
+    expect(snapshot.chatters_present_total).to be_nil
+    expect(snapshot.unique_chatters_count).to eq(1)
   end
 
   # TC-011: Helix fallback

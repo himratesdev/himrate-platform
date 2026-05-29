@@ -11,11 +11,59 @@ RSpec.describe TrustIndex::ContextBuilder do
 
     expected_keys = %i[
       latest_ccv ccv_series_15min ccv_series_30min ccv_series_10min
-      chat_rate_10min chat_username_counts_5min unique_chatters_60min bot_scores
+      chat_rate_10min chat_username_counts_5min unique_chatters_60min
+      chatters_present_total bot_scores
       channel_protection_config cross_channel_counts raids recent_raids category
       stream_duration_min
     ]
     expect(context.keys).to match_array(expected_keys)
+  end
+
+  # BUG-251.30: chatters_present_total sourced from ChattersSnapshot.chatters_present_total
+  # (populated by StreamMonitorWorker#poll_tier1 via Twitch::GqlClient#community_tab).
+  describe "chatters_present_total" do
+    it "returns latest non-nil chatters_present_total from ChattersSnapshot" do
+      ChattersSnapshot.create!(
+        stream: stream, timestamp: 5.minutes.ago,
+        unique_chatters_count: 0, total_messages_count: 0,
+        chatters_present_total: 90
+      )
+      ChattersSnapshot.create!(
+        stream: stream, timestamp: 1.minute.ago,
+        unique_chatters_count: 0, total_messages_count: 0,
+        chatters_present_total: 106
+      )
+
+      context = described_class.build(stream)
+      expect(context[:chatters_present_total]).to eq(106)
+    end
+
+    it "skips snapshots with nil chatters_present_total (pre-deploy rows)" do
+      ChattersSnapshot.create!(
+        stream: stream, timestamp: 5.minutes.ago,
+        unique_chatters_count: 12, total_messages_count: 40,
+        chatters_present_total: nil
+      )
+      ChattersSnapshot.create!(
+        stream: stream, timestamp: 1.minute.ago,
+        unique_chatters_count: 14, total_messages_count: 50,
+        chatters_present_total: 87
+      )
+
+      context = described_class.build(stream)
+      expect(context[:chatters_present_total]).to eq(87)
+    end
+
+    it "returns nil when no snapshots have presence column populated" do
+      ChattersSnapshot.create!(
+        stream: stream, timestamp: 1.minute.ago,
+        unique_chatters_count: 10, total_messages_count: 30,
+        chatters_present_total: nil
+      )
+
+      context = described_class.build(stream)
+      expect(context[:chatters_present_total]).to be_nil
+    end
   end
 
   it "fetches latest CCV from snapshots" do

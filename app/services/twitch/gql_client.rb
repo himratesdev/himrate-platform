@@ -1,19 +1,30 @@
 # frozen_string_literal: true
 
-# TASK-022: Twitch GQL Client
-# POST requests to gql.twitch.tv/gql with public Client-ID.
-# 11 operations + batch support. No OAuth required for read-only.
+# TASK-022 + BUG-251.30: Twitch GQL Client.
+# POST requests to gql.twitch.tv/gql with Android Client-ID — bypasses Kasada KPSDK integrity
+# check entirely. ALL operations (incl. previously "integrity-protected" chatters / socialMedias /
+# hasPrime/hasTurbo) work server-side. Verified live 2026-05-29 on justcooman: same persisted
+# hash returned `failed integrity check` under web Client-ID and full chatters list under Android.
+# Validated by ViewerMetrics extension (Chrome Web Store deployment) which uses the identical
+# Android Client-ID + inline-query strategy.
+#
+# Research references:
+# - `bft/_research/twitch-gql-research-himrate.md` (GQL hash catalog + Kasada analysis)
+# - `_tasks/TASK-096-product-philosophy-shift/findings-40-deep-dive.md` Wave-3 Finding #1
+#   (Android Client-ID bypass first verified 2026-05-06; propagation deferred 23 days — RC-8)
+# - `_research/viewermetrics-re/viewermetrics-0.9.951/background/api-manager.js`
+#   (single-header `Client-Id: kd1unb4b3q4t58fwlpcbzcbnm76a8fp`, no Client-Integrity)
 #
 # IMPORTANT: Call from Sidekiq workers only (not controllers).
 # sleep() in retry handlers blocks the thread — unacceptable in web request cycle.
-#
-# Integrity-protected operations (chatters, socialMedias, hasPrime/hasTurbo)
-# are NOT available server-side — must be called from Extension (browser context).
 
 module Twitch
   class GqlClient
     GQL_URL = "https://gql.twitch.tv/gql"
-    DEFAULT_CLIENT_ID = "kimne78kx3ncx6brgo4mv6wki5h1ko"
+    # Android Client-ID — bypasses Kasada KPSDK integrity (was: web Client-ID kimne78kx3ncx6brgo4mv6wki5h1ko,
+    # integrity-gated; community_tab/socialMedias/hasPrime/etc. returned `failed integrity check`).
+    # ENV override preserved for emergency rollback or testing alternate clients.
+    DEFAULT_CLIENT_ID = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
     REQUEST_TIMEOUT = 5
     MAX_RETRIES = 3
     BACKOFF_BASE = 1 # seconds
@@ -47,8 +58,10 @@ module Twitch
       results.map { |r| parse_user_profile(r&.dig("data", "user")) }
     end
 
-    # FR-003: Channel viewer list (CommunityTab) — may require integrity token
-    # Note: Twitch GQL chatters list does not support pagination
+    # FR-003: Channel viewer list (CommunityTab). Works server-side via Android Client-ID
+    # (BUG-251.30 verified 2026-05-29). Returns role-bucketed registered users present in chat
+    # (broadcasters, moderators, vips, staff, viewers + total count). NOTE: Twitch caps the
+    # `viewers` array at 100 entries per response on big channels (G-3 gap → BUG-251.31).
     def community_tab(channel_login:)
       return nil if channel_login.blank?
 
@@ -56,16 +69,29 @@ module Twitch
       chatters = result&.dig("data", "channel", "chatters")
       return nil unless chatters
 
+      broadcasters = parse_chatter_list(chatters.dig("broadcasters"))
+      moderators = parse_chatter_list(chatters.dig("moderators"))
+      vips = parse_chatter_list(chatters.dig("vips"))
+      staff = parse_chatter_list(chatters.dig("staff"))
+      viewers = parse_chatter_list(chatters.dig("viewers"))
+
       {
-        broadcasters: parse_chatter_list(chatters.dig("broadcasters")),
-        moderators: parse_chatter_list(chatters.dig("moderators")),
-        vips: parse_chatter_list(chatters.dig("vips")),
-        viewers: parse_chatter_list(chatters.dig("viewers")),
-        count: chatters["count"]
+        broadcasters: broadcasters,
+        moderators: moderators,
+        vips: vips,
+        staff: staff,
+        viewers: viewers,
+        count: chatters["count"],
+        # BUG-251.30: total registered users present in chat (sum across all role buckets).
+        # Used by AuthRatio signal #1 (chatters_present_total / latest_ccv) and
+        # ChatterProfileEnrichment downstream (G-2 ViewerCard + G-1 UserFollowing per login).
+        total_present: broadcasters.size + moderators.size + vips.size + staff.size + viewers.size,
+        all_logins: broadcasters + moderators + vips + staff + viewers
       }
     end
 
-    # FR-004: Chatters count — may require integrity token
+    # FR-004: Chatters count (registered chat-connected total). Works server-side via Android
+    # Client-ID (BUG-251.30 verified 2026-05-29 — was previously integrity-gated under web ID).
     def channel_chatters_count(channel_login:)
       return nil if channel_login.blank?
 
@@ -545,6 +571,7 @@ module Twitch
               broadcasters { login }
               moderators { login }
               vips { login }
+              staff { login }
               viewers { login }
               count
             }

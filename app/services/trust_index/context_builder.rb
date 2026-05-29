@@ -21,6 +21,9 @@ module TrustIndex
         chat_rate_10min: fetch_chat_rate(stream, 10.minutes.ago),
         chat_username_counts_5min: fetch_chat_username_counts(stream, 5.minutes.ago),
         unique_chatters_60min: fetch_unique_chatters(stream),
+        # BUG-251.30: registered users present in chat (CommunityTab via Android Client-ID).
+        # Source = latest ChattersSnapshot.chatters_present_total. Used by AuthRatio signal #1.
+        chatters_present_total: fetch_chatters_present_total(stream),
         bot_scores: fetch_bot_scores(stream),
         channel_protection_config: fetch_config(channel),
         cross_channel_counts: fetch_cross_channel(stream),
@@ -38,6 +41,19 @@ module TrustIndex
         stream.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count)
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: latest_ccv failed (#{e.message})")
+        nil
+      end
+
+      # BUG-251.30: latest CommunityTab presence count for AuthRatio signal #1.
+      # Returns nil if no snapshot has presence column populated (e.g., pre-deploy rows
+      # or community_tab batch failed for current cycle) — AuthRatio falls back to insufficient.
+      def fetch_chatters_present_total(stream)
+        stream.chatters_snapshots
+          .where.not(chatters_present_total: nil)
+          .order(timestamp: :desc)
+          .pick(:chatters_present_total)
+      rescue ActiveRecord::StatementInvalid => e
+        Rails.logger.warn("ContextBuilder: chatters_present_total failed (#{e.message})")
         nil
       end
 

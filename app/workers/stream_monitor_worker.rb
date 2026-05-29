@@ -46,20 +46,74 @@ class StreamMonitorWorker
       ccv_data = fetch_ccv_batch(logins)
 
       # TASK-251.6: chatter activity from captured IRC chat (chat_messages), keyed by
-      # stream_id. GQL chatters_count is integrity-protected → empty server-side.
+      # stream_id. GQL chatters_count was integrity-protected under web Client-ID — empty
+      # server-side. BUG-251.30 swapped to Android Client-ID which bypasses Kasada; we now
+      # ALSO fetch community_tab presence (lurkers + chat-connected lurkers + active typers
+      # all visible), used by AuthRatio signal #1. Active-typer chat_data from IRC remains
+      # the chatter_ccv_ratio signal #2 input (distinct concept: typers vs presence).
       chat_data = fetch_chat_activity(batch)
+
+      # BUG-251.30: registered users present in chat (broadcasters + moderators + vips + staff +
+      # viewers). Source = GQL CommunityTab (single integrity-bypassed call per login). Used by
+      # AuthRatio signal #1 to compute chatters_present_total / latest_ccv. Falls back to {}
+      # on rate-limit / 5xx — ChattersSnapshot still written with active-typer columns only.
+      chatters_present_data = fetch_chatters_present_batch(logins)
 
       batch.each do |stream|
         ccv = ccv_data[stream.channel.login]
         chat = chat_data[stream.id]
+        present = chatters_present_data[stream.channel.login]
 
         save_ccv_snapshot(stream, ccv) if ccv
-        save_chatters_snapshot(stream, ccv, chat) if chat && ccv
+        save_chatters_snapshot(stream, ccv, chat, present) if (chat || present) && ccv
 
         # TASK-030: Trigger signal computation after data saved
-        SignalComputeWorker.perform_async(stream.id) if ccv || chat
+        SignalComputeWorker.perform_async(stream.id) if ccv || chat || present
       end
     end
+  end
+
+  # BUG-251.30: batched community_tab fetch. Each operation = single channel CommunityTab
+  # query with login variable. Twitch caps viewers[] at 100 per response (G-3 follow-up
+  # BUG-251.31 — pagination iteration). Returns { login => presence_hash } only for streams
+  # where chatters object was non-nil.
+  def fetch_chatters_present_batch(logins)
+    operations = logins.map do |login|
+      { query: Twitch::GqlClient::QUERIES[:community_tab], variables: { login: login } }
+    end
+
+    results = gql.batch(operations)
+    result = {}
+    logins.each_with_index do |login, i|
+      chatters = results[i]&.dig("data", "channel", "chatters")
+      next unless chatters
+
+      bcasters = parse_chatters_array(chatters["broadcasters"])
+      mods = parse_chatters_array(chatters["moderators"])
+      vips = parse_chatters_array(chatters["vips"])
+      staff = parse_chatters_array(chatters["staff"])
+      viewers = parse_chatters_array(chatters["viewers"])
+
+      result[login] = {
+        total_present: bcasters.size + mods.size + vips.size + staff.size + viewers.size,
+        broadcasters_count: bcasters.size,
+        moderators_count: mods.size,
+        vips_count: vips.size,
+        staff_count: staff.size,
+        viewers_count_present: viewers.size,
+        logins: bcasters + mods + vips + staff + viewers
+      }
+    end
+    result
+  rescue Twitch::GqlClient::Error => e
+    Rails.logger.warn("StreamMonitorWorker: community_tab batch failed (#{e.message})")
+    {}
+  end
+
+  def parse_chatters_array(list)
+    return [] unless list.is_a?(Array)
+
+    list.map { |u| u["login"] }.compact
   end
 
   def fetch_ccv_batch(logins)
@@ -116,16 +170,27 @@ class StreamMonitorWorker
     )
   end
 
-  def save_chatters_snapshot(stream, ccv_count, chat)
-    unique = chat[:unique].to_i
-    auth_ratio = ccv_count.to_i.positive? ? unique.to_f / ccv_count : nil
+  # BUG-251.30 (extended): persist both active-typer columns (existing semantics) AND
+  # new presence columns. Either source may be nil (e.g., community_tab rate-limited but
+  # chat captured, or vice versa) — null-safe.
+  def save_chatters_snapshot(stream, ccv_count, chat, present = nil)
+    unique = chat ? chat[:unique].to_i : 0
+    total = chat ? chat[:total].to_i : 0
+    auth_ratio = ccv_count.to_i.positive? && unique.positive? ? unique.to_f / ccv_count : nil
 
     ChattersSnapshot.create!(
       stream: stream,
       timestamp: Time.current,
       unique_chatters_count: unique,
-      total_messages_count: chat[:total].to_i,
-      auth_ratio: auth_ratio
+      total_messages_count: total,
+      auth_ratio: auth_ratio,
+      chatters_present_total: present&.dig(:total_present),
+      viewer_logins: present&.dig(:logins) || [],
+      broadcasters_count: present&.dig(:broadcasters_count),
+      moderators_count: present&.dig(:moderators_count),
+      vips_count: present&.dig(:vips_count),
+      staff_count: present&.dig(:staff_count),
+      viewers_count_present: present&.dig(:viewers_count_present)
     )
   end
 
