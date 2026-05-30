@@ -30,12 +30,12 @@ module Clickhouse
     MAX_RUNTIME_SECONDS = 50
     INTER_BATCH_SLEEP_SECONDS = 0.5
 
-    # CR iter1 M1: cross-process overlap lock. TTL exceeds MAX_RUNTIME_SECONDS so a hung worker
-    # cannot starve the next cron tick beyond ~30s past the runtime budget. Atomic SETNX (Redis
-    # `SET ... NX EX`) returns nil/false when another holder owns the key. We release only if we
-    # still own it (token-stamped) — the standard Redis distributed-lock idiom.
-    LOCK_KEY = "#{Clickhouse::ChatBackfill::REDIS_PREFIX}:cycle_lock"
-    LOCK_TTL_SECONDS = MAX_RUNTIME_SECONDS + 30
+    # CR iter1 M1 + CR iter3 Should-1: cross-process overlap lock — shared with
+    # Clickhouse::ChatBackfill#call (rake operator path) via Clickhouse::BackfillCycleLock so
+    # both entry points cannot interleave concurrent #tick calls (which would double-insert into
+    # the no-engine-dedup CH MergeTree). Lock helpers extracted to a module so both call sites
+    # use the same KEY / TTL / raw-call-form (CR iter2 M1).
+    LOCK_TTL_SECONDS = Clickhouse::BackfillCycleLock::DEFAULT_TTL_SECONDS
 
     def perform
       return unless Flipper.enabled?(:chat_backfill_running)
@@ -64,9 +64,9 @@ module Clickhouse
       end
 
       lock_token = SecureRandom.hex(16)
-      acquired = lock_acquire(lock_token)
+      acquired = Sidekiq.redis { |c| Clickhouse::BackfillCycleLock.acquire(c, lock_token) }
       unless acquired
-        Rails.logger.info("ChatBackfillCycleWorker: cycle lock already held by prior tick — skipping (cron will re-fire next minute)")
+        Rails.logger.info("ChatBackfillCycleWorker: cycle lock already held (cron tick OR rake operator path) — skipping (cron will re-fire next minute)")
         return
       end
 
@@ -102,7 +102,7 @@ module Clickhouse
 
         Rails.logger.info("ChatBackfillCycleWorker: ran #{ticks} ticks within #{MAX_RUNTIME_SECONDS}s budget — cron will re-fire next minute")
       ensure
-        lock_release(lock_token)
+        Sidekiq.redis { |c| Clickhouse::BackfillCycleLock.release(c, lock_token) }
       end
     end
 
@@ -122,41 +122,7 @@ module Clickhouse
       Sidekiq.redis { |c| c.get(key) }
     end
 
-    def lock_acquire(token)
-      Sidekiq.redis do |c|
-        # Returns "OK" on success, nil if the key already exists (NX semantics). redis-rb (specs)
-        # and Sidekiq's RedisClientAdapter::CompatClient both expose #set with kwargs.
-        c.set(LOCK_KEY, token, nx: true, ex: LOCK_TTL_SECONDS) == "OK"
-      end
-    end
-
-    def lock_release(token)
-      # Atomic check-and-delete via Lua: only DEL if we still own the lock (token match). Prevents
-      # the worker from releasing a lock that has already expired and been re-acquired by a later
-      # tick (the canonical Redlock-style pattern).
-      #
-      # CR iter2 M1: use the RAW `c.call("EVAL", ...)` form (not `c.eval(script, keys:, argv:)`).
-      # Sidekiq.redis yields RedisClient::CompatClient in production; `eval` is NOT in its
-      # USED_COMMANDS allow-list, so it falls through method_missing → RedisClient#call → CommandBuilder,
-      # which raises `TypeError: Unsupported command argument type: Array` on the `keys:` Array kwarg.
-      # The outer `rescue` then swallows it, and the lock leaks until its 80s TTL — degrading cron
-      # cadence from every-1-minute to every-2-minutes. The redis-rb 5 client used in specs handles
-      # the kwargs form, hiding the bug from unit tests. The raw `call("EVAL", script, numkeys, *keys, *argv)`
-      # form is canonical Redis protocol and works for both clients.
-      Sidekiq.redis { |c| c.call("EVAL", script_lock_release, 1, LOCK_KEY, token) }
-    rescue StandardError => e
-      # CR iter2 N1: include e.message so prod incidents are debuggable in one log line.
-      Rails.logger.warn("ChatBackfillCycleWorker: lock_release failed (#{e.class}: #{e.message.truncate(120)}) — lock will expire via TTL (#{LOCK_TTL_SECONDS}s)")
-    end
-
-    def script_lock_release
-      <<~LUA
-        if redis.call('GET', KEYS[1]) == ARGV[1] then
-          return redis.call('DEL', KEYS[1])
-        else
-          return 0
-        end
-      LUA
-    end
+    # Lock acquire/release now delegated to Clickhouse::BackfillCycleLock module (shared with
+    # the rake operator path via Clickhouse::ChatBackfill#call). See CR iter3 Should-1 + iter2 M1.
   end
 end

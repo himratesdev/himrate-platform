@@ -61,34 +61,50 @@ module Clickhouse
     # ad-hoc one-shot backfill via `rake clickhouse:backfill_chat` still works the same way.
     # The TASK-251.58 Sidekiq cron path (ChatBackfillCycleWorker) calls #tick directly with a
     # timeboxed deadline so it survives container swaps natively.
+    #
+    # CR iter3 Should-1: both entry points MUST share `:cycle_lock` (Clickhouse::BackfillCycleLock)
+    # — otherwise the rake operator path and the cron worker would both call #tick concurrently
+    # and double-insert into the no-engine-dedup CH MergeTree. Acquires lock at top, releases in
+    # ensure. If lock is already held (the cron worker is running or another operator-rake is in
+    # flight), abort with a clear message rather than block.
     def call
       @redis.set("#{REDIS_PREFIX}:t0", @t0.iso8601)
-      @redis.set("#{REDIS_PREFIX}:status", "running")
-      started_at = Time.current
-      cursor = @redis.get("#{REDIS_PREFIX}:cursor_id") || NULL_UUID
-      rows_processed = @redis.get("#{REDIS_PREFIX}:rows_processed").to_i
-      batches = 0
-      @logger.info("ChatBackfill: starting t0=#{@t0.iso8601} cursor=#{cursor} rows_so_far=#{rows_processed} batch_size=#{@batch_size}")
+      lock_token = SecureRandom.hex(16)
+      unless BackfillCycleLock.acquire(@redis, lock_token)
+        @logger.error("ChatBackfill: cycle lock already held — refusing to start a concurrent rake-driven loop. Wait for the cron-driven ChatBackfillCycleWorker (or other operator-rake) to finish, then re-run.")
+        return Result.new(status: "lock_busy", rows_processed: 0, batches: 0, elapsed_seconds: 0)
+      end
 
-      loop do
-        result = tick
+      begin
+        @redis.set("#{REDIS_PREFIX}:status", "running")
+        started_at = Time.current
+        cursor = @redis.get("#{REDIS_PREFIX}:cursor_id") || NULL_UUID
+        rows_processed = @redis.get("#{REDIS_PREFIX}:rows_processed").to_i
+        batches = 0
+        @logger.info("ChatBackfill: starting t0=#{@t0.iso8601} cursor=#{cursor} rows_so_far=#{rows_processed} batch_size=#{@batch_size}")
 
-        case result[:status]
-        when :paused
-          return finish("paused", started_at, result[:rows_processed], batches,
-                        "kill-switch flipped — paused at cursor=#{result[:cursor]}, rows=#{result[:rows_processed]}")
-        when :done
-          return finish("done", started_at, result[:rows_processed], batches,
-                        "no more pre-T0 rows; rows_processed=#{result[:rows_processed]} batches=#{batches}")
-        when :failed
-          @logger.error("ChatBackfill: CH insert failed at cursor=#{result[:cursor]} batch_size=#{result[:batch_size]}: #{result[:last_error]}")
-          return Result.new(status: "failed", rows_processed: result[:rows_processed], batches: batches,
-                            elapsed_seconds: (Time.current - started_at).to_i)
-        when :ok
-          batches += 1
-          @logger.info("ChatBackfill: progress cursor=#{result[:cursor]} rows=#{result[:rows_processed]} batches=#{batches}") if (batches % LOG_EVERY_N_BATCHES).zero?
-          sleep(@sleep_seconds)
+        loop do
+          result = tick
+
+          case result[:status]
+          when :paused
+            return finish("paused", started_at, result[:rows_processed], batches,
+                          "kill-switch flipped — paused at cursor=#{result[:cursor]}, rows=#{result[:rows_processed]}")
+          when :done
+            return finish("done", started_at, result[:rows_processed], batches,
+                          "no more pre-T0 rows; rows_processed=#{result[:rows_processed]} batches=#{batches}")
+          when :failed
+            @logger.error("ChatBackfill: CH insert failed at cursor=#{result[:cursor]} batch_size=#{result[:batch_size]}: #{result[:last_error]}")
+            return Result.new(status: "failed", rows_processed: result[:rows_processed], batches: batches,
+                              elapsed_seconds: (Time.current - started_at).to_i)
+          when :ok
+            batches += 1
+            @logger.info("ChatBackfill: progress cursor=#{result[:cursor]} rows=#{result[:rows_processed]} batches=#{batches}") if (batches % LOG_EVERY_N_BATCHES).zero?
+            sleep(@sleep_seconds)
+          end
         end
+      ensure
+        BackfillCycleLock.release(@redis, lock_token)
       end
     end
 

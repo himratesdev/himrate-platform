@@ -11,7 +11,7 @@ RSpec.describe Clickhouse::ChatBackfillCycleWorker do
   let(:t0) { Time.utc(2026, 5, 28, 3, 32, 0) }
   let(:t0_iso) { t0.iso8601 }
   let(:prefix) { Clickhouse::ChatBackfill::REDIS_PREFIX }
-  let(:lock_key) { described_class::LOCK_KEY }
+  let(:lock_key) { Clickhouse::BackfillCycleLock::KEY }
 
   before do
     skip "Redis not reachable" unless redis.ping == "PONG"
@@ -117,30 +117,36 @@ RSpec.describe Clickhouse::ChatBackfillCycleWorker do
       expect(redis.get(lock_key)).to eq("different-token")
     end
 
-    # CR iter2 M1: regression guard against future client swap. The release MUST go through the
-    # raw `c.call("EVAL", script, 1, key, arg)` form because Sidekiq's RedisClient::CompatClient
-    # routes `eval` through method_missing → CommandBuilder, which raises TypeError on Array
-    # kwargs (`keys:` / `argv:`). The redis-rb client used in this spec accepts both forms,
-    # which hid the bug at iter1. This test asserts the worker uses the canonical raw form so a
-    # future client adapter swap can't regress the lock release path silently.
-    it "releases the lock via raw Sidekiq.redis#call(\"EVAL\", ...) form (CR iter2 M1 regression guard)" do
-      mock_client = instance_double("Redis client")
+    # CR iter2 M1: regression guard. Both lock acquire AND release MUST go through the raw
+    # `c.call("EVAL"/"SET", ...)` form because Sidekiq's RedisClient::CompatClient (prod) does NOT
+    # have `eval` in USED_COMMANDS; it falls through method_missing → RedisClient::CommandBuilder
+    # raises TypeError on Array kwargs. The redis-rb 5 client used in this spec accepts both forms,
+    # which hid the bug at iter1. This test mocks a client that ONLY exposes `call` (the raw
+    # protocol entry point) — any non-raw call would hit `NoMethodError`, failing the test.
+    it "uses ONLY the raw Sidekiq.redis#call form for lock acquire + release (CR iter2 M1 + iter3 Should-1)" do
+      mock_client = instance_double("RedisClient::CompatClient")
       allow(Sidekiq).to receive(:redis).and_yield(mock_client)
-      # Trace every call. lock_acquire uses #set (works for both client APIs); release uses raw #call.
-      allow(mock_client).to receive(:get).and_return(nil) # status, t0 reads — t0 read returns nil → no-op path
-      # Actually re-stub: short-circuit before lock taken so we only test the release path explicitly.
-      # Simpler: stub the worker to take a known path through release.
-      allow(mock_client).to receive(:set).with(lock_key, anything, hash_including(:nx, :ex)).and_return("OK")
+
+      # `Sidekiq.redis { |c| c.get(...) }` is exercised by #redis_get for status + t0 reads.
       allow(mock_client).to receive(:get).with("#{prefix}:status").and_return(nil)
       allow(mock_client).to receive(:get).with("#{prefix}:t0").and_return(t0_iso)
-      allow(mock_client).to receive(:call) # captures EVAL call
+      # The CompatClient mock DOES respond to `call` (and only `call`) — both acquire and release
+      # are routed through `c.call("SET"/"EVAL", ...)` via Clickhouse::BackfillCycleLock.
+      allow(mock_client).to receive(:call).with("SET", lock_key, kind_of(String), "NX", "EX", Integer).and_return("OK")
+      allow(mock_client).to receive(:call).with("EVAL", a_string_matching(/redis\.call\('GET', KEYS\[1\]\).*KEYS\[1\]/m), 1, lock_key, kind_of(String)).and_return(1)
+      # No-op stubs for other potential `Sidekiq.redis` accesses inside #tick (the backfill service
+      # uses its OWN @redis — not Sidekiq.redis — so the worker's mock should not see those).
 
-      described_class.new.perform
+      worker = described_class.new
+      allow(worker).to receive(:sleep)
+      # Real Clickhouse::ChatBackfill instance, but stub #tick to return :done immediately so we
+      # exercise only acquire → tick → release on the worker path.
+      allow_any_instance_of(Clickhouse::ChatBackfill).to receive(:tick).and_return({ status: :done, cursor: "x", rows_processed: 0 })
 
-      # Assert the release happened via raw `call("EVAL", script, 1, key, token)` form.
-      expect(mock_client).to have_received(:call).with(
-        "EVAL", a_string_matching(/redis\.call\('GET', KEYS\[1\]\).*KEYS\[1\]/m), 1, lock_key, kind_of(String)
-      )
+      worker.perform
+
+      expect(mock_client).to have_received(:call).with("SET", lock_key, kind_of(String), "NX", "EX", Integer).once
+      expect(mock_client).to have_received(:call).with("EVAL", anything, 1, lock_key, kind_of(String)).once
     end
   end
 
