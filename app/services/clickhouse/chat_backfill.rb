@@ -57,47 +57,85 @@ module Clickhouse
     end
     private :parse_t0!
 
+    # Operator-driven blocking loop (original rake-task entry point). Kept for backward-compat:
+    # ad-hoc one-shot backfill via `rake clickhouse:backfill_chat` still works the same way.
+    # The TASK-251.58 Sidekiq cron path (ChatBackfillCycleWorker) calls #tick directly with a
+    # timeboxed deadline so it survives container swaps natively.
     def call
       @redis.set("#{REDIS_PREFIX}:t0", @t0.iso8601)
       @redis.set("#{REDIS_PREFIX}:status", "running")
+      started_at = Time.current
       cursor = @redis.get("#{REDIS_PREFIX}:cursor_id") || NULL_UUID
       rows_processed = @redis.get("#{REDIS_PREFIX}:rows_processed").to_i
       batches = 0
-      started_at = Time.current
       @logger.info("ChatBackfill: starting t0=#{@t0.iso8601} cursor=#{cursor} rows_so_far=#{rows_processed} batch_size=#{@batch_size}")
 
       loop do
-        unless Flipper.enabled?(:chat_backfill_running)
-          return finish("paused", started_at, rows_processed, batches,
-                        "kill-switch flipped — paused at cursor=#{cursor}, rows=#{rows_processed}")
-        end
+        result = tick
 
-        batch = fetch_batch(cursor)
-        return finish("done", started_at, rows_processed, batches,
-                      "no more pre-T0 rows; rows_processed=#{rows_processed} batches=#{batches}") if batch.empty?
-
-        rows = batch.map { |record| ChatRow.from_pg(record.attributes) }
-
-        begin
-          @client.insert("chat_messages", rows)
-        rescue Clickhouse::Error => e
-          @redis.set("#{REDIS_PREFIX}:status", "failed")
-          @redis.set("#{REDIS_PREFIX}:last_error", "#{e.class}: #{e.message.truncate(500)}")
-          @logger.error("ChatBackfill: CH insert failed at cursor=#{cursor} batch_size=#{batch.size}: #{e.class}: #{e.message.truncate(200)}")
-          return Result.new(status: "failed", rows_processed: rows_processed, batches: batches,
+        case result[:status]
+        when :paused
+          return finish("paused", started_at, result[:rows_processed], batches,
+                        "kill-switch flipped — paused at cursor=#{result[:cursor]}, rows=#{result[:rows_processed]}")
+        when :done
+          return finish("done", started_at, result[:rows_processed], batches,
+                        "no more pre-T0 rows; rows_processed=#{result[:rows_processed]} batches=#{batches}")
+        when :failed
+          @logger.error("ChatBackfill: CH insert failed at cursor=#{result[:cursor]} batch_size=#{result[:batch_size]}: #{result[:last_error]}")
+          return Result.new(status: "failed", rows_processed: result[:rows_processed], batches: batches,
                             elapsed_seconds: (Time.current - started_at).to_i)
+        when :ok
+          batches += 1
+          @logger.info("ChatBackfill: progress cursor=#{result[:cursor]} rows=#{result[:rows_processed]} batches=#{batches}") if (batches % LOG_EVERY_N_BATCHES).zero?
+          sleep(@sleep_seconds)
         end
-
-        cursor = batch.last.id
-        rows_processed += batch.size
-        batches += 1
-        @redis.set("#{REDIS_PREFIX}:cursor_id", cursor)
-        @redis.set("#{REDIS_PREFIX}:rows_processed", rows_processed.to_s)
-
-        @logger.info("ChatBackfill: progress cursor=#{cursor} rows=#{rows_processed} batches=#{batches}") if (batches % LOG_EVERY_N_BATCHES).zero?
-
-        sleep(@sleep_seconds)
       end
+    end
+
+    # TASK-251.58: single-batch operation. Used by both #call (operator-driven loop with sleep)
+    # and ChatBackfillCycleWorker (Sidekiq cron with timeboxed deadline; survives container swaps
+    # natively, unlike the previous detached-rake pattern which died on every Kamal deploy and
+    # required manual setsid re-spawn — observed 4× swap kills during TASK-251.14 backfill window
+    # 2026-05-29). Stateless — Redis is the only mutable state, so concurrent invocations are
+    # safe (Sidekiq cron prevents overlap via the 60s cadence + queue serialization).
+    #
+    # Return value (Hash):
+    #   { status: :ok,     cursor:, batch_size:, rows_processed: }  - batch inserted, more remaining
+    #   { status: :done,   cursor:, rows_processed: }               - no rows match `id > cursor AND timestamp < T0`
+    #   { status: :paused, cursor:, rows_processed: }               - :chat_backfill_running OFF (kill-switch)
+    #   { status: :failed, cursor:, batch_size:, rows_processed:, last_error: }  - CH insert error; Redis status="failed"
+    def tick
+      cursor = @redis.get("#{REDIS_PREFIX}:cursor_id") || NULL_UUID
+      rows_processed = @redis.get("#{REDIS_PREFIX}:rows_processed").to_i
+
+      unless Flipper.enabled?(:chat_backfill_running)
+        return { status: :paused, cursor: cursor, rows_processed: rows_processed }
+      end
+
+      batch = fetch_batch(cursor)
+      if batch.empty?
+        @redis.set("#{REDIS_PREFIX}:status", "done")
+        return { status: :done, cursor: cursor, rows_processed: rows_processed }
+      end
+
+      rows = batch.map { |record| ChatRow.from_pg(record.attributes) }
+
+      begin
+        @client.insert("chat_messages", rows)
+      rescue Clickhouse::Error => e
+        @redis.set("#{REDIS_PREFIX}:status", "failed")
+        @redis.set("#{REDIS_PREFIX}:last_error", "#{e.class}: #{e.message.truncate(500)}")
+        return { status: :failed, cursor: cursor, batch_size: batch.size,
+                 rows_processed: rows_processed, last_error: "#{e.class}: #{e.message.truncate(200)}" }
+      end
+
+      new_cursor = batch.last.id
+      new_rows_processed = rows_processed + batch.size
+      @redis.set("#{REDIS_PREFIX}:cursor_id", new_cursor)
+      @redis.set("#{REDIS_PREFIX}:rows_processed", new_rows_processed.to_s)
+      @redis.set("#{REDIS_PREFIX}:status", "running")
+
+      { status: :ok, cursor: new_cursor, batch_size: batch.size, rows_processed: new_rows_processed }
     end
 
     private

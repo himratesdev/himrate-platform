@@ -155,6 +155,93 @@ RSpec.describe Clickhouse::ChatBackfill do
     end
   end
 
+  # TASK-251.58: #tick is the single-batch operation extracted from the original #call loop.
+  # Used by both the legacy operator-driven blocking loop (`rake clickhouse:backfill_chat`) AND
+  # the new Sidekiq-cron worker (Clickhouse::ChatBackfillCycleWorker). Direct unit coverage of
+  # #tick is needed because the worker exercises it in a timeboxed loop, not via #call.
+  describe "#tick" do
+    let(:instance) do
+      described_class.new(t0: t0, redis: redis, client: ch_client, logger: logger,
+                          batch_size: 2, sleep_seconds: 0)
+    end
+
+    it "returns :paused without touching CH when :chat_backfill_running flag is OFF" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(false)
+      create(:chat_message, channel_login: "x", msg_type: "privmsg",
+                            username: "u", timestamp: t0 - 1.minute)
+
+      result = instance.tick
+
+      expect(result[:status]).to eq(:paused)
+      expect(ch_client).not_to have_received(:insert)
+    end
+
+    it "returns :done and sets Redis status=done when no pre-T0 rows remain" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true)
+
+      result = instance.tick
+
+      expect(result[:status]).to eq(:done)
+      expect(redis.get("#{described_class::REDIS_PREFIX}:status")).to eq("done")
+    end
+
+    it "returns :ok, advances Redis cursor + rows_processed, sets status=running on successful batch" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true)
+      channel = create(:channel)
+      stream = create(:stream, channel: channel, ended_at: nil)
+      pre = Array.new(3) do |i|
+        create(:chat_message, stream: stream, channel_login: channel.login,
+                              msg_type: "privmsg", username: "u#{i}", timestamp: t0 - (i + 1).minutes)
+      end
+      sorted_ids = pre.map(&:id).sort
+
+      result = instance.tick
+
+      expect(result[:status]).to eq(:ok)
+      expect(result[:batch_size]).to eq(2)
+      expect(result[:rows_processed]).to eq(2)
+      expect(result[:cursor]).to eq(sorted_ids[1])
+      expect(redis.get("#{described_class::REDIS_PREFIX}:cursor_id")).to eq(sorted_ids[1])
+      expect(redis.get("#{described_class::REDIS_PREFIX}:status")).to eq("running")
+      expect(ch_client).to have_received(:insert).once
+    end
+
+    it "returns :failed and sets Redis status=failed without advancing cursor on CH error" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true)
+      create(:chat_message, channel_login: "x", msg_type: "privmsg",
+                            username: "u", timestamp: t0 - 1.minute)
+      allow(ch_client).to receive(:insert).and_raise(Clickhouse::QueryError, "boom")
+
+      result = instance.tick
+
+      expect(result[:status]).to eq(:failed)
+      expect(result[:last_error]).to include("Clickhouse::QueryError")
+      expect(redis.get("#{described_class::REDIS_PREFIX}:status")).to eq("failed")
+      # Cursor was never set — the failure short-circuits before the Redis cursor write.
+      expect(redis.get("#{described_class::REDIS_PREFIX}:cursor_id")).to be_nil
+    end
+
+    it "is idempotent — successive ticks from the same cursor produce deterministic forward progress" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true)
+      channel = create(:channel)
+      stream = create(:stream, channel: channel, ended_at: nil)
+      pre = Array.new(4) do |i|
+        create(:chat_message, stream: stream, channel_login: channel.login,
+                              msg_type: "privmsg", username: "u#{i}", timestamp: t0 - (i + 1).minutes)
+      end
+      sorted_ids = pre.map(&:id).sort
+
+      r1 = instance.tick # rows 1-2
+      r2 = instance.tick # rows 3-4
+      r3 = instance.tick # done
+
+      expect([ r1[:status], r2[:status], r3[:status] ]).to eq([ :ok, :ok, :done ])
+      expect(r2[:cursor]).to eq(sorted_ids.last)
+      expect(r2[:rows_processed]).to eq(4)
+      expect(ch_client).to have_received(:insert).exactly(2).times
+    end
+  end
+
   describe "integration (real ClickHouse)", :clickhouse do
     let(:real_client) { Clickhouse.client }
     let(:channel) { create(:channel) }
