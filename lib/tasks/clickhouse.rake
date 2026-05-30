@@ -47,9 +47,10 @@ namespace :clickhouse do
     if args.t0_iso.blank?
       abort "Usage: rake 'clickhouse:backfill_chat[T0_ISO]' " \
             "(e.g. clickhouse:backfill_chat[2026-05-28T03:31:10Z] — enable_time + ~2min). " \
-            "BATCH_SIZE/SLEEP_S positional args are accepted for backward-compat but ignored " \
-            "(cron worker uses Clickhouse::ChatBackfill::DEFAULT_{BATCH_SIZE,SLEEP_SECONDS} constants — " \
-            "edit those in code to tune)"
+            "BATCH_SIZE/SLEEP_S positional args are accepted for backward-compat but ignored. " \
+            "Cron worker tuning: batch size = Clickhouse::ChatBackfill::DEFAULT_BATCH_SIZE, " \
+            "inter-batch sleep = Clickhouse::ChatBackfillCycleWorker::INTER_BATCH_SLEEP_SECONDS, " \
+            "tick budget = Clickhouse::ChatBackfillCycleWorker::MAX_RUNTIME_SECONDS — edit in code to tune"
     end
 
     begin
@@ -68,6 +69,8 @@ namespace :clickhouse do
     puts "ChatBackfill: status=#{result.status} rows_so_far=#{result.rows_processed}"
     puts "Cron-driven Clickhouse::ChatBackfillCycleWorker will resume on the next minute tick (≤60s)."
     puts "Monitor progress: `rake clickhouse:backfill_chat_status` (read-only Redis dump) or tail Sidekiq logs."
+    # Future-proof guard: #call is currently seed-only (always returns "seeded"), but the guard
+    # catches any future #call return-shape regression that would silently leave T0 unseeded.
     abort "✗ T0 seed unexpected status=#{result.status}" unless result.status == "seeded"
   end
 

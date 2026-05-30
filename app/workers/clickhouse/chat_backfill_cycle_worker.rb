@@ -29,11 +29,14 @@ module Clickhouse
     MAX_RUNTIME_SECONDS = 50
     INTER_BATCH_SLEEP_SECONDS = 0.5
 
-    # CR iter1 M1 + CR iter3 Should-1: cross-process overlap lock — shared with
-    # Clickhouse::ChatBackfill#call (rake operator path) via Clickhouse::BackfillCycleLock so
-    # both entry points cannot interleave concurrent #tick calls (which would double-insert into
-    # the no-engine-dedup CH MergeTree). Lock helpers extracted to a module so both call sites
-    # use the same KEY / TTL / raw-call-form (CR iter2 M1).
+    # Overlap guard against worker-vs-worker concurrency — protects against:
+    #   * Multi-instance Sidekiq deploy (two job containers running this cron worker)
+    #   * A #tick run that overran MAX_RUNTIME_SECONDS past the next 60s cron tick
+    # CR iter4 removed the rake-side blocking loop, so #call is no longer a #tick driver and
+    # does NOT acquire this lock — the worker is the sole #tick caller. The lock helpers live
+    # in Clickhouse::BackfillCycleLock so they're unit-testable in isolation and use the raw
+    # `c.call("SET"/"EVAL", ...)` form (CR iter2 M1 — compatible with both redis-rb 5 and
+    # Sidekiq's RedisClient::CompatClient).
     LOCK_TTL_SECONDS = Clickhouse::BackfillCycleLock::DEFAULT_TTL_SECONDS
 
     def perform
@@ -65,7 +68,7 @@ module Clickhouse
       lock_token = SecureRandom.hex(16)
       acquired = Sidekiq.redis { |c| Clickhouse::BackfillCycleLock.acquire(c, lock_token) }
       unless acquired
-        Rails.logger.info("ChatBackfillCycleWorker: cycle lock already held (cron tick OR rake operator path) — skipping (cron will re-fire next minute)")
+        Rails.logger.info("ChatBackfillCycleWorker: cycle lock already held by prior tick (multi-instance worker OR overrun-tick) — skipping (cron will re-fire next minute)")
         return
       end
 
@@ -121,7 +124,7 @@ module Clickhouse
       Sidekiq.redis { |c| c.get(key) }
     end
 
-    # Lock acquire/release now delegated to Clickhouse::BackfillCycleLock module (shared with
-    # the rake operator path via Clickhouse::ChatBackfill#call). See CR iter3 Should-1 + iter2 M1.
+    # Lock acquire/release delegated to Clickhouse::BackfillCycleLock module (raw-call form
+    # compatible with both redis-rb 5 and Sidekiq's RedisClient::CompatClient — see iter2 M1).
   end
 end

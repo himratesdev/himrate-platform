@@ -65,9 +65,9 @@ RSpec.describe Clickhouse::ChatBackfill do
   end
 
   # TASK-251.58: #tick is the single-batch operation extracted from the original #call loop.
-  # Used by both the legacy operator-driven blocking loop (`rake clickhouse:backfill_chat`) AND
-  # the new Sidekiq-cron worker (Clickhouse::ChatBackfillCycleWorker). Direct unit coverage of
-  # #tick is needed because the worker exercises it in a timeboxed loop, not via #call.
+  # Called by the cron worker (Clickhouse::ChatBackfillCycleWorker, sole #tick driver after
+  # CR iter4 dropped the rake blocking loop). Direct unit coverage of #tick is needed because
+  # the worker exercises it in a timeboxed loop, not via #call.
   describe "#tick" do
     let(:instance) do
       described_class.new(t0: t0, redis: redis, client: ch_client, logger: logger,

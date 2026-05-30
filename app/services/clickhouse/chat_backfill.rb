@@ -85,16 +85,16 @@ module Clickhouse
       Result.new(status: "seeded", rows_processed: rows_so_far, batches: 0, elapsed_seconds: 0)
     end
 
-    # TASK-251.58: single-batch operation. Used by both #call (operator-driven loop with sleep)
-    # and ChatBackfillCycleWorker (Sidekiq cron with timeboxed deadline; survives container swaps
-    # natively, unlike the previous detached-rake pattern which died on every Kamal deploy and
-    # required manual setsid re-spawn — observed 4× swap kills during TASK-251.14 backfill window
-    # 2026-05-29). Single-writer assumption: this method is idempotent at the cursor level under
-    # a single concurrent writer (Redis cursor advances monotonically). It is NOT inherently
-    # concurrency-safe — two parallel ticks would both read the same Redis cursor, fetch the same
-    # PG batch, and double-insert into the no-engine-dedup CH MergeTree. ChatBackfillCycleWorker
-    # enforces single-writer via a cross-process Redis SETNX lock (`:cycle_lock`); the `rake
-    # clickhouse:backfill_chat` operator path is single-process by construction.
+    # TASK-251.58: single-batch operation. Called by ChatBackfillCycleWorker (Sidekiq cron with
+    # timeboxed deadline; survives container swaps natively, unlike the prior detached-rake
+    # pattern which died on every Kamal deploy — observed 4× swap kills during TASK-251.14
+    # backfill window 2026-05-29). The worker is the sole #tick caller after CR iter4 dropped
+    # the rake blocking loop. Single-writer assumption: this method is idempotent at the cursor
+    # level under a single concurrent writer (Redis cursor advances monotonically). It is NOT
+    # inherently concurrency-safe — two parallel ticks would both read the same Redis cursor,
+    # fetch the same PG batch, and double-insert into the no-engine-dedup CH MergeTree.
+    # ChatBackfillCycleWorker enforces single-writer via the Clickhouse::BackfillCycleLock SETNX
+    # lock around the #tick loop (overlap guard against multi-instance worker OR overrun-tick).
     #
     # Return value (Hash):
     #   { status: :ok,     cursor:, batch_size:, rows_processed: }  - batch inserted, more remaining

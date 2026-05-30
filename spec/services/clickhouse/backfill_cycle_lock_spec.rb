@@ -2,9 +2,9 @@
 
 require "rails_helper"
 
-# TASK-251.58 (CR iter3 Should-1): shared cross-process lock used by BOTH ChatBackfill#call
-# (rake operator path) AND ChatBackfillCycleWorker (Sidekiq cron path). Direct unit coverage
-# pins the raw-call form (CR iter2 M1: `c.eval(...)` fails on RedisClient::CompatClient in prod).
+# TASK-251.58: overlap-guard lock used by ChatBackfillCycleWorker (Sidekiq cron, sole #tick
+# driver after CR iter4). Direct unit coverage pins the raw-call form (CR iter2 M1: `c.eval(...)`
+# fails on RedisClient::CompatClient in prod, only `c.call("EVAL", ...)` is client-agnostic).
 RSpec.describe Clickhouse::BackfillCycleLock do
   let(:redis_url) { "redis://localhost:6379/1" }
   let(:redis) { Redis.new(url: redis_url) }
