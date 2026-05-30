@@ -116,6 +116,32 @@ RSpec.describe Clickhouse::ChatBackfillCycleWorker do
 
       expect(redis.get(lock_key)).to eq("different-token")
     end
+
+    # CR iter2 M1: regression guard against future client swap. The release MUST go through the
+    # raw `c.call("EVAL", script, 1, key, arg)` form because Sidekiq's RedisClient::CompatClient
+    # routes `eval` through method_missing → CommandBuilder, which raises TypeError on Array
+    # kwargs (`keys:` / `argv:`). The redis-rb client used in this spec accepts both forms,
+    # which hid the bug at iter1. This test asserts the worker uses the canonical raw form so a
+    # future client adapter swap can't regress the lock release path silently.
+    it "releases the lock via raw Sidekiq.redis#call(\"EVAL\", ...) form (CR iter2 M1 regression guard)" do
+      mock_client = instance_double("Redis client")
+      allow(Sidekiq).to receive(:redis).and_yield(mock_client)
+      # Trace every call. lock_acquire uses #set (works for both client APIs); release uses raw #call.
+      allow(mock_client).to receive(:get).and_return(nil) # status, t0 reads — t0 read returns nil → no-op path
+      # Actually re-stub: short-circuit before lock taken so we only test the release path explicitly.
+      # Simpler: stub the worker to take a known path through release.
+      allow(mock_client).to receive(:set).with(lock_key, anything, hash_including(:nx, :ex)).and_return("OK")
+      allow(mock_client).to receive(:get).with("#{prefix}:status").and_return(nil)
+      allow(mock_client).to receive(:get).with("#{prefix}:t0").and_return(t0_iso)
+      allow(mock_client).to receive(:call) # captures EVAL call
+
+      described_class.new.perform
+
+      # Assert the release happened via raw `call("EVAL", script, 1, key, token)` form.
+      expect(mock_client).to have_received(:call).with(
+        "EVAL", a_string_matching(/redis\.call\('GET', KEYS\[1\]\).*KEYS\[1\]/m), 1, lock_key, kind_of(String)
+      )
+    end
   end
 
   describe "#perform — tick loop" do

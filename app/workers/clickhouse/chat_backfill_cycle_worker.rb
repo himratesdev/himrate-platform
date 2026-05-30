@@ -52,6 +52,17 @@ module Clickhouse
         return
       end
 
+      # CR iter2 S2: parse T0 BEFORE acquiring the lock and with a narrow rescue. The original
+      # outer `rescue ArgumentError` caught any ArgumentError from inside the inner loop (e.g.
+      # AR validation, Rails internals) and mislabeled it as "T0 parse failed". A scoped rescue
+      # here makes the failure mode unambiguous + avoids burning a lock acquire on bad config.
+      t0 = begin
+        Time.iso8601(t0_iso)
+      rescue ArgumentError => e
+        Rails.logger.error("ChatBackfillCycleWorker: T0 parse failed (#{e.message}) — Redis value invalid (#{t0_iso.inspect}); operator must reset `#{Clickhouse::ChatBackfill::REDIS_PREFIX}:t0`")
+        return
+      end
+
       lock_token = SecureRandom.hex(16)
       acquired = lock_acquire(lock_token)
       unless acquired
@@ -60,7 +71,6 @@ module Clickhouse
       end
 
       begin
-        t0 = Time.iso8601(t0_iso)
         backfill = Clickhouse::ChatBackfill.new(t0: t0)
         deadline = clock.call + MAX_RUNTIME_SECONDS
         ticks = 0
@@ -81,7 +91,11 @@ module Clickhouse
             Rails.logger.info("ChatBackfillCycleWorker: kill-switch OFF (:chat_backfill_running) — paused at cursor=#{result[:cursor]}, rows_processed=#{result[:rows_processed]}, ticks=#{ticks}")
             return
           when :failed
-            Rails.logger.error("ChatBackfillCycleWorker: tick failed at cursor=#{result[:cursor]} batch_size=#{result[:batch_size]} err=#{result[:last_error]} ticks=#{ticks}. Redis status='failed'; operator must inspect Redis `#{Clickhouse::ChatBackfill::REDIS_PREFIX}:last_error` and clear status before next cron fire will retry.")
+            # CR iter2 S1: auto-retry IS the actual behavior — Redis cursor was not advanced
+            # (see Clickhouse::ChatBackfill#tick failure path), so the next cron tick will re-attempt
+            # the same batch. Correct + desired for transient CH errors. The prior log line claimed
+            # "operator must clear status before retry" which contradicted the code.
+            Rails.logger.error("ChatBackfillCycleWorker: tick failed at cursor=#{result[:cursor]} batch_size=#{result[:batch_size]} err=#{result[:last_error]} ticks=#{ticks}. Cursor not advanced — next cron tick will auto-retry the same batch. Inspect `#{Clickhouse::ChatBackfill::REDIS_PREFIX}:last_error` for persistent failures.")
             return
           end
         end
@@ -90,8 +104,6 @@ module Clickhouse
       ensure
         lock_release(lock_token)
       end
-    rescue ArgumentError => e
-      Rails.logger.error("ChatBackfillCycleWorker: T0 parse failed (#{e.message}) — Redis value invalid; operator must reset")
     end
 
     # CR iter1 N3: clock injection. The default is `-> { Time.current }`, but specs can swap in a
@@ -112,7 +124,8 @@ module Clickhouse
 
     def lock_acquire(token)
       Sidekiq.redis do |c|
-        # Returns "OK" on success, nil if the key already exists (NX semantics).
+        # Returns "OK" on success, nil if the key already exists (NX semantics). redis-rb (specs)
+        # and Sidekiq's RedisClientAdapter::CompatClient both expose #set with kwargs.
         c.set(LOCK_KEY, token, nx: true, ex: LOCK_TTL_SECONDS) == "OK"
       end
     end
@@ -121,16 +134,29 @@ module Clickhouse
       # Atomic check-and-delete via Lua: only DEL if we still own the lock (token match). Prevents
       # the worker from releasing a lock that has already expired and been re-acquired by a later
       # tick (the canonical Redlock-style pattern).
-      script = <<~LUA
+      #
+      # CR iter2 M1: use the RAW `c.call("EVAL", ...)` form (not `c.eval(script, keys:, argv:)`).
+      # Sidekiq.redis yields RedisClient::CompatClient in production; `eval` is NOT in its
+      # USED_COMMANDS allow-list, so it falls through method_missing → RedisClient#call → CommandBuilder,
+      # which raises `TypeError: Unsupported command argument type: Array` on the `keys:` Array kwarg.
+      # The outer `rescue` then swallows it, and the lock leaks until its 80s TTL — degrading cron
+      # cadence from every-1-minute to every-2-minutes. The redis-rb 5 client used in specs handles
+      # the kwargs form, hiding the bug from unit tests. The raw `call("EVAL", script, numkeys, *keys, *argv)`
+      # form is canonical Redis protocol and works for both clients.
+      Sidekiq.redis { |c| c.call("EVAL", script_lock_release, 1, LOCK_KEY, token) }
+    rescue StandardError => e
+      # CR iter2 N1: include e.message so prod incidents are debuggable in one log line.
+      Rails.logger.warn("ChatBackfillCycleWorker: lock_release failed (#{e.class}: #{e.message.truncate(120)}) — lock will expire via TTL (#{LOCK_TTL_SECONDS}s)")
+    end
+
+    def script_lock_release
+      <<~LUA
         if redis.call('GET', KEYS[1]) == ARGV[1] then
           return redis.call('DEL', KEYS[1])
         else
           return 0
         end
       LUA
-      Sidekiq.redis { |c| c.eval(script, keys: [ LOCK_KEY ], argv: [ token ]) }
-    rescue StandardError => e
-      Rails.logger.warn("ChatBackfillCycleWorker: lock_release failed (#{e.class}) — lock will expire via TTL (#{LOCK_TTL_SECONDS}s)")
     end
   end
 end
