@@ -57,55 +57,26 @@ module Clickhouse
     end
     private :parse_t0!
 
-    # Operator-driven blocking loop (original rake-task entry point). Kept for backward-compat:
-    # ad-hoc one-shot backfill via `rake clickhouse:backfill_chat` still works the same way.
-    # The TASK-251.58 Sidekiq cron path (ChatBackfillCycleWorker) calls #tick directly with a
-    # timeboxed deadline so it survives container swaps natively.
+    # Seed T0 in Redis and exit. The actual backfill loop runs in Clickhouse::ChatBackfillCycleWorker
+    # (Sidekiq cron, every minute, survives container swaps natively). The rake task wrapper
+    # `rake clickhouse:backfill_chat[T0]` calls this method to set the watermark; the cron worker
+    # picks T0 up from Redis on its next tick.
     #
-    # CR iter3 Should-1: both entry points MUST share `:cycle_lock` (Clickhouse::BackfillCycleLock)
-    # — otherwise the rake operator path and the cron worker would both call #tick concurrently
-    # and double-insert into the no-engine-dedup CH MergeTree. Acquires lock at top, releases in
-    # ensure. If lock is already held (the cron worker is running or another operator-rake is in
-    # flight), abort with a clear message rather than block.
+    # CR iter4 M1: the previous blocking-loop implementation here held a lock with TTL=80s while
+    # the loop ran for hours — the cron worker would steal the lock after TTL expiry → concurrent
+    # #tick → duplicate inserts in no-engine-dedup CH MergeTree (the exact race iter3 Should-1
+    # was supposed to fix). The clean fix is to remove the rake's blocking loop entirely: it was
+    # the operator-driven pattern this entire TASK-251.58 replaces. Operators monitor progress
+    # via `rake clickhouse:backfill_chat_status` (read-only Redis dump) or tail Sidekiq logs.
+    #
+    # Returns a Result with status="seeded" — distinct from "done"/"paused"/"failed" so callers
+    # (rake task wrapper) can tell apart "T0 was set, worker will take it" from terminal states.
     def call
       @redis.set("#{REDIS_PREFIX}:t0", @t0.iso8601)
-      lock_token = SecureRandom.hex(16)
-      unless BackfillCycleLock.acquire(@redis, lock_token)
-        @logger.error("ChatBackfill: cycle lock already held — refusing to start a concurrent rake-driven loop. Wait for the cron-driven ChatBackfillCycleWorker (or other operator-rake) to finish, then re-run.")
-        return Result.new(status: "lock_busy", rows_processed: 0, batches: 0, elapsed_seconds: 0)
-      end
-
-      begin
-        @redis.set("#{REDIS_PREFIX}:status", "running")
-        started_at = Time.current
-        cursor = @redis.get("#{REDIS_PREFIX}:cursor_id") || NULL_UUID
-        rows_processed = @redis.get("#{REDIS_PREFIX}:rows_processed").to_i
-        batches = 0
-        @logger.info("ChatBackfill: starting t0=#{@t0.iso8601} cursor=#{cursor} rows_so_far=#{rows_processed} batch_size=#{@batch_size}")
-
-        loop do
-          result = tick
-
-          case result[:status]
-          when :paused
-            return finish("paused", started_at, result[:rows_processed], batches,
-                          "kill-switch flipped — paused at cursor=#{result[:cursor]}, rows=#{result[:rows_processed]}")
-          when :done
-            return finish("done", started_at, result[:rows_processed], batches,
-                          "no more pre-T0 rows; rows_processed=#{result[:rows_processed]} batches=#{batches}")
-          when :failed
-            @logger.error("ChatBackfill: CH insert failed at cursor=#{result[:cursor]} batch_size=#{result[:batch_size]}: #{result[:last_error]}")
-            return Result.new(status: "failed", rows_processed: result[:rows_processed], batches: batches,
-                              elapsed_seconds: (Time.current - started_at).to_i)
-          when :ok
-            batches += 1
-            @logger.info("ChatBackfill: progress cursor=#{result[:cursor]} rows=#{result[:rows_processed]} batches=#{batches}") if (batches % LOG_EVERY_N_BATCHES).zero?
-            sleep(@sleep_seconds)
-          end
-        end
-      ensure
-        BackfillCycleLock.release(@redis, lock_token)
-      end
+      cursor = @redis.get("#{REDIS_PREFIX}:cursor_id") || NULL_UUID
+      rows_so_far = @redis.get("#{REDIS_PREFIX}:rows_processed").to_i
+      @logger.info("ChatBackfill: T0 seeded t0=#{@t0.iso8601} cursor=#{cursor} rows_so_far=#{rows_so_far}. Cron-driven Clickhouse::ChatBackfillCycleWorker will resume on next tick (≤60s). Monitor via `rake clickhouse:backfill_chat_status` or Sidekiq logs.")
+      Result.new(status: "seeded", rows_processed: rows_so_far, batches: 0, elapsed_seconds: 0)
     end
 
     # TASK-251.58: single-batch operation. Used by both #call (operator-driven loop with sleep)
@@ -166,13 +137,6 @@ module Clickhouse
         .order(:id)
         .limit(@batch_size)
         .to_a
-    end
-
-    def finish(status, started_at, rows_processed, batches, message)
-      @redis.set("#{REDIS_PREFIX}:status", status)
-      @logger.info("ChatBackfill: #{message}")
-      Result.new(status: status, rows_processed: rows_processed, batches: batches,
-                 elapsed_seconds: (Time.current - started_at).to_i)
     end
   end
 end
