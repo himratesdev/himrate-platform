@@ -32,10 +32,8 @@ module Clickhouse
   class ChatBackfill
     REDIS_PREFIX = "clickhouse:backfill:chat"
     DEFAULT_BATCH_SIZE = 5_000
-    DEFAULT_SLEEP_SECONDS = 0.5
     # "Before all UUIDs" seed for the first run — every real UUID compares strictly greater.
     NULL_UUID = "00000000-0000-0000-0000-000000000000"
-    LOG_EVERY_N_BATCHES = 10
 
     Result = Struct.new(:status, :rows_processed, :batches, :elapsed_seconds, keyword_init: true)
 
@@ -43,10 +41,10 @@ module Clickhouse
       new(**opts).call
     end
 
-    # CR iter5 N2: `sleep_seconds:` removed — #call is now seed-only (no loop, no sleep);
-    # #tick is single-shot (no sleep). The cron worker uses its own INTER_BATCH_SLEEP_SECONDS
-    # between #tick calls. The constant DEFAULT_SLEEP_SECONDS is kept for documentation but no
-    # longer referenced in this class.
+    # `sleep_seconds:` removed (CR iter5 N2) — #call is seed-only (no loop, no sleep) and #tick
+    # is single-shot. The cron worker uses ChatBackfillCycleWorker::INTER_BATCH_SLEEP_SECONDS
+    # between #tick calls — that's the only inter-batch knob now. LOG_EVERY_N_BATCHES constant
+    # also dropped (PG nit) since #call no longer drives a logging loop.
     def initialize(t0:, batch_size: DEFAULT_BATCH_SIZE,
                    redis: nil, client: nil, logger: Rails.logger)
       @t0 = t0.is_a?(Time) ? t0 : parse_t0!(t0)
