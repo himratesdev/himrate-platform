@@ -96,8 +96,12 @@ module Clickhouse
     # and ChatBackfillCycleWorker (Sidekiq cron with timeboxed deadline; survives container swaps
     # natively, unlike the previous detached-rake pattern which died on every Kamal deploy and
     # required manual setsid re-spawn — observed 4× swap kills during TASK-251.14 backfill window
-    # 2026-05-29). Stateless — Redis is the only mutable state, so concurrent invocations are
-    # safe (Sidekiq cron prevents overlap via the 60s cadence + queue serialization).
+    # 2026-05-29). Single-writer assumption: this method is idempotent at the cursor level under
+    # a single concurrent writer (Redis cursor advances monotonically). It is NOT inherently
+    # concurrency-safe — two parallel ticks would both read the same Redis cursor, fetch the same
+    # PG batch, and double-insert into the no-engine-dedup CH MergeTree. ChatBackfillCycleWorker
+    # enforces single-writer via a cross-process Redis SETNX lock (`:cycle_lock`); the `rake
+    # clickhouse:backfill_chat` operator path is single-process by construction.
     #
     # Return value (Hash):
     #   { status: :ok,     cursor:, batch_size:, rows_processed: }  - batch inserted, more remaining
