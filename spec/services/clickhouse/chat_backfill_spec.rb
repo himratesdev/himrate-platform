@@ -27,7 +27,7 @@ RSpec.describe Clickhouse::ChatBackfill do
 
   def call(**opts)
     described_class.call(t0: t0, redis: redis, client: ch_client, logger: logger,
-                         batch_size: 2, sleep_seconds: 0, **opts)
+                         batch_size: 2, **opts)
   end
 
   # TASK-251.58 CR iter4 M1: #call is now a SEED-ONLY operation (sets T0 in Redis and exits).
@@ -71,7 +71,7 @@ RSpec.describe Clickhouse::ChatBackfill do
   describe "#tick" do
     let(:instance) do
       described_class.new(t0: t0, redis: redis, client: ch_client, logger: logger,
-                          batch_size: 2, sleep_seconds: 0)
+                          batch_size: 2)
     end
 
     it "returns :paused without touching CH when :chat_backfill_running flag is OFF" do
@@ -165,7 +165,12 @@ RSpec.describe Clickhouse::ChatBackfill do
     # this spec inserts don't interfere with any other spec's queries (they all filter by stream_id).
     # The CI ClickHouse service is ephemeral; local runs skip the example entirely.
 
-    it "round-trips Postgres rows into real ClickHouse with the exact rowset and order" do
+    # CR iter5 M1: drives #tick directly in a loop (the cron worker's pattern, but without the
+    # timebox — driven to completion in-process for end-to-end real-CH coverage). #call is now a
+    # T0 seeder + exit, so the original `#call → "done"` shape no longer applies; the real-CH
+    # contract is what `#tick` does per batch. This preserves the row-mapper round-trip assertion
+    # that was the only integration coverage of `Clickhouse::ChatRow.from_pg` on the backfill path.
+    it "round-trips Postgres rows into real ClickHouse via #tick (real client, real schema)" do
       pre = Array.new(3) do |i|
         create(:chat_message, stream: stream, channel_login: channel.login,
                               msg_type: "privmsg", username: "user#{i}", timestamp: t0 - (3 - i).minutes,
@@ -174,11 +179,24 @@ RSpec.describe Clickhouse::ChatBackfill do
       create(:chat_message, stream: stream, channel_login: channel.login,
                             msg_type: "privmsg", username: "future", timestamp: t0 + 1.minute)
 
-      result = described_class.call(t0: t0, redis: redis, client: real_client, logger: logger,
-                                    batch_size: 10, sleep_seconds: 0)
+      instance = described_class.new(t0: t0, redis: redis, client: real_client, logger: logger,
+                                     batch_size: 10)
 
-      expect(result.status).to eq("done")
-      expect(result.rows_processed).to eq(3)
+      # Drive #tick to completion (mirrors what ChatBackfillCycleWorker does, sans timebox).
+      ticks = 0
+      loop do
+        ticks += 1
+        result = instance.tick
+        case result[:status]
+        when :done then break
+        when :ok then next # continue draining
+        else raise "unexpected #tick status #{result[:status]} (last_error=#{result[:last_error]})"
+        end
+        raise "tick budget exceeded" if ticks > 10
+      end
+
+      expect(redis.get("#{described_class::REDIS_PREFIX}:rows_processed").to_i).to eq(3)
+      expect(redis.get("#{described_class::REDIS_PREFIX}:status")).to eq("done")
 
       ch_rows = real_client.select(
         "SELECT username, raw_tags FROM chat_messages WHERE stream_id = '#{stream_id}' ORDER BY username"

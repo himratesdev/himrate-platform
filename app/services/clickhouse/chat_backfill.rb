@@ -16,11 +16,14 @@ module Clickhouse
   # enable_time + 2× drain cadence + IRC ingest lag (≈ 2–3 minutes). PR 1d's parity gate spot-checks
   # for duplicate `twitch_msg_id` before flipping read.
   #
-  # Operator-invoked via `rake clickhouse:backfill_chat[t0_iso,batch_size,sleep_seconds]`. Idempotent
-  # + resumable: cursor stored in Redis (AOF-durable). Re-running picks up where it left off.
-  # Kill-switch: Flipper flag :chat_backfill_running. Flip OFF → loop exits cleanly after the current
-  # batch (cursor preserved). Failure path: CH error → log + status=failed + exit WITHOUT advancing
-  # the cursor (operator inspects, then re-runs to resume from the same batch).
+  # Operator-invoked via `rake clickhouse:backfill_chat[t0_iso]`. The rake task calls #call to
+  # seed T0 in Redis and exits; the actual backfill loop runs in Clickhouse::ChatBackfillCycleWorker
+  # (Sidekiq cron, every minute — survives container swaps natively). Idempotent + resumable:
+  # cursor stored in Redis (AOF-durable). Kill-switch: Flipper flag :chat_backfill_running — flip
+  # OFF and the next #tick returns :paused (cursor preserved). Failure path: CH error → set
+  # Redis status=failed + last_error, return :failed WITHOUT advancing the cursor (operator
+  # inspects via `rake clickhouse:backfill_chat_status`; the next cron tick auto-retries the same
+  # batch — for transient errors this is the desired behavior).
   #
   # Cursor is the Postgres UUID PK ordered ascending (id > cursor). UUIDv4 PK has NO timestamp
   # correlation (`gen_random_uuid()` is random) — so pre-T0 and post-T0 rows are scattered evenly
@@ -40,11 +43,14 @@ module Clickhouse
       new(**opts).call
     end
 
-    def initialize(t0:, batch_size: DEFAULT_BATCH_SIZE, sleep_seconds: DEFAULT_SLEEP_SECONDS,
+    # CR iter5 N2: `sleep_seconds:` removed — #call is now seed-only (no loop, no sleep);
+    # #tick is single-shot (no sleep). The cron worker uses its own INTER_BATCH_SLEEP_SECONDS
+    # between #tick calls. The constant DEFAULT_SLEEP_SECONDS is kept for documentation but no
+    # longer referenced in this class.
+    def initialize(t0:, batch_size: DEFAULT_BATCH_SIZE,
                    redis: nil, client: nil, logger: Rails.logger)
       @t0 = t0.is_a?(Time) ? t0 : parse_t0!(t0)
       @batch_size = batch_size
-      @sleep_seconds = sleep_seconds
       @redis = redis || Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
       @client = client || Clickhouse.client
       @logger = logger
@@ -125,6 +131,11 @@ module Clickhouse
       @redis.set("#{REDIS_PREFIX}:cursor_id", new_cursor)
       @redis.set("#{REDIS_PREFIX}:rows_processed", new_rows_processed.to_s)
       @redis.set("#{REDIS_PREFIX}:status", "running")
+      # CR iter5 N1: clear last_error on a successful subsequent tick so `rake backfill_chat_status`
+      # doesn't show a stale error message hours after the transient CH failure recovered. The
+      # backfill is back to healthy ticking — operators reading the status should see that, not
+      # the message from the now-resolved failure.
+      @redis.del("#{REDIS_PREFIX}:last_error")
 
       { status: :ok, cursor: new_cursor, batch_size: batch.size, rows_processed: new_rows_processed }
     end

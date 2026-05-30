@@ -18,8 +18,7 @@
 #
 # Kill-switch: `:chat_backfill_running` (existing). T0 (watermark) must be set in Redis BEFORE
 # the cycle can start — operator seeds T0 via `rake clickhouse:backfill_chat[T0_ISO]` (the rake
-# task sets T0 as a side-effect before entering its blocking loop; the cron worker then picks
-# up the same T0 from Redis on its next tick).
+# task sets T0 in Redis and exits; the cron worker picks up T0 on its next tick, ≤60s).
 module Clickhouse
   class ChatBackfillCycleWorker
     include Sidekiq::Job

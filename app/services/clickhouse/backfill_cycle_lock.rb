@@ -1,17 +1,22 @@
 # frozen_string_literal: true
 
 module Clickhouse
-  # TASK-251.58: cross-process single-writer lock for the chat backfill cycle.
+  # TASK-251.58: overlap-guard for the chat backfill cycle worker.
   #
-  # Shared by BOTH entry points so they cannot interleave:
-  #   - `Clickhouse::ChatBackfillCycleWorker` (Sidekiq cron, every minute)
-  #   - `Clickhouse::ChatBackfill#call` (operator-driven blocking loop via `rake clickhouse:backfill_chat`)
+  # Used by `Clickhouse::ChatBackfillCycleWorker` to prevent concurrent #tick invocations from
+  # corrupting the cursor advance. The scenarios this guards against:
+  #   - Multi-instance Sidekiq deploy (two job containers, both running the cron worker)
+  #   - A single #tick run that overran MAX_RUNTIME_SECONDS (50s) past the next 60s cron tick,
+  #     so the new tick fires before the old one returned
   #
-  # Without a shared lock, the cron worker and an in-flight detached-rake would both call
-  # `#tick` concurrently, both read the same Redis cursor, both fetch the same PG batch, and
-  # both insert duplicate rows into the raw chat_messages CH table (MergeTree, NO engine-level
-  # dedup — explicitly called out in `chat_backfill.rb` T0 safety-margin comment). CR iter3
-  # caught this race in the original implementation where only the worker took the lock.
+  # CR iter4 dropped the rake-side blocking loop, so `Clickhouse::ChatBackfill#call` no longer
+  # competes with the worker — the rake task is now a T0-seed-and-exit and never invokes #tick.
+  # The lock module is kept as a separate file so it stays unit-testable in isolation.
+  #
+  # Without overlap guard, two concurrent #tick calls would both read the same Redis cursor,
+  # both fetch the same PG batch, and both insert duplicate rows into the raw chat_messages CH
+  # table (MergeTree, NO engine-level dedup — explicitly called out in `chat_backfill.rb` T0
+  # safety-margin comment).
   #
   # Client-agnostic via the raw `c.call("SET", ...)` / `c.call("EVAL", ...)` form. Both the
   # redis-rb 5 client (used by `Clickhouse::ChatBackfill@redis` constructed via `Redis.new`)

@@ -78,11 +78,10 @@ Sidekiq.configure_server do |config|
       # `detached rake + setsid wrapper` operator pattern that died on every Kamal deploy
       # (container swap) and required manual re-spawn — 4× kills observed during TASK-251.14
       # chat backfill window 2026-05-29. The worker timeboxes a #tick loop at ~50s
-      # (< 60s cron cadence → no overlap), Sidekiq cron registers on boot, so the cycle
-      # resumes natively post-deploy. No-op when `:chat_backfill_running` OFF or T0 unset.
-      # T0 (watermark) is seeded via `rake clickhouse:backfill_chat[T0_ISO]` (one-shot
-      # operator action; rake task writes T0 to Redis then loops itself for legacy compat —
-      # the cron worker picks up the same T0 thereafter).
+      # (< 60s cron cadence + a SETNX overlap guard), Sidekiq cron registers on boot, so the
+      # cycle resumes natively post-deploy. No-op when `:chat_backfill_running` OFF or T0 unset.
+      # T0 (watermark) is seeded via `rake clickhouse:backfill_chat[T0_ISO]` (one-shot operator
+      # action; rake writes T0 to Redis and exits — the cron worker is the sole #tick driver).
       "chat_backfill_cycle" => {
         "cron" => "* * * * *", # Every minute
         "class" => "Clickhouse::ChatBackfillCycleWorker",
