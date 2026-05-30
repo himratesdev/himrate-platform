@@ -74,6 +74,20 @@ Sidekiq.configure_server do |config|
         "queue" => "chat",
         "description" => "Drain irc:chat_messages Redis queue → chat_messages (loop up to ~50s, cron-driven)"
       },
+      # TASK-251.58: ClickHouse chat backfill cron-driven cycle. Replaces the previous
+      # `detached rake + setsid wrapper` operator pattern that died on every Kamal deploy
+      # (container swap) and required manual re-spawn — 4× kills observed during TASK-251.14
+      # chat backfill window 2026-05-29. The worker timeboxes a #tick loop at ~50s
+      # (< 60s cron cadence + a SETNX overlap guard), Sidekiq cron registers on boot, so the
+      # cycle resumes natively post-deploy. No-op when `:chat_backfill_running` OFF or T0 unset.
+      # T0 (watermark) is seeded via `rake clickhouse:backfill_chat[T0_ISO]` (one-shot operator
+      # action; rake writes T0 to Redis and exits — the cron worker is the sole #tick driver).
+      "chat_backfill_cycle" => {
+        "cron" => "* * * * *", # Every minute
+        "class" => "Clickhouse::ChatBackfillCycleWorker",
+        "queue" => "long_running",
+        "description" => "TASK-251.58: resumable CH chat backfill cycle (gated :chat_backfill_running; T0 from Redis)"
+      },
       # TASK-251.3: backfill/refresh monitored Channel metadata (display_name / avatar /
       # broadcaster_type / description) from Helix /users. Channels created by discovery/
       # EventSub carry only login + is_monitored → these were null. ≤1000 channels/run (≤10

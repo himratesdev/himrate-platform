@@ -16,11 +16,14 @@ module Clickhouse
   # enable_time + 2× drain cadence + IRC ingest lag (≈ 2–3 minutes). PR 1d's parity gate spot-checks
   # for duplicate `twitch_msg_id` before flipping read.
   #
-  # Operator-invoked via `rake clickhouse:backfill_chat[t0_iso,batch_size,sleep_seconds]`. Idempotent
-  # + resumable: cursor stored in Redis (AOF-durable). Re-running picks up where it left off.
-  # Kill-switch: Flipper flag :chat_backfill_running. Flip OFF → loop exits cleanly after the current
-  # batch (cursor preserved). Failure path: CH error → log + status=failed + exit WITHOUT advancing
-  # the cursor (operator inspects, then re-runs to resume from the same batch).
+  # Operator-invoked via `rake clickhouse:backfill_chat[t0_iso]`. The rake task calls #call to
+  # seed T0 in Redis and exits; the actual backfill loop runs in Clickhouse::ChatBackfillCycleWorker
+  # (Sidekiq cron, every minute — survives container swaps natively). Idempotent + resumable:
+  # cursor stored in Redis (AOF-durable). Kill-switch: Flipper flag :chat_backfill_running — flip
+  # OFF and the next #tick returns :paused (cursor preserved). Failure path: CH error → set
+  # Redis status=failed + last_error, return :failed WITHOUT advancing the cursor (operator
+  # inspects via `rake clickhouse:backfill_chat_status`; the next cron tick auto-retries the same
+  # batch — for transient errors this is the desired behavior).
   #
   # Cursor is the Postgres UUID PK ordered ascending (id > cursor). UUIDv4 PK has NO timestamp
   # correlation (`gen_random_uuid()` is random) — so pre-T0 and post-T0 rows are scattered evenly
@@ -29,10 +32,8 @@ module Clickhouse
   class ChatBackfill
     REDIS_PREFIX = "clickhouse:backfill:chat"
     DEFAULT_BATCH_SIZE = 5_000
-    DEFAULT_SLEEP_SECONDS = 0.5
     # "Before all UUIDs" seed for the first run — every real UUID compares strictly greater.
     NULL_UUID = "00000000-0000-0000-0000-000000000000"
-    LOG_EVERY_N_BATCHES = 10
 
     Result = Struct.new(:status, :rows_processed, :batches, :elapsed_seconds, keyword_init: true)
 
@@ -40,11 +41,14 @@ module Clickhouse
       new(**opts).call
     end
 
-    def initialize(t0:, batch_size: DEFAULT_BATCH_SIZE, sleep_seconds: DEFAULT_SLEEP_SECONDS,
+    # `sleep_seconds:` removed (CR iter5 N2) — #call is seed-only (no loop, no sleep) and #tick
+    # is single-shot. The cron worker uses ChatBackfillCycleWorker::INTER_BATCH_SLEEP_SECONDS
+    # between #tick calls — that's the only inter-batch knob now. LOG_EVERY_N_BATCHES constant
+    # also dropped (PG nit) since #call no longer drives a logging loop.
+    def initialize(t0:, batch_size: DEFAULT_BATCH_SIZE,
                    redis: nil, client: nil, logger: Rails.logger)
       @t0 = t0.is_a?(Time) ? t0 : parse_t0!(t0)
       @batch_size = batch_size
-      @sleep_seconds = sleep_seconds
       @redis = redis || Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
       @client = client || Clickhouse.client
       @logger = logger
@@ -57,47 +61,81 @@ module Clickhouse
     end
     private :parse_t0!
 
+    # Seed T0 in Redis and exit. The actual backfill loop runs in Clickhouse::ChatBackfillCycleWorker
+    # (Sidekiq cron, every minute, survives container swaps natively). The rake task wrapper
+    # `rake clickhouse:backfill_chat[T0]` calls this method to set the watermark; the cron worker
+    # picks T0 up from Redis on its next tick.
+    #
+    # CR iter4 M1: the previous blocking-loop implementation here held a lock with TTL=80s while
+    # the loop ran for hours — the cron worker would steal the lock after TTL expiry → concurrent
+    # #tick → duplicate inserts in no-engine-dedup CH MergeTree (the exact race iter3 Should-1
+    # was supposed to fix). The clean fix is to remove the rake's blocking loop entirely: it was
+    # the operator-driven pattern this entire TASK-251.58 replaces. Operators monitor progress
+    # via `rake clickhouse:backfill_chat_status` (read-only Redis dump) or tail Sidekiq logs.
+    #
+    # Returns a Result with status="seeded" — distinct from "done"/"paused"/"failed" so callers
+    # (rake task wrapper) can tell apart "T0 was set, worker will take it" from terminal states.
     def call
       @redis.set("#{REDIS_PREFIX}:t0", @t0.iso8601)
-      @redis.set("#{REDIS_PREFIX}:status", "running")
+      cursor = @redis.get("#{REDIS_PREFIX}:cursor_id") || NULL_UUID
+      rows_so_far = @redis.get("#{REDIS_PREFIX}:rows_processed").to_i
+      @logger.info("ChatBackfill: T0 seeded t0=#{@t0.iso8601} cursor=#{cursor} rows_so_far=#{rows_so_far}. Cron-driven Clickhouse::ChatBackfillCycleWorker will resume on next tick (≤60s). Monitor via `rake clickhouse:backfill_chat_status` or Sidekiq logs.")
+      Result.new(status: "seeded", rows_processed: rows_so_far, batches: 0, elapsed_seconds: 0)
+    end
+
+    # TASK-251.58: single-batch operation. Called by ChatBackfillCycleWorker (Sidekiq cron with
+    # timeboxed deadline; survives container swaps natively, unlike the prior detached-rake
+    # pattern which died on every Kamal deploy — observed 4× swap kills during TASK-251.14
+    # backfill window 2026-05-29). The worker is the sole #tick caller after CR iter4 dropped
+    # the rake blocking loop. Single-writer assumption: this method is idempotent at the cursor
+    # level under a single concurrent writer (Redis cursor advances monotonically). It is NOT
+    # inherently concurrency-safe — two parallel ticks would both read the same Redis cursor,
+    # fetch the same PG batch, and double-insert into the no-engine-dedup CH MergeTree.
+    # ChatBackfillCycleWorker enforces single-writer via the Clickhouse::BackfillCycleLock SETNX
+    # lock around the #tick loop (overlap guard against multi-instance worker OR overrun-tick).
+    #
+    # Return value (Hash):
+    #   { status: :ok,     cursor:, batch_size:, rows_processed: }  - batch inserted, more remaining
+    #   { status: :done,   cursor:, rows_processed: }               - no rows match `id > cursor AND timestamp < T0`
+    #   { status: :paused, cursor:, rows_processed: }               - :chat_backfill_running OFF (kill-switch)
+    #   { status: :failed, cursor:, batch_size:, rows_processed:, last_error: }  - CH insert error; Redis status="failed"
+    def tick
       cursor = @redis.get("#{REDIS_PREFIX}:cursor_id") || NULL_UUID
       rows_processed = @redis.get("#{REDIS_PREFIX}:rows_processed").to_i
-      batches = 0
-      started_at = Time.current
-      @logger.info("ChatBackfill: starting t0=#{@t0.iso8601} cursor=#{cursor} rows_so_far=#{rows_processed} batch_size=#{@batch_size}")
 
-      loop do
-        unless Flipper.enabled?(:chat_backfill_running)
-          return finish("paused", started_at, rows_processed, batches,
-                        "kill-switch flipped — paused at cursor=#{cursor}, rows=#{rows_processed}")
-        end
-
-        batch = fetch_batch(cursor)
-        return finish("done", started_at, rows_processed, batches,
-                      "no more pre-T0 rows; rows_processed=#{rows_processed} batches=#{batches}") if batch.empty?
-
-        rows = batch.map { |record| ChatRow.from_pg(record.attributes) }
-
-        begin
-          @client.insert("chat_messages", rows)
-        rescue Clickhouse::Error => e
-          @redis.set("#{REDIS_PREFIX}:status", "failed")
-          @redis.set("#{REDIS_PREFIX}:last_error", "#{e.class}: #{e.message.truncate(500)}")
-          @logger.error("ChatBackfill: CH insert failed at cursor=#{cursor} batch_size=#{batch.size}: #{e.class}: #{e.message.truncate(200)}")
-          return Result.new(status: "failed", rows_processed: rows_processed, batches: batches,
-                            elapsed_seconds: (Time.current - started_at).to_i)
-        end
-
-        cursor = batch.last.id
-        rows_processed += batch.size
-        batches += 1
-        @redis.set("#{REDIS_PREFIX}:cursor_id", cursor)
-        @redis.set("#{REDIS_PREFIX}:rows_processed", rows_processed.to_s)
-
-        @logger.info("ChatBackfill: progress cursor=#{cursor} rows=#{rows_processed} batches=#{batches}") if (batches % LOG_EVERY_N_BATCHES).zero?
-
-        sleep(@sleep_seconds)
+      unless Flipper.enabled?(:chat_backfill_running)
+        return { status: :paused, cursor: cursor, rows_processed: rows_processed }
       end
+
+      batch = fetch_batch(cursor)
+      if batch.empty?
+        @redis.set("#{REDIS_PREFIX}:status", "done")
+        return { status: :done, cursor: cursor, rows_processed: rows_processed }
+      end
+
+      rows = batch.map { |record| ChatRow.from_pg(record.attributes) }
+
+      begin
+        @client.insert("chat_messages", rows)
+      rescue Clickhouse::Error => e
+        @redis.set("#{REDIS_PREFIX}:status", "failed")
+        @redis.set("#{REDIS_PREFIX}:last_error", "#{e.class}: #{e.message.truncate(500)}")
+        return { status: :failed, cursor: cursor, batch_size: batch.size,
+                 rows_processed: rows_processed, last_error: "#{e.class}: #{e.message.truncate(200)}" }
+      end
+
+      new_cursor = batch.last.id
+      new_rows_processed = rows_processed + batch.size
+      @redis.set("#{REDIS_PREFIX}:cursor_id", new_cursor)
+      @redis.set("#{REDIS_PREFIX}:rows_processed", new_rows_processed.to_s)
+      @redis.set("#{REDIS_PREFIX}:status", "running")
+      # CR iter5 N1: clear last_error on a successful subsequent tick so `rake backfill_chat_status`
+      # doesn't show a stale error message hours after the transient CH failure recovered. The
+      # backfill is back to healthy ticking — operators reading the status should see that, not
+      # the message from the now-resolved failure.
+      @redis.del("#{REDIS_PREFIX}:last_error")
+
+      { status: :ok, cursor: new_cursor, batch_size: batch.size, rows_processed: new_rows_processed }
     end
 
     private
@@ -108,13 +146,6 @@ module Clickhouse
         .order(:id)
         .limit(@batch_size)
         .to_a
-    end
-
-    def finish(status, started_at, rows_processed, batches, message)
-      @redis.set("#{REDIS_PREFIX}:status", status)
-      @logger.info("ChatBackfill: #{message}")
-      Result.new(status: status, rows_processed: rows_processed, batches: batches,
-                 elapsed_seconds: (Time.current - started_at).to_i)
     end
   end
 end

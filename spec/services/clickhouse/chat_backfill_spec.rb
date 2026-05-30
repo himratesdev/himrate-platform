@@ -27,64 +27,111 @@ RSpec.describe Clickhouse::ChatBackfill do
 
   def call(**opts)
     described_class.call(t0: t0, redis: redis, client: ch_client, logger: logger,
-                         batch_size: 2, sleep_seconds: 0, **opts)
+                         batch_size: 2, **opts)
   end
 
-  describe "happy path (mocked CH)" do
-    before { allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true) }
-
-    it "returns status=done with no rows when Postgres is empty (pre-T0)" do
+  # TASK-251.58 CR iter4 M1: #call is now a SEED-ONLY operation (sets T0 in Redis and exits).
+  # The blocking loop was removed because it competed with the cron worker (TTL=80s lock vs
+  # hours-long loop → cron stole lock mid-run → concurrent #tick → duplicate inserts in CH).
+  # The actual backfill loop runs in Clickhouse::ChatBackfillCycleWorker (Sidekiq cron, every
+  # minute, survives container swaps). #call's only job is to write T0 — the worker reads it.
+  describe "#call (T0 seed + exit)" do
+    it "writes T0 to Redis and returns status=seeded immediately" do
       result = call
-      expect(result.status).to eq("done")
-      expect(result.rows_processed).to eq(0)
-      expect(result.batches).to eq(0)
+
+      expect(result.status).to eq("seeded")
+      expect(redis.get("#{described_class::REDIS_PREFIX}:t0")).to eq(t0.iso8601)
+      expect(ch_client).not_to have_received(:insert) # no loop, no CH writes
+    end
+
+    it "reports rows_so_far from Redis (resumable T0 reseed mid-cycle)" do
+      redis.set("#{described_class::REDIS_PREFIX}:rows_processed", "5_000_000")
+
+      result = call
+
+      expect(result.status).to eq("seeded")
+      expect(result.rows_processed).to eq(5_000_000)
+    end
+
+    it "is idempotent — re-seeding the same T0 is a no-op for the worker" do
+      call # seed
+      original = redis.get("#{described_class::REDIS_PREFIX}:t0")
+
+      result = call # re-seed
+
+      expect(result.status).to eq("seeded")
+      expect(redis.get("#{described_class::REDIS_PREFIX}:t0")).to eq(original)
+    end
+  end
+
+  # TASK-251.58: #tick is the single-batch operation extracted from the original #call loop.
+  # Called by the cron worker (Clickhouse::ChatBackfillCycleWorker, sole #tick driver after
+  # CR iter4 dropped the rake blocking loop). Direct unit coverage of #tick is needed because
+  # the worker exercises it in a timeboxed loop, not via #call.
+  describe "#tick" do
+    let(:instance) do
+      described_class.new(t0: t0, redis: redis, client: ch_client, logger: logger,
+                          batch_size: 2)
+    end
+
+    it "returns :paused without touching CH when :chat_backfill_running flag is OFF" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(false)
+      create(:chat_message, channel_login: "x", msg_type: "privmsg",
+                            username: "u", timestamp: t0 - 1.minute)
+
+      result = instance.tick
+
+      expect(result[:status]).to eq(:paused)
       expect(ch_client).not_to have_received(:insert)
     end
 
-    it "batches pre-T0 rows in id ASC order, advances Redis cursor, calls CH#insert per batch" do
-      channel = create(:channel)
-      stream = create(:stream, channel: channel, ended_at: nil)
-      # 5 pre-T0 rows + 1 post-T0 row (must be skipped).
-      pre = Array.new(5) do |i|
-        create(:chat_message, stream: stream, channel_login: channel.login,
-                              msg_type: "privmsg", username: "u#{i}", timestamp: t0 - (i + 1).minutes)
-      end
-      _post = create(:chat_message, stream: stream, channel_login: channel.login,
-                                    msg_type: "privmsg", username: "future", timestamp: t0 + 1.minute)
+    it "returns :done and sets Redis status=done when no pre-T0 rows remain" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true)
 
-      result = call
+      result = instance.tick
 
-      expect(result.status).to eq("done")
-      expect(result.rows_processed).to eq(5)
-      expect(result.batches).to eq(3) # 2 + 2 + 1
-      expect(ch_client).to have_received(:insert).exactly(3).times
-      # Cursor lands on the highest-id pre-T0 row.
-      expect(redis.get("#{described_class::REDIS_PREFIX}:cursor_id")).to eq(pre.map(&:id).max)
+      expect(result[:status]).to eq(:done)
       expect(redis.get("#{described_class::REDIS_PREFIX}:status")).to eq("done")
     end
 
-    it "maps each row via Clickhouse::ChatRow (single source of truth with the live mirror)" do
+    it "returns :ok, advances Redis cursor + rows_processed, sets status=running on successful batch" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true)
       channel = create(:channel)
       stream = create(:stream, channel: channel, ended_at: nil)
-      create(:chat_message, stream: stream, channel_login: channel.login,
-                            msg_type: "privmsg", username: "alice", timestamp: t0 - 5.minutes,
-                            raw_tags: { "k" => "v" })
+      pre = Array.new(3) do |i|
+        create(:chat_message, stream: stream, channel_login: channel.login,
+                              msg_type: "privmsg", username: "u#{i}", timestamp: t0 - (i + 1).minutes)
+      end
+      sorted_ids = pre.map(&:id).sort
 
-      received = nil
-      allow(ch_client).to receive(:insert) { |_table, rows| received = rows }
+      result = instance.tick
 
-      call
-
-      expect(received.size).to eq(1)
-      row = received.first
-      expect(row[:username]).to eq("alice")
-      expect(row[:raw_tags]).to eq('{"k":"v"}')
-      expect(row[:timestamp]).to match(/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\z/)
+      expect(result[:status]).to eq(:ok)
+      expect(result[:batch_size]).to eq(2)
+      expect(result[:rows_processed]).to eq(2)
+      expect(result[:cursor]).to eq(sorted_ids[1])
+      expect(redis.get("#{described_class::REDIS_PREFIX}:cursor_id")).to eq(sorted_ids[1])
+      expect(redis.get("#{described_class::REDIS_PREFIX}:status")).to eq("running")
+      expect(ch_client).to have_received(:insert).once
     end
-  end
 
-  describe "kill-switch" do
-    it "exits cleanly with status=paused (cursor preserved) when the flag flips OFF mid-run" do
+    it "returns :failed and sets Redis status=failed without advancing cursor on CH error" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true)
+      create(:chat_message, channel_login: "x", msg_type: "privmsg",
+                            username: "u", timestamp: t0 - 1.minute)
+      allow(ch_client).to receive(:insert).and_raise(Clickhouse::QueryError, "boom")
+
+      result = instance.tick
+
+      expect(result[:status]).to eq(:failed)
+      expect(result[:last_error]).to include("Clickhouse::QueryError")
+      expect(redis.get("#{described_class::REDIS_PREFIX}:status")).to eq("failed")
+      # Cursor was never set — the failure short-circuits before the Redis cursor write.
+      expect(redis.get("#{described_class::REDIS_PREFIX}:cursor_id")).to be_nil
+    end
+
+    it "is idempotent — successive ticks from the same cursor produce deterministic forward progress" do
+      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true)
       channel = create(:channel)
       stream = create(:stream, channel: channel, ended_at: nil)
       pre = Array.new(4) do |i|
@@ -92,66 +139,15 @@ RSpec.describe Clickhouse::ChatBackfill do
                               msg_type: "privmsg", username: "u#{i}", timestamp: t0 - (i + 1).minutes)
       end
       sorted_ids = pre.map(&:id).sort
-      # First check returns true (run one batch), second check returns false (paused).
-      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true, false)
 
-      result = call
-      expect(result.status).to eq("paused")
-      expect(result.rows_processed).to eq(2)        # exactly one batch processed
-      expect(result.batches).to eq(1)
-      expect(redis.get("#{described_class::REDIS_PREFIX}:cursor_id")).to eq(sorted_ids[1]) # 2nd-lowest id
-    end
+      r1 = instance.tick # rows 1-2
+      r2 = instance.tick # rows 3-4
+      r3 = instance.tick # done
 
-    it "aborts immediately if the flag was never enabled (no work done)" do
-      create(:chat_message, channel_login: "x", msg_type: "privmsg",
-                            username: "u", timestamp: t0 - 1.minute)
-      allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(false)
-
-      result = call
-      expect(result.status).to eq("paused")
-      expect(result.rows_processed).to eq(0)
-      expect(ch_client).not_to have_received(:insert)
-    end
-  end
-
-  describe "resumability" do
-    before { allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true) }
-
-    it "starts from the persisted Redis cursor, skipping already-processed rows" do
-      channel = create(:channel)
-      stream = create(:stream, channel: channel, ended_at: nil)
-      rows = Array.new(4) do |i|
-        create(:chat_message, stream: stream, channel_login: channel.login,
-                              msg_type: "privmsg", username: "u#{i}", timestamp: t0 - (i + 1).minutes)
-      end
-      sorted_ids = rows.map(&:id).sort
-      # Pretend a previous run processed rows up to the 2nd-lowest id.
-      redis.set("#{described_class::REDIS_PREFIX}:cursor_id", sorted_ids[1])
-      redis.set("#{described_class::REDIS_PREFIX}:rows_processed", "2")
-
-      result = call
-
-      expect(result.rows_processed).to eq(4) # 2 prior + 2 new this run
-      expect(redis.get("#{described_class::REDIS_PREFIX}:cursor_id")).to eq(sorted_ids.last)
-    end
-  end
-
-  describe "failure path" do
-    before { allow(Flipper).to receive(:enabled?).with(:chat_backfill_running).and_return(true) }
-
-    it "leaves the cursor untouched on CH error so a re-run resumes the same batch (status=failed)" do
-      channel = create(:channel)
-      stream = create(:stream, channel: channel, ended_at: nil)
-      create(:chat_message, stream: stream, channel_login: channel.login,
-                            msg_type: "privmsg", username: "u", timestamp: t0 - 1.minute)
-      allow(ch_client).to receive(:insert).and_raise(Clickhouse::QueryError, "boom")
-
-      result = call
-
-      expect(result.status).to eq("failed")
-      expect(redis.get("#{described_class::REDIS_PREFIX}:status")).to eq("failed")
-      expect(redis.get("#{described_class::REDIS_PREFIX}:last_error")).to include("Clickhouse::QueryError")
-      expect(redis.get("#{described_class::REDIS_PREFIX}:cursor_id")).to be_nil
+      expect([ r1[:status], r2[:status], r3[:status] ]).to eq([ :ok, :ok, :done ])
+      expect(r2[:cursor]).to eq(sorted_ids.last)
+      expect(r2[:rows_processed]).to eq(4)
+      expect(ch_client).to have_received(:insert).exactly(2).times
     end
   end
 
@@ -169,7 +165,12 @@ RSpec.describe Clickhouse::ChatBackfill do
     # this spec inserts don't interfere with any other spec's queries (they all filter by stream_id).
     # The CI ClickHouse service is ephemeral; local runs skip the example entirely.
 
-    it "round-trips Postgres rows into real ClickHouse with the exact rowset and order" do
+    # CR iter5 M1: drives #tick directly in a loop (the cron worker's pattern, but without the
+    # timebox — driven to completion in-process for end-to-end real-CH coverage). #call is now a
+    # T0 seeder + exit, so the original `#call → "done"` shape no longer applies; the real-CH
+    # contract is what `#tick` does per batch. This preserves the row-mapper round-trip assertion
+    # that was the only integration coverage of `Clickhouse::ChatRow.from_pg` on the backfill path.
+    it "round-trips Postgres rows into real ClickHouse via #tick (real client, real schema)" do
       pre = Array.new(3) do |i|
         create(:chat_message, stream: stream, channel_login: channel.login,
                               msg_type: "privmsg", username: "user#{i}", timestamp: t0 - (3 - i).minutes,
@@ -178,11 +179,24 @@ RSpec.describe Clickhouse::ChatBackfill do
       create(:chat_message, stream: stream, channel_login: channel.login,
                             msg_type: "privmsg", username: "future", timestamp: t0 + 1.minute)
 
-      result = described_class.call(t0: t0, redis: redis, client: real_client, logger: logger,
-                                    batch_size: 10, sleep_seconds: 0)
+      instance = described_class.new(t0: t0, redis: redis, client: real_client, logger: logger,
+                                     batch_size: 10)
 
-      expect(result.status).to eq("done")
-      expect(result.rows_processed).to eq(3)
+      # Drive #tick to completion (mirrors what ChatBackfillCycleWorker does, sans timebox).
+      ticks = 0
+      loop do
+        ticks += 1
+        result = instance.tick
+        case result[:status]
+        when :done then break
+        when :ok then next # continue draining
+        else raise "unexpected #tick status #{result[:status]} (last_error=#{result[:last_error]})"
+        end
+        raise "tick budget exceeded" if ticks > 10
+      end
+
+      expect(redis.get("#{described_class::REDIS_PREFIX}:rows_processed").to_i).to eq(3)
+      expect(redis.get("#{described_class::REDIS_PREFIX}:status")).to eq("done")
 
       ch_rows = real_client.select(
         "SELECT username, raw_tags FROM chat_messages WHERE stream_id = '#{stream_id}' ORDER BY username"
