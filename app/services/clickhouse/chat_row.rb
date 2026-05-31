@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
 module Clickhouse
-  # TASK-251.14c: single source of truth for the Postgres-ChatMessage → ClickHouse-chat_messages row
-  # mapping. Used by both paths so they produce byte-identical rows:
-  #   • ChatMessageWorker#mirror_to_clickhouse (live dual-write, TASK-251.14b) — symbol-keyed hash
-  #     from parse_message;
-  #   • Clickhouse::ChatBackfill (TASK-251.14c) — string-keyed hash from AR record#attributes.
+  # TASK-251.14c (post-PR-1e-A): single source of truth for the parsed-record → ClickHouse
+  # chat_messages row mapping. Used by both code paths so they produce byte-identical rows:
+  #   • ChatMessageWorker#write_to_clickhouse (live ingest, primary writer post-cutover) —
+  #     symbol-keyed hash from parse_message;
+  #   • Clickhouse::ChatBackfill (historical, pre-PR-1e-B drop) — string-keyed hash from AR
+  #     record#attributes (only meaningful while PG chat_messages table still exists).
   # Accepts either via with_indifferent_access. Coalesces nils to non-nullable column defaults,
   # booleans → UInt8, raw_tags Hash → JSON String, Time → ClickHouse DateTime64(3) text. stream_id
   # stays nil → CH NULL (Nullable(UUID)); inserted_at is omitted so CH applies its DEFAULT now().
