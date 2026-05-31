@@ -7,7 +7,11 @@
 
 class SignalComputeWorker
   include Sidekiq::Job
-  sidekiq_options queue: :signals, retry: 3
+  # Phase 5 follow-up (2026-05-31): dedicated :signal_compute queue so new TI recompute
+  # jobs bypass the historical :signals 1M+ backlog (same fix pattern as PR #229
+  # :bot_scoring). String value (not Symbol) per CR-229 iter-2 — Sidekiq stores option
+  # values verbatim, and queue introspection in specs/cron-enqueue paths assumes String.
+  sidekiq_options queue: "signal_compute", retry: 3
 
   THROTTLE_KEY_PREFIX = "signal_compute:throttle:"
   PUBLISH_CHANNEL_PREFIX = "ti:updates:"
