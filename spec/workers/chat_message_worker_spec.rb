@@ -2,14 +2,26 @@
 
 require "rails_helper"
 
+# PR 1e-A (2026-05-31): post-CH-cutover ChatMessageWorker writes ONLY to ClickHouse.
+# All assertions on `ChatMessage.count` / `ChatMessage.last` were removed — Postgres
+# is no longer a writer for chat (PG chat_messages table dropped in PR 1e-B). The new
+# contract is captured by spying on `Clickhouse.client.insert`: the worker must call
+# it with the expected rows for each Redis batch, must raise (not swallow) on CH
+# failure, and must re-queue the drained batch back to Redis when it does.
 RSpec.describe ChatMessageWorker do
   let(:worker) { described_class.new }
   let(:redis_url) { "redis://localhost:6379/1" }
   let(:redis_key) { "irc:chat_messages" }
+  let(:ch_client) { instance_double(Clickhouse::Client) }
+  let(:captured_rows) { [] }
 
   before do
     allow(ENV).to receive(:fetch).and_call_original
     allow(ENV).to receive(:fetch).with("REDIS_URL", anything).and_return(redis_url)
+
+    # Spy on the (now primary) CH write path. Default: succeed and capture the rows.
+    allow(Clickhouse).to receive(:client).and_return(ch_client)
+    allow(ch_client).to receive(:insert) { |_table, rows| captured_rows.replace(rows) }
 
     # Clear Redis queue
     Redis.new(url: redis_url).del(redis_key)
@@ -43,32 +55,40 @@ RSpec.describe ChatMessageWorker do
     }.merge(overrides)
   end
 
-  # TC-013: Redis → batch INSERT
   describe "#perform" do
-    it "inserts messages from Redis into chat_messages" do
+    # TC-013 (post-cutover): Redis → ClickHouse insert
+    it "writes Redis-drained messages into the ClickHouse chat_messages table" do
       push_message(sample_message)
       push_message(sample_message(username: "user2", message_text: "Second msg"))
 
-      expect { worker.perform }.to change(ChatMessage, :count).by(2)
+      worker.perform
 
-      msg = ChatMessage.last
-      expect(msg.channel_login).to eq("testchannel")
-      expect(msg.msg_type).to eq("privmsg")
-      expect(msg.raw_tags).to be_a(Hash)
+      expect(ch_client).to have_received(:insert).with("chat_messages", anything)
+      expect(captured_rows.size).to eq(2)
+      # Row shape (Clickhouse::ChatRow.from_pg) — verify the dimensions a downstream
+      # signal/aggregation actually consumes survive the transform.
+      expect(captured_rows.map { |r| r[:channel_login] }).to all(eq("testchannel"))
+      expect(captured_rows.map { |r| r[:username] }).to match_array([ "testuser", "user2" ])
+      expect(captured_rows.map { |r| r[:msg_type] }).to all(eq("privmsg"))
+      expect(captured_rows.first[:raw_tags]).to be_a(String) # JSON serialized for CH
     end
 
-    it "handles empty Redis queue" do
-      expect { worker.perform }.not_to change(ChatMessage, :count)
+    it "is a no-op when the Redis queue is empty" do
+      worker.perform
+      expect(ch_client).not_to have_received(:insert)
     end
 
-    it "skips invalid JSON in queue" do
+    it "skips invalid JSON and writes the rest" do
       Redis.new(url: redis_url).lpush(redis_key, "not-json{{{")
       push_message(sample_message)
 
-      expect { worker.perform }.to change(ChatMessage, :count).by(1)
+      worker.perform
+
+      expect(captured_rows.size).to eq(1)
+      expect(captured_rows.first[:username]).to eq("testuser")
     end
 
-    it "inserts USERNOTICE messages" do
+    it "writes USERNOTICE messages with the right msg_type and raw_tags" do
       push_message(sample_message(
         msg_type: "sub",
         message_text: "PogChamp first sub!",
@@ -77,12 +97,12 @@ RSpec.describe ChatMessageWorker do
 
       worker.perform
 
-      msg = ChatMessage.last
-      expect(msg.msg_type).to eq("sub")
-      expect(msg.raw_tags["msg-param-cumulative-months"]).to eq("1")
+      row = captured_rows.first
+      expect(row[:msg_type]).to eq("sub")
+      expect(JSON.parse(row[:raw_tags])["msg-param-cumulative-months"]).to eq("1")
     end
 
-    it "inserts ROOMSTATE messages" do
+    it "writes ROOMSTATE messages" do
       push_message(sample_message(
         msg_type: "roomstate",
         username: nil,
@@ -92,12 +112,12 @@ RSpec.describe ChatMessageWorker do
 
       worker.perform
 
-      msg = ChatMessage.last
-      expect(msg.msg_type).to eq("roomstate")
-      expect(msg.raw_tags["followers-only"]).to eq("10")
+      row = captured_rows.first
+      expect(row[:msg_type]).to eq("roomstate")
+      expect(JSON.parse(row[:raw_tags])["followers-only"]).to eq("10")
     end
 
-    it "inserts CLEARCHAT messages" do
+    it "writes CLEARCHAT messages" do
       push_message(sample_message(
         msg_type: "clearchat",
         username: "banneduser",
@@ -107,108 +127,36 @@ RSpec.describe ChatMessageWorker do
 
       worker.perform
 
-      msg = ChatMessage.last
-      expect(msg.msg_type).to eq("clearchat")
-      expect(msg.raw_tags["ban-duration"]).to eq("600")
+      row = captured_rows.first
+      expect(row[:msg_type]).to eq("clearchat")
+      expect(JSON.parse(row[:raw_tags])["ban-duration"]).to eq("600")
     end
 
-    it "resolves stream_id from channel_login" do
+    it "resolves stream_id from the active stream for channel_login" do
       channel = create(:channel, login: "testchannel")
       stream = create(:stream, channel: channel, ended_at: nil)
 
       push_message(sample_message)
       worker.perform
 
-      msg = ChatMessage.last
-      expect(msg.stream_id).to eq(stream.id)
+      expect(captured_rows.first[:stream_id]).to eq(stream.id)
     end
 
-    it "handles messages without active stream (stream_id = nil)" do
+    it "writes nil stream_id when no active stream exists for the channel" do
       push_message(sample_message(channel_login: "nochannel"))
       worker.perform
 
-      msg = ChatMessage.last
-      expect(msg.stream_id).to be_nil
+      expect(captured_rows.first[:stream_id]).to be_nil
     end
 
-    # TASK-251.5 CR nit-1: drained batch must not be lost on an unexpected insert failure
-    it "re-queues the drained batch and re-raises on an unexpected insert failure" do
+    # PR 1e-A: post-cutover CH is the SoT — a write failure MUST raise (no best_effort)
+    # so Sidekiq retry kicks in. Re-queue contract from the PG era is preserved verbatim.
+    it "re-queues the drained batch and re-raises on a ClickHouse insert failure" do
       push_message(sample_message)
-      allow(ChatMessage).to receive(:insert_all).and_raise(ActiveRecord::ConnectionNotEstablished)
+      allow(ch_client).to receive(:insert).and_raise(Clickhouse::QueryError, "boom")
 
-      expect { worker.perform }.to raise_error(ActiveRecord::ConnectionNotEstablished)
+      expect { worker.perform }.to raise_error(Clickhouse::QueryError)
       expect(Redis.new(url: redis_url).llen(redis_key)).to eq(1) # restored, not lost
-    end
-  end
-
-  # TASK-251.14b: best-effort dual-write to ClickHouse. Postgres stays source of truth.
-  describe "ClickHouse dual-write" do
-    let(:ch_client) { instance_double(Clickhouse::Client) }
-    let(:captured) { [] }
-
-    before do
-      allow(Clickhouse).to receive(:client).and_return(ch_client)
-      allow(ch_client).to receive(:insert) { |_table, rows, **| captured.replace(rows) }
-      allow(Flipper).to receive(:enabled?).and_call_original
-    end
-
-    context "when :chat_writes_clickhouse is OFF (default)" do
-      before { allow(Flipper).to receive(:enabled?).with(:chat_writes_clickhouse).and_return(false) }
-
-      it "writes only to Postgres, never touches ClickHouse" do
-        push_message(sample_message)
-        expect { worker.perform }.to change(ChatMessage, :count).by(1)
-        expect(Clickhouse).not_to have_received(:client)
-      end
-    end
-
-    context "when :chat_writes_clickhouse is ON" do
-      before { allow(Flipper).to receive(:enabled?).with(:chat_writes_clickhouse).and_return(true) }
-
-      it "mirrors the batch into ClickHouse alongside Postgres" do
-        push_message(sample_message)
-        push_message(sample_message(username: "user2"))
-
-        expect { worker.perform }.to change(ChatMessage, :count).by(2)
-        expect(ch_client).to have_received(:insert).with("chat_messages", anything, best_effort: true)
-        expect(captured.size).to eq(2)
-        expect(captured.map { |r| r[:channel_login] }).to all(eq("testchannel"))
-      end
-
-      it "mirrors only the rows Postgres actually persisted (fallback skips invalid → no CH-superset)" do
-        push_message(sample_message(username: "good"))
-        push_message(sample_message(username: "bad"))
-        # Force the per-record fallback, then make only the "bad" record fail PG validation.
-        allow(ChatMessage).to receive(:insert_all).and_raise(ActiveRecord::StatementInvalid, "boom")
-        allow(ChatMessage).to receive(:create!).and_call_original
-        allow(ChatMessage).to receive(:create!).with(hash_including(username: "bad"))
-                                               .and_raise(ActiveRecord::RecordInvalid.new(ChatMessage.new))
-
-        worker.perform
-
-        expect(captured.map { |r| r[:username] }).to eq([ "good" ])
-      end
-
-      it "maps each row to the ClickHouse shape (bool→UInt8, raw_tags→JSON, ts→DateTime64 text, nil→\"\")" do
-        push_message(sample_message(vip: true, is_first_msg: false, display_name: nil,
-                                    raw_tags: { "a" => "b" }, timestamp: "2026-05-27T12:00:00Z"))
-        worker.perform
-
-        row = captured.first
-        expect(row[:vip]).to eq(1)
-        expect(row[:is_first_msg]).to eq(0)
-        expect(row[:display_name]).to eq("")
-        expect(row[:raw_tags]).to eq('{"a":"b"}')
-        expect(row[:timestamp]).to match(/\A\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}\z/)
-      end
-
-      it "is best-effort: a ClickHouse failure neither raises nor re-queues (Postgres is source of truth)" do
-        allow(ch_client).to receive(:insert).and_raise(Clickhouse::QueryError, "boom")
-        push_message(sample_message)
-
-        expect { worker.perform }.to change(ChatMessage, :count).by(1) # PG ok; CH error swallowed
-        expect(Redis.new(url: redis_url).llen(redis_key)).to eq(0)     # batch consumed, NOT requeued
-      end
     end
   end
 end

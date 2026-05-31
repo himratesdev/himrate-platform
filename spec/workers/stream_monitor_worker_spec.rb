@@ -34,6 +34,11 @@ RSpec.describe StreamMonitorWorker do
     allow(gql).to receive(:polls).and_return(nil)
     allow(gql).to receive(:hype_train).and_return(nil)
 
+    # PR 1e-A (2026-05-31): post-CH-cutover fetch_chat_activity queries
+    # Clickhouse::ChatQueries.chat_activity_batch instead of PG ChatMessage. Default: no chat.
+    # Tests that need chat data override the stub with explicit {unique:, total:} per stream_id.
+    allow(Clickhouse::ChatQueries).to receive(:chat_activity_batch).and_return({})
+
     Redis.new(url: "redis://localhost:6379/1").del("monitor:cycle_count")
   rescue Redis::CannotConnectError
     skip "Redis not available"
@@ -53,10 +58,11 @@ RSpec.describe StreamMonitorWorker do
   end
 
   # TC-009: Chatters snapshot from captured chat (TASK-251.6 — unique chatters + messages)
+  # PR 1e-A: chat activity sourced from Clickhouse::ChatQueries.chat_activity_batch.
   it "creates chatters_snapshot from captured chat" do
-    %w[alice bob carol alice].each do |u| # 3 unique, 4 messages
-      create(:chat_message, stream: stream, channel_login: "teststreamer", username: u, timestamp: Time.current)
-    end
+    allow(Clickhouse::ChatQueries).to receive(:chat_activity_batch)
+      .with([ stream.id ], anything)
+      .and_return(stream.id => { unique: 3, total: 4 }) # alice, bob, carol; 4 messages
 
     expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
 
@@ -78,9 +84,10 @@ RSpec.describe StreamMonitorWorker do
       ]
     )
     # Many unique chatters over the 60-min window → unique=50, ratio = 50/5 = 10.0
-    50.times do |i|
-      create(:chat_message, stream: stream, channel_login: "teststreamer", username: "user_#{i}", timestamp: Time.current)
-    end
+    # PR 1e-A: chat activity through Clickhouse::ChatQueries.chat_activity_batch stub.
+    allow(Clickhouse::ChatQueries).to receive(:chat_activity_batch)
+      .with([ stream.id ], anything)
+      .and_return(stream.id => { unique: 50, total: 50 })
 
     expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
 
@@ -175,7 +182,10 @@ RSpec.describe StreamMonitorWorker do
         { "data" => { "channel" => { "chatters" => nil } } }
       ]
     )
-    create(:chat_message, stream: stream, channel_login: "teststreamer", username: "u1", timestamp: Time.current)
+    # PR 1e-A: chat activity through Clickhouse::ChatQueries.chat_activity_batch stub.
+    allow(Clickhouse::ChatQueries).to receive(:chat_activity_batch)
+      .with([ stream.id ], anything)
+      .and_return(stream.id => { unique: 1, total: 1 })
 
     expect { worker.perform }.to change { stream.ccv_snapshots.count }.by(1)
       .and change { stream.chatters_snapshots.count }.by(1)
