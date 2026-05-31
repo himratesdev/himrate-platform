@@ -71,22 +71,43 @@ class MonitoredLiveDetectorWorker
     any_success ? [ live, queried, ids.size ] : [ nil, nil, nil ]
   end
 
-  # Live channels without an open Stream → delegate to StreamOnlineWorker (its
-  # active_stream_exists? guard keeps this idempotent if a job is already queued).
+  # Live channels → delegate to StreamOnlineWorker. BUG-251.40 A2: identity-aware skip.
+  #
+  # PRIOR BEHAVIOUR (the bug): skip if channel had ANY open Stream row, irrespective of
+  # whether that row's broadcast id matched Helix's current `stream.id`. Channels that
+  # ended overnight + restarted as a NEW Twitch broadcast kept appending CCV/chat to the
+  # OLD row. 2026-05-31 staging audit found 224 such fused rows out of 521 open total.
+  #
+  # NEW BEHAVIOUR: skip only when our open Stream's `twitch_stream_id` matches Helix's
+  # current `id` (true continuation — same broadcast). On mismatch (incl. legacy NULL),
+  # enqueue StreamOnlineWorker — it now closes the stale row via StreamOfflineWorker
+  # ("fuse_replaced" source) before creating the new Stream, so the next cycle's pluck
+  # sees the fresh row with the right twitch_stream_id and stays no-op.
+  #
+  # Volume: continuation cycles are no-op (the common case — ~404 of 404 live channels
+  # are continuations per typical minute). Only fuse / new-broadcast cycles enqueue.
   def open_new_streams(live_by_twitch_id)
     return if live_by_twitch_id.empty?
 
-    already_live = Channel.where(twitch_id: live_by_twitch_id.keys)
-                          .joins(:streams).where(streams: { ended_at: nil })
-                          .pluck(:twitch_id).to_set
+    open_tws_by_twitch_id = Channel.where(twitch_id: live_by_twitch_id.keys)
+                                   .joins(:streams).where(streams: { ended_at: nil })
+                                   .pluck("channels.twitch_id, streams.twitch_stream_id")
+                                   .to_h
 
-    live_by_twitch_id.each do |twitch_id, stream|
-      next if already_live.include?(twitch_id)
+    live_by_twitch_id.each do |twitch_id, helix_stream|
+      current_tws = open_tws_by_twitch_id[twitch_id]
+      # Skip ONLY when our open row carries the exact Helix `id` (continuation).
+      # NULL legacy rows (Phase A1 pre-existing) and id-mismatches both fall through
+      # to StreamOnlineWorker, which handles the close-then-create transition.
+      next if current_tws.present? && current_tws == helix_stream["id"]
 
       StreamOnlineWorker.perform_async(
         "broadcaster_user_id" => twitch_id,
-        "broadcaster_user_login" => stream["user_login"]&.downcase,
-        "started_at" => stream["started_at"]
+        "broadcaster_user_login" => helix_stream["user_login"]&.downcase,
+        "started_at" => helix_stream["started_at"],
+        # BUG-251.40 A2: forward Helix per-broadcast id so StreamOnlineWorker can
+        # persist it on the new Stream + use it for fuse detection.
+        "stream_id" => helix_stream["id"]
       )
     end
   end
