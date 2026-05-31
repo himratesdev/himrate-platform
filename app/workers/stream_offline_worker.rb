@@ -7,7 +7,10 @@
 
 class StreamOfflineWorker
   include Sidekiq::Job
-  sidekiq_options queue: :signals
+  # BUG-251.40-E (2026-06-01): co-located with StreamOnlineWorker on dedicated
+  # :stream_lifecycle queue — close events must process real-time alongside open events
+  # to avoid stream pairs being inconsistently visible. See sidekiq.yml + stream_online_worker.
+  sidekiq_options queue: :stream_lifecycle
 
   IRC_COMMANDS_CHANNEL = "irc:commands"
 

@@ -24,12 +24,24 @@
 #                 1M+ historical backlog. Result: new live-stream Trust Index recomputes
 #                 themselves are queue-tail starved. Same fix pattern as bot_scoring —
 #                 dedicated queue so NEW jobs bypass historical backlog. Weight 6 matches
-#                 :bot_scoring priority class ("live freshness"). The other :signals workers
-#                 (channel_update / raid / stream_online / stream_offline / trends/aggregation /
-#                 trends/anomaly_attribution) are low-volume and stay on :signals — they'll
-#                 drain naturally as the 1M backlog (pure historical SignalComputeWorker jobs
-#                 from pre-cutover state) burns down without new inflow.
-# signals: Trust Index computations (real-time critical)
+#                 :bot_scoring priority class ("live freshness").
+# stream_lifecycle: StreamOnlineWorker + StreamOfflineWorker — BUG-251.40-E (2026-06-01).
+#                   Post EPIC BUG-251.40 cleanup (348k pre-A2 OnlineWorker jobs purged), the
+#                   remaining :signals queue (~967k) is dominated by 564k legacy
+#                   SignalComputeWorker jobs from pre-PR #233 (now stale; new SCW enqueues
+#                   go to :signal_compute). FIFO-from-tail Sidekiq pop semantics → NEW
+#                   StreamOnlineWorker enqueues from `MonitoredLiveDetectorWorker` land at
+#                   queue HEAD but won't process for ~30-44h while tail drains. Result:
+#                   Stream creation effectively paused (Stream.where(ended_at: nil).count = 4
+#                   after cleanup, no growth despite MLD detecting 333 live channels). Same
+#                   fix pattern as :bot_scoring + :signal_compute — dedicated queue so NEW
+#                   lifecycle jobs bypass historical backlog. Weight 6 = real-time priority
+#                   class. The remaining :signals queue (~867k legacy non-lifecycle jobs)
+#                   drains naturally without affecting new stream detection.
+# signals: legacy queue with the historical backlog (SignalComputeWorker pre-PR #233 stale,
+#          Trends::AnomalyAttributionWorker low-volume, BotScoringWorker stragglers). Drains
+#          naturally as backlog burns down without new inflow (all primary enqueuers now route
+#          to dedicated queues).
 # default: general tasks
 # notifications: email, Telegram, push
 # monitoring: periodic checks, cleanup
@@ -43,6 +55,7 @@
 :queues:
   - [bot_scoring, 6]
   - [signal_compute, 6]
+  - [stream_lifecycle, 6]
   - [signals, 5]
   - [chat, 4]
   - [pva_critical, 3]

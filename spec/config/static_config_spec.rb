@@ -11,7 +11,7 @@ RSpec.describe "Static configuration" do
       )
     end
 
-    it "contains 13 queues" do
+    it "contains 14 queues" do
       # TASK-110 v1.2 (CR S-7): whisper_transcripts НЕ в shared :queues — обрабатывается
       # ТОЛЬКО dedicated whisper_worker role (deploy.yml) для CPU isolation concurrency=1.
       # TASK-113 Δ-1 Wave 1 (FR-016): pva_critical / pva_helix / pva_gql_anon (8 → 11).
@@ -19,14 +19,17 @@ RSpec.describe "Static configuration" do
       # BotScoringWorker bypasses the :signals SignalComputeWorker backlog.
       # Phase 5 follow-up (2026-05-31): signal_compute dedicated queue (12 → 13) so new
       # SignalComputeWorker enqueues bypass the residual :signals 1M+ historical backlog.
-      expect(config[:queues].size).to eq(13)
+      # BUG-251.40-E (2026-06-01): stream_lifecycle dedicated queue (13 → 14) so new
+      # StreamOnlineWorker + StreamOfflineWorker enqueues bypass the legacy :signals backlog
+      # (Stream creation was paused for ~30-44h until queue tail drained organically).
+      expect(config[:queues].size).to eq(14)
     end
 
     it "includes required queue names" do
       queue_names = config[:queues].map(&:first)
       expect(queue_names).to include(
-        "bot_scoring", "signal_compute", "signals", "chat", "post_stream", "default",
-        "notifications", "monitoring", "accessory_ops", "long_running"
+        "bot_scoring", "signal_compute", "stream_lifecycle", "signals", "chat", "post_stream",
+        "default", "notifications", "monitoring", "accessory_ops", "long_running"
       )
     end
 
@@ -55,6 +58,20 @@ RSpec.describe "Static configuration" do
       signal_compute_weight = config[:queues].find { |q| q.first == "signal_compute" }&.last
       signals_weight = config[:queues].find { |q| q.first == "signals" }&.last
       expect(signal_compute_weight).to be > signals_weight
+    end
+
+    it "stream_lifecycle queue matches bot_scoring priority class (weight 6) — BUG-251.40-E" do
+      # Real-time live state — same priority class as :bot_scoring + :signal_compute. If
+      # this drifts, Stream creation gets fetch-starved when :signal_compute has steady volume.
+      stream_lifecycle_weight = config[:queues].find { |q| q.first == "stream_lifecycle" }&.last
+      bot_scoring_weight = config[:queues].find { |q| q.first == "bot_scoring" }&.last
+      expect(stream_lifecycle_weight).to eq(bot_scoring_weight)
+    end
+
+    it "stream_lifecycle queue ranks above signals (NEW StreamOnline/Offline bypass historical backlog) — BUG-251.40-E" do
+      stream_lifecycle_weight = config[:queues].find { |q| q.first == "stream_lifecycle" }&.last
+      signals_weight = config[:queues].find { |q| q.first == "signals" }&.last
+      expect(stream_lifecycle_weight).to be > signals_weight
     end
   end
 

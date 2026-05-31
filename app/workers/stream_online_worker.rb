@@ -6,7 +6,11 @@
 
 class StreamOnlineWorker
   include Sidekiq::Job
-  sidekiq_options queue: :signals
+  # BUG-251.40-E (2026-06-01): dedicated :stream_lifecycle queue. NEW MLD enqueues bypass
+  # the legacy :signals historical backlog (~967k stale jobs) — without this, Stream
+  # creation effectively pauses while the queue drains (~30-44h at ~6 jobs/sec). Same
+  # priority class as :bot_scoring + :signal_compute ("real-time live state").
+  sidekiq_options queue: :stream_lifecycle
 
   IRC_COMMANDS_CHANNEL = "irc:commands"
   MERGE_GAP_MINUTES = 30
