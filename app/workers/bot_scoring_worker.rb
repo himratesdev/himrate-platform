@@ -101,10 +101,13 @@ class BotScoringWorker
   # Clickhouse::ChatQueries. Same return shape ({ username => { irc_tags:, chat_stats: } }),
   # CH column-store is materially cheaper for the per-stream group-bys on 95k+ msg streams
   # AND keeps the data path single-source (PG chat_messages will be dropped in PR 1e-B).
+  #
+  # CR-231 iter-2 N3: we mutate each Hash returned by chatter_aggregations to inject :user_id.
+  # The CH method's docstring describes the base shape only; the worker widens the entry shape
+  # for its downstream Scorer (which expects :user_id). Kept here (not in CH method) because
+  # :user_id is a worker-pipeline concern, not a chat-query primitive.
   def collect_chatters(stream)
     chatters = Clickhouse::ChatQueries.chatter_aggregations(stream)
-    # Each entry is { irc_tags:, chat_stats: } — add the nil :user_id placeholder the rest
-    # of the worker / Scorer expects (kept-from-PG path for back-compat).
     chatters.each_value { |entry| entry[:user_id] = nil }
 
     # Per-user entropy and CV timing aggregation (requires 3+ messages)

@@ -121,6 +121,9 @@ module Clickhouse
     # isn't UUID-shaped so a future caller can't sneak in arbitrary SQL via the interpolation.
     UUID_RE = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
 
+    # CR-231 iter-2 N1: contract divergence — raises ArgumentError (bad input = caller bug,
+    # don't silently return {} and pretend nothing happened) vs the sibling rescue Clickhouse::Error
+    # log-and-return-{} (transient infra; analytics tolerates an empty window).
     def validate_stream_uuid!(sids)
       Array(sids).each do |sid|
         raise ArgumentError, "Clickhouse::ChatQueries: stream_id #{sid.inspect} is not a UUID" unless sid.to_s.match?(UUID_RE)
