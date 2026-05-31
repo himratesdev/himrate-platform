@@ -210,5 +210,42 @@ RSpec.describe StreamOnlineWorker do
       # No incoming id → close_stale_if_fused is no-op → active_stream_exists? returns true → skip
       expect { worker.perform(legacy_payload) }.not_to change(Stream, :count)
     end
+
+    # CR-237 C1 regression: the fuse-close + same-game-merge path used to re-open the
+    # just-closed stale row, undoing the fuse fix. allow_merge:false gate prevents this.
+    it "does NOT re-merge the just-closed stale row when game_name matches (CR-237 C1)" do
+      stale = create(:stream, channel: channel, ended_at: nil,
+                     twitch_stream_id: "999999999999",
+                     game_name: "Just Chatting") # matches GQL stub default game
+
+      expect { worker.perform(event_data) }.to change(Stream, :count).by(1)
+
+      stale.reload
+      expect(stale.ended_at).to be_present, "fuse-closed row must stay closed (CR-237 C1)"
+      expect(stale.merge_status).not_to eq("merged"), "fuse path must NOT re-open the stale row even on game_name match"
+      expect(stale.merged_parts_count).to eq(1), "merged_parts_count must NOT increment after fuse"
+
+      fresh = channel.streams.where(twitch_stream_id: "316159655126").first
+      expect(fresh).to be_present
+      expect(fresh.id).not_to eq(stale.id)
+      expect(fresh.ended_at).to be_nil
+    end
+
+    # CR-237 I1: legacy data can have >1 open Stream per channel (pre-A1 partial UNIQUE).
+    # Fuse path must close ALL mismatched open rows, not just the most recent.
+    it "closes ALL mismatched open streams when channel has multiple opens (CR-237 I1)" do
+      stale1 = create(:stream, channel: channel, started_at: 2.days.ago, ended_at: nil,
+                      twitch_stream_id: "OLD_BROADCAST_A", game_name: nil)
+      stale2 = create(:stream, channel: channel, started_at: 1.day.ago, ended_at: nil,
+                      twitch_stream_id: nil, game_name: nil) # NULL legacy
+
+      expect { worker.perform(event_data) }.to change(Stream, :count).by(1)
+
+      stale1.reload; stale2.reload
+      expect(stale1.ended_at).to be_present, "first stale row must be closed"
+      expect(stale2.ended_at).to be_present, "second stale row must be closed"
+      expect(channel.streams.where(ended_at: nil).count).to eq(1)
+      expect(channel.streams.where(ended_at: nil).first.twitch_stream_id).to eq("316159655126")
+    end
   end
 end
