@@ -11,17 +11,19 @@ RSpec.describe "Static configuration" do
       )
     end
 
-    it "contains 11 queues" do
+    it "contains 12 queues" do
       # TASK-110 v1.2 (CR S-7): whisper_transcripts НЕ в shared :queues — обрабатывается
       # ТОЛЬКО dedicated whisper_worker role (deploy.yml) для CPU isolation concurrency=1.
       # TASK-113 Δ-1 Wave 1 (FR-016): pva_critical / pva_helix / pva_gql_anon (8 → 11).
-      expect(config[:queues].size).to eq(11)
+      # PR #229 (EPIC BUG-251.28 Phase 5): bot_scoring dedicated queue (11 → 12) so
+      # BotScoringWorker bypasses the :signals SignalComputeWorker backlog.
+      expect(config[:queues].size).to eq(12)
     end
 
     it "includes required queue names" do
       queue_names = config[:queues].map(&:first)
       expect(queue_names).to include(
-        "signals", "chat", "post_stream", "default", "notifications", "monitoring",
+        "bot_scoring", "signals", "chat", "post_stream", "default", "notifications", "monitoring",
         "accessory_ops", "long_running"
       )
     end
