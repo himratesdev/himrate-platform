@@ -85,7 +85,7 @@ RSpec.describe Streams::LifecycleAudit do
   describe "#call" do
     let(:ch) { create(:channel, twitch_id: "111", login: "stale_streamer") }
 
-    before { open_stream(channel: ch, twitch_stream_id: "OLD") }
+    before { @stale = open_stream(channel: ch, twitch_stream_id: "OLD") }
 
     it "dry_run=true does NOT close any stream" do
       allow(helix).to receive(:get_streams).and_return([])
@@ -140,6 +140,82 @@ RSpec.describe Streams::LifecycleAudit do
         hash_including("broadcaster_user_login" => "stale_streamer"), "lifecycle_audit"
       ).once
 
+      described_class.new(dry_run: false, logger: logger).call
+    end
+
+    # CR-238 Important #1
+    it "REFUSES to apply when any Helix sub-batch failed (CR-238 #1)" do
+      stub_const("MonitoredLiveDetectorWorker::HELIX_BATCH_SIZE", 1)
+      allow(helix).to receive(:get_streams).and_return(nil) # all batches fail
+
+      expect(StreamOfflineWorker).not_to receive(:new)
+      expect(logger).to receive(:info).with(/REFUSING to apply/).at_least(:once)
+
+      described_class.new(dry_run: false, logger: logger).call
+      # Stale row stays open — operator must re-run after Helix recovers.
+      expect(Stream.where(ended_at: nil, channel: ch).count).to eq(1)
+    end
+
+    # CR-238 Important #2
+    it "SKIPS close when stream was already finalized between classify and close_all" do
+      allow(helix).to receive(:get_streams).and_return([
+        { "user_id" => "111", "id" => "NEW", "started_at" => "2026-05-31T10:00:00Z", "game_name" => "X" }
+      ])
+
+      # Simulate race: EventSub closes the stale row between classify and close_all.
+      allow(Stream).to receive(:find_by).and_wrap_original do |orig, **args|
+        row = orig.call(**args)
+        row&.update_columns(ended_at: Time.current) if row && row.id == @stale.id
+        row.reload if row
+        row
+      end
+
+      expect(StreamOfflineWorker).not_to receive(:new)
+
+      described_class.new(dry_run: false, logger: logger).call
+    end
+
+    it "SKIPS close when a replacement stream opened between classify and close_all" do
+      allow(helix).to receive(:get_streams).and_return([
+        { "user_id" => "111", "id" => "NEW", "started_at" => "2026-05-31T10:00:00Z", "game_name" => "X" }
+      ])
+
+      # Replacement opens BETWEEN classify and close.
+      replacement = nil
+      allow(Stream).to receive(:find_by).and_wrap_original do |orig, **args|
+        row = orig.call(**args)
+        # On first call from classify: this returns the stale row. Race happens after.
+        # On second call (in close_one): the row still exists open BUT a NEWER open row exists.
+        if row && row.id == @stale.id && replacement.nil?
+          replacement = create(:stream, channel: ch, ended_at: nil, twitch_stream_id: "NEW",
+                                started_at: Time.current)
+        end
+        row
+      end
+
+      expect(StreamOfflineWorker).not_to receive(:new)
+
+      described_class.new(dry_run: false, logger: logger).call
+    end
+
+    # CR-238 nice #3 — exception isolation
+    it "continues batch on a single close failure (per-row rescue)" do
+      ch2 = create(:channel, twitch_id: "222", login: "second_stale")
+      open_stream(channel: ch2, twitch_stream_id: "OTHER_OLD")
+
+      allow(helix).to receive(:get_streams).and_return([
+        { "user_id" => "111", "id" => "NEW1", "started_at" => "2026-05-31T10:00:00Z", "game_name" => "X" },
+        { "user_id" => "222", "id" => "NEW2", "started_at" => "2026-05-31T10:00:00Z", "game_name" => "Y" }
+      ])
+
+      offline_worker = instance_double(StreamOfflineWorker)
+      allow(StreamOfflineWorker).to receive(:new).and_return(offline_worker)
+      expect(offline_worker).to receive(:perform).twice do |payload, _src|
+        raise StandardError, "transient redis err" if payload["broadcaster_user_login"] == "stale_streamer"
+        nil
+      end
+
+      # Both attempted, first errored, second succeeded.
       described_class.new(dry_run: false, logger: logger).call
     end
   end
