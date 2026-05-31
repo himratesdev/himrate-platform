@@ -97,39 +97,15 @@ class BotScoringWorker
 
   private
 
-  # Collect unique chatters with their IRC data from chat_messages.
-  # Returns Hash { username => { user_id:, irc_tags:, chat_stats: } }
+  # PR 1e-A (2026-05-31): switched from PG ChatMessage queries to ClickHouse via
+  # Clickhouse::ChatQueries. Same return shape ({ username => { irc_tags:, chat_stats: } }),
+  # CH column-store is materially cheaper for the per-stream group-bys on 95k+ msg streams
+  # AND keeps the data path single-source (PG chat_messages will be dropped in PR 1e-B).
   def collect_chatters(stream)
-    messages = ChatMessage.where(stream_id: stream.id).where.not(username: nil)
-
-    chatters = {}
-
-    # Per-user aggregation
-    messages.select(
-      :username,
-      "MAX(user_type) as agg_user_type",
-      "MAX(subscriber_status) as agg_subscriber_status",
-      "BOOL_OR(returning_chatter) as agg_returning_chatter",
-      "BOOL_OR(vip) as agg_vip",
-      "MAX(badge_info) as agg_badge_info",
-      "SUM(bits_used) as agg_bits_used",
-      "COUNT(*) as msg_count"
-    ).group(:username).each do |row|
-      chatters[row.username] = {
-        user_id: nil, # from GQL if available
-        irc_tags: {
-          user_type: row.agg_user_type,
-          subscriber_status: row.agg_subscriber_status,
-          returning_chatter: row.agg_returning_chatter,
-          vip: row.agg_vip,
-          badge_info: row.agg_badge_info,
-          bits_used: row.agg_bits_used.to_i
-        },
-        chat_stats: {
-          message_count: row.msg_count
-        }
-      }
-    end
+    chatters = Clickhouse::ChatQueries.chatter_aggregations(stream)
+    # Each entry is { irc_tags:, chat_stats: } — add the nil :user_id placeholder the rest
+    # of the worker / Scorer expects (kept-from-PG path for back-compat).
+    chatters.each_value { |entry| entry[:user_id] = nil }
 
     # Per-user entropy and CV timing aggregation (requires 3+ messages)
     enrich_chat_stats(stream, chatters)
@@ -137,20 +113,11 @@ class BotScoringWorker
     chatters
   end
 
-  # Calculate per-user CV timing and Shannon entropy from raw messages.
-  # NOTE: 3 pluck queries load all messages into Ruby memory.
-  # For 200K messages ≈ 20-50MB — acceptable on 8GB VPS.
-  # Monitor and optimize to SQL aggregation if streams exceed 500K messages.
+  # Per-user CV timing + Shannon entropy + custom-emote signal. Each of the three CH queries
+  # returns Hash { username => [values...] } so the in-Ruby maths stays identical to the
+  # PG-era implementation (just the data fetch is column-store now).
   def enrich_chat_stats(stream, chatters)
-    # Fetch timestamps per user for CV timing
-    user_timestamps = ChatMessage
-      .where(stream_id: stream.id, msg_type: "privmsg")
-      .where.not(username: nil)
-      .order(:username, :timestamp)
-      .pluck(:username, :timestamp)
-      .group_by(&:first)
-      .transform_values { |pairs| pairs.map(&:last) }
-
+    user_timestamps = Clickhouse::ChatQueries.chatter_timestamps(stream)
     user_timestamps.each do |username, timestamps|
       next unless chatters[username]
       next if timestamps.size < 3
@@ -165,15 +132,7 @@ class BotScoringWorker
       end
     end
 
-    # Fetch message texts per user for Shannon entropy
-    user_messages = ChatMessage
-      .where(stream_id: stream.id, msg_type: "privmsg")
-      .where.not(username: nil)
-      .where.not(message_text: nil)
-      .pluck(:username, :message_text)
-      .group_by(&:first)
-      .transform_values { |pairs| pairs.map(&:last) }
-
+    user_messages = Clickhouse::ChatQueries.chatter_messages(stream)
     user_messages.each do |username, texts|
       next unless chatters[username]
       next if texts.size < 3
@@ -186,15 +145,7 @@ class BotScoringWorker
       chatters[username][:chat_stats][:entropy] = entropy
     end
 
-    # Custom emote ratio
-    user_emotes = ChatMessage
-      .where(stream_id: stream.id, msg_type: "privmsg")
-      .where.not(username: nil)
-      .where.not(emotes: [ nil, "" ])
-      .pluck(:username, :emotes)
-      .group_by(&:first)
-      .transform_values { |pairs| pairs.map(&:last) }
-
+    user_emotes = Clickhouse::ChatQueries.chatter_emotes(stream)
     user_emotes.each do |username, emote_strings|
       next unless chatters[username]
 
@@ -204,18 +155,9 @@ class BotScoringWorker
   end
 
   # FR-010: Cross-channel presence from chat_messages (24h window).
+  # PR 1e-A: ClickHouse-backed (matches Clickhouse::ChatQueries.chatter_cross_channel_counts).
   def fetch_cross_channel_counts(usernames)
-    return {} if usernames.empty?
-
-    ChatMessage
-      .where(username: usernames)
-      .where("timestamp > ?", 24.hours.ago)
-      .group(:username)
-      .distinct
-      .count(:channel_login)
-  rescue ActiveRecord::StatementInvalid => e
-    Rails.logger.warn("BotScoringWorker: cross-channel query failed (#{e.message})")
-    {}
+    Clickhouse::ChatQueries.chatter_cross_channel_counts(usernames, 24.hours.ago)
   end
 
   # TASK-251.W2b: look up cached Twitch profiles for the scored chatters (one query, no N+1,

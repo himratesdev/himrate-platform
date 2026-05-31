@@ -111,5 +111,136 @@ module Clickhouse
     def escape_string_literal(value)
       value.gsub(/[\\']/) { |c| c == "\\" ? "\\\\" : "''" }
     end
+
+    # ─── PR 1e-A migrations (BotScoringWorker / StreamMonitorWorker / ChatMessageWorker) ───
+    # Mirrors of the per-stream chat queries the readers ran against Postgres before the CH cutover.
+    # Each method returns the SAME shape as the PG equivalent it replaces.
+
+    # Mirrors BotScoringWorker#collect_chatters (PG):
+    #   per-user max(user_type)/max(subscriber_status)/bool_or(returning_chatter)/bool_or(vip)/
+    #   max(badge_info)/sum(bits_used)/count(*). PG `MAX(LowCardinality(String))` → CH `any()` on the
+    #   skinny dimension columns (any sampled value is fine — the worker treats irc_tags as last-seen
+    #   state, not a hard aggregate). PG `BOOL_OR` → CH `max(UInt8)` since the columns are UInt8 (0/1).
+    # Returns Hash { username => { irc_tags: {...}, chat_stats: { message_count: n } } } — exact
+    # caller-side shape so collect_chatters drops in as a pure swap.
+    def chatter_aggregations(stream)
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT
+          username,
+          any(user_type)            AS user_type,
+          any(subscriber_status)    AS subscriber_status,
+          max(returning_chatter)    AS returning_chatter,
+          max(vip)                  AS vip,
+          any(badge_info)           AS badge_info,
+          sum(bits_used)            AS bits_used,
+          count()                   AS msg_count
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}' AND username != ''
+        GROUP BY username
+      SQL
+      rows.to_h do |r|
+        [ r["username"], {
+            irc_tags: {
+              user_type: r["user_type"],
+              subscriber_status: r["subscriber_status"],
+              returning_chatter: r["returning_chatter"].to_i == 1,
+              vip: r["vip"].to_i == 1,
+              badge_info: r["badge_info"],
+              bits_used: r["bits_used"].to_i
+            },
+            chat_stats: { message_count: r["msg_count"].to_i }
+          } ]
+      end
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: chatter_aggregations failed (#{e.class})")
+      {}
+    end
+
+    # Mirrors BotScoringWorker#enrich_chat_stats — per-user (username, timestamp) tuples in privmsg
+    # order, used to compute CV timing (std/mean of inter-message intervals). PG path used a heavy
+    # `.pluck.group_by`; this query is identical semantically and the column-store load is trivial
+    # for typical per-stream chat sizes (≤200k messages).
+    def chatter_timestamps(stream)
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT username, timestamp
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg' AND username != ''
+        ORDER BY username, timestamp
+      SQL
+      rows.group_by { |r| r["username"] }.transform_values { |pairs| pairs.map { |r| Time.parse("#{r['timestamp']} UTC") } }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: chatter_timestamps failed (#{e.class})")
+      {}
+    end
+
+    # Mirrors BotScoringWorker#enrich_chat_stats — per-user message-text array for Shannon-entropy.
+    def chatter_messages(stream)
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT username, message_text
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
+          AND username != '' AND message_text != ''
+      SQL
+      rows.group_by { |r| r["username"] }.transform_values { |pairs| pairs.map { |r| r["message_text"] } }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: chatter_messages failed (#{e.class})")
+      {}
+    end
+
+    # Mirrors BotScoringWorker#enrich_chat_stats — per-user emotes payload (split count → has_custom_emotes).
+    def chatter_emotes(stream)
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT username, emotes
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
+          AND username != '' AND emotes != ''
+      SQL
+      rows.group_by { |r| r["username"] }.transform_values { |pairs| pairs.map { |r| r["emotes"] } }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: chatter_emotes failed (#{e.class})")
+      {}
+    end
+
+    # Mirrors BotScoringWorker#fetch_cross_channel_counts — { username => distinct_channel_count }
+    # over the given window. Differs from ChatQueries.cross_channel above (which takes a stream and
+    # picks 500 chatters itself) by accepting a pre-resolved usernames array.
+    def chatter_cross_channel_counts(usernames, since)
+      return {} if usernames.empty?
+
+      since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
+      quoted = usernames.map { |u| "'#{escape_string_literal(u)}'" }.join(",")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT username, uniqExact(channel_login) AS c
+        FROM chat_messages
+        WHERE username IN (#{quoted}) AND msg_type = 'privmsg'
+          AND timestamp > toDateTime('#{since_ts}')
+        GROUP BY username
+      SQL
+      rows.to_h { |r| [ r["username"], r["c"].to_i ] }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: chatter_cross_channel_counts failed (#{e.class})")
+      {}
+    end
+
+    # Mirrors StreamMonitorWorker#fetch_chat_activity — batched per-stream chat activity over the
+    # given window. Returns Hash { stream_id => { unique: n, total: n } } for the streams that had
+    # any privmsg in the window (others absent from the Hash, matching the PG groupby behaviour).
+    def chat_activity_batch(stream_ids, since)
+      return {} if stream_ids.empty?
+
+      since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
+      quoted = stream_ids.map { |sid| "'#{sid}'" }.join(",")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT stream_id, count() AS total, uniqExact(username) AS unique_n
+        FROM chat_messages
+        WHERE stream_id IN (#{quoted}) AND msg_type = 'privmsg'
+          AND timestamp > toDateTime('#{since_ts}')
+        GROUP BY stream_id
+      SQL
+      rows.to_h { |r| [ r["stream_id"], { unique: r["unique_n"].to_i, total: r["total"].to_i } ] }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: chat_activity_batch failed (#{e.class})")
+      {}
+    end
   end
 end
