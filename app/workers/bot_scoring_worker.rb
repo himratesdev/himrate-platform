@@ -7,7 +7,13 @@
 
 class BotScoringWorker
   include Sidekiq::Job
-  sidekiq_options queue: :signals, retry: 3
+  # Phase 5 root cause (2026-05-31): :signals queue runs 700k+ backlog of SignalComputeWorker
+  # rebuilds, so bot-scoring jobs enqueued by LiveBotScoringWorker cron land in the tail and
+  # never reach workers in time. Dedicated :bot_scoring queue (weight 6 — Sidekiq weighted-random,
+  # ≈17% of fetch slots vs :signals weight 5; queue volume tiny so it drains within seconds even
+  # at fractional fetch share). Keeps PerUserBotScore fresh for the chat_behavior /
+  # known_bot_match / account_profile_scoring signals on live streams.
+  sidekiq_options queue: "bot_scoring", retry: 3
 
   BATCH_SIZE = 1000
 

@@ -11,6 +11,11 @@ RSpec.describe LiveBotScoringWorker do
     allow(BotScoringWorker).to receive(:perform_async)
   end
 
+  # Phase 5 (2026-05-31): pairs with BotScoringWorker on the dedicated :bot_scoring queue.
+  it "uses the dedicated :bot_scoring queue" do
+    expect(described_class.sidekiq_options["queue"]).to eq("bot_scoring")
+  end
+
   it "enqueues BotScoringWorker for each live stream, skipping ended ones" do
     live = create(:stream, ended_at: nil)
     create(:stream, ended_at: 1.hour.ago) # ended → not enqueued
