@@ -35,6 +35,15 @@
 #
 # Runs on :monitoring (NOT the :signals hot path) and reads only the DB (no external API), so it
 # never competes with signal compute. Idempotent via raid_attributions.twitch_msg_id.
+#
+# PR-251.14 PR 1e-A follow-up (2026-05-31): post PR #231 the ChatMessageWorker stopped
+# dual-writing chat to Postgres, so this worker now reads chat_messages exclusively from
+# ClickHouse via Clickhouse::ChatQueries. Three call sites migrated:
+#   - unprocessed_raids  → raid_messages_pending (CH source) + Ruby NOT-EXISTS dedup against PG raid_attributions
+#   - privmsg_logins     → ChatQueries.privmsg_logins (signature now takes Stream, not stream_id)
+#   - cross_channel_signal → ChatQueries.chatter_cross_channel_counts (shared with BotScoringWorker)
+# Without this migration signal #9 went silent after PR #231 merge (verified live: 0 RaidAttribution
+# rows written between 05:49Z and 11:00Z despite captured organic raids).
 class RaidDetectionWorker
   include Sidekiq::Job
   sidekiq_options queue: :monitoring, retry: 1
@@ -52,6 +61,13 @@ class RaidDetectionWorker
   # is conservative — a raid that's noise relative to a big lurking audience stays unclassified.
   SIGNIFICANCE_RATIO = 0.5 # raid_viewers ≥ baseline × this
   SIGNIFICANCE_FLOOR = 10  # and at least this many raiders (tiny raids = noise)
+
+  # Oversample factor for CH fetch (CR-234 Should-1). PG path applied NOT EXISTS BEFORE LIMIT, so
+  # the worker always returned ≤MAX_PER_RUN *new* raids. CH ↔ PG NOT EXISTS isn't possible so the
+  # filter runs in Ruby AFTER LIMIT — meaning if 200 in-window candidates are all already-processed,
+  # no new raids progress this run. Raids are sparse (~20/h × 3h LOOKBACK ≈ 60 ≪ 200) so the risk
+  # is currently nil, but oversampling at 3× MAX_PER_RUN gives 3-4× volume headroom for free.
+  CH_CANDIDATE_LIMIT = MAX_PER_RUN * 3
 
   # Signal thresholds (BFT 33 §3.2; lean toward specificity — never mislabel an organic raid).
   ACCOUNT_AGE_DAYS      = 30
@@ -76,36 +92,45 @@ class RaidDetectionWorker
 
   private
 
-  # Matured raid USERNOTICEs with a linked stream that have not been classified yet. The NOT EXISTS
-  # dedup + LIMIT run in SQL so memory stays bounded against the large chat_messages table.
+  # Matured raid USERNOTICEs with a linked stream that have not been classified yet. Post PR #231
+  # (PG chat_messages dual-write dropped → CH is sole writer for chat) the source is ClickHouse;
+  # the NOT EXISTS dedup against PG raid_attributions can't be done in CH (cross-DB), so we fetch
+  # up to MAX_PER_RUN candidates from CH then strip already-recorded msg_ids in Ruby. Net result
+  # is the same row shape callers expect — Hashes with stream_id / timestamp / username /
+  # twitch_msg_id / raw_tags keys (vs the prior ChatMessage AR records).
   def unprocessed_raids
-    ChatMessage
-      .where(msg_type: "raid")
-      .where.not(stream_id: nil)
-      .where.not(twitch_msg_id: nil)
-      .where(timestamp: LOOKBACK.ago..MATURITY.ago)
-      .where("NOT EXISTS (SELECT 1 FROM raid_attributions ra WHERE ra.twitch_msg_id = chat_messages.twitch_msg_id)")
-      .order(:timestamp)
-      .limit(MAX_PER_RUN)
-      .to_a
+    candidates = Clickhouse::ChatQueries.raid_messages_pending(
+      since:  LOOKBACK.ago,
+      until_: MATURITY.ago,
+      limit:  CH_CANDIDATE_LIMIT
+    )
+    return [] if candidates.empty?
+
+    already_recorded = RaidAttribution
+      .where(twitch_msg_id: candidates.map { |c| c[:twitch_msg_id] })
+      .pluck(:twitch_msg_id)
+      .to_set
+    candidates
+      .reject { |c| already_recorded.include?(c[:twitch_msg_id]) }
+      .first(MAX_PER_RUN)
   end
 
   def process_raid(msg)
-    tags = msg.raw_tags || {}
+    tags = msg[:raw_tags] || {}
     viewers = tags["msg-param-viewerCount"].to_i
-    stream = Stream.find_by(id: msg.stream_id)
+    stream = Stream.find_by(id: msg[:stream_id])
     return false if viewers <= 0 || stream.nil?
 
-    result = classify(stream: stream, raid_time: msg.timestamp, viewers: viewers)
+    result = classify(stream: stream, raid_time: msg[:timestamp], viewers: viewers)
     RaidAttribution.create!(
       stream_id: stream.id,
       source_channel_id: Channel.find_by(twitch_id: tags["user-id"])&.id,
-      timestamp: msg.timestamp,
+      timestamp: msg[:timestamp],
       raid_viewers_count: viewers,
       is_bot_raid: result[:is_bot_raid],
       bot_score: result[:bot_score],
       signal_scores: result[:breakdown],
-      twitch_msg_id: msg.twitch_msg_id
+      twitch_msg_id: msg[:twitch_msg_id]
     )
     true
   rescue ActiveRecord::RecordNotUnique
@@ -114,7 +139,7 @@ class RaidDetectionWorker
     # Isolate a single bad raid (malformed tags / transient query error) so it can't stall the rest
     # of the ordered batch until it ages past LOOKBACK — same per-unit rescue philosophy as
     # ContextBuilder. RecordInvalid is a StandardError, so create! validation failures land here too.
-    Rails.logger.warn("RaidDetectionWorker: #{msg.twitch_msg_id} failed (#{e.class}: #{e.message.to_s.truncate(120)})")
+    Rails.logger.warn("RaidDetectionWorker: #{msg[:twitch_msg_id]} failed (#{e.class}: #{e.message.to_s.truncate(120)})")
     false
   end
 
@@ -122,7 +147,7 @@ class RaidDetectionWorker
     baseline = baseline_audience(stream, raid_time)
     return insignificant(viewers, baseline) unless significant?(viewers, baseline)
 
-    newcomers = post_raid_newcomers(stream.id, raid_time)
+    newcomers = post_raid_newcomers(stream, raid_time)
     signals = {
       write_rate: write_rate_signal(newcomers, viewers),
       account_age: account_age_signal(newcomers),
@@ -155,7 +180,7 @@ class RaidDetectionWorker
   end
 
   def baseline_audience(stream, raid_time)
-    chatters = privmsg_logins(stream.id, raid_time - PRE_WINDOW, raid_time).size
+    chatters = privmsg_logins(stream, raid_time - PRE_WINDOW, raid_time).size
     ccv = latest_ccv_before(stream, raid_time) || 0
     [ chatters, ccv ].max
   end
@@ -164,18 +189,18 @@ class RaidDetectionWorker
 
   # New chatters in the post-raid window who were not chatting in the pre-raid window ≈ raiders
   # (only reliable when the raid is significant; gated above). Capped for very large raids.
-  def post_raid_newcomers(stream_id, raid_time)
-    pre = privmsg_logins(stream_id, raid_time - PRE_WINDOW, raid_time)
-    post = privmsg_logins(stream_id, raid_time, raid_time + POST_WINDOW)
+  def post_raid_newcomers(stream, raid_time)
+    pre = privmsg_logins(stream, raid_time - PRE_WINDOW, raid_time)
+    post = privmsg_logins(stream, raid_time, raid_time + POST_WINDOW)
     (post - pre).first(COHORT_SAMPLE_CAP)
   end
 
-  def privmsg_logins(stream_id, from, to)
-    ChatMessage
-      .where(stream_id: stream_id, msg_type: "privmsg")
-      .where(timestamp: from...to)
-      .distinct
-      .pluck(:username)
+  # PR-251.14-followup: post PR #231 the chat writer no longer dual-writes to PG, so the
+  # distinct-usernames-in-window scan reads ClickHouse (the sole source of truth for chat).
+  # Same semantics as the prior PG path: distinct usernames, msg_type='privmsg', stream-scoped,
+  # half-open window [from, to).
+  def privmsg_logins(stream, from, to)
+    Clickhouse::ChatQueries.privmsg_logins(stream, from: from, to: to)
   end
 
   # --- signals (each returns { value:, triggered: }; value=nil → not computable, excluded) -------
@@ -201,12 +226,11 @@ class RaidDetectionWorker
   def cross_channel_signal(newcomers)
     return blank_signal if newcomers.empty?
 
-    counts = ChatMessage
-             .where(username: newcomers)
-             .where("timestamp > ?", CROSS_CHANNEL_WINDOW.ago)
-             .group(:username)
-             .distinct
-             .count(:channel_login)
+    # PR-251.14-followup: same CH cross-channel-distinct-channel-count helper that
+    # BotScoringWorker uses (post PR #231 cutover). Window aligned to the prior PG `> ?` shape
+    # by passing `CROSS_CHANNEL_WINDOW.ago` directly (chatter_cross_channel_counts uses `>` on
+    # the cutoff so the open boundary matches).
+    counts = Clickhouse::ChatQueries.chatter_cross_channel_counts(newcomers, CROSS_CHANNEL_WINDOW.ago)
     return blank_signal if counts.empty?
 
     in_many = counts.count { |_, n| n >= CROSS_CHANNEL_MIN }

@@ -310,6 +310,130 @@ RSpec.describe Clickhouse::ChatQueries do
     end
   end
 
+  describe ".raid_messages_pending" do
+    let(:since)  { Time.utc(2026, 5, 31, 10, 0, 0) }
+    let(:until_) { Time.utc(2026, 5, 31, 11, 52, 0) }
+
+    it "queries chat_messages with msg_type='raid' + stream/twitch_msg_id NOT NULL + chronological LIMIT" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/FROM chat_messages/)
+          .and(a_string_matching(/msg_type = 'raid'/))
+          .and(a_string_matching(/stream_id IS NOT NULL/))
+          .and(a_string_matching(/twitch_msg_id != ''/))
+          .and(a_string_matching(/timestamp >= toDateTime64\('2026-05-31 10:00:00\.000', 3\)/))
+          .and(a_string_matching(/timestamp <= toDateTime64\('2026-05-31 11:52:00\.000', 3\)/))
+          .and(a_string_matching(/ORDER BY timestamp/))
+          .and(a_string_matching(/LIMIT 200/))
+      ).and_return([])
+
+      described_class.raid_messages_pending(since: since, until_: until_, limit: 200)
+    end
+
+    it "returns each row as Hash with stream_id / timestamp / username / twitch_msg_id / parsed raw_tags" do
+      sid = SecureRandom.uuid
+      allow(ch).to receive(:select).and_return([
+        {
+          "stream_id"     => sid,
+          "timestamp"     => "2026-05-31 10:30:15.123",
+          "username"      => "tmi.twitch.tv",
+          "twitch_msg_id" => "raid-abc123",
+          "raw_tags"      => '{"msg-id":"raid","msg-param-viewerCount":"100","user-id":"src-42"}'
+        }
+      ])
+
+      rows = described_class.raid_messages_pending(since: since, until_: until_, limit: 200)
+      expect(rows.size).to eq(1)
+      expect(rows.first[:stream_id]).to eq(sid)
+      expect(rows.first[:timestamp]).to eq(Time.utc(2026, 5, 31, 10, 30, 15, 123_000))
+      expect(rows.first[:twitch_msg_id]).to eq("raid-abc123")
+      expect(rows.first[:raw_tags]).to eq(
+        "msg-id" => "raid", "msg-param-viewerCount" => "100", "user-id" => "src-42"
+      )
+    end
+
+    it "tolerates malformed JSON in raw_tags (returns {}) so a single corrupt row doesn't crash the run" do
+      allow(ch).to receive(:select).and_return([
+        {
+          "stream_id"     => SecureRandom.uuid,
+          "timestamp"     => "2026-05-31 10:30:00.000",
+          "username"      => "tmi.twitch.tv",
+          "twitch_msg_id" => "raid-bad",
+          "raw_tags"      => "{not-valid-json"
+        }
+      ])
+
+      expect { described_class.raid_messages_pending(since: since, until_: until_, limit: 10) }
+        .not_to raise_error
+      expect(described_class.raid_messages_pending(since: since, until_: until_, limit: 10).first[:raw_tags])
+        .to eq({})
+    end
+
+    # CR-234 Nit-1: writer emits a Hash, but JSON.parse accepts arrays/scalars too — downstream
+    # `tags["msg-id"]` would TypeError on a parsed array. parse_raw_tags returns {} for any non-Hash
+    # so process_raid never sees a typed-mismatched payload.
+    it "returns {} when raw_tags JSON is valid but not a Hash (Array/scalar guard)" do
+      allow(ch).to receive(:select).and_return([
+        { "stream_id" => SecureRandom.uuid, "timestamp" => "2026-05-31 10:30:00.000",
+          "username" => "x", "twitch_msg_id" => "r-arr", "raw_tags" => '["not","a","hash"]' },
+        { "stream_id" => SecureRandom.uuid, "timestamp" => "2026-05-31 10:31:00.000",
+          "username" => "y", "twitch_msg_id" => "r-num", "raw_tags" => "42" },
+        { "stream_id" => SecureRandom.uuid, "timestamp" => "2026-05-31 10:32:00.000",
+          "username" => "z", "twitch_msg_id" => "r-str", "raw_tags" => '"a-string"' }
+      ])
+
+      rows = described_class.raid_messages_pending(since: since, until_: until_, limit: 10)
+      expect(rows.map { |r| r[:raw_tags] }).to all(eq({}))
+    end
+
+    it "tolerates nil/blank raw_tags (returns {})" do
+      allow(ch).to receive(:select).and_return([
+        { "stream_id" => SecureRandom.uuid, "timestamp" => "2026-05-31 10:30:00.000",
+          "username" => "x", "twitch_msg_id" => "r1", "raw_tags" => nil },
+        { "stream_id" => SecureRandom.uuid, "timestamp" => "2026-05-31 10:31:00.000",
+          "username" => "y", "twitch_msg_id" => "r2", "raw_tags" => "" }
+      ])
+
+      rows = described_class.raid_messages_pending(since: since, until_: until_, limit: 10)
+      expect(rows.map { |r| r[:raw_tags] }).to all(eq({}))
+    end
+
+    it "swallows Clickhouse::Error and returns [] (transient infra tolerance)" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::QueryError, "boom")
+      expect(described_class.raid_messages_pending(since: since, until_: until_, limit: 10)).to eq([])
+    end
+  end
+
+  describe ".privmsg_logins" do
+    let(:stream_id) { SecureRandom.uuid }
+    let(:stream)    { instance_double(Stream, id: stream_id) }
+    let(:from) { Time.utc(2026, 5, 31, 11, 0, 0) }
+    let(:to)   { Time.utc(2026, 5, 31, 11, 15, 0) }
+
+    it "queries DISTINCT username with stream + msg_type='privmsg' + half-open window" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT DISTINCT username/)
+          .and(a_string_matching(/stream_id = '#{stream_id}'/))
+          .and(a_string_matching(/msg_type = 'privmsg'/))
+          .and(a_string_matching(/username != ''/))
+          .and(a_string_matching(/timestamp >= toDateTime64\('2026-05-31 11:00:00\.000', 3\)/))
+          .and(a_string_matching(/timestamp <  toDateTime64\('2026-05-31 11:15:00\.000', 3\)/))
+      ).and_return([ { "username" => "alice" }, { "username" => "bob" } ])
+
+      expect(described_class.privmsg_logins(stream, from: from, to: to)).to eq(%w[alice bob])
+    end
+
+    it "raises on non-UUID stream_id (guard against SQL injection)" do
+      bad_stream = instance_double(Stream, id: "'; DROP TABLE chat_messages; --")
+      expect { described_class.privmsg_logins(bad_stream, from: from, to: to) }
+        .to raise_error(ArgumentError, /not a UUID/)
+    end
+
+    it "swallows Clickhouse::Error and returns []" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::QueryError, "boom")
+      expect(described_class.privmsg_logins(stream, from: from, to: to)).to eq([])
+    end
+  end
+
   describe ".validate_stream_uuid!" do
     it "accepts valid UUID v4 string" do
       expect { described_class.validate_stream_uuid!(SecureRandom.uuid) }.not_to raise_error
