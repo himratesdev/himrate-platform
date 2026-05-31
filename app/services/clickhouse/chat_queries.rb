@@ -315,10 +315,15 @@ module Clickhouse
 
     # CH stores raw_tags as JSON String (ZSTD-compressed). PG had it as jsonb (Hash). Tolerate
     # nil / blank / malformed JSON — return {} so callers can index into the Hash without nil-guards.
+    # CR-234 Nit-1: type-guard the JSON.parse result — the writer always emits a Hash, but `parse`
+    # accepts any valid JSON (arrays / scalars), and downstream code does `tags["msg-id"]` which
+    # would TypeError on a parsed array. Return {} so the per-raid rescue isn't load-bearing for
+    # this trivially-checkable shape contract.
     def parse_raw_tags(value)
       return {} if value.nil? || value.to_s.empty?
 
-      JSON.parse(value)
+      parsed = JSON.parse(value)
+      parsed.is_a?(Hash) ? parsed : {}
     rescue JSON::ParserError
       {}
     end

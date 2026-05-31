@@ -182,6 +182,19 @@ RSpec.describe RaidDetectionWorker do
     expect { worker.perform }.to change(RaidAttribution, :count).by(1)
   end
 
+  it "oversamples the CH fetch (CR-234 Should-1) and trims to MAX_PER_RUN after Ruby NOT EXISTS dedup" do
+    # CH ↔ PG NOT EXISTS isn't possible so the filter runs in Ruby AFTER LIMIT.
+    # Oversample factor 3× MAX_PER_RUN protects against a "200 candidates, all already-processed
+    # → 0 new raids progress" worst case if raid volume scales 3-4×.
+    expect(Clickhouse::ChatQueries).to receive(:raid_messages_pending).with(
+      since:  a_value_within(5.seconds).of(RaidDetectionWorker::LOOKBACK.ago),
+      until_: a_value_within(5.seconds).of(RaidDetectionWorker::MATURITY.ago),
+      limit:  RaidDetectionWorker::CH_CANDIDATE_LIMIT
+    ).and_return([])
+
+    worker.perform
+  end
+
   it "feeds chatter_cross_channel_counts the newcomer cohort + CROSS_CHANNEL_WINDOW.ago" do
     # Regression guard: a future refactor must keep passing the post-raid newcomer list and the
     # rolling 24h cutoff to the CH helper. If either drifts (e.g. someone passes raw_tags or

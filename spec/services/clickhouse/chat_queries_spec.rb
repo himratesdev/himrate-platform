@@ -368,6 +368,23 @@ RSpec.describe Clickhouse::ChatQueries do
         .to eq({})
     end
 
+    # CR-234 Nit-1: writer emits a Hash, but JSON.parse accepts arrays/scalars too — downstream
+    # `tags["msg-id"]` would TypeError on a parsed array. parse_raw_tags returns {} for any non-Hash
+    # so process_raid never sees a typed-mismatched payload.
+    it "returns {} when raw_tags JSON is valid but not a Hash (Array/scalar guard)" do
+      allow(ch).to receive(:select).and_return([
+        { "stream_id" => SecureRandom.uuid, "timestamp" => "2026-05-31 10:30:00.000",
+          "username" => "x", "twitch_msg_id" => "r-arr", "raw_tags" => '["not","a","hash"]' },
+        { "stream_id" => SecureRandom.uuid, "timestamp" => "2026-05-31 10:31:00.000",
+          "username" => "y", "twitch_msg_id" => "r-num", "raw_tags" => "42" },
+        { "stream_id" => SecureRandom.uuid, "timestamp" => "2026-05-31 10:32:00.000",
+          "username" => "z", "twitch_msg_id" => "r-str", "raw_tags" => '"a-string"' }
+      ])
+
+      rows = described_class.raid_messages_pending(since: since, until_: until_, limit: 10)
+      expect(rows.map { |r| r[:raw_tags] }).to all(eq({}))
+    end
+
     it "tolerates nil/blank raw_tags (returns {})" do
       allow(ch).to receive(:select).and_return([
         { "stream_id" => SecureRandom.uuid, "timestamp" => "2026-05-31 10:30:00.000",

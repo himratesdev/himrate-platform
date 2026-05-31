@@ -62,6 +62,13 @@ class RaidDetectionWorker
   SIGNIFICANCE_RATIO = 0.5 # raid_viewers ≥ baseline × this
   SIGNIFICANCE_FLOOR = 10  # and at least this many raiders (tiny raids = noise)
 
+  # Oversample factor for CH fetch (CR-234 Should-1). PG path applied NOT EXISTS BEFORE LIMIT, so
+  # the worker always returned ≤MAX_PER_RUN *new* raids. CH ↔ PG NOT EXISTS isn't possible so the
+  # filter runs in Ruby AFTER LIMIT — meaning if 200 in-window candidates are all already-processed,
+  # no new raids progress this run. Raids are sparse (~20/h × 3h LOOKBACK ≈ 60 ≪ 200) so the risk
+  # is currently nil, but oversampling at 3× MAX_PER_RUN gives 3-4× volume headroom for free.
+  CH_CANDIDATE_LIMIT = MAX_PER_RUN * 3
+
   # Signal thresholds (BFT 33 §3.2; lean toward specificity — never mislabel an organic raid).
   ACCOUNT_AGE_DAYS      = 30
   ACCOUNT_AGE_TRIGGER   = 0.50 # bot if >50% of profiled newcomers have <30d accounts
@@ -95,7 +102,7 @@ class RaidDetectionWorker
     candidates = Clickhouse::ChatQueries.raid_messages_pending(
       since:  LOOKBACK.ago,
       until_: MATURITY.ago,
-      limit:  MAX_PER_RUN
+      limit:  CH_CANDIDATE_LIMIT
     )
     return [] if candidates.empty?
 
@@ -103,7 +110,9 @@ class RaidDetectionWorker
       .where(twitch_msg_id: candidates.map { |c| c[:twitch_msg_id] })
       .pluck(:twitch_msg_id)
       .to_set
-    candidates.reject { |c| already_recorded.include?(c[:twitch_msg_id]) }
+    candidates
+      .reject { |c| already_recorded.include?(c[:twitch_msg_id]) }
+      .first(MAX_PER_RUN)
   end
 
   def process_raid(msg)
