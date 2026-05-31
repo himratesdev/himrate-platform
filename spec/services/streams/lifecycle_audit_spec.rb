@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe Streams::LifecycleAudit do
   let(:helix) { instance_double(Twitch::HelixClient) }
-  let(:logger) { instance_double(Logger, info: nil, warn: nil) }
+  let(:logger) { instance_double(Logger, info: nil, warn: nil, error: nil) }
 
   before do
     allow(Twitch::HelixClient).to receive(:new).and_return(helix)
