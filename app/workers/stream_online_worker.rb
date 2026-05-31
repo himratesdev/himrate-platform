@@ -198,6 +198,12 @@ class StreamOnlineWorker
     nil
   end
 
+  # CR-237 N4: when the FUSE path runs, StreamOfflineWorker publishes a PART for this
+  # same login microseconds before this JOIN. Redis pub/sub preserves per-publisher
+  # ordering, and IrcMonitor processes commands serially → PART then JOIN reaches the
+  # IRC session in order, leaving the channel rejoined. Subtle invariant — break it
+  # (e.g. by parallelising the close vs the join) and the channel ends up PART'd with
+  # no rejoin, silently dropping chat capture.
   def publish_irc_join(login)
     return unless login.present?
 
