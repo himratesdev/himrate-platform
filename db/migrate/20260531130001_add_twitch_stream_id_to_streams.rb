@@ -39,22 +39,20 @@ class AddTwitchStreamIdToStreams < ActiveRecord::Migration[8.1]
   INDEX_NAME = :idx_streams_twitch_stream_id_unique
 
   def up
-    add_column :streams, :twitch_stream_id, :string unless column_exists?(:streams, :twitch_stream_id)
-
-    return if index_exists?(:streams, :twitch_stream_id, name: INDEX_NAME)
+    # CR-236 nit-1: prefer `if_(not_)exists` over `unless column_exists?` — atomic at the
+    # PG level, matches sibling migration idiom (20260512100002 / 20260526100002).
+    add_column :streams, :twitch_stream_id, :string, if_not_exists: true
 
     add_index :streams, :twitch_stream_id,
               where: "twitch_stream_id IS NOT NULL",
               unique: true,
               name: INDEX_NAME,
-              algorithm: :concurrently
+              algorithm: :concurrently,
+              if_not_exists: true
   end
 
   def down
-    if index_exists?(:streams, :twitch_stream_id, name: INDEX_NAME)
-      remove_index :streams, name: INDEX_NAME, algorithm: :concurrently
-    end
-
-    remove_column :streams, :twitch_stream_id if column_exists?(:streams, :twitch_stream_id)
+    remove_index :streams, name: INDEX_NAME, algorithm: :concurrently, if_exists: true
+    remove_column :streams, :twitch_stream_id, if_exists: true
   end
 end
