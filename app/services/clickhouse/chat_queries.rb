@@ -1,16 +1,16 @@
 # frozen_string_literal: true
 
 module Clickhouse
-  # TASK-251.14d: ClickHouse-side equivalents of the 4 chat queries TrustIndex::ContextBuilder
-  # currently runs against Postgres. Each method returns the SAME shape as its PG counterpart so the
-  # downstream signal pipeline doesn't care which store served the read. Used by ContextBuilder when
-  # the :chat_reads_clickhouse_dual_read flag (parity validation) OR :chat_reads_clickhouse flag
-  # (CH-only flip) is ON.
+  # ClickHouse-side equivalents of the chat queries the platform runs (used directly by
+  # TrustIndex::ContextBuilder + the 3 chat workers post-cutover; the dual-read scaffolding and
+  # :chat_reads_clickhouse_dual_read / :chat_reads_clickhouse flags from TASK-251.14d are gone
+  # along with the PG dispatch leaves — CH is the SoT). Each method returns the SAME shape as its
+  # historical PG counterpart so the downstream signal/worker pipeline doesn't change.
   #
-  # Window alignment (CR-198 Nit-2): the MVs aggregate at minute granularity (toStartOfMinute), so
-  # PG and CH only stay in 0-divergence parity if both READ at minute-rounded boundaries.
-  # ContextBuilder floors `since` to the minute before dispatch — the same floor is applied to the
-  # PG path so dual-read compares apples-to-apples.
+  # Window alignment (CR-198 Nit-2): the MVs aggregate at minute granularity (toStartOfMinute),
+  # so ContextBuilder floors `since` to the minute at the call-site before invoking the MV-backed
+  # methods. Raw-scan methods (cross_channel, chatter_cross_channel_counts) take the absolute
+  # 24h cutoff with usec zeroed for second-resolution determinism.
   #
   # `cross_channel` reads RAW chat_messages (per SRS revision after the DSV — raw columnar scan = 30
   # ms, exact rolling-24h semantics) rather than an MV; the rolling window is what enables true
@@ -116,6 +116,17 @@ module Clickhouse
     # Mirrors of the per-stream chat queries the readers ran against Postgres before the CH cutover.
     # Each method returns the SAME shape as the PG equivalent it replaces.
 
+    # CR-231 Nit-5: stream UUIDs come from PG (no live exploit), but consistency with the
+    # escape_string_literal pattern used for usernames calls for a guard. Reject anything that
+    # isn't UUID-shaped so a future caller can't sneak in arbitrary SQL via the interpolation.
+    UUID_RE = /\A[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\z/i
+
+    def validate_stream_uuid!(sids)
+      Array(sids).each do |sid|
+        raise ArgumentError, "Clickhouse::ChatQueries: stream_id #{sid.inspect} is not a UUID" unless sid.to_s.match?(UUID_RE)
+      end
+    end
+
     # Mirrors BotScoringWorker#collect_chatters (PG):
     #   per-user max(user_type)/max(subscriber_status)/bool_or(returning_chatter)/bool_or(vip)/
     #   max(badge_info)/sum(bits_used)/count(*). PG `MAX(LowCardinality(String))` → CH `any()` on the
@@ -124,6 +135,7 @@ module Clickhouse
     # Returns Hash { username => { irc_tags: {...}, chat_stats: { message_count: n } } } — exact
     # caller-side shape so collect_chatters drops in as a pure swap.
     def chatter_aggregations(stream)
+      validate_stream_uuid!(stream.id)
       rows = Clickhouse.client.select(<<~SQL)
         SELECT
           username,
@@ -161,6 +173,7 @@ module Clickhouse
     # `.pluck.group_by`; this query is identical semantically and the column-store load is trivial
     # for typical per-stream chat sizes (≤200k messages).
     def chatter_timestamps(stream)
+      validate_stream_uuid!(stream.id)
       rows = Clickhouse.client.select(<<~SQL)
         SELECT username, timestamp
         FROM chat_messages
@@ -175,6 +188,7 @@ module Clickhouse
 
     # Mirrors BotScoringWorker#enrich_chat_stats — per-user message-text array for Shannon-entropy.
     def chatter_messages(stream)
+      validate_stream_uuid!(stream.id)
       rows = Clickhouse.client.select(<<~SQL)
         SELECT username, message_text
         FROM chat_messages
@@ -189,6 +203,7 @@ module Clickhouse
 
     # Mirrors BotScoringWorker#enrich_chat_stats — per-user emotes payload (split count → has_custom_emotes).
     def chatter_emotes(stream)
+      validate_stream_uuid!(stream.id)
       rows = Clickhouse.client.select(<<~SQL)
         SELECT username, emotes
         FROM chat_messages
@@ -204,6 +219,13 @@ module Clickhouse
     # Mirrors BotScoringWorker#fetch_cross_channel_counts — { username => distinct_channel_count }
     # over the given window. Differs from ChatQueries.cross_channel above (which takes a stream and
     # picks 500 chatters itself) by accepting a pre-resolved usernames array.
+    #
+    # CR-231 S1: msg_type = 'privmsg' filter is INTENTIONAL post-cutover, NOT preserved from the
+    # PG path. The pre-cutover PG implementation (BotScoringWorker#fetch_cross_channel_counts) had
+    # no msg_type filter — that was incidentally broader (counted USERNOTICE / clearchat /
+    # roomstate "presence" too). The correct semantic for "cross-channel **chat** presence" is
+    # privmsg only — same restriction the sibling ContextBuilder#cross_channel already used. The
+    # PG path being broader was an oversight; this PR aligns both call-sites on the right rule.
     def chatter_cross_channel_counts(usernames, since)
       return {} if usernames.empty?
 
@@ -227,6 +249,10 @@ module Clickhouse
     # any privmsg in the window (others absent from the Hash, matching the PG groupby behaviour).
     def chat_activity_batch(stream_ids, since)
       return {} if stream_ids.empty?
+
+      # CR-231 Nit-5: guard stream_ids — they're UUIDs from PG so no live exploit, but the SQL is
+      # interpolated and the username path next door uses escape_string_literal. Consistency.
+      validate_stream_uuid!(stream_ids)
 
       since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
       quoted = stream_ids.map { |sid| "'#{sid}'" }.join(",")

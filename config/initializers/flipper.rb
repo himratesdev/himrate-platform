@@ -136,18 +136,20 @@ module FlipperDefaults
     # confirming no false-close on legitimately live channels (e.g., dual-check against Helix).
     pva: "TASK-113", # Personal Viewer Analytics (BE-1..BE-5 + FE). OFF by default — фича шипится
     # инкрементально и ещё НЕ выпущена; enable per-env только после полного ship + verify (CR SF-3).
-    chat_writes_clickhouse: "TASK-251.14b", # Dual-write ChatMessageWorker → ClickHouse (best-effort;
-    # Postgres stays source of truth). OFF by default — enable per-env only after ingest-parity is
-    # validated. Read migration (ContextBuilder → CH) is a separate flag :chat_reads_clickhouse (1d).
+    # PR 1e-A (2026-05-31, CR-231 S2): the three flags below are NO LONGER READ by application code
+    # — cutover completed 2026-05-31T01:33:00Z, ChatMessageWorker writes CH-only, ContextBuilder
+    # reads CH-only, no dispatch_chat / dual_read path remains. Kept here for one more PR (1e-B)
+    # so that the rollback story for 1e-A is just `git revert + re-flip` (CH was the new SoT before
+    # 1e-A too — these flags being ON is the steady state). 1e-B will DROP TABLE chat_messages
+    # AND remove these declarations together — at that point any rollback requires a re-backfill
+    # anyway, so the flags lose all meaning. TODO(PR-1e-B): delete these 3 lines.
+    chat_writes_clickhouse: "TASK-251.14b (dead after 1e-A — remove in 1e-B)",
     chat_backfill_running: "TASK-251.14c", # Kill-switch for `rake clickhouse:backfill_chat`. OFF by
     # default — operator flips ON to start the one-shot backfill, OFF to pause cleanly (the loop
     # exits at the next batch boundary with the Redis cursor preserved → re-running resumes).
-    chat_reads_clickhouse_dual_read: "TASK-251.14d", # ContextBuilder validation flag: ON → run BOTH
-    # PG and CH chat queries, log divergence, return PG result (safe). Phase 1 of the read-migration
-    # — monitor divergence; flip :chat_reads_clickhouse once it's 0 over a stable window.
-    chat_reads_clickhouse: "TASK-251.14d", # ContextBuilder cutover flag: ON → CH-only chat reads.
-    # Combat: signals offload to the minute MV rollups, the :signals backlog drains, TI goes live.
-    # Flip ONLY after dual_read shows clean 0-divergence (and the chat_messages backfill is done).
+    # Kept indefinitely — used for future re-backfill operations (e.g., schema migrations).
+    chat_reads_clickhouse_dual_read: "TASK-251.14d (dead after 1e-A — remove in 1e-B)",
+    chat_reads_clickhouse: "TASK-251.14d (dead after 1e-A — remove in 1e-B)",
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
     billing_auto_subscription_creation: "BUG-012", # Dev/staging only: ChannelsController#track
     # auto-creates Subscription if missing. Production: flag OFF — Subscription must pre-exist
