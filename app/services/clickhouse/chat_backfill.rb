@@ -1,13 +1,15 @@
 # frozen_string_literal: true
 
 module Clickhouse
-  # TASK-251.14c: backfill historical Postgres chat_messages into ClickHouse up to a T0 watermark
-  # (the timestamp at which the live dual-write was enabled per env). Post-T0 rows are already
-  # covered by the live mirror (ChatMessageWorker#mirror_to_clickhouse, PR 1b); the backfill closes
-  # the historical gap so signals can read EVERYTHING from CH after the read-migration (PR 1d).
+  # TASK-251.14c (historical, retained pre-PR-1e-B): backfill historical Postgres chat_messages
+  # into ClickHouse up to a T0 watermark (the timestamp at which the live dual-write was enabled
+  # per env). Post-T0 rows were covered by the live mirror — now the CH-only primary writer
+  # ChatMessageWorker#write_to_clickhouse post-cutover; the backfill closed the historical gap so
+  # signals could read EVERYTHING from CH after the read-migration (PR 1d cutover completed
+  # 2026-05-31T01:33:00Z). After PR 1e-B drops the PG source table this class can be removed.
   #
-  # ⚠️ T0 SAFETY MARGIN (queue-drain dedup window): set T0 = `Flipper.enable(:chat_writes_clickhouse)`
-  # time + safety margin PAST FULL DRAIN of the Redis chat queue (`irc:chat_messages`). ChatMessageWorker
+  # ⚠️ T0 SAFETY MARGIN (queue-drain dedup window): set T0 = the dual-write enable timestamp for
+  # the env + safety margin PAST FULL DRAIN of the Redis chat queue (`irc:chat_messages`). ChatMessageWorker
   # drains every minute on cron; messages with `tmi-sent-ts < enable_time` can still be sitting in
   # the queue when the flag flips ON, and the next drain mirrors them to CH with their original
   # (pre-enable) timestamp. If T0 is set to the enable_time exactly, this small tail is BOTH live-

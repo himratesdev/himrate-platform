@@ -152,17 +152,11 @@ class StreamMonitorWorker
   # CHATTERS_WINDOW — one grouped query pair per batch (no per-channel GQL calls).
   # GQL chatters_count is integrity-protected (empty server-side). Returns
   # { stream_id => { unique:, total: } } only for streams that had chat in the window.
+  # PR 1e-A (2026-05-31): batched chat activity from ClickHouse instead of PG.
+  # Same return shape ({ stream_id => { unique:, total: } }) — streams with 0 privmsg
+  # in the window are absent from the Hash (matches PG groupby).
   def fetch_chat_activity(streams)
-    since = CHATTERS_WINDOW.ago
-    base = ChatMessage.where(stream_id: streams.map(&:id), msg_type: "privmsg").where("timestamp > ?", since)
-    uniques = base.group(:stream_id).distinct.count(:username)
-    totals = base.group(:stream_id).count
-    uniques.each_with_object({}) do |(sid, uniq), acc|
-      acc[sid] = { unique: uniq, total: totals[sid] || 0 }
-    end
-  rescue ActiveRecord::StatementInvalid => e
-    Rails.logger.warn("StreamMonitorWorker: chat activity query failed (#{e.message})")
-    {}
+    Clickhouse::ChatQueries.chat_activity_batch(streams.map(&:id), CHATTERS_WINDOW.ago)
   end
 
   def save_ccv_snapshot(stream, ccv_count)

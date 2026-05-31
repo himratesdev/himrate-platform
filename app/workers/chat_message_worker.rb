@@ -1,10 +1,13 @@
 # frozen_string_literal: true
 
-# TASK-024: Batch insert chat messages from Redis queue into PostgreSQL.
-# Reads from Redis list `irc:chat_messages`, inserts in batches via insert_all.
+# TASK-024: Batch insert chat messages from Redis queue into ClickHouse.
+# Reads from Redis list `irc:chat_messages`, inserts in batches.
 # TASK-251.5: cron-driven (every minute). Drains the queue in a loop until empty or
-# MAX_RUNTIME_SECONDS, then exits — sidekiq-cron re-runs it next minute. (Replaces the old
-# self-reschedule, which was never bootstrapped → the queue never drained → ChatMessage=0.)
+# MAX_RUNTIME_SECONDS, then exits — sidekiq-cron re-runs it next minute.
+# PR 1e-A (2026-05-31): post-CH-cutover, ClickHouse is the SoT. PG INSERT path dropped
+# (Postgres chat_messages will be removed in PR 1e-B). CH write is no longer best-effort —
+# it must succeed or the batch re-queues. The :chat_writes_clickhouse flag and the dual-write
+# mirror gating are gone with the cutover.
 
 class ChatMessageWorker
   include Sidekiq::Job
@@ -31,37 +34,29 @@ class ChatMessageWorker
 
   private
 
-  # Insert one drained batch. drain_redis_queue already removed it from Redis, so on an
-  # unexpected (e.g. connection-level) failure re-queue the raw batch before re-raising —
-  # otherwise the batch would be lost (CR nit-1). StatementInvalid is handled inside
-  # batch_insert (per-record), so only connection/unexpected errors reach the rescue here.
+  # Insert one drained batch into ClickHouse. drain_redis_queue already removed the batch from
+  # Redis, so on any failure re-queue the raw batch before re-raising — otherwise the batch
+  # would be lost (CR nit-1, original PG behaviour preserved). Sidekiq retry then picks it up.
   def insert_batch(raw)
     records = raw.filter_map { |json| parse_message(json) }
-    if records.any?
-      persisted = batch_insert(records) # Postgres — source of truth; returns rows actually written
-      mirror_to_clickhouse(persisted)   # ClickHouse — best-effort mirror of exactly what PG wrote
-    end
+    write_to_clickhouse(records) if records.any?
     records.size
   rescue StandardError => e
     requeue(raw)
     raise e
   end
 
-  # TASK-251.14b: mirror the just-inserted batch into ClickHouse (the analytics store being migrated
-  # to). Postgres stays the source of truth; gated by :chat_writes_clickhouse (OFF until ingest-parity
-  # is validated per env). NEVER raises — a CH failure must not requeue the batch (that would
-  # double-write Postgres) nor block ingest; the gap is closed by the backfill (PR 1c).
-  def mirror_to_clickhouse(records)
-    return if records.empty?
-    return unless Flipper.enabled?(:chat_writes_clickhouse)
-
-    # best_effort: true → short timeout, no retry — a CH outage must not stall the drain loop.
-    # Row mapping delegated to Clickhouse::ChatRow (TASK-251.14c): single source of truth shared
-    # with the historical backfill so live mirror + backfill produce byte-identical rows.
-    Clickhouse.client.insert("chat_messages", records.map { |record| Clickhouse::ChatRow.from_pg(record) }, best_effort: true)
-  rescue StandardError => e
-    # Log the error class only — the message can echo CH response-body fragments.
-    Rails.logger.warn("ChatMessageWorker: ClickHouse mirror failed (#{e.class}) — Postgres is source of truth, gap backfilled later")
+  # PR 1e-A: primary write path (was `mirror_to_clickhouse` under the dual-write era). CH is now
+  # the SoT for chat — no `best_effort: true`, no flag gate, no silent rescue. A CH outage MUST
+  # surface as a worker exception so the batch returns to Redis and Sidekiq retries (matches the
+  # pre-cutover PG behaviour). Row mapping still delegated to Clickhouse::ChatRow.from_pg —
+  # the method name is kept for the back-compat row shape it produces (rename to from_record
+  # in a follow-up touch-up; out of scope here).
+  def write_to_clickhouse(records)
+    Clickhouse.client.insert(
+      "chat_messages",
+      records.map { |record| Clickhouse::ChatRow.from_pg(record) }
+    )
   end
 
   # Restore a drained batch to the tail (oldest-first FIFO preserved) so Sidekiq retry
@@ -111,27 +106,6 @@ class ChatMessageWorker
   rescue JSON::ParserError => e
     Rails.logger.warn("ChatMessageWorker: invalid JSON (#{e.message})")
     nil
-  end
-
-  # Returns the records actually persisted to Postgres so the ClickHouse mirror reflects exactly what
-  # PG holds (no CH-superset divergence). Bulk path writes all; fallback returns the written subset.
-  def batch_insert(records)
-    ChatMessage.insert_all(records)
-    records
-  rescue ActiveRecord::StatementInvalid => e
-    Rails.logger.error("ChatMessageWorker: batch INSERT failed (#{e.message}), trying individual inserts")
-    individual_insert(records)
-  end
-
-  def individual_insert(records)
-    persisted = records.each_with_object([]) do |record, kept|
-      ChatMessage.create!(record)
-      kept << record
-    rescue ActiveRecord::RecordInvalid => e
-      Rails.logger.warn("ChatMessageWorker: skip invalid record (#{e.message})")
-    end
-    Rails.logger.info("ChatMessageWorker: individual insert #{persisted.size}/#{records.size}")
-    persisted
   end
 
   def resolve_stream_id(channel_login)

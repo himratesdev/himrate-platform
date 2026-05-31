@@ -2,11 +2,34 @@
 
 require "rails_helper"
 
+# PR 1e-A (2026-05-31): post-CH-cutover BotScoringWorker reads chat from ClickHouse
+# (Clickhouse::ChatQueries.chatter_aggregations/timestamps/messages/emotes/cross_channel_counts)
+# instead of PG ChatMessage. Specs stub the 5 ChatQueries methods to feed deterministic
+# per-user data into the scorer pipeline — same per_user_bot_scores assertions as the
+# PG era, just sourced through the CH-shaped interface.
 RSpec.describe BotScoringWorker do
   let(:worker) { described_class.new }
 
   before do
     allow(Flipper).to receive(:enabled?).with(:bot_scoring).and_return(true)
+    # Default: no chat returned. Each test overrides the methods it depends on.
+    allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).and_return({})
+    allow(Clickhouse::ChatQueries).to receive(:chatter_timestamps).and_return({})
+    allow(Clickhouse::ChatQueries).to receive(:chatter_messages).and_return({})
+    allow(Clickhouse::ChatQueries).to receive(:chatter_emotes).and_return({})
+    allow(Clickhouse::ChatQueries).to receive(:chatter_cross_channel_counts).and_return({})
+  end
+
+  # Helper: build the chatter_aggregations Hash shape Clickhouse::ChatQueries returns.
+  def aggregation(username, msg_count: 3, user_type: nil, sub: nil, badge: nil,
+                  returning: false, vip: false, bits: 0)
+    {
+      irc_tags: {
+        user_type: user_type, subscriber_status: sub, badge_info: badge,
+        returning_chatter: returning, vip: vip, bits_used: bits
+      },
+      chat_stats: { message_count: msg_count }
+    }
   end
 
   # Phase 5 (2026-05-31): dedicated :bot_scoring queue so cron-enqueued jobs don't sit behind
@@ -21,19 +44,11 @@ RSpec.describe BotScoringWorker do
     channel = Channel.create!(twitch_id: "123", login: "test_channel", display_name: "Test")
     stream = Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
 
-    # Create chat messages
-    3.times do |i|
-      ChatMessage.create!(
-        stream: stream,
-        channel_login: "test_channel",
-        username: "user_#{i}",
-        message_text: "hello #{i}",
-        timestamp: 90.minutes.ago + i.minutes,
-        msg_type: "privmsg"
-      )
-    end
-
-    # Stub KnownBotService
+    allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).with(stream).and_return(
+      "user_0" => aggregation("user_0"),
+      "user_1" => aggregation("user_1"),
+      "user_2" => aggregation("user_2")
+    )
     allow_any_instance_of(KnownBotService).to receive(:check_batch).and_return(
       "user_0" => { bot: false, confidence: 0.0, sources: [] },
       "user_1" => { bot: false, confidence: 0.0, sources: [] },
@@ -65,12 +80,9 @@ RSpec.describe BotScoringWorker do
   it "feeds cached chatter profile into bot-score components (#11 revival)" do
     channel = Channel.create!(twitch_id: "777", login: "prof_channel", display_name: "Prof")
     stream = Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
-    3.times do |i|
-      ChatMessage.create!(stream: stream, channel_login: "prof_channel", username: "botty",
-                          message_text: "spam #{i}", timestamp: 90.minutes.ago + i.minutes, msg_type: "privmsg")
-    end
-    # Cached profile with genuine bot signals (zero followers + brand-new account + follows nobody).
-    # TASK-251.20: profile_view_count dropped (Twitch deprecated profileViewCount).
+    allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).with(stream).and_return(
+      "botty" => aggregation("botty")
+    )
     ChatterProfile.create!(login: "botty", twitch_created_at: 2.days.ago, followers_count: 0,
                            follows_count: 0, fetched_at: Time.current)
     allow_any_instance_of(KnownBotService).to receive(:check_batch).and_return("botty" => { bot: false, confidence: 0.0, sources: [] })
@@ -87,7 +99,9 @@ RSpec.describe BotScoringWorker do
   it "does NOT flag a normal viewer's cached profile (calibration: no streamer-presence flags)" do
     channel = Channel.create!(twitch_id: "779", login: "viewer_channel", display_name: "V")
     stream = Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
-    3.times { |i| ChatMessage.create!(stream: stream, channel_login: "viewer_channel", username: "realviewer", message_text: "hi #{i}", timestamp: 90.minutes.ago + i.minutes, msg_type: "privmsg") }
+    allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).with(stream).and_return(
+      "realviewer" => aggregation("realviewer")
+    )
     ChatterProfile.create!(login: "realviewer", twitch_created_at: 3.years.ago, followers_count: 25,
                            follows_count: 120, fetched_at: Time.current)
     allow_any_instance_of(KnownBotService).to receive(:check_batch).and_return("realviewer" => { bot: false, confidence: 0.0, sources: [] })
@@ -99,11 +113,10 @@ RSpec.describe BotScoringWorker do
     expect(components).not_to include("followers_zero", "account_age_7d", "account_age_30d", "follows_zero")
   end
 
-  it "handles stream with 0 chatters" do
+  it "handles stream with 0 chatters (empty Clickhouse::ChatQueries.chatter_aggregations)" do
     channel = Channel.create!(twitch_id: "456", login: "empty_channel", display_name: "Empty")
     stream = Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
-
-    allow_any_instance_of(KnownBotService).to receive(:check_batch).and_return({})
+    # chatter_aggregations stub already defaults to {} via the top-level before block.
 
     expect { worker.perform(stream.id) }.not_to change(PerUserBotScore, :count)
   end
