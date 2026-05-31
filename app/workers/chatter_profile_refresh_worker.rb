@@ -8,6 +8,13 @@
 # signal compute. Profiles are stable (account age / follower count change slowly), so each
 # chatter is fetched once per STALE_AFTER and cached cross-stream; BotScoringWorker then reads the
 # cache with zero GQL calls. Bounded per run; cron re-runs to warm the cache over time.
+#
+# PR-251.14 PR 1e-A follow-up (2026-05-31): post PR #231 chat_messages is CH-only, so the
+# "recently active chatters" lookup moved to Clickhouse::ChatQueries.distinct_active_chatters and
+# the freshness filter (NOT EXISTS chatter_profiles WHERE fetched_at > STALE_AFTER.ago) runs in
+# Ruby against PG. Without this migration the LOOKBACK=2h window drained to empty within hours
+# of PR #231 merge → no chatters ever queued for GQL refresh → Account Profile Scoring (#11)
+# silently re-broken on every channel.
 class ChatterProfileRefreshWorker
   include Sidekiq::Job
   sidekiq_options queue: :monitoring, retry: 1
@@ -42,19 +49,31 @@ class ChatterProfileRefreshWorker
 
   private
 
-  # Recently-active chatter logins without a fresh cached profile. Filtering + LIMIT happen in
-  # SQL (NOT EXISTS subquery) so memory stays bounded even though chat_messages is large.
+  # Recently-active chatter logins without a fresh cached profile. PR-251.14 PR 1e-A follow-up:
+  # post PR #231 chat_messages is CH-only, but chatter_profiles stays in PG (it's small, slow-
+  # moving, joined into PG signal queries). Cross-DB NOT EXISTS isn't possible, so:
+  #   1. CH returns up to OVERSAMPLE_LIMIT distinct active chatters in the LOOKBACK window
+  #      (oversamples because the next filter rejects already-fresh entries).
+  #   2. PG returns the subset that's already fresh-cached (fetched_at > STALE_AFTER.ago).
+  #   3. Ruby set-difference yields the to-enrich list, capped at MAX_PER_RUN.
+  # Self-throttles to small batches when cache hit rate is high (steady state) and to a full
+  # MAX_PER_RUN burst when cold (fresh staging / cache wipe) — same shape the prior PG NOT EXISTS
+  # delivered.
+  OVERSAMPLE_LIMIT = MAX_PER_RUN * 15 # 5250 — cushion for steady-state 95%+ cache hit ratio
+
   def logins_to_enrich
-    ChatMessage
-      .where("chat_messages.timestamp > ?", LOOKBACK.ago)
-      .where.not(username: nil)
-      .where(
-        "NOT EXISTS (SELECT 1 FROM chatter_profiles cp WHERE cp.login = chat_messages.username AND cp.fetched_at > ?)",
-        STALE_AFTER.ago
-      )
-      .distinct
-      .limit(MAX_PER_RUN)
-      .pluck(:username)
+    candidates = Clickhouse::ChatQueries.distinct_active_chatters(
+      since: LOOKBACK.ago,
+      limit: OVERSAMPLE_LIMIT
+    )
+    return [] if candidates.empty?
+
+    fresh = ChatterProfile
+      .where(login: candidates)
+      .where("fetched_at > ?", STALE_AFTER.ago)
+      .pluck(:login)
+      .to_set
+    (candidates - fresh.to_a).first(MAX_PER_RUN)
   end
 
   # Batch GQL profile lookups (≤35 logins/request). Returns { login => profile_hash_or_nil }.

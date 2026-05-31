@@ -434,6 +434,26 @@ RSpec.describe Clickhouse::ChatQueries do
     end
   end
 
+  describe ".distinct_active_chatters" do
+    let(:since) { Time.utc(2026, 5, 31, 10, 0, 0) }
+
+    it "queries DISTINCT username over the cutoff with username != '' and LIMIT" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT DISTINCT username/)
+          .and(a_string_matching(/timestamp > toDateTime64\('2026-05-31 10:00:00\.000', 3\)/))
+          .and(a_string_matching(/username != ''/))
+          .and(a_string_matching(/LIMIT 5250/))
+      ).and_return([ { "username" => "alice" }, { "username" => "bob" } ])
+
+      expect(described_class.distinct_active_chatters(since: since, limit: 5250)).to eq(%w[alice bob])
+    end
+
+    it "swallows Clickhouse::Error and returns [] (transient infra tolerance)" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::QueryError, "boom")
+      expect(described_class.distinct_active_chatters(since: since, limit: 100)).to eq([])
+    end
+  end
+
   describe ".validate_stream_uuid!" do
     it "accepts valid UUID v4 string" do
       expect { described_class.validate_stream_uuid!(SecureRandom.uuid) }.not_to raise_error

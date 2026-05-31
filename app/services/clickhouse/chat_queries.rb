@@ -329,6 +329,27 @@ module Clickhouse
     end
     private_class_method :parse_raw_tags
 
+    # ─── Chatter profile refresh migration (ChatterProfileRefreshWorker) ────────
+    # Mirrors ChatterProfileRefreshWorker#logins_to_enrich raw input: DISTINCT non-empty usernames
+    # that chatted (any msg_type — privmsg / RESUB / etc count as "active") since the given cutoff,
+    # capped at `limit`. Caller does the cross-DB NOT EXISTS filter against PG chatter_profiles in
+    # Ruby (the CH side oversamples because the freshness filter rejects most entries in steady
+    # state). Order is implementation-defined; caller's set-difference doesn't care.
+    def distinct_active_chatters(since:, limit:)
+      since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S.%3N")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT DISTINCT username
+        FROM chat_messages
+        WHERE timestamp > toDateTime64('#{since_ts}', 3)
+          AND username != ''
+        LIMIT #{limit.to_i}
+      SQL
+      rows.map { |r| r["username"] }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: distinct_active_chatters failed (#{e.class})")
+      []
+    end
+
     # Mirrors StreamMonitorWorker#fetch_chat_activity — batched per-stream chat activity over the
     # given window. Returns Hash { stream_id => { unique: n, total: n } } for the streams that had
     # any privmsg in the window (others absent from the Hash, matching the PG groupby behaviour).
