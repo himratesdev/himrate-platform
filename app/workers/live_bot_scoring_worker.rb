@@ -13,7 +13,9 @@
 
 class LiveBotScoringWorker
   include Sidekiq::Job
-  sidekiq_options queue: :signals, retry: 1
+  # On the :bot_scoring queue (paired with BotScoringWorker) so cron-driven enqueues don't sit
+  # behind the :signals backlog. See sidekiq.yml + bot_scoring_worker.rb for rationale.
+  sidekiq_options queue: :bot_scoring, retry: 1
 
   # Bound per run; cron re-runs. Follow-up at scale (thousands of concurrent live streams): a
   # Stream#bot_scored_at column to rotate fairly (least-recently-scored first) + incremental/windowed

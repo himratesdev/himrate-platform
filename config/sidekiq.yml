@@ -1,5 +1,10 @@
 # TASK-015: Sidekiq queue configuration
 # Queues ordered by priority (higher weight = higher priority)
+# bot_scoring: per-stream bot-scoring (BotScoringWorker, LiveBotScoringWorker) — must bypass
+#              :signals backlog so PerUserBotScore stays fresh on live streams. Without a
+#              dedicated queue, bot-scoring jobs sit behind 700k+ SignalComputeWorker rebuilds
+#              and the chat_behavior / known_bot_match / account_profile_scoring signals
+#              abstain on 97% of channels (Phase 5 root cause, 2026-05-31).
 # signals: Trust Index computations (real-time critical)
 # default: general tasks
 # notifications: email, Telegram, push
@@ -12,6 +17,7 @@
 :concurrency: <%= ENV.fetch("SIDEKIQ_CONCURRENCY", 5) %>
 
 :queues:
+  - [bot_scoring, 6]
   - [signals, 5]
   - [chat, 4]
   - [pva_critical, 3]

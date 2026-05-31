@@ -9,6 +9,13 @@ RSpec.describe BotScoringWorker do
     allow(Flipper).to receive(:enabled?).with(:bot_scoring).and_return(true)
   end
 
+  # Phase 5 (2026-05-31): dedicated :bot_scoring queue so cron-enqueued jobs don't sit behind
+  # the 700k+ :signals backlog. Regression guard: if this drops back to :signals, the
+  # chat_behavior / known_bot_match / account_profile_scoring signals re-break on live streams.
+  it "uses the dedicated :bot_scoring queue (above :signals priority)" do
+    expect(described_class.sidekiq_options["queue"]).to eq("bot_scoring")
+  end
+
   # AC-09: BotScoringWorker batch scores all chatters after stream ends
   it "scores chatters and writes to per_user_bot_scores" do
     channel = Channel.create!(twitch_id: "123", login: "test_channel", display_name: "Test")
