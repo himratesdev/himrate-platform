@@ -8,9 +8,11 @@
 class StreamOfflineWorker
   include Sidekiq::Job
   # BUG-251.40-E (2026-06-01): co-located with StreamOnlineWorker on dedicated
-  # :stream_lifecycle queue — close events must process real-time alongside open events
-  # to avoid stream pairs being inconsistently visible. See sidekiq.yml + stream_online_worker.
-  sidekiq_options queue: :stream_lifecycle
+  # :stream_lifecycle queue — close events must process real-time alongside open events to
+  # avoid inconsistent stream-pair visibility. String value + retry:3 match :bot_scoring /
+  # :signal_compute precedent (CR-229 iter-2). finalize_stream is idempotent (early-return on
+  # already-closed row) so retry: 3 is safe.
+  sidekiq_options queue: "stream_lifecycle", retry: 3
 
   IRC_COMMANDS_CHANNEL = "irc:commands"
 

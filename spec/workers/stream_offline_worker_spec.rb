@@ -3,6 +3,16 @@
 require "rails_helper"
 
 RSpec.describe StreamOfflineWorker do
+  # BUG-251.40-E (2026-06-01): regression guard — co-located with StreamOnlineWorker on
+  # :stream_lifecycle for real-time open/close pair processing.
+  it "is enqueued on the :stream_lifecycle dedicated queue (string value per CR-229 iter-2 convention)" do
+    expect(described_class.sidekiq_options["queue"]).to eq("stream_lifecycle")
+  end
+
+  it "uses retry: 3 (matches StreamOnlineWorker; finalize_stream idempotent via early-return on closed row)" do
+    expect(described_class.sidekiq_options["retry"]).to eq(3)
+  end
+
   let(:worker) { described_class.new }
   let(:channel) { create(:channel, twitch_id: "12345", login: "teststreamer") }
 

@@ -40,8 +40,10 @@
 #                   drains naturally without affecting new stream detection.
 # signals: legacy queue with the historical backlog (SignalComputeWorker pre-PR #233 stale,
 #          Trends::AnomalyAttributionWorker low-volume, BotScoringWorker stragglers). Drains
-#          naturally as backlog burns down without new inflow (all primary enqueuers now route
-#          to dedicated queues).
+#          naturally as backlog burns down without new inflow — all high-volume primary
+#          enqueuers (SignalCompute, BotScoring, StreamOnline/Offline) now route to dedicated
+#          queues. Remaining workers on :signals (RaidWorker, ChannelUpdateWorker,
+#          Trends::AnomalyAttribution, Trends::Aggregation) are low-volume.
 # default: general tasks
 # notifications: email, Telegram, push
 # monitoring: periodic checks, cleanup
