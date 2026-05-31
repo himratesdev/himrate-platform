@@ -2,29 +2,59 @@
 
 require "rails_helper"
 
+# PR-251.14 PR 1e-A follow-up: chat now lives in ClickHouse only (post PR #231 cutover). These
+# specs were rewritten to drive the worker via Clickhouse::ChatQueries stubs instead of inserting
+# PG ChatMessage rows — same semantics (raid USERNOTICEs + privmsg windows + cross-channel counts),
+# different source of truth.
 RSpec.describe RaidDetectionWorker do
   let(:worker) { described_class.new }
   let(:channel) { create(:channel) }
   let(:stream) { create(:stream, channel: channel, started_at: 4.hours.ago, ended_at: nil) }
 
+  # Mutable state the stubs read. Reset per-example via the let-lazy semantics.
+  let(:raid_rows) { [] }                # what ChatQueries.raid_messages_pending returns
+  let(:privmsg_log) { [] }              # [{ stream_id:, username:, at: }, ...] — drives privmsg_logins
+  let(:cross_channel_counts) { {} }     # explicit override for cross_channel scenarios
+
   before do
     allow(Flipper).to receive(:enabled?).with(:stream_monitor).and_return(true)
     allow(Flipper).to receive(:enabled?).with(:raid_detection).and_return(true)
+
+    # CH stubs: filter the in-memory log by window so timestamp-based test setup stays expressive.
+    allow(Clickhouse::ChatQueries).to receive(:raid_messages_pending) do |since:, until_:, limit:|
+      raid_rows.select { |r| r[:timestamp] >= since && r[:timestamp] <= until_ }
+               .first(limit.to_i)
+    end
+    allow(Clickhouse::ChatQueries).to receive(:privmsg_logins) do |s, from:, to:|
+      privmsg_log
+        .select { |row| row[:stream_id] == s.id && row[:at] >= from && row[:at] < to }
+        .map { |row| row[:username] }
+        .uniq
+    end
+    # Default: no cross-channel signal data. Per-example specs override via `cross_channel_counts`.
+    allow(Clickhouse::ChatQueries).to receive(:chatter_cross_channel_counts) { |_, _| cross_channel_counts }
   end
 
   # A matured raid USERNOTICE (default 20 min old → inside [LOOKBACK..MATURITY]).
   def raid(viewers:, at: 20.minutes.ago, msg_id: "raid-#{SecureRandom.hex(4)}", source_id: "src-1", linked: stream)
-    ChatMessage.create!(
-      channel_login: channel.login, username: "tmi.twitch.tv", msg_type: "raid",
-      message_text: nil, timestamp: at, stream: linked, twitch_msg_id: msg_id,
-      raw_tags: { "msg-id" => "raid", "msg-param-login" => "raider", "user-id" => source_id,
-                  "msg-param-viewerCount" => viewers.to_s }
-    )
+    row = {
+      stream_id:     linked&.id,
+      timestamp:     at,
+      username:      "tmi.twitch.tv",
+      twitch_msg_id: msg_id,
+      raw_tags: {
+        "msg-id"                => "raid",
+        "msg-param-login"       => "raider",
+        "user-id"               => source_id,
+        "msg-param-viewerCount" => viewers.to_s
+      }
+    }
+    raid_rows << row
+    row
   end
 
-  def chat(username, at:, login: channel.login, strm: stream)
-    ChatMessage.create!(channel_login: login, username: username, message_text: "hi",
-                        msg_type: "privmsg", timestamp: at, stream: strm)
+  def chat(username, at:, strm: stream)
+    privmsg_log << { stream_id: strm.id, username: username, at: at }
   end
 
   def ccv(count, at:)
@@ -55,7 +85,7 @@ RSpec.describe RaidDetectionWorker do
 
     expect { worker.perform }.to change(RaidAttribution, :count).by(1)
 
-    ra = RaidAttribution.find_by(twitch_msg_id: r.twitch_msg_id)
+    ra = RaidAttribution.find_by(twitch_msg_id: r[:twitch_msg_id])
     expect(ra.is_bot_raid).to be(true)
     expect(ra.bot_score).to be >= 0.75
     expect(ra.raid_viewers_count).to eq(100)
@@ -97,7 +127,7 @@ RSpec.describe RaidDetectionWorker do
     end
 
     worker.perform
-    ra = RaidAttribution.find_by(twitch_msg_id: r.twitch_msg_id)
+    ra = RaidAttribution.find_by(twitch_msg_id: r[:twitch_msg_id])
     expect(ra.is_bot_raid).to be(false)
     expect(ra.signal_scores["significant"]).to be(true)
     expect(ra.signal_scores["triggered"]).to eq(0)
@@ -110,7 +140,7 @@ RSpec.describe RaidDetectionWorker do
     40.times { |i| chat("regular_#{i}", at: t - 5.minutes) } # large pre-raid chatter base
 
     expect { worker.perform }.to change(RaidAttribution, :count).by(1)
-    ra = RaidAttribution.find_by(twitch_msg_id: r.twitch_msg_id)
+    ra = RaidAttribution.find_by(twitch_msg_id: r[:twitch_msg_id])
     expect(ra.is_bot_raid).to be(false)
     expect(ra.bot_score).to be_nil
     expect(ra.signal_scores["reason"]).to eq("insufficient_isolation")
@@ -118,7 +148,7 @@ RSpec.describe RaidDetectionWorker do
 
   it "is idempotent — skips a raid already attributed" do
     r = raid(viewers: 100)
-    create(:raid_attribution, stream: stream, twitch_msg_id: r.twitch_msg_id)
+    create(:raid_attribution, stream: stream, twitch_msg_id: r[:twitch_msg_id])
 
     expect { worker.perform }.not_to change(RaidAttribution, :count)
   end
@@ -133,8 +163,10 @@ RSpec.describe RaidDetectionWorker do
     expect { worker.perform }.not_to change(RaidAttribution, :count)
   end
 
-  it "skips raid USERNOTICEs without a linked stream" do
-    raid(viewers: 100, linked: nil)
+  it "skips raid USERNOTICEs without a linked stream (CH guarantees stream_id IS NOT NULL filter)" do
+    # ChatQueries.raid_messages_pending applies `stream_id IS NOT NULL` server-side, so the
+    # candidate set never contains nil-linked raids. We model that by simply not enqueueing one
+    # — the worker therefore makes no progress.
     expect { worker.perform }.not_to change(RaidAttribution, :count)
   end
 
@@ -148,5 +180,22 @@ RSpec.describe RaidDetectionWorker do
     raid(viewers: 50, at: 20.minutes.ago)
     raid(viewers: 50, at: 25.minutes.ago)
     expect { worker.perform }.to change(RaidAttribution, :count).by(1)
+  end
+
+  it "feeds chatter_cross_channel_counts the newcomer cohort + CROSS_CHANNEL_WINDOW.ago" do
+    # Regression guard: a future refactor must keep passing the post-raid newcomer list and the
+    # rolling 24h cutoff to the CH helper. If either drifts (e.g. someone passes raw_tags or
+    # mixes pre+post window), the cross-channel signal silently breaks.
+    t = 20.minutes.ago
+    raid(viewers: 100, at: t)
+    setup_bot_raid(t, viewers: 100)
+
+    expect(Clickhouse::ChatQueries).to receive(:chatter_cross_channel_counts) do |usernames, since|
+      expect(usernames).to match_array(%w[bot_a bot_b bot_c])
+      expect(since).to be_within(5.seconds).of(RaidDetectionWorker::CROSS_CHANNEL_WINDOW.ago)
+      {}
+    end.at_least(:once)
+
+    worker.perform
   end
 end

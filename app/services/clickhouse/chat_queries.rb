@@ -247,6 +247,83 @@ module Clickhouse
       {}
     end
 
+    # ─── Raid detection migration (RaidDetectionWorker) ─────────────────────────
+    # RaidDetectionWorker classifies IRC USERNOTICE raid messages. Post PR #231 the
+    # writer stopped dual-writing to PG, so raid USERNOTICEs now land ONLY in CH — these
+    # CH-side mirrors keep signal #9 alive.
+
+    # Mirrors RaidDetectionWorker#unprocessed_raids (PG):
+    # SELECT raid USERNOTICEs in [since, until_] with NOT NULL stream_id+twitch_msg_id,
+    # ordered chronologically, capped. Each row carries the fields the classifier needs
+    # (raid tag bag + raid timestamp + linked stream). PG's NOT EXISTS against
+    # raid_attributions can't be done here (CH ↔ PG is cross-DB), so the caller filters
+    # already-processed twitch_msg_ids in Ruby after the fetch.
+    #
+    # raw_tags lives in CH as a JSON String (ZSTD-compressed), unlike PG's jsonb Hash —
+    # we decode it here so the caller sees the same Hash shape PG returned. Empty/missing
+    # tags → empty Hash (matches PG ChatMessage#raw_tags default).
+    def raid_messages_pending(since:, until_:, limit:)
+      since_ts  = since.utc.strftime("%Y-%m-%d %H:%M:%S.%3N")
+      until_ts  = until_.utc.strftime("%Y-%m-%d %H:%M:%S.%3N")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT stream_id, timestamp, username, twitch_msg_id, raw_tags
+        FROM chat_messages
+        WHERE msg_type = 'raid'
+          AND stream_id IS NOT NULL
+          AND twitch_msg_id != ''
+          AND timestamp >= toDateTime64('#{since_ts}', 3)
+          AND timestamp <= toDateTime64('#{until_ts}', 3)
+        ORDER BY timestamp
+        LIMIT #{limit.to_i}
+      SQL
+      rows.map do |r|
+        {
+          stream_id:     r["stream_id"],
+          timestamp:     Time.parse("#{r['timestamp']} UTC"),
+          username:      r["username"],
+          twitch_msg_id: r["twitch_msg_id"],
+          raw_tags:      parse_raw_tags(r["raw_tags"])
+        }
+      end
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: raid_messages_pending failed (#{e.class})")
+      []
+    end
+
+    # Mirrors RaidDetectionWorker#privmsg_logins (PG):
+    # SELECT DISTINCT username FROM chat_messages WHERE stream_id=? AND msg_type='privmsg'
+    #   AND timestamp BETWEEN from..to.
+    # Returns Array<String> (matches the PG `.pluck(:username)` shape — caller does set ops).
+    def privmsg_logins(stream, from:, to:)
+      validate_stream_uuid!(stream.id)
+      from_ts = from.utc.strftime("%Y-%m-%d %H:%M:%S.%3N")
+      to_ts   = to.utc.strftime("%Y-%m-%d %H:%M:%S.%3N")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT DISTINCT username
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}'
+          AND msg_type = 'privmsg'
+          AND username != ''
+          AND timestamp >= toDateTime64('#{from_ts}', 3)
+          AND timestamp <  toDateTime64('#{to_ts}', 3)
+      SQL
+      rows.map { |r| r["username"] }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: privmsg_logins failed (#{e.class})")
+      []
+    end
+
+    # CH stores raw_tags as JSON String (ZSTD-compressed). PG had it as jsonb (Hash). Tolerate
+    # nil / blank / malformed JSON — return {} so callers can index into the Hash without nil-guards.
+    def parse_raw_tags(value)
+      return {} if value.nil? || value.to_s.empty?
+
+      JSON.parse(value)
+    rescue JSON::ParserError
+      {}
+    end
+    private_class_method :parse_raw_tags
+
     # Mirrors StreamMonitorWorker#fetch_chat_activity — batched per-stream chat activity over the
     # given window. Returns Hash { stream_id => { unique: n, total: n } } for the streams that had
     # any privmsg in the window (others absent from the Hash, matching the PG groupby behaviour).
