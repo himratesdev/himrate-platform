@@ -10,8 +10,13 @@ class StreamOfflineWorker
   # BUG-251.40-E (2026-06-01): co-located with StreamOnlineWorker on dedicated
   # :stream_lifecycle queue — close events must process real-time alongside open events to
   # avoid inconsistent stream-pair visibility. String value + retry:3 match :bot_scoring /
-  # :signal_compute precedent (CR-229 iter-2). finalize_stream is idempotent (early-return on
-  # already-closed row) so retry: 3 is safe.
+  # :signal_compute precedent (CR-229 iter-2). finalize_stream itself is idempotent
+  # (early-return on already-closed row), but that early-return ALSO skips the
+  # BotScoringWorker / PostStreamWorker enqueues — so if finalize succeeds but a downstream
+  # step (e.g. publish_irc_part Redis raise) crashes mid-perform, the retry no-ops the
+  # downstream pipeline. retry: 3 reduces exposure vs. the pre-PR implicit retry: 25; a
+  # full fix would split finalize and downstream enqueues into separate idempotent steps,
+  # follow-up out of scope.
   sidekiq_options queue: "stream_lifecycle", retry: 3
 
   IRC_COMMANDS_CHANNEL = "irc:commands"
