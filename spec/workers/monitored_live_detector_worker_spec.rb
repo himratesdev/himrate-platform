@@ -16,8 +16,8 @@ RSpec.describe MonitoredLiveDetectorWorker do
     allow(redis).to receive(:del)
   end
 
-  def live_stream(user_id:, login:, started_at: "2026-05-25T10:00:00Z", ccv: 5000)
-    { "user_id" => user_id, "user_login" => login, "started_at" => started_at, "viewer_count" => ccv }
+  def live_stream(user_id:, login:, started_at: "2026-05-25T10:00:00Z", ccv: 5000, id: "316159655126")
+    { "id" => id, "user_id" => user_id, "user_login" => login, "started_at" => started_at, "viewer_count" => ccv }
   end
 
   it "skips entirely when Flipper :stream_monitor is disabled" do
@@ -32,22 +32,51 @@ RSpec.describe MonitoredLiveDetectorWorker do
     create(:channel, twitch_id: "111", login: "bigstreamer", is_monitored: true)
     allow(helix).to receive(:get_streams).and_return([ live_stream(user_id: "111", login: "BigStreamer") ])
 
+    # BUG-251.40 A2: payload now carries Helix `id` as `stream_id` for downstream worker.
     expect(StreamOnlineWorker).to receive(:perform_async).with(
       "broadcaster_user_id" => "111",
       "broadcaster_user_login" => "bigstreamer",
-      "started_at" => "2026-05-25T10:00:00Z"
+      "started_at" => "2026-05-25T10:00:00Z",
+      "stream_id" => "316159655126"
     )
 
     worker.perform
   end
 
-  it "does not re-open a channel that already has an active stream (idempotent)" do
+  it "does not re-open a channel whose open stream matches Helix `id` (continuation — BUG-251.40 A2)" do
     channel = create(:channel, twitch_id: "111", login: "big", is_monitored: true)
-    create(:stream, channel: channel, ended_at: nil)
+    create(:stream, channel: channel, ended_at: nil, twitch_stream_id: "316159655126")
     allow(helix).to receive(:get_streams).and_return([ live_stream(user_id: "111", login: "big") ])
 
     expect(StreamOnlineWorker).not_to receive(:perform_async)
     expect(StreamOfflineWorker).not_to receive(:perform_async)
+
+    worker.perform
+  end
+
+  # BUG-251.40 A2: open-side identity-aware skip — the fuse-fix path.
+  it "RE-OPENS via StreamOnlineWorker when open stream has DIFFERENT twitch_stream_id (fuse)" do
+    channel = create(:channel, twitch_id: "111", login: "big", is_monitored: true)
+    # Stale row from yesterday's broadcast.
+    create(:stream, channel: channel, ended_at: nil, twitch_stream_id: "999999999999")
+    allow(helix).to receive(:get_streams).and_return([ live_stream(user_id: "111", login: "big") ])
+
+    # Detector enqueues OnlineWorker; OnlineWorker handles close+create internally.
+    expect(StreamOnlineWorker).to receive(:perform_async).with(
+      hash_including("stream_id" => "316159655126")
+    )
+
+    worker.perform
+  end
+
+  it "RE-OPENS via StreamOnlineWorker when open stream has NULL twitch_stream_id (legacy A1 pre-write)" do
+    channel = create(:channel, twitch_id: "111", login: "big", is_monitored: true)
+    create(:stream, channel: channel, ended_at: nil, twitch_stream_id: nil)
+    allow(helix).to receive(:get_streams).and_return([ live_stream(user_id: "111", login: "big") ])
+
+    expect(StreamOnlineWorker).to receive(:perform_async).with(
+      hash_including("stream_id" => "316159655126")
+    )
 
     worker.perform
   end
