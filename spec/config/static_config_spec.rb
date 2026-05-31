@@ -11,20 +11,22 @@ RSpec.describe "Static configuration" do
       )
     end
 
-    it "contains 12 queues" do
+    it "contains 13 queues" do
       # TASK-110 v1.2 (CR S-7): whisper_transcripts НЕ в shared :queues — обрабатывается
       # ТОЛЬКО dedicated whisper_worker role (deploy.yml) для CPU isolation concurrency=1.
       # TASK-113 Δ-1 Wave 1 (FR-016): pva_critical / pva_helix / pva_gql_anon (8 → 11).
       # PR #229 (EPIC BUG-251.28 Phase 5): bot_scoring dedicated queue (11 → 12) so
       # BotScoringWorker bypasses the :signals SignalComputeWorker backlog.
-      expect(config[:queues].size).to eq(12)
+      # Phase 5 follow-up (2026-05-31): signal_compute dedicated queue (12 → 13) so new
+      # SignalComputeWorker enqueues bypass the residual :signals 1M+ historical backlog.
+      expect(config[:queues].size).to eq(13)
     end
 
     it "includes required queue names" do
       queue_names = config[:queues].map(&:first)
       expect(queue_names).to include(
-        "bot_scoring", "signals", "chat", "post_stream", "default", "notifications", "monitoring",
-        "accessory_ops", "long_running"
+        "bot_scoring", "signal_compute", "signals", "chat", "post_stream", "default",
+        "notifications", "monitoring", "accessory_ops", "long_running"
       )
     end
 
@@ -37,6 +39,22 @@ RSpec.describe "Static configuration" do
       signals_weight = config[:queues].find { |q| q.first == "signals" }&.last
       default_weight = config[:queues].find { |q| q.first == "default" }&.last
       expect(signals_weight).to be > default_weight
+    end
+
+    it "signal_compute queue matches bot_scoring priority class (weight 6)" do
+      # Phase 5 follow-up (2026-05-31): both queues serve "live freshness" — bot scoring
+      # of live streams (PR #229) + TI/ERV recompute on live streams (this PR). Same
+      # priority class, so same weight. If this drifts, the lower-weight queue gets
+      # starved of fetch share when the other has steady volume.
+      signal_compute_weight = config[:queues].find { |q| q.first == "signal_compute" }&.last
+      bot_scoring_weight = config[:queues].find { |q| q.first == "bot_scoring" }&.last
+      expect(signal_compute_weight).to eq(bot_scoring_weight)
+    end
+
+    it "signal_compute queue ranks above signals (new enqueues bypass historical backlog)" do
+      signal_compute_weight = config[:queues].find { |q| q.first == "signal_compute" }&.last
+      signals_weight = config[:queues].find { |q| q.first == "signals" }&.last
+      expect(signal_compute_weight).to be > signals_weight
     end
   end
 

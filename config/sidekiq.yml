@@ -16,6 +16,19 @@
 #              freshness. Burning down the :signals backlog slows by ~17%; bot-scoring becomes
 #              real-time. If the trade becomes unacceptable, dedicated Kamal role (mirroring
 #              whisper_worker) is the next escalation.
+# signal_compute: SignalComputeWorker — Phase 5 follow-up (2026-05-31). The :bot_scoring
+#                 dedicated queue (PR #229) fixed BotScoringWorker freshness but left
+#                 SignalComputeWorker.perform_async (the highest-volume :signals enqueuer —
+#                 every live stream every minute via StreamMonitorWorker, plus post-stream
+#                 force=true from BotScoringWorker) still piling onto :signals BEHIND its own
+#                 1M+ historical backlog. Result: new live-stream Trust Index recomputes
+#                 themselves are queue-tail starved. Same fix pattern as bot_scoring —
+#                 dedicated queue so NEW jobs bypass historical backlog. Weight 6 matches
+#                 :bot_scoring priority class ("live freshness"). The other :signals workers
+#                 (channel_update / raid / stream_online / stream_offline / trends/aggregation /
+#                 trends/anomaly_attribution) are low-volume and stay on :signals — they'll
+#                 drain naturally as the 1M backlog (pure historical SignalComputeWorker jobs
+#                 from pre-cutover state) burns down without new inflow.
 # signals: Trust Index computations (real-time critical)
 # default: general tasks
 # notifications: email, Telegram, push
@@ -29,6 +42,7 @@
 
 :queues:
   - [bot_scoring, 6]
+  - [signal_compute, 6]
   - [signals, 5]
   - [chat, 4]
   - [pva_critical, 3]

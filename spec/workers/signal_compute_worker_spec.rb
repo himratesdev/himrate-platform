@@ -7,6 +7,23 @@ RSpec.describe SignalComputeWorker do
   let(:channel) { Channel.create!(twitch_id: "scw_ch", login: "scw_channel", display_name: "SCW") }
   let(:stream) { Stream.create!(channel: channel, started_at: 1.hour.ago, game_name: "Just Chatting") }
 
+  # Phase 5 follow-up regression guard (2026-05-31): the worker MUST enqueue on
+  # :signal_compute (not :signals). String value (not Symbol) — Sidekiq stores option
+  # values verbatim, and any drift back to :signals re-puts new TI recomputes BEHIND
+  # the 1M+ historical :signals backlog → live Trust Index goes stale on every channel.
+  describe "sidekiq queue" do
+    it "is 'signal_compute' (String) — bypasses :signals historical backlog" do
+      expect(described_class.sidekiq_options["queue"]).to eq("signal_compute"),
+        "SignalComputeWorker.sidekiq_options[:queue] must be 'signal_compute' (String). " \
+        "If this drifts back to 'signals', new TI recompute jobs land behind the residual " \
+        "1M+ :signals backlog and live-stream TI/ERV freshness re-breaks."
+    end
+
+    it "retry count is 3 (unchanged from pre-Phase-5)" do
+      expect(described_class.sidekiq_options["retry"]).to eq(3)
+    end
+  end
+
   before do
     # Permissive default for unrelated flags — keeps the spec stable as new flags are introduced.
     allow(Flipper).to receive(:enabled?).and_return(false)
