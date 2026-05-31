@@ -13,7 +13,7 @@ class BotScoringWorker
   # ≈17% of fetch slots vs :signals weight 5; queue volume tiny so it drains within seconds even
   # at fractional fetch share). Keeps PerUserBotScore fresh for the chat_behavior /
   # known_bot_match / account_profile_scoring signals on live streams.
-  sidekiq_options queue: :bot_scoring, retry: 3
+  sidekiq_options queue: "bot_scoring", retry: 3
 
   BATCH_SIZE = 1000
 
