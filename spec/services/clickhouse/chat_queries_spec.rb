@@ -148,4 +148,190 @@ RSpec.describe Clickhouse::ChatQueries do
       expect(described_class.unique_chatters(stream, since)).to eq(2)
     end
   end
+
+  # PR 1e-A (CR-231 N2) — direct unit specs for the 6 new methods added in the cutover.
+  # SQL-shape regression: each describe asserts the right table, GROUP BY, WHERE filters
+  # (privmsg + non-empty), and aggregate functions. Coverage gap noted by PG #0b — closes it
+  # in-PR (not via follow-up) per Iron Rule #5.
+  describe ".chatter_aggregations" do
+    let(:stream) { instance_double(Stream, id: stream_id) }
+
+    it "groups raw chat_messages by username with PG-shaped per-user aggregates" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/FROM chat_messages/)
+          .and(a_string_matching(/stream_id = '#{stream_id}'/))
+          .and(a_string_matching(/GROUP BY username/))
+          .and(a_string_matching(/any\(user_type\)/))
+          .and(a_string_matching(/max\(returning_chatter\)/))
+          .and(a_string_matching(/sum\(bits_used\)/))
+          .and(a_string_matching(/count\(\)/))
+      ).and_return([
+                     { "username" => "alice", "user_type" => "mod", "subscriber_status" => "1",
+                       "returning_chatter" => "1", "vip" => "0", "badge_info" => "subscriber/12",
+                       "bits_used" => "100", "msg_count" => "5" }
+                   ])
+
+      result = described_class.chatter_aggregations(stream)
+      entry = result.fetch("alice")
+      expect(entry[:irc_tags]).to include(user_type: "mod", subscriber_status: "1",
+                                          returning_chatter: true, vip: false,
+                                          badge_info: "subscriber/12", bits_used: 100)
+      expect(entry[:chat_stats]).to eq(message_count: 5)
+    end
+
+    it "raises ArgumentError for non-UUID stream.id (validate_stream_uuid! guard)" do
+      bad_stream = instance_double(Stream, id: "not-a-uuid; DROP TABLE chat_messages;--")
+      expect { described_class.chatter_aggregations(bad_stream) }
+        .to raise_error(ArgumentError, /not a UUID/)
+    end
+
+    it "returns {} on Clickhouse::Error (transient infra contract)" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::QueryError, "boom")
+      expect(described_class.chatter_aggregations(stream)).to eq({})
+    end
+  end
+
+  describe ".chatter_timestamps" do
+    let(:stream) { instance_double(Stream, id: stream_id) }
+
+    it "returns Hash { username => [Time, ...] } ordered ascending" do
+      ts_a1 = "2026-05-31 10:00:01"; ts_a2 = "2026-05-31 10:00:05"; ts_b = "2026-05-31 10:00:03"
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT username, timestamp/)
+          .and(a_string_matching(/msg_type = 'privmsg'/))
+          .and(a_string_matching(/username != ''/))
+          .and(a_string_matching(/ORDER BY username, timestamp/))
+      ).and_return([
+                     { "username" => "alice", "timestamp" => ts_a1 },
+                     { "username" => "alice", "timestamp" => ts_a2 },
+                     { "username" => "bob",   "timestamp" => ts_b }
+                   ])
+
+      result = described_class.chatter_timestamps(stream)
+      expect(result.keys).to contain_exactly("alice", "bob")
+      expect(result["alice"].size).to eq(2)
+      expect(result["alice"].first).to be_a(Time)
+    end
+
+    it "returns {} on Clickhouse::Error" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::QueryError, "boom")
+      expect(described_class.chatter_timestamps(stream)).to eq({})
+    end
+  end
+
+  describe ".chatter_messages" do
+    let(:stream) { instance_double(Stream, id: stream_id) }
+
+    it "groups by username with privmsg + non-empty message_text filters" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT username, message_text/)
+          .and(a_string_matching(/msg_type = 'privmsg'/))
+          .and(a_string_matching(/username != ''/))
+          .and(a_string_matching(/message_text != ''/))
+      ).and_return([
+                     { "username" => "alice", "message_text" => "hi" },
+                     { "username" => "alice", "message_text" => "bye" }
+                   ])
+
+      expect(described_class.chatter_messages(stream)).to eq("alice" => [ "hi", "bye" ])
+    end
+  end
+
+  describe ".chatter_emotes" do
+    let(:stream) { instance_double(Stream, id: stream_id) }
+
+    it "groups by username with non-empty emotes filter" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT username, emotes/)
+          .and(a_string_matching(/emotes != ''/))
+      ).and_return([ { "username" => "alice", "emotes" => "25:0-4/50:6-9" } ])
+
+      expect(described_class.chatter_emotes(stream)).to eq("alice" => [ "25:0-4/50:6-9" ])
+    end
+  end
+
+  describe ".chatter_cross_channel_counts" do
+    it "returns {} on empty usernames (no SQL roundtrip)" do
+      expect(ch).not_to receive(:select)
+      expect(described_class.chatter_cross_channel_counts([], 24.hours.ago)).to eq({})
+    end
+
+    it "queries with PRIVMSG filter (CR S1: intentional shift from PG path that lacked filter)" do
+      since = Time.utc(2026, 5, 30, 12, 0, 0)
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT username, uniqExact\(channel_login\)/)
+          .and(a_string_matching(/msg_type = 'privmsg'/)) # CR S1 lock-in
+          .and(a_string_matching(/timestamp > toDateTime\('2026-05-30 12:00:00'\)/))
+          .and(a_string_matching(/'alice','bob'/))
+      ).and_return([ { "username" => "alice", "c" => "3" }, { "username" => "bob", "c" => "1" } ])
+
+      expect(described_class.chatter_cross_channel_counts(%w[alice bob], since))
+        .to eq("alice" => 3, "bob" => 1)
+    end
+
+    it "escapes single-quotes + backslashes in usernames (escape_string_literal)" do
+      since = Time.utc(2026, 5, 30, 12, 0, 0)
+      expect(ch).to receive(:select).with(
+        a_string_matching(/'o''reilly'/) # single-quote doubled per CH escape
+      ).and_return([])
+      described_class.chatter_cross_channel_counts([ "o'reilly" ], since)
+    end
+  end
+
+  describe ".chat_activity_batch" do
+    it "returns {} on empty stream_ids (no SQL roundtrip)" do
+      expect(ch).not_to receive(:select)
+      expect(described_class.chat_activity_batch([], 10.minutes.ago)).to eq({})
+    end
+
+    it "queries with stream_id IN list + privmsg + groups per stream" do
+      sid1 = SecureRandom.uuid
+      sid2 = SecureRandom.uuid
+      since = Time.utc(2026, 5, 30, 12, 0, 0)
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT stream_id, count\(\) AS total, uniqExact\(username\)/)
+          .and(a_string_matching(/msg_type = 'privmsg'/))
+          .and(a_string_matching(/GROUP BY stream_id/))
+          .and(a_string_matching(/'#{sid1}'/))
+      ).and_return([
+                     { "stream_id" => sid1, "total" => "10", "unique_n" => "4" },
+                     { "stream_id" => sid2, "total" => "3",  "unique_n" => "2" }
+                   ])
+
+      result = described_class.chat_activity_batch([ sid1, sid2 ], since)
+      expect(result[sid1]).to eq(unique: 4, total: 10)
+      expect(result[sid2]).to eq(unique: 2, total: 3)
+    end
+
+    it "raises ArgumentError for non-UUID stream_id (validate_stream_uuid! guard)" do
+      expect {
+        described_class.chat_activity_batch([ "not-a-uuid' OR 1=1 --" ], 10.minutes.ago)
+      }.to raise_error(ArgumentError, /not a UUID/)
+    end
+  end
+
+  describe ".validate_stream_uuid!" do
+    it "accepts valid UUID v4 string" do
+      expect { described_class.validate_stream_uuid!(SecureRandom.uuid) }.not_to raise_error
+    end
+
+    it "accepts an array of valid UUIDs" do
+      expect { described_class.validate_stream_uuid!([ SecureRandom.uuid, SecureRandom.uuid ]) }
+        .not_to raise_error
+    end
+
+    it "raises on SQL-injection attempt" do
+      expect { described_class.validate_stream_uuid!("'; DROP TABLE chat_messages; --") }
+        .to raise_error(ArgumentError, /not a UUID/)
+    end
+
+    it "raises on plain string" do
+      expect { described_class.validate_stream_uuid!("not-uuid") }.to raise_error(ArgumentError)
+    end
+
+    it "raises on UUID with trailing chars" do
+      expect { described_class.validate_stream_uuid!("#{SecureRandom.uuid}x") }
+        .to raise_error(ArgumentError)
+    end
+  end
 end
