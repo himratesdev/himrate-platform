@@ -6,7 +6,20 @@
 
 class StreamOnlineWorker
   include Sidekiq::Job
-  sidekiq_options queue: :signals
+  # BUG-251.40-E (2026-06-01): dedicated :stream_lifecycle queue so NEW MLD/EventSub enqueues
+  # bypass the legacy :signals historical backlog. Without this, Stream creation pauses while
+  # the historical backlog drains. Same priority class as :bot_scoring + :signal_compute
+  # ("real-time live state"). String value per CR-229 iter-2 convention (sidekiq_options
+  # stores verbatim → spec assertions `eq("stream_lifecycle")` work). retry: 3 matches
+  # :bot_scoring / :signal_compute precedent. The retry semantics are *partially* idempotent:
+  # close_stale_if_fused is fully idempotent (re-running closes nothing new), but if perform
+  # crashes between close_stale_if_fused returning non-zero and Stream.create!/update!
+  # committing, the retry runs with closed_count = 0 → allow_merge = true (in-memory flag
+  # is not reconstructed) → merge_or_create_stream's MERGE_GAP_MINUTES lookup may pick up
+  # the just-closed stale row and re-open it on game_name match (CR-237 C1 surface).
+  # retry: 3 reduces exposure vs. the pre-PR implicit retry: 25 — full fix would persist
+  # closed_count as a stream-row annotation, follow-up out of scope.
+  sidekiq_options queue: "stream_lifecycle", retry: 3
 
   IRC_COMMANDS_CHANNEL = "irc:commands"
   MERGE_GAP_MINUTES = 30

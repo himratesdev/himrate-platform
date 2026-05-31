@@ -3,6 +3,17 @@
 require "rails_helper"
 
 RSpec.describe StreamOnlineWorker do
+  # BUG-251.40-E (2026-06-01): regression guard — worker MUST enqueue to :stream_lifecycle
+  # so new lifecycle events bypass the :signals historical backlog. String value
+  # asserted explicitly (sidekiq_options stores verbatim; CR-229 iter-2 standardised on String).
+  it "is enqueued on the :stream_lifecycle dedicated queue (string value per CR-229 iter-2 convention)" do
+    expect(described_class.sidekiq_options["queue"]).to eq("stream_lifecycle")
+  end
+
+  it "uses retry: 3 (matches :bot_scoring / :signal_compute precedent; close_stale_if_fused + merge_or_create_stream idempotent)" do
+    expect(described_class.sidekiq_options["retry"]).to eq(3)
+  end
+
   let(:worker) { described_class.new }
   let(:channel) { create(:channel, twitch_id: "12345", login: "teststreamer") }
 
