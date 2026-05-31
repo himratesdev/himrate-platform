@@ -61,8 +61,13 @@ Sidekiq.configure_server do |config|
         # scalable fix, TASK-251.14) is built. Revert to */10 at ClickHouse cutover.
         "cron" => "*/30 * * * *", # every 30 min (bridge; was */10 — see TASK-251.15)
         "class" => "LiveBotScoringWorker",
-        "queue" => "signals",
-        "description" => "TASK-251.8: periodic bot-scoring of live streams (mid-stream bot presence). Cadence */30 (TASK-251.15 bridge)"
+        # Phase 5 (2026-05-31, CR-229 C1): sidekiq-cron's schedule-entry `"queue"` is pushed
+        # straight into the Sidekiq client and **overrides** `LiveBotScoringWorker.sidekiq_options
+        # queue:`. Without flipping this too the cron enqueue still landed on `:signals` (behind
+        # the 700k+ SignalComputeWorker backlog) — defeating the dedicated queue. Must match the
+        # worker-class declaration in `app/workers/live_bot_scoring_worker.rb:18`.
+        "queue" => "bot_scoring",
+        "description" => "TASK-251.8: periodic bot-scoring of live streams (mid-stream bot presence). Cadence */30 (TASK-251.15 bridge). Enqueues on :bot_scoring (Phase 5 — bypasses :signals backlog)."
       },
       # TASK-251.5: bootstrap the IRC chat drainer every minute. The worker drains
       # irc:chat_messages in a loop (~50s) then exits; cron re-runs it. Without this the
