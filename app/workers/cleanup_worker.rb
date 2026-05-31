@@ -117,12 +117,13 @@ class CleanupWorker
   end
 
   def sub_runs
+    # PR 1e-B (TASK-251.14): :messages retention removed — chat_messages PG table dropped.
+    # Chat retention now ClickHouse-managed (TTL on MergeTree, see clickhouse/schema.rb).
     {
       signals: -> { cleanup_old_signals },
       sessions: -> { cleanup_expired_sessions },
       ccv: -> { cleanup_old_records(CcvSnapshot, "ccv_snapshots") },
       chatters: -> { cleanup_old_records(ChattersSnapshot, "chatters_snapshots") },
-      messages: -> { cleanup_old_records(ChatMessage, "chat_messages") },
       tih: -> { cleanup_old_trust_index_histories },
       audit_logs: -> { cleanup_old_audit_logs }
     }
@@ -132,7 +133,7 @@ class CleanupWorker
     Rails.logger.info(
       "CleanupWorker: deleted #{counts[:signals]} signals, #{counts[:sessions]} sessions, " \
       "#{counts[:ccv]} ccv_snapshots, #{counts[:chatters]} chatters_snapshots, " \
-      "#{counts[:messages]} chat_messages, #{counts[:tih]} trust_index_histories, " \
+      "#{counts[:tih]} trust_index_histories, " \
       "#{counts[:audit_logs]} cleanup_audit_logs"
     )
   end
@@ -370,8 +371,9 @@ class CleanupWorker
     return unless Date.current.wday == ROW_STATS_WDAY
 
     push_tih_row_stats
+    # PR 1e-B: chat_messages dropped — table-row stats now ClickHouse-side (see Grafana CH dashboards).
     { "ti_signals" => TiSignal, "ccv_snapshots" => CcvSnapshot,
-      "chatters_snapshots" => ChattersSnapshot, "chat_messages" => ChatMessage }.each do |name, model|
+      "chatters_snapshots" => ChattersSnapshot }.each do |name, model|
       PrometheusMetrics.observe_cleanup_table_rows(table: name, kind: "total", rows: estimated_rows(model.table_name))
     end
   rescue StandardError => e

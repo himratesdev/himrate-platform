@@ -28,12 +28,12 @@ namespace :cleanup do
   RETENTION_DAYS_DEFAULT = 90
   REPORT_FORMATS = %w[text csv json].freeze
 
+  # PR 1e-B (TASK-251.14): `chat_messages` entry removed — PG table dropped, retention now CH-side.
   TABLE_MAP = {
     "tih" => { model: -> { TrustIndexHistory }, signal_type: "trust_index_histories", category: "default" },
     "ti_signals" => { model: -> { TiSignal }, signal_type: "cleanup", category: "ti_signals" },
     "ccv_snapshots" => { model: -> { CcvSnapshot }, signal_type: "cleanup", category: "ccv_snapshots" },
-    "chatters_snapshots" => { model: -> { ChattersSnapshot }, signal_type: "cleanup", category: "chatters_snapshots" },
-    "chat_messages" => { model: -> { ChatMessage }, signal_type: "cleanup", category: "chat_messages" }
+    "chatters_snapshots" => { model: -> { ChattersSnapshot }, signal_type: "cleanup", category: "chatters_snapshots" }
   }.freeze
 
   desc "One-shot historical cleanup for one table (chunked, throttled). dry_run defaults to TRUE."
