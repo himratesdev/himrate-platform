@@ -112,8 +112,11 @@ RSpec.describe CleanupWorker, type: :worker do
       it "clamps a misconfigured chatters_snapshots retention_days=0 to MIN_RETENTION_DAYS — rows inside the 7d floor survive" do
         SignalConfiguration.where(signal_type: "cleanup", category: "chatters_snapshots", param_name: "retention_days").update_all(param_value: 0)
         ActiveSupport::CurrentAttributes.clear_all
-        kept_in_floor = create(:chatters_snapshot, stream: stream, timestamp: 3.days.ago)
-        deleted_past_floor = create(:chatters_snapshot, stream: stream, timestamp: 10.days.ago)
+        # CR P0: no :chatters_snapshot factory exists; use direct .create! to match the
+        # pattern at line 70 (model validates unique_chatters_count + total_messages_count
+        # presence). Setting both to 0 keeps the fixture minimal.
+        kept_in_floor = ChattersSnapshot.create!(stream: stream, unique_chatters_count: 0, total_messages_count: 0, timestamp: 3.days.ago)
+        deleted_past_floor = ChattersSnapshot.create!(stream: stream, unique_chatters_count: 0, total_messages_count: 0, timestamp: 10.days.ago)
 
         described_class.new.perform
 

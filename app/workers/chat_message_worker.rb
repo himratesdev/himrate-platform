@@ -4,10 +4,10 @@
 # Reads from Redis list `irc:chat_messages`, inserts in batches.
 # TASK-251.5: cron-driven (every minute). Drains the queue in a loop until empty or
 # MAX_RUNTIME_SECONDS, then exits — sidekiq-cron re-runs it next minute.
-# PR 1e-A (2026-05-31): post-CH-cutover, ClickHouse is the SoT. PG INSERT path dropped
-# (Postgres chat_messages will be removed in PR 1e-B). CH write is no longer best-effort —
-# it must succeed or the batch re-queues. The :chat_writes_clickhouse flag and the dual-write
-# mirror gating are gone with the cutover.
+# PR 1e-A (2026-05-31) + PR 1e-B (2026-06-01): ClickHouse is the SoT — PG chat_messages
+# table dropped, only INSERT path is to CH. CH write must succeed or the batch re-queues.
+# Historical context: pre-1e-A had dual-write to both PG and CH gated by :chat_writes_clickhouse
+# flag; flag + PG path retired with the cutover.
 
 class ChatMessageWorker
   include Sidekiq::Job

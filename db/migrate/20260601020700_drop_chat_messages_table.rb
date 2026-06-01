@@ -5,11 +5,16 @@
 # Post PR 1e-A (commit 5f572a8, 2026-05-31 05:49Z), all readers + writers migrated to
 # ClickHouse (`himrate.chat_messages` in CH cluster). Dual-write was disabled, ChatMessageWorker
 # now writes exclusively to CH. Sufficient 24h+ stability verified before this migration
-# (see ADR addendum: `_tasks/TASK-251.14/ADR-cleanup-drift-addendum.md` for cleanup-drift
-# acknowledgement of one-way data flow during cutover window).
+# (gate cleared 2026-06-01 05:49Z, this PR ran +8.5h past anniversary).
 #
-# Reversibility: `down` reconstructs the table with all columns + indexes + FK exactly as
-# they existed on staging at deploy time (captured from `\d chat_messages` 2026-06-01).
+# The cleanup-drift acknowledgement (~145k row PG↔CH divergence during the 36h backfill
+# window when PG CleanupWorker continued retention deletes) is documented in the EPIC
+# BUG-251.28 closure body in Notion + PO-side workspace ADR addendum draft. Direction is
+# favorable (CH has MORE data than PG at any point); PR 1e-B makes the divergence moot.
+#
+# Reversibility: `down` reconstructs the table with all columns + 8 indexes + FK exactly
+# as they existed on staging at deploy time (captured from `\d chat_messages` 2026-06-01;
+# index count = 7 explicit `add_index` calls + 1 implicit from `t.references :stream`).
 # Data restoration not in scope — rollback would re-create the empty table; row content
 # remains in ClickHouse (single source of truth post-cutover).
 class DropChatMessagesTable < ActiveRecord::Migration[8.1]
