@@ -11,6 +11,27 @@ RSpec.describe Stream, type: :model do
     it { is_expected.to have_many(:erv_estimates).dependent(:destroy) }
     it { is_expected.to have_many(:per_user_bot_scores).dependent(:destroy) }
     it { is_expected.to have_one(:post_stream_report).dependent(:destroy) }
+    # 2026-06-01: macro declarations + integration test below proving cascade actually fires.
+    it { is_expected.to have_many(:cross_channel_presences).dependent(:nullify) }
+    it { is_expected.to have_many(:notifications).dependent(:delete_all) }
+  end
+
+  describe "cascade integration (2026-06-01 fix)" do
+    let(:channel) { create(:channel) }
+    let(:stream) { create(:stream, channel: channel) }
+
+    it "does not raise FK violation on destroy when cross_channel_presences exist" do
+      create(:cross_channel_presence, channel: channel, stream: stream)
+      expect { stream.destroy }.not_to raise_error
+    end
+
+    it "nullifies stream_id on associated CrossChannelPresence (preserves Signal #8 evidence)" do
+      ccp = create(:cross_channel_presence, channel: channel, stream: stream)
+      stream.destroy
+      ccp.reload
+      expect(ccp.stream_id).to be_nil
+      expect(CrossChannelPresence.exists?(ccp.id)).to be true
+    end
   end
 
   describe "validations" do

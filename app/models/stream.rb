@@ -14,6 +14,22 @@ class Stream < ApplicationRecord
   has_many :anomalies, dependent: :destroy
   has_many :predictions_polls, dependent: :destroy
   has_one :post_stream_report, dependent: :destroy
+  # 2026-06-01 fix: missing cascades caused FK violation on Stream.destroy (Phase 2 fuse
+  # cleanup hit this on cross_channel_presences).
+  #
+  # CrossChannelPresence: Signal #8 evidence — per-user×channel lifetime record (UNIQUE
+  # username + channel_id). `belongs_to :stream, optional: true` deliberately allows the
+  # row to outlive any specific Stream — stream_id is metadata pointing at the broadcast
+  # where the user was last/first observed. Cascade MUST be :nullify, NOT :destroy:
+  # wiping the cross-channel evidence on stream delete destroys the very data Signal #8
+  # depends on. Phase 2 fuse-stream cleanup should explicitly null these out via the
+  # cleanup tool rather than rely on cascade semantics that would also fire on legitimate
+  # Channel.destroy → streams.destroy chains.
+  has_many :cross_channel_presences, dependent: :nullify
+  # Notification declares no after_destroy/before_destroy callbacks (model is empty
+  # other than associations) → bulk SQL DELETE is correct + faster than per-row :destroy.
+  # If a future Notification adds audit/websocket callbacks, switch to :destroy.
+  has_many :notifications, dependent: :delete_all
 
   MERGE_STATUSES = %w[separate merged primary secondary].freeze
 
