@@ -1,13 +1,13 @@
 # frozen_string_literal: true
 
-# EPIC ML-FEATURE-EXTRACTOR PR1 (framework wireframe): orchestrates per-stream-completion
-# extraction of 25 LightGBM-ready tabular features. Delegates per-group implementation to
-# `Ml::Features::*` service modules (added in PR2-7).
+# EPIC ML-FEATURE-EXTRACTOR: orchestrates per-stream-completion extraction of 25
+# LightGBM-ready tabular features. Delegates per-group implementation to
+# `Ml::Features::*` service modules (Viewer + Chat + Account + Growth + Stability + Maturity).
 #
 # Returns a Hash with all 25 feature keys; values are nil when source data insufficient
 # (cold-start, no chatters, no CCV snapshots, etc.) — LightGBM trees handle NULL natively
-# via missing-value splits. PR1 wireframe returns all-nil; per-feature implementations
-# light up incrementally в PR2-7 (Viewer/Chat/Account/Growth/Stability/Maturity).
+# via missing-value splits. Per-group implementations land incrementally; PR1 shipped the
+# framework (all-nil), PR2 lights up Viewer (4 features), PR3-7 light up the rest.
 #
 # NB: BFT 15_ML-Pipeline.md §3.2 lists 30 entries, but 4 (auth_ratio, follower_only_mode,
 # cross_channel_score, known_bot_ratio) are already live TI signals persisted в
@@ -20,17 +20,20 @@ module Ml
 
     def initialize(stream)
       @stream = stream
+      @insufficient_data_reasons = {}
     end
 
     # Returns flat Hash of 25 feature keys → numeric values or nil (insufficient data).
     # Order matches StreamFeatureVector::FEATURE_COLUMNS for round-trip safety.
     def call
+      viewer_features = collect_viewer_features
+
       {
-        # Viewer (PR2) — Ml::Features::ViewerSignals
-        chatter_to_ccv_ratio: nil,
-        peak_to_average_ccv_ratio: nil,
-        ccv_coefficient_of_variation: nil,
-        ccv_tier_stickiness: nil,
+        # Viewer (PR2 — live) — Ml::Features::ViewerSignals
+        chatter_to_ccv_ratio: viewer_features[:chatter_to_ccv_ratio],
+        peak_to_average_ccv_ratio: viewer_features[:peak_to_average_ccv_ratio],
+        ccv_coefficient_of_variation: viewer_features[:ccv_coefficient_of_variation],
+        ccv_tier_stickiness: viewer_features[:ccv_tier_stickiness],
 
         # Chat (PR3) — Ml::Features::ChatSignals
         message_entropy: nil,
@@ -69,9 +72,18 @@ module Ml
       {
         schema_version: SCHEMA_VERSION,
         stream_id: @stream.id,
-        # PR2-7 will append per-group reasons (e.g., "viewer: insufficient_ccv_snapshots")
-        insufficient_data_reasons: {}
+        insufficient_data_reasons: @insufficient_data_reasons
       }
+    end
+
+    private
+
+    def collect_viewer_features
+      viewer = Ml::Features::ViewerSignals.new(@stream)
+      features = viewer.call
+      reasons = viewer.insufficient_data_reasons
+      @insufficient_data_reasons[:viewer] = reasons if reasons.any?
+      features
     end
   end
 end
