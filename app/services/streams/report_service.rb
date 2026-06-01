@@ -88,19 +88,26 @@ module Streams
       }
     end
 
+    # BUG-TI-SIGNAL-BREAKDOWN (2026-06-01): read signals from latest TIH.signal_breakdown
+    # JSON column. The `signals` PG table is dead-write since TrustIndex::Engine refactor.
+    # Same fix pattern as Trust::ShowService + PostStreamWorker.
     def signals
-      TiSignal.where(stream: @stream)
-              .select("DISTINCT ON (signal_type) signal_type, value, confidence, weight_in_ti, metadata, timestamp")
-              .order(:signal_type, timestamp: :desc)
-              .map do |sig|
+      tih = TrustIndexHistory.where(stream_id: @stream.id).order(calculated_at: :desc).first
+      return [] unless tih
+
+      breakdown = tih.signal_breakdown
+      return [] unless breakdown.is_a?(Hash)
+
+      breakdown.map do |signal_type, data|
+        next nil unless data.is_a?(Hash)
         {
-          type: sig.signal_type,
-          value: sig.value.to_f,
-          confidence: sig.confidence&.to_f,
-          weight: sig.weight_in_ti&.to_f,
-          metadata: sig.metadata
+          type: signal_type,
+          value: data["value"]&.to_f,
+          confidence: data["confidence"]&.to_f,
+          weight: data["weight"]&.to_f,
+          metadata: nil
         }
-      end
+      end.compact
     end
 
     def chat_stats

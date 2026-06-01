@@ -112,23 +112,38 @@ module Trust
       )
     end
 
+    # BUG-TI-SIGNAL-BREAKDOWN (2026-06-01): read signals from latest TIH.signal_breakdown
+    # JSON column (canonical post TrustIndex::Engine refactor). The `signals` PG table
+    # is dead-write since the Engine refactor — TiSignal.create! call no longer exists in
+    # the worker path, the table sits at 0 rows. Reading from it returned `[]` for every
+    # caller (drill_down panel empty for all Free users on live channels).
+    #
+    # TIH.signal_breakdown JSON schema (per TrustIndex::Engine):
+    #   { "auth_ratio" => { "value" => 0.0, "weight" => 0.21, "confidence" => 1.0, "contribution" => 0.0 }, ... }
+    # The `metadata` field old TiSignal carried is intentionally not preserved — it was
+    # signal-specific debug context, not consumed by the API contract per current Blueprinter
+    # specs (TrustIndexBlueprint drill_down view exposes only value/weight/confidence/contribution).
     def signal_breakdown_for_stream
-      current_stream = @channel.streams.order(started_at: :desc).first
-      return [] unless current_stream
+      tih = latest_trust_index
+      return [] unless tih
 
-      TiSignal.where(stream: current_stream)
-              .select("DISTINCT ON (signal_type) signal_type, value, confidence, weight_in_ti, metadata, timestamp")
-              .order(:signal_type, timestamp: :desc)
-              .map do |sig|
+      breakdown = tih.signal_breakdown
+      return [] unless breakdown.is_a?(Hash)
+
+      breakdown.map do |signal_type, data|
+        next nil unless data.is_a?(Hash)
+
         {
-          type: sig.signal_type,
-          value: sig.value.to_f,
-          confidence: sig.confidence&.to_f,
-          weight: sig.weight_in_ti&.to_f,
-          contribution: (sig.value.to_f * (sig.weight_in_ti || 0).to_f).round(4),
-          metadata: sig.metadata
+          type: signal_type,
+          value: data["value"]&.to_f,
+          confidence: data["confidence"]&.to_f,
+          weight: data["weight"]&.to_f,
+          # contribution is always written by TrustIndex::Engine (engine.rb:116-121); read
+          # canonical, no defensive fallback — schema drift should surface, not be papered over.
+          contribution: data["contribution"]&.to_f,
+          metadata: nil
         }
-      end
+      end.compact
     end
 
     def category_avg_ti
