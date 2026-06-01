@@ -259,4 +259,91 @@ RSpec.describe StreamOnlineWorker do
       expect(channel.streams.where(ended_at: nil).first.twitch_stream_id).to eq("316159655126")
     end
   end
+
+  # BUG-251.40-G (2026-06-01): two OnlineWorker jobs racing past the read-only
+  # `active_stream_exists?` check both proceed to `Stream.create!`. The partial UNIQUE
+  # index on `twitch_stream_id` (PR #236 A1) catches the second commit as
+  # `ActiveRecord::RecordNotUnique`. Without rescue, retry 3× → DeadSet (1000 dead jobs
+  # accumulated in 17h post-A2 deploy on staging). Fix: rescue + recover existing row.
+  describe "concurrent enqueue race recovery (BUG-251.40-G)" do
+    it "recovers gracefully when another worker created the same stream concurrently (create branch)" do
+      # Simulate the race: another worker already created the row between our
+      # active_stream_exists? check and our Stream.create! attempt.
+      twitch_stream_id = event_data["stream_id"]
+      existing = create(:stream, channel: channel, started_at: Time.current,
+                        twitch_stream_id: twitch_stream_id, ended_at: nil)
+
+      # Force `active_stream_exists?` to return false (race window) so worker proceeds
+      # to create_stream_idempotent and hits the UNIQUE constraint.
+      allow_any_instance_of(described_class).to receive(:active_stream_exists?).and_return(false)
+      # Bypass merge branch (no closed streams in MERGE_GAP_MINUTES) so create branch runs.
+
+      # Should NOT raise — rescue catches RecordNotUnique and recovers existing row.
+      expect { worker.perform(event_data) }.not_to raise_error
+
+      # No new row created — the existing one stays.
+      expect(channel.streams.where(twitch_stream_id: twitch_stream_id, ended_at: nil).count).to eq(1)
+      expect(channel.streams.where(twitch_stream_id: twitch_stream_id).first.id).to eq(existing.id)
+    end
+
+    # CR-246 N1 (iter-2): recovery scope by twitch_stream_id only (no ended_at filter)
+    # — strictly stronger than active_stream_exists? predicate. Covers the
+    # sub-microsecond edge case where StreamOfflineWorker closes the winning row
+    # between W1's commit and W2's rescue lookup.
+    it "recovers via twitch_stream_id-only lookup even if winning row was already closed (N1)" do
+      twitch_stream_id = event_data["stream_id"]
+      # Simulate winning row already closed (StreamOfflineWorker ran between W1 commit + W2 rescue).
+      closed_winner = create(:stream, channel: channel, started_at: 1.minute.ago,
+                             twitch_stream_id: twitch_stream_id, ended_at: 1.second.ago)
+      allow_any_instance_of(described_class).to receive(:active_stream_exists?).and_return(false)
+      allow_any_instance_of(described_class).to receive(:close_stale_if_fused).and_return(0)
+      allow(Stream).to receive(:create!).and_raise(
+        ActiveRecord::RecordNotUnique.new(
+          'PG::UniqueViolation: ERROR: duplicate key value violates unique constraint "idx_streams_twitch_stream_id_unique"'
+        )
+      )
+
+      expect { worker.perform(event_data) }.not_to raise_error
+      # closed_winner row preserved (not re-opened or duplicated)
+      closed_winner.reload
+      expect(closed_winner.ended_at).to be_present
+    end
+
+    # CR-246 N2 (iter-2): merge branch UPDATE can also hit UNIQUE constraint. Probability
+    # vanishingly small (divergent merge-candidate state within microseconds + game match),
+    # but rescue is essentially free and closes the last hand-wave gap.
+    it "recovers gracefully when merge branch UPDATE hits the same race (N2)" do
+      twitch_stream_id = event_data["stream_id"]
+      # Setup: one closed recent stream (merge candidate) + one open winning row created by W1.
+      _recent_closed = create(:stream, channel: channel, started_at: 25.minutes.ago,
+                              ended_at: 5.minutes.ago, game_name: "Just Chatting", twitch_stream_id: "OLD_ID")
+      winning_open = create(:stream, channel: channel, started_at: 30.seconds.ago,
+                            twitch_stream_id: twitch_stream_id, ended_at: nil)
+      # Force merge branch path (active_stream_exists? false simulates pre-W1-commit race).
+      allow_any_instance_of(described_class).to receive(:active_stream_exists?).and_return(false)
+      # Force update! to raise (simulates UNIQUE constraint hit during merge re-open).
+      allow_any_instance_of(Stream).to receive(:update!).and_raise(
+        ActiveRecord::RecordNotUnique.new(
+          'PG::UniqueViolation: ERROR: duplicate key value violates unique constraint "idx_streams_twitch_stream_id_unique"'
+        )
+      )
+
+      expect { worker.perform(event_data) }.not_to raise_error
+      # Winning row still wins, no duplicate.
+      expect(Stream.where(twitch_stream_id: twitch_stream_id).count).to eq(1)
+      expect(Stream.where(twitch_stream_id: twitch_stream_id).first.id).to eq(winning_open.id)
+    end
+
+    it "re-raises RecordNotUnique when recovery cannot find a matching open stream (different constraint)" do
+      # Edge case: RecordNotUnique on a DIFFERENT constraint (not idx_streams_twitch_stream_id_unique).
+      # Recovery lookup returns nil → we re-raise so real bugs surface (don't silently swallow).
+      allow_any_instance_of(described_class).to receive(:active_stream_exists?).and_return(false)
+      allow_any_instance_of(described_class).to receive(:close_stale_if_fused).and_return(0)
+      allow(Stream).to receive(:create!).and_raise(
+        ActiveRecord::RecordNotUnique.new("hypothetical other unique constraint")
+      )
+
+      expect { worker.perform(event_data) }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+  end
 end

@@ -170,29 +170,91 @@ class StreamOnlineWorker
         erv_percent: last_ti&.erv_percent&.to_f,
         part_number: last_stream.merged_parts_count
       }
-      # BUG-251.40 A2: refresh twitch_stream_id to the latest broadcast id on merge.
-      # Twitch assigns a NEW per-broadcast id even for "resume" within MERGE_GAP_MINUTES;
-      # the merged row should carry the LATEST id so MonitoredLiveDetector's continuation
-      # check (helix.id == row.twitch_stream_id) matches on subsequent cycles.
-      last_stream.update!(
-        ended_at: nil,
-        twitch_stream_id: new_twitch_stream_id,
-        merge_status: "merged",
-        merged_parts_count: last_stream.merged_parts_count + 1,
-        part_boundaries: (last_stream.part_boundaries || []) + [ boundary ]
-      )
-      Rails.logger.info("StreamOnlineWorker: merged with previous stream #{last_stream.id} (parts: #{last_stream.merged_parts_count}, twitch_stream_id=#{new_twitch_stream_id.inspect})")
-      last_stream
+      merge_existing_idempotent(last_stream, new_twitch_stream_id, boundary, channel)
     else
-      Stream.create!(
-        channel: channel,
-        started_at: event_data["started_at"] || Time.current,
-        twitch_stream_id: new_twitch_stream_id,
-        title: title,
-        game_name: game_name,
-        language: language
-      )
+      create_stream_idempotent(channel, event_data, new_twitch_stream_id, title, game_name, language)
     end
+  end
+
+  # BUG-251.40-G (2026-06-01): tolerate concurrent OnlineWorker enqueues that race past
+  # `active_stream_exists?`. The check is read-only (SELECT) without any row lock; two
+  # workers can both see "no open stream with this twitch_stream_id" microseconds apart
+  # and both proceed to `Stream.create!`. The partial UNIQUE index
+  # `idx_streams_twitch_stream_id_unique` (PR #236 A1) catches the second commit, which
+  # then bubbles as `ActiveRecord::RecordNotUnique` → Sidekiq retry 3× → dead.
+  #
+  # The dead job is semantically a no-op (the row the dead job wanted to create already
+  # exists, created by the winning worker). Recovery is to find the existing row and
+  # return it — IRC join publish at the caller is idempotent (IrcMonitor's `subscribe`
+  # returns `:already_joined`). Pre-fix DeadSet had ~1000 such jobs accumulated over 17h
+  # since the BUG-251.40 A2 deploy introduced the UNIQUE index.
+  #
+  # We only catch RecordNotUnique for this specific path (twitch_stream_id collision on
+  # idx_streams_twitch_stream_id_unique). If the recovery lookup returns nil — different
+  # constraint hit (channel_id, FK, etc.) — re-raise so we don't silently swallow real bugs.
+  def create_stream_idempotent(channel, event_data, new_twitch_stream_id, title, game_name, language)
+    Stream.create!(
+      channel: channel,
+      started_at: event_data["started_at"] || Time.current,
+      twitch_stream_id: new_twitch_stream_id,
+      title: title,
+      game_name: game_name,
+      language: language
+    )
+  rescue ActiveRecord::RecordNotUnique => e
+    recover_unique_winner!(channel, new_twitch_stream_id, e, branch: "create")
+  end
+
+  # BUG-251.40-G (CR-246 N2): the merge branch also races. If W1 took create and W2 took
+  # merge for the same incoming `new_twitch_stream_id`, W2's `last_stream.update!`
+  # (`twitch_stream_id: new_twitch_stream_id`) will also hit `idx_streams_twitch_stream_id_unique`
+  # — W1 has already committed an open row with that id. Probability profile is
+  # vanishingly small (requires divergent merge-candidate state within microseconds
+  # AND `merge_game_match? = true`), but the rescue is essentially free and closes the
+  # last hand-wave gap. Same recovery helper as create branch.
+  #
+  # `last_stream` (the row we tried to re-open) stays closed on the rescue path — we
+  # return the winning open row instead, leaving the original closed row untouched.
+  def merge_existing_idempotent(last_stream, new_twitch_stream_id, boundary, channel)
+    # BUG-251.40 A2: refresh twitch_stream_id to the latest broadcast id on merge.
+    # Twitch assigns a NEW per-broadcast id even for "resume" within MERGE_GAP_MINUTES;
+    # the merged row should carry the LATEST id so MonitoredLiveDetector's continuation
+    # check (helix.id == row.twitch_stream_id) matches on subsequent cycles.
+    last_stream.update!(
+      ended_at: nil,
+      twitch_stream_id: new_twitch_stream_id,
+      merge_status: "merged",
+      merged_parts_count: last_stream.merged_parts_count + 1,
+      part_boundaries: (last_stream.part_boundaries || []) + [ boundary ]
+    )
+    Rails.logger.info("StreamOnlineWorker: merged with previous stream #{last_stream.id} (parts: #{last_stream.merged_parts_count}, twitch_stream_id=#{new_twitch_stream_id.inspect})")
+    last_stream
+  rescue ActiveRecord::RecordNotUnique => e
+    recover_unique_winner!(channel, new_twitch_stream_id, e, branch: "merge")
+  end
+
+  # Shared recovery for both create + merge branches. CR-246 N1: scope the lookup
+  # ONLY on `twitch_stream_id` (no `ended_at: nil` filter), strictly stronger than
+  # `active_stream_exists?` predicate — the partial UNIQUE index that just fired
+  # is itself `twitch_stream_id WHERE twitch_stream_id IS NOT NULL` (allows multiple
+  # NULLs but at most one non-null), so a row with this exact twitch_stream_id MUST
+  # exist somewhere if RecordNotUnique fired on this column.
+  #
+  # The (sub-microsecond) edge case where StreamOfflineWorker closes the winning row
+  # between W1 commit and W2 rescue is now also covered — we still find the row by
+  # `twitch_stream_id` (now `ended_at IS NOT NULL`) and return it; caller treats it
+  # as a non-create branch, IRC join is still published, and the next MLD tick will
+  # naturally close+create as needed.
+  def recover_unique_winner!(channel, new_twitch_stream_id, error, branch:)
+    Rails.logger.warn(
+      "StreamOnlineWorker[#{branch}]: RecordNotUnique caught for ##{channel.login} " \
+      "(twitch_stream_id=#{new_twitch_stream_id.inspect}) — another worker won the race. " \
+      "Recovering existing row. Original error: #{error.message.slice(0, 200)}"
+    )
+    existing = Stream.find_by(twitch_stream_id: new_twitch_stream_id)
+    raise error unless existing # Different constraint hit (FK / channel_id / etc.) — surface
+
+    existing
   end
 
   # TASK-033 FR-004: nil game_name fallback — GQL failure should not break merge.
