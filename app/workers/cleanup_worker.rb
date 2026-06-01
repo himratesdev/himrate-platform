@@ -10,7 +10,8 @@
 #   - reads its retention horizon from SignalConfiguration (no hardcoded const;
 #     job-scoped memoization via Current.signal_config — FR-024, zero new cache code),
 #     then floors it at MIN_RETENTION_DAYS so a misconfigured `retention_days = 0` admin
-#     row can never push a cutoff to "now" (uniform across all 5 time-series tables)
+#     row can never push a cutoff to "now" (uniform across all 4 time-series tables —
+#     ti_signals/ccv_snapshots/chatters_snapshots + trust_index_histories special-cased)
 #   - deletes in BATCH_SIZE batches, each batch in its own transaction with
 #     SET LOCAL statement_timeout='30s' (FR-037 — long DELETE → timeout → retry,
 #     not a production lock stall). A timeout AFTER ≥1 committed batch → status
@@ -45,9 +46,10 @@ class CleanupWorker
   DEFAULT_RETENTION_DAYS = 90 # last-resort fallback only (SignalConfiguration is the source of truth)
   # Hard floor for EVERY per-table retention horizon — a misconfigured (or deliberately
   # zeroed) admin row must never push a cutoff to "now". For trust_index_histories the
-  # FR-002/003 conservation rule additionally protects final/live rows; the other four
-  # tables (ti_signals, ccv_snapshots, chatters_snapshots, chat_messages) have no
-  # conservation rule, so this floor is their only guard against a full-table wipe.
+  # FR-002/003 conservation rule additionally protects final/live rows; the other three
+  # tables (ti_signals, ccv_snapshots, chatters_snapshots) have no conservation rule, so
+  # this floor is their only guard against a full-table wipe. PR 1e-B (2026-06-01) dropped
+  # chat_messages from the cleanup set — retention now CH-side (MergeTree TTL).
   # Single source of truth — referenced from lib/tasks/cleanup.rake and the
   # SignalConfiguration model validation; do not duplicate the literal.
   MIN_RETENTION_DAYS = 7
@@ -117,12 +119,13 @@ class CleanupWorker
   end
 
   def sub_runs
+    # PR 1e-B (TASK-251.14): :messages retention removed — chat_messages PG table dropped.
+    # Chat retention now ClickHouse-managed (TTL on MergeTree, see clickhouse/schema.rb).
     {
       signals: -> { cleanup_old_signals },
       sessions: -> { cleanup_expired_sessions },
       ccv: -> { cleanup_old_records(CcvSnapshot, "ccv_snapshots") },
       chatters: -> { cleanup_old_records(ChattersSnapshot, "chatters_snapshots") },
-      messages: -> { cleanup_old_records(ChatMessage, "chat_messages") },
       tih: -> { cleanup_old_trust_index_histories },
       audit_logs: -> { cleanup_old_audit_logs }
     }
@@ -132,7 +135,7 @@ class CleanupWorker
     Rails.logger.info(
       "CleanupWorker: deleted #{counts[:signals]} signals, #{counts[:sessions]} sessions, " \
       "#{counts[:ccv]} ccv_snapshots, #{counts[:chatters]} chatters_snapshots, " \
-      "#{counts[:messages]} chat_messages, #{counts[:tih]} trust_index_histories, " \
+      "#{counts[:tih]} trust_index_histories, " \
       "#{counts[:audit_logs]} cleanup_audit_logs"
     )
   end
@@ -202,7 +205,7 @@ class CleanupWorker
       scope = model.where("#{model.table_name}.timestamp < ?", cutoff).limit(BATCH_SIZE)
       # NULL-stream_id rows must still be pruned at the default window even when a
       # per-channel override exists — `NOT IN (… NULL …)` is NULL for NULL stream_id
-      # (would orphan e.g. chat_messages with no stream). Include them explicitly.
+      # (would orphan e.g. ccv_snapshots with no stream). Include them explicitly.
       scope = scope.where("#{model.table_name}.stream_id IS NULL OR #{model.table_name}.stream_id NOT IN (?)", override_stream_ids) if override_stream_ids
       scope.delete_all
     end
@@ -370,8 +373,9 @@ class CleanupWorker
     return unless Date.current.wday == ROW_STATS_WDAY
 
     push_tih_row_stats
+    # PR 1e-B: chat_messages dropped — table-row stats now ClickHouse-side (see Grafana CH dashboards).
     { "ti_signals" => TiSignal, "ccv_snapshots" => CcvSnapshot,
-      "chatters_snapshots" => ChattersSnapshot, "chat_messages" => ChatMessage }.each do |name, model|
+      "chatters_snapshots" => ChattersSnapshot }.each do |name, model|
       PrometheusMetrics.observe_cleanup_table_rows(table: name, kind: "total", rows: estimated_rows(model.table_name))
     end
   rescue StandardError => e

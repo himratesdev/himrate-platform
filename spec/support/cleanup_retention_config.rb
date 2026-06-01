@@ -6,12 +6,14 @@
 module CleanupRetentionConfigSeeder
   module_function
 
+  # PR 1e-B (2026-06-01): chat_messages dropped — retention now CH-side (MergeTree TTL).
+  # Remaining 4 entries match the post-PR-1e-B migration `20260512100001_seed_cleanup_retention_thresholds`
+  # state (after followup cleanup of the orphan chat_messages row).
   CONFIGS = [
     [ "trust_index_histories", "default", "retention_days", 90 ],
     [ "cleanup", "ti_signals", "retention_days", 90 ],
     [ "cleanup", "ccv_snapshots", "retention_days", 90 ],
-    [ "cleanup", "chatters_snapshots", "retention_days", 90 ],
-    [ "cleanup", "chat_messages", "retention_days", 90 ]
+    [ "cleanup", "chatters_snapshots", "retention_days", 90 ]
   ].freeze
 
   def seed!

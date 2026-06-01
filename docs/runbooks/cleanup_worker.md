@@ -1,6 +1,6 @@
 # CleanupWorker — Retention / Backfill Runbook
 
-**Контекст:** TASK-086 / ADR-086. `CleanupWorker` (`app/workers/cleanup_worker.rb`) — единственный owner retention для time-series таблиц (`trust_index_histories`, `ti_signals`, `ccv_snapshots`, `chatters_snapshots`, `chat_messages`). Запускается nightly через `sidekiq-cron` (`config/initializers/sidekiq_cron.rb`), Flipper-guarded флагом `:cleanup_worker`. Удаляет старые строки батчами (`BATCH_SIZE = 1000`, каждый батч — отдельная транзакция с `SET LOCAL statement_timeout='30s'`).
+**Контекст:** TASK-086 / ADR-086. `CleanupWorker` (`app/workers/cleanup_worker.rb`) — единственный owner retention для time-series таблиц (`trust_index_histories`, `ti_signals`, `ccv_snapshots`, `chatters_snapshots`). Запускается nightly через `sidekiq-cron` (`config/initializers/sidekiq_cron.rb`), Flipper-guarded флагом `:cleanup_worker`. Удаляет старые строки батчами (`BATCH_SIZE = 1000`, каждый батч — отдельная транзакция с `SET LOCAL statement_timeout='30s'`). _PR 1e-B (2026-06-01): `chat_messages` dropped — chat retention теперь ClickHouse-side (TTL на `himrate.chat_messages` MergeTree)._
 
 Этот документ — операционные процедуры: первый production deploy, ручной backfill, отчёты, аварийный stop.
 
@@ -14,14 +14,14 @@
 | Flipper флаг | `:cleanup_worker` — в `FlipperDefaults::ALL_FLAGS` ⇒ **enabled-by-default на каждом boot** |
 | Cron | nightly (`config/initializers/sidekiq_cron.rb`) |
 | Retention config | таблица `signal_configurations` (rows seeded миграцией `20260512100001_seed_cleanup_retention_thresholds.rb`); `SignalConfiguration` — source of truth, `DEFAULT_RETENTION_DAYS = 90` — last-resort fallback |
-| Retention floor | `CleanupWorker::MIN_RETENTION_DAYS = 7` — `retention_days` **любой** из 5 таблиц клампится снизу до 7д (worker, rake-backfill, и валидация `SignalConfiguration` — защита от misconfigured/обнулённого admin-row `retention_days = 0`). Для `trust_index_histories` сверх этого работает ещё и conservation rule (FR-002/003) |
+| Retention floor | `CleanupWorker::MIN_RETENTION_DAYS = 7` — `retention_days` **любой** из 4 таблиц клампится снизу до 7д (worker, rake-backfill, и валидация `SignalConfiguration` — защита от misconfigured/обнулённого admin-row `retention_days = 0`). Для `trust_index_histories` сверх этого работает ещё и conservation rule (FR-002/003) |
 | TIH conservation (FR-002/003) | rank-1 (финальная) TIH на каждый stream и **все** TIH live-стримов (`streams.ended_at IS NULL`) **никогда** не удаляются |
 | Audit | таблица `cleanup_audit_logs` (retention indefinite — никогда не auto-удаляется); по строке на sub-run (`success` / `partial` / `error` / `skipped`) |
 | Auto-disable | 3 подряд `error`-строки для таблицы ⇒ `Cleanup::AutoDisableService` выключает `:cleanup_worker` + critical Alertmanager alert |
 | Метрики | Prometheus push-gateway gauges `cleanup_worker_*` (см. `prometheus/rules/cleanup_health.yml`), Grafana dashboard `grafana/dashboards/cleanup_health.json` |
 | Rake | `lib/tasks/cleanup.rake` — `cleanup:initial_backfill[table,dry_run]`, `cleanup:report[start,end,format]`, `cleanup:restore_from_archive[...]` (pending) |
 
-Valid `table` для rake-задач: `tih | ti_signals | ccv_snapshots | chatters_snapshots | chat_messages` (это ключи `TABLE_MAP`, **не** реальные имена таблиц — `tih` ↦ `trust_index_histories`).
+Valid `table` для rake-задач: `tih | ti_signals | ccv_snapshots | chatters_snapshots` (это ключи `TABLE_MAP`, **не** реальные имена таблиц — `tih` ↦ `trust_index_histories`).
 
 ---
 
@@ -38,7 +38,6 @@ Valid `table` для rake-задач: `tih | ti_signals | ccv_snapshots | chatte
    bin/rails cleanup:initial_backfill[ti_signals]
    bin/rails cleanup:initial_backfill[ccv_snapshots]
    bin/rails cleanup:initial_backfill[chatters_snapshots]
-   bin/rails cleanup:initial_backfill[chat_messages]
    ```
 
    Печатает eligible-count + sample. Сверить, что числа адекватны (не «вся таблица» из-за `retention_days = 0`).
@@ -50,7 +49,6 @@ Valid `table` для rake-задач: `tih | ti_signals | ccv_snapshots | chatte
    bin/rails cleanup:initial_backfill[ti_signals,false]
    bin/rails cleanup:initial_backfill[ccv_snapshots,false]
    bin/rails cleanup:initial_backfill[chatters_snapshots,false]
-   bin/rails cleanup:initial_backfill[chat_messages,false]
    ```
 
    `cleanup:initial_backfill` — chunked + throttled + `statement_timeout` на каждый chunk; безопасно прогонять на проде, можно перезапускать (идемпотентно). После этого таблицы уже в пределах retention, и первый nightly запуск `CleanupWorker` будет инкрементальным (день к дню), а не «всё за один раз».
