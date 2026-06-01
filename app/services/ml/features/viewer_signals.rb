@@ -87,7 +87,9 @@ module Ml
       # (real audience varies; bot packages produce consistent CCV). Channel-level
       # longitudinal stat persisted with each stream's row.
       def ccv_coefficient_of_variation
-        # Include the current stream if ended; otherwise fall back to last 30 *prior* completed.
+        # Last 30 completed streams of the channel — extractor runs from PostStreamWorker
+        # *after* the current stream's ended_at is set, so the current stream is naturally
+        # included in this scope. No separate "current vs prior" branch needed.
         recent = @stream.channel
                         .streams
                         .where.not(ended_at: nil)
