@@ -11,6 +11,10 @@ RSpec.describe Stream, type: :model do
     it { is_expected.to have_many(:erv_estimates).dependent(:destroy) }
     it { is_expected.to have_many(:per_user_bot_scores).dependent(:destroy) }
     it { is_expected.to have_one(:post_stream_report).dependent(:destroy) }
+    # 2026-06-01 fix — these tables have stream_id FK but were missing cascade. Hit during
+    # Phase 2 fuse-streams cleanup (delete_fuse_streams_v4 → FK violation on Stream.destroy).
+    it { is_expected.to have_many(:cross_channel_presences).dependent(:destroy) }
+    it { is_expected.to have_many(:notifications).dependent(:delete_all) }
   end
 
   describe "validations" do
