@@ -68,7 +68,14 @@ module Ml
         (agg[:unique_messages].to_f / total).round(4)
       end
 
+      # CR-250 N1: consistency with sibling ratio features — gate on MIN_MESSAGES_FOR_RATIO_FEATURES
+      # before computing. A 2-message stream с 2 distinct chatters gives 1.0 but is statistically
+      # noise for ML training. Lower noise floor would diverge от entropy/unique_message_ratio
+      # semantics; better to keep all ratio features on the same 50-message threshold.
       def single_message_chatter_ratio(agg)
+        total = agg[:total_messages].to_i
+        return record_insufficient(:single_message_chatter_ratio, "insufficient_messages") if total < MIN_MESSAGES_FOR_RATIO_FEATURES
+
         unique = agg[:unique_chatters].to_i
         return record_insufficient(:single_message_chatter_ratio, "no_chatters") if unique.zero?
 

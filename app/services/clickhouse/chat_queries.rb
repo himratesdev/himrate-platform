@@ -370,21 +370,26 @@ module Clickhouse
       validate_stream_uuid!(stream.id)
 
       # 1. Single SELECT covering counts + entropy.
+      # CR-250 N2: `total` CTE precomputes count() once instead of inlining `(SELECT count() FROM stream_msgs)`
+      # 3 times inside the entropy aggregate. Readability + planner determinism (CH may or may not CSE
+      # subqueries depending on version); for typical ≤200k privmsg scans the perf delta is negligible
+      # but the explicit CTE removes the question.
       agg = Clickhouse.client.select(<<~SQL).first
         WITH stream_msgs AS (
           SELECT message_text, username, emotes
           FROM chat_messages
           WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg' AND username != ''
         ),
+        total AS (SELECT count() AS n FROM stream_msgs),
         text_freq AS (
           SELECT count() AS c FROM stream_msgs GROUP BY message_text
         )
         SELECT
-          (SELECT count()                  FROM stream_msgs)                              AS total_messages,
+          (SELECT n                        FROM total)                                    AS total_messages,
           (SELECT uniqExact(message_text)  FROM stream_msgs)                              AS unique_messages,
           (SELECT uniqExact(username)      FROM stream_msgs)                              AS unique_chatters,
           (SELECT countIf(emotes != '')    FROM stream_msgs)                              AS messages_with_emotes,
-          (SELECT -sum((c / (SELECT count() FROM stream_msgs)) * log2(c / (SELECT count() FROM stream_msgs)))
+          (SELECT -sum((c / (SELECT n FROM total)) * log2(c / (SELECT n FROM total)))
              FROM text_freq)                                                              AS message_entropy_bits
       SQL
 

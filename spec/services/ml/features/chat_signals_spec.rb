@@ -106,8 +106,11 @@ RSpec.describe Ml::Features::ChatSignals do
       expect(result[:timing_regularity_score]).to eq(0.5)
     end
 
-    it "single_message_chatter_ratio still computes (only needs ≥1 unique chatter)" do
-      expect(chat.call[:single_message_chatter_ratio]).to be_within(0.001).of(0.5333)
+    # CR-250 N1 iter-2: single_message_chatter_ratio now gates on MIN_MESSAGES_FOR_RATIO_FEATURES
+    # consistent with sibling ratio features (entropy, unique_msg, emote_only).
+    it "single_message_chatter_ratio also marked insufficient (< 50 messages)" do
+      chat.call
+      expect(chat.insufficient_data_reasons[:single_message_chatter_ratio]).to eq("insufficient_messages")
     end
   end
 
