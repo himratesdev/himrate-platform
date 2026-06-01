@@ -109,7 +109,7 @@ class PostStreamWorker
   # a deferred retry that will succeed once the flag is flipped back ON.
   def detect_silent_skip!(stream)
     return if ti_data_available?(stream)
-    return if Flipper.enabled?(:signal_compute) # was running — likely no chatters/signals at all, legitimate empty
+    return if Flipper.enabled?(:signal_compute) # flag is ON — likely legitimate empty stream (no chatters/signals)
 
     Rails.logger.warn(
       "PostStreamWorker: silent skip detected for stream #{stream.id} " \
@@ -122,11 +122,21 @@ class PostStreamWorker
       details: {
         reason: "signal_compute_flag_off_at_finalization",
         retry_scheduled_at: 1.hour.from_now.iso8601,
-        post_stream_worker_jid: Thread.current[:sidekiq_context]&.dig("jid")
+        # CR iter-2 N1: Sidekiq::Context.current["jid"] is canonical (matches the pattern used
+        # by SignalComputeWorker's sidekiq_retries_exhausted block which reads job["jid"]).
+        # `defined?(Sidekiq::Context)` guards against spec/rake-harness contexts where the
+        # context module isn't initialized (returns nil safely instead of NameError).
+        post_stream_worker_jid: (defined?(Sidekiq::Context) ? Sidekiq::Context.current["jid"] : nil)
       }
     )
     # Schedule deferred async retry — by the time it runs the flag should be back on.
     # force=true so the retry bypasses throttle once it executes.
+    #
+    # CR iter-2 S1 follow-up: the deferred retry at T+1h ALSO hits the flag-off short-circuit
+    # in SignalComputeWorker#perform if the flag is still OFF (e.g., long-running backfill).
+    # When that happens, no second Anomaly is created and operators don't know the recovery
+    # was eaten. Out of scope for this PR — tracked in BUG-SIGNAL-COMPUTE-SILENT-SKIP follow-up
+    # ticket. Mitigation today: the original Anomaly above gives operators a manual rerun handle.
     SignalComputeWorker.perform_in(1.hour, stream.id, true)
   rescue StandardError => e
     Rails.logger.error(
