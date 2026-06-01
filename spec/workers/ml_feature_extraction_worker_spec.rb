@@ -8,7 +8,12 @@ RSpec.describe MlFeatureExtractionWorker do
 
   describe "sidekiq_options" do
     it "is enqueued on :post_stream queue (matches StreamerReputationRefreshWorker precedent)" do
-      expect(described_class.sidekiq_options["queue"]).to eq("post_stream")
+      # Sidekiq stores sidekiq_options verbatim — worker declares `queue: :post_stream`
+      # (symbol), matching StreamerReputationRefreshWorker which uses the same symbol form.
+      # Compare as-is. Note: PR #229 / #246 workers use STRING form
+      # (`queue: "stream_lifecycle"`); both forms are valid in Sidekiq, must match worker
+      # declaration verbatim in spec.
+      expect(described_class.sidekiq_options["queue"]).to eq(:post_stream)
     end
 
     it "retry: 3 (matches post-stream worker convention)" do
