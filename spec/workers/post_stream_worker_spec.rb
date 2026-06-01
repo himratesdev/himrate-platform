@@ -132,4 +132,56 @@ RSpec.describe PostStreamWorker do
       expect(report.erv_percent_final).to be_nil
     end
   end
+
+  describe "#detect_silent_skip! (BUG-SIGNAL-COMPUTE-SILENT-SKIP regression guard)" do
+    # 2026-06-01: SignalComputeWorker silently short-circuits on flag-off, even for
+    # post-stream finalization (PostStreamWorker:94 inline call). Pre-fix, this caused
+    # streams with rich data to permanently lose TI compute (PSR.trust_index_final NULL,
+    # 0 TIH). Fix: after inline compute, if no TIH exists AND flag is off, schedule a
+    # deferred retry + create Anomaly for visibility.
+
+    it "creates compute_failure Anomaly + schedules deferred retry when TIH missing AND flag is OFF" do
+      TrustIndexHistory.where(stream_id: stream.id).delete_all
+      allow(Flipper).to receive(:enabled?).with(:signal_compute).and_return(false)
+      allow(SignalComputeWorker).to receive(:new).and_return(instance_double(SignalComputeWorker, perform: nil))
+      allow(SignalComputeWorker).to receive(:perform_in)
+
+      expect {
+        described_class.new.perform(stream.id)
+      }.to change { Anomaly.where(stream_id: stream.id, anomaly_type: "compute_failure").count }.by(1)
+
+      expect(SignalComputeWorker).to have_received(:perform_in).with(1.hour, stream.id, true)
+
+      anomaly = Anomaly.where(stream_id: stream.id, anomaly_type: "compute_failure").last
+      expect(anomaly.details["reason"]).to eq("signal_compute_flag_off_at_finalization")
+      expect(anomaly.details["retry_scheduled_at"]).to be_present
+    end
+
+    it "does NOT create compute_failure Anomaly when TIH was successfully written (happy path)" do
+      # Default state: TIH exists (created in outer `before`)
+      allow(SignalComputeWorker).to receive(:new).and_return(instance_double(SignalComputeWorker, perform: nil))
+      allow(SignalComputeWorker).to receive(:perform_in)
+
+      expect {
+        described_class.new.perform(stream.id)
+      }.not_to change { Anomaly.where(stream_id: stream.id, anomaly_type: "compute_failure").count }
+
+      expect(SignalComputeWorker).not_to have_received(:perform_in)
+    end
+
+    it "does NOT create compute_failure Anomaly when flag IS enabled but TIH still missing (legitimate empty stream)" do
+      # No bots, no chat, no chatters — empty stream legitimately produces no TIH.
+      # We don't want to spam Anomaly for every such empty stream.
+      TrustIndexHistory.where(stream_id: stream.id).delete_all
+      allow(Flipper).to receive(:enabled?).with(:signal_compute).and_return(true)
+      allow(SignalComputeWorker).to receive(:new).and_return(instance_double(SignalComputeWorker, perform: nil))
+      allow(SignalComputeWorker).to receive(:perform_in)
+
+      expect {
+        described_class.new.perform(stream.id)
+      }.not_to change { Anomaly.where(stream_id: stream.id, anomaly_type: "compute_failure").count }
+
+      expect(SignalComputeWorker).not_to have_received(:perform_in)
+    end
+  end
 end
