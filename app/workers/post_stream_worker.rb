@@ -92,11 +92,47 @@ class PostStreamWorker
 
   def run_final_compute(stream)
     SignalComputeWorker.new.perform(stream.id, true)
+    detect_silent_skip!(stream)
   rescue StandardError => e
     Rails.logger.error("PostStreamWorker: final compute failed for stream #{stream.id} — #{e.message}")
     # If no TI data from live compute either — re-raise for Sidekiq retry.
     # Otherwise continue with last available data from live phase.
     raise unless ti_data_available?(stream)
+  end
+
+  # BUG-SIGNAL-COMPUTE-SILENT-SKIP (2026-06-01): after the inline SignalComputeWorker call
+  # returns, verify that TI compute actually happened. The worker short-circuits silently
+  # on `:signal_compute` flag-off (which happens during backfill / pause windows), losing
+  # post-stream TI finalization forever — PSR ends up with trust_index_final=NULL and the
+  # stream never gets TIH. Defence: if no TIH rows exist for this stream after the inline
+  # call AND the flag is currently disabled, record an Anomaly for visibility and schedule
+  # a deferred retry that will succeed once the flag is flipped back ON.
+  def detect_silent_skip!(stream)
+    return if ti_data_available?(stream)
+    return if Flipper.enabled?(:signal_compute) # was running — likely no chatters/signals at all, legitimate empty
+
+    Rails.logger.warn(
+      "PostStreamWorker: silent skip detected for stream #{stream.id} " \
+      "— :signal_compute flag OFF, no TIH after inline compute. Scheduling 1h deferred retry."
+    )
+    Anomaly.create!(
+      stream: stream,
+      timestamp: Time.current,
+      anomaly_type: "compute_failure",
+      details: {
+        reason: "signal_compute_flag_off_at_finalization",
+        retry_scheduled_at: 1.hour.from_now.iso8601,
+        post_stream_worker_jid: Thread.current[:sidekiq_context]&.dig("jid")
+      }
+    )
+    # Schedule deferred async retry — by the time it runs the flag should be back on.
+    # force=true so the retry bypasses throttle once it executes.
+    SignalComputeWorker.perform_in(1.hour, stream.id, true)
+  rescue StandardError => e
+    Rails.logger.error(
+      "PostStreamWorker: detect_silent_skip! failed for stream #{stream.id} — #{e.class}: #{e.message}"
+    )
+    # Non-fatal — original perform() should continue with whatever live-phase TI is available.
   end
 
   def ti_data_available?(stream)
