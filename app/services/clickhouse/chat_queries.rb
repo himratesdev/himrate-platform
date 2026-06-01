@@ -350,6 +350,83 @@ module Clickhouse
       []
     end
 
+    # ─── ML feature aggregations (Ml::Features::ChatSignals, PR3) ──────────────
+    # Single multi-aggregate over the stream's chat history (msg_type='privmsg') returning
+    # everything `Ml::Features::ChatSignals` needs to derive the 7 BFT 15_ML-Pipeline.md §3.2
+    # chat features. One query, columnar scan; for typical per-stream chat sizes (≤200k
+    # privmsgs) CH returns in milliseconds.
+    #
+    # Returns Hash:
+    #   - :total_messages (Integer) — total privmsg count
+    #   - :unique_messages (Integer) — distinct message_text count
+    #   - :unique_chatters (Integer) — distinct username count
+    #   - :messages_with_emotes (Integer) — count where emotes != ''
+    #   - :single_message_chatters (Integer) — chatters posting exactly 1 message
+    #   - :message_entropy_bits (Float|nil) — Shannon entropy of message_text distribution
+    #   - :mean_inter_msg_sec (Float|nil) — mean gap between consecutive privmsgs
+    #   - :std_inter_msg_sec (Float|nil) — stddev of consecutive privmsg gaps
+    # All nil-safe; on CH error returns empty Hash so caller treats as insufficient data.
+    def chat_feature_aggregates(stream)
+      validate_stream_uuid!(stream.id)
+
+      # 1. Single SELECT covering counts + entropy.
+      agg = Clickhouse.client.select(<<~SQL).first
+        WITH stream_msgs AS (
+          SELECT message_text, username, emotes
+          FROM chat_messages
+          WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg' AND username != ''
+        ),
+        text_freq AS (
+          SELECT count() AS c FROM stream_msgs GROUP BY message_text
+        )
+        SELECT
+          (SELECT count()                  FROM stream_msgs)                              AS total_messages,
+          (SELECT uniqExact(message_text)  FROM stream_msgs)                              AS unique_messages,
+          (SELECT uniqExact(username)      FROM stream_msgs)                              AS unique_chatters,
+          (SELECT countIf(emotes != '')    FROM stream_msgs)                              AS messages_with_emotes,
+          (SELECT -sum((c / (SELECT count() FROM stream_msgs)) * log2(c / (SELECT count() FROM stream_msgs)))
+             FROM text_freq)                                                              AS message_entropy_bits
+      SQL
+
+      # 2. Single-message chatters (separate because nested aggregate against subquery is heavy).
+      single_row = Clickhouse.client.select(<<~SQL).first
+        SELECT count() AS single_message_chatters FROM (
+          SELECT username FROM chat_messages
+          WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg' AND username != ''
+          GROUP BY username HAVING count() = 1
+        )
+      SQL
+
+      # 3. Inter-message intervals — use window function over timestamps.
+      # Cast to Float64 for sub-second precision (DateTime64 -> seconds since epoch).
+      timing = Clickhouse.client.select(<<~SQL).first
+        SELECT
+          avg(diff_sec)        AS mean_inter_msg_sec,
+          stddevSamp(diff_sec) AS std_inter_msg_sec
+        FROM (
+          SELECT
+            (toUnixTimestamp64Milli(timestamp) - toUnixTimestamp64Milli(lagInFrame(timestamp, 1) OVER (ORDER BY timestamp))) / 1000.0 AS diff_sec
+          FROM chat_messages
+          WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
+        )
+        WHERE diff_sec IS NOT NULL AND diff_sec > 0
+      SQL
+
+      {
+        total_messages:           (agg && agg["total_messages"]).to_i,
+        unique_messages:          (agg && agg["unique_messages"]).to_i,
+        unique_chatters:          (agg && agg["unique_chatters"]).to_i,
+        messages_with_emotes:     (agg && agg["messages_with_emotes"]).to_i,
+        message_entropy_bits:     agg && agg["message_entropy_bits"]&.to_f,
+        single_message_chatters:  (single_row && single_row["single_message_chatters"]).to_i,
+        mean_inter_msg_sec:       timing && timing["mean_inter_msg_sec"]&.to_f,
+        std_inter_msg_sec:        timing && timing["std_inter_msg_sec"]&.to_f
+      }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: chat_feature_aggregates failed (#{e.class})")
+      {}
+    end
+
     # Mirrors StreamMonitorWorker#fetch_chat_activity — batched per-stream chat activity over the
     # given window. Returns Hash { stream_id => { unique: n, total: n } } for the streams that had
     # any privmsg in the window (others absent from the Hash, matching the PG groupby behaviour).

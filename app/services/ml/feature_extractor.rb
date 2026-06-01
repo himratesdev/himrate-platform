@@ -27,6 +27,7 @@ module Ml
     # Order matches StreamFeatureVector::FEATURE_COLUMNS for round-trip safety.
     def call
       viewer_features = collect_viewer_features
+      chat_features = collect_chat_features
 
       {
         # Viewer (PR2 — live) — Ml::Features::ViewerSignals
@@ -35,14 +36,16 @@ module Ml
         ccv_coefficient_of_variation: viewer_features[:ccv_coefficient_of_variation],
         ccv_tier_stickiness: viewer_features[:ccv_tier_stickiness],
 
-        # Chat (PR3) — Ml::Features::ChatSignals
-        message_entropy: nil,
-        unique_message_ratio: nil,
-        single_message_chatter_ratio: nil,
-        emote_only_ratio: nil,
-        avg_inter_message_interval_sec: nil,
-        timing_regularity_score: nil,
-        nlp_contextual_relevance_score: nil,
+        # Chat (PR3 — live, 6/7) — Ml::Features::ChatSignals.
+        # nlp_contextual_relevance_score deferred to separate ONNX-NLP EPIC (per
+        # [[feedback-no-throwaway-go-to-final-architecture]] — no heuristic placeholder).
+        message_entropy: chat_features[:message_entropy],
+        unique_message_ratio: chat_features[:unique_message_ratio],
+        single_message_chatter_ratio: chat_features[:single_message_chatter_ratio],
+        emote_only_ratio: chat_features[:emote_only_ratio],
+        avg_inter_message_interval_sec: chat_features[:avg_inter_message_interval_sec],
+        timing_regularity_score: chat_features[:timing_regularity_score],
+        nlp_contextual_relevance_score: chat_features[:nlp_contextual_relevance_score],
 
         # Account (PR4) — Ml::Features::AccountSignals
         avg_account_age_days: nil,
@@ -83,6 +86,14 @@ module Ml
       features = viewer.call
       reasons = viewer.insufficient_data_reasons
       @insufficient_data_reasons[:viewer] = reasons if reasons.any?
+      features
+    end
+
+    def collect_chat_features
+      chat = Ml::Features::ChatSignals.new(@stream)
+      features = chat.call
+      reasons = chat.insufficient_data_reasons
+      @insufficient_data_reasons[:chat] = reasons if reasons.any?
       features
     end
   end
