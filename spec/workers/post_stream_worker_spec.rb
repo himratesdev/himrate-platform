@@ -46,8 +46,8 @@ RSpec.describe PostStreamWorker do
     # populate from TIH.signal_breakdown JSON column. The `signals` PG table is dead-write
     # post TrustIndex::Engine refactor — old TiSignal.where(...) returned empty {} for every
     # post-stream report. The summary is the canonical per-signal trace stored in
-    # PostStreamReport.signals_data; empty broke the $4.99 stream report endpoint.
-    it "populates signals_data from TIH.signal_breakdown JSON column (not empty signals PG table)" do
+    # PostStreamReport.signals_summary; empty broke the $4.99 stream report endpoint.
+    it "populates signals_summary from TIH.signal_breakdown JSON column (not empty signals PG table)" do
       tih = TrustIndexHistory.find_by!(stream: stream)
       tih.update!(signal_breakdown: {
         "auth_ratio" => { "value" => 0.0, "weight" => 0.21, "confidence" => 1.0, "contribution" => 0.0 },
