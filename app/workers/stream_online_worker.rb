@@ -184,15 +184,48 @@ class StreamOnlineWorker
       Rails.logger.info("StreamOnlineWorker: merged with previous stream #{last_stream.id} (parts: #{last_stream.merged_parts_count}, twitch_stream_id=#{new_twitch_stream_id.inspect})")
       last_stream
     else
-      Stream.create!(
-        channel: channel,
-        started_at: event_data["started_at"] || Time.current,
-        twitch_stream_id: new_twitch_stream_id,
-        title: title,
-        game_name: game_name,
-        language: language
-      )
+      create_stream_idempotent(channel, event_data, new_twitch_stream_id, title, game_name, language)
     end
+  end
+
+  # BUG-251.40-G (2026-06-01): tolerate concurrent OnlineWorker enqueues that race past
+  # `active_stream_exists?`. The check is read-only (SELECT) without any row lock; two
+  # workers can both see "no open stream with this twitch_stream_id" microseconds apart
+  # and both proceed to `Stream.create!`. The partial UNIQUE index
+  # `idx_streams_twitch_stream_id_unique` (PR #236 A1) catches the second commit, which
+  # then bubbles as `ActiveRecord::RecordNotUnique` → Sidekiq retry 3× → dead.
+  #
+  # The dead job is semantically a no-op (the row the dead job wanted to create already
+  # exists, created by the winning worker). Recovery is to find the existing row and
+  # return it — IRC join publish at the caller is idempotent (IrcMonitor's `subscribe`
+  # returns `:already_joined`). Pre-fix DeadSet had ~1000 such jobs accumulated over 17h
+  # since the BUG-251.40 A2 deploy introduced the UNIQUE index.
+  #
+  # We only catch RecordNotUnique for this specific path (twitch_stream_id collision on
+  # idx_streams_twitch_stream_id_unique). If the recovery lookup returns nil — different
+  # constraint hit (channel_id, FK, etc.) — re-raise so we don't silently swallow real bugs.
+  def create_stream_idempotent(channel, event_data, new_twitch_stream_id, title, game_name, language)
+    Stream.create!(
+      channel: channel,
+      started_at: event_data["started_at"] || Time.current,
+      twitch_stream_id: new_twitch_stream_id,
+      title: title,
+      game_name: game_name,
+      language: language
+    )
+  rescue ActiveRecord::RecordNotUnique => e
+    Rails.logger.warn(
+      "StreamOnlineWorker: RecordNotUnique caught for ##{channel.login} " \
+      "(twitch_stream_id=#{new_twitch_stream_id.inspect}) — another worker created the row " \
+      "concurrently. Recovering existing row. Original error: #{e.message.slice(0, 200)}"
+    )
+    existing = channel.streams
+                      .where(ended_at: nil, twitch_stream_id: new_twitch_stream_id)
+                      .order(started_at: :desc)
+                      .first
+    raise unless existing # Different constraint hit — surface, don't swallow
+
+    existing
   end
 
   # TASK-033 FR-004: nil game_name fallback — GQL failure should not break merge.

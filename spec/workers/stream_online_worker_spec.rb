@@ -259,4 +259,43 @@ RSpec.describe StreamOnlineWorker do
       expect(channel.streams.where(ended_at: nil).first.twitch_stream_id).to eq("316159655126")
     end
   end
+
+  # BUG-251.40-G (2026-06-01): two OnlineWorker jobs racing past the read-only
+  # `active_stream_exists?` check both proceed to `Stream.create!`. The partial UNIQUE
+  # index on `twitch_stream_id` (PR #236 A1) catches the second commit as
+  # `ActiveRecord::RecordNotUnique`. Without rescue, retry 3× → DeadSet (1000 dead jobs
+  # accumulated in 17h post-A2 deploy on staging). Fix: rescue + recover existing row.
+  describe "concurrent enqueue race recovery (BUG-251.40-G)" do
+    it "recovers gracefully when another worker created the same stream concurrently" do
+      # Simulate the race: another worker already created the row between our
+      # active_stream_exists? check and our Stream.create! attempt.
+      twitch_stream_id = event_data["stream_id"]
+      existing = create(:stream, channel: channel, started_at: Time.current,
+                        twitch_stream_id: twitch_stream_id, ended_at: nil)
+
+      # Force `active_stream_exists?` to return false (race window) so worker proceeds
+      # to create_stream_idempotent and hits the UNIQUE constraint.
+      allow_any_instance_of(described_class).to receive(:active_stream_exists?).and_return(false)
+      # Bypass merge branch (no closed streams in MERGE_GAP_MINUTES) so create branch runs.
+
+      # Should NOT raise — rescue catches RecordNotUnique and recovers existing row.
+      expect { worker.perform(event_data) }.not_to raise_error
+
+      # No new row created — the existing one stays.
+      expect(channel.streams.where(twitch_stream_id: twitch_stream_id, ended_at: nil).count).to eq(1)
+      expect(channel.streams.where(twitch_stream_id: twitch_stream_id).first.id).to eq(existing.id)
+    end
+
+    it "re-raises RecordNotUnique when recovery cannot find a matching open stream (different constraint)" do
+      # Edge case: RecordNotUnique on a DIFFERENT constraint (not idx_streams_twitch_stream_id_unique).
+      # Recovery lookup returns nil → we re-raise so real bugs surface (don't silently swallow).
+      allow_any_instance_of(described_class).to receive(:active_stream_exists?).and_return(false)
+      allow_any_instance_of(described_class).to receive(:close_stale_if_fused).and_return(0)
+      allow(Stream).to receive(:create!).and_raise(
+        ActiveRecord::RecordNotUnique.new("hypothetical other unique constraint")
+      )
+
+      expect { worker.perform(event_data) }.to raise_error(ActiveRecord::RecordNotUnique)
+    end
+  end
 end
