@@ -57,7 +57,7 @@ RSpec.describe PostStreamWorker do
       described_class.new.perform(stream.id)
 
       report = PostStreamReport.last
-      summary = report.signals_data || report["signals_data"] || {}
+      summary = report.signals_summary
       expect(summary).to be_a(Hash)
       expect(summary.keys).to contain_exactly("auth_ratio", "chat_behavior")
       expect(summary["auth_ratio"]).to include("value" => 0.0, "weight" => 0.21, "confidence" => 1.0)
