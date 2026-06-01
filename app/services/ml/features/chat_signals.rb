@@ -23,9 +23,16 @@ module Ml
 
       def call
         agg = aggregates
+
+        # CR-250 PG-iter-3 test fix: nlp_contextual_relevance_score is STRUCTURALLY deferred
+        # (separate ONNX EPIC) — its reason is always "requires_nlp_inference_layer_separate_epic"
+        # regardless of chat data availability. The data-availability branches below must NOT
+        # overwrite the NLP reason with "no_chat_data" / "insufficient_messages" / etc.
+        nlp_score = nlp_contextual_relevance_score
+
         if agg.empty? || agg[:total_messages].to_i.zero?
-          mark_all_insufficient("no_chat_data")
-          return all_nil
+          mark_data_dependent_insufficient("no_chat_data")
+          return all_nil.merge(nlp_contextual_relevance_score: nlp_score)
         end
 
         total = agg[:total_messages]
@@ -37,7 +44,7 @@ module Ml
           emote_only_ratio:               emote_only_ratio(agg, total),
           avg_inter_message_interval_sec: avg_inter_message_interval_sec(agg, total),
           timing_regularity_score:        timing_regularity_score(agg, total),
-          nlp_contextual_relevance_score: nlp_contextual_relevance_score
+          nlp_contextual_relevance_score: nlp_score
         }
       end
 
@@ -142,8 +149,11 @@ module Ml
         }
       end
 
-      def mark_all_insufficient(reason)
-        all_nil.keys.each { |k| insufficient_data_reasons[k] = reason }
+      # Mark data-dependent features (everything EXCEPT structurally-deferred NLP) с the given
+      # reason. NLP keeps its own EPIC-deferral reason set by `nlp_contextual_relevance_score`.
+      def mark_data_dependent_insufficient(reason)
+        data_dependent = all_nil.keys - [ :nlp_contextual_relevance_score ]
+        data_dependent.each { |k| insufficient_data_reasons[k] = reason }
       end
 
       def record_insufficient(feature_key, reason)

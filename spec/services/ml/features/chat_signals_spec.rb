@@ -21,15 +21,20 @@ RSpec.describe Ml::Features::ChatSignals do
       ])
     end
 
-    it "marks all 7 features 'no_chat_data'" do
+    it "marks 6 data-dependent features 'no_chat_data' + NLP keeps deferred-EPIC reason" do
       chat.call
       reasons = chat.insufficient_data_reasons
-      expect(reasons.values.uniq).to eq([ "no_chat_data" ])
       expect(reasons.keys).to match_array(%i[
         message_entropy unique_message_ratio single_message_chatter_ratio
         emote_only_ratio avg_inter_message_interval_sec timing_regularity_score
         nlp_contextual_relevance_score
       ])
+      # 6 data-dependent features → "no_chat_data"; NLP keeps its structural deferral reason.
+      expect(reasons.values.tally).to eq(
+        "no_chat_data" => 6,
+        "requires_nlp_inference_layer_separate_epic" => 1
+      )
+      expect(reasons[:nlp_contextual_relevance_score]).to eq("requires_nlp_inference_layer_separate_epic")
     end
   end
 
