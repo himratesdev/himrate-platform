@@ -38,6 +38,14 @@
 #                   lifecycle jobs bypass historical backlog. Weight 6 = real-time priority
 #                   class. The remaining :signals queue (~867k legacy non-lifecycle jobs)
 #                   drains naturally without affecting new stream detection.
+#                   BUG-251.40-F (2026-06-01): weight=6 alone was insufficient — drain rate
+#                   ~0.625 effective thread / ~6 j/s peak << ~21 j/s enqueue rate from MLD
+#                   (60s cron × ~333 live channels). Queue accumulated 165k in 16h post-#240
+#                   deploy, head-of-line blocking → 0 Stream creates last 6h. Solved by
+#                   dedicated `stream_worker` Kamal role (deploy.yml, mirroring whisper_worker
+#                   pattern) — strict precedence, c=3 sustained ~12 j/s. Queue stays here
+#                   as fallback: if stream_worker role drops, default `job` role picks up via
+#                   weighted-random until role restored.
 # signals: legacy queue with the historical backlog (SignalComputeWorker pre-PR #233 stale,
 #          Trends::AnomalyAttributionWorker low-volume, BotScoringWorker stragglers). Drains
 #          naturally as backlog burns down without new inflow — all high-volume primary
