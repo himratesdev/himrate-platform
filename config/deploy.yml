@@ -38,6 +38,23 @@ servers:
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
+  # BUG-251.40-F: dedicated Sidekiq role для :stream_lifecycle queue.
+  # PR #240 dedicated queue + weight=6 в default `job` role оказалось insufficient:
+  # 5 threads × ~12.5% weighted slot = ~0.625 effective thread (~6 j/s peak) vs
+  # ~21 j/s enqueue rate (MLD каждые 60s × ~333 live channels). Net +3 j/s → 165k
+  # backlog за 16h, head-of-line blocking → 0 Stream creations last 6h on staging.
+  # Strict precedence (separate process, -q stream_lifecycle only) с c=3 даёт ~12 j/s
+  # sustained drain. Mirror whisper_worker pattern. stream_lifecycle queue ОСТАЁТСЯ в
+  # config/sidekiq.yml :queues для backward-compat и fallback (default job role подхватит
+  # если stream_worker role упадёт — соответствует existing pattern для bot_scoring/signal_compute).
+  stream_worker:
+    hosts:
+      - 194.135.85.159
+    cmd: bundle exec sidekiq -q stream_lifecycle -c 3
+    proxy: false
+    options:
+      health-cmd: "ruby -e 'puts :ok'"
+      health-interval: 10s
   irc:
     hosts:
       - 194.135.85.159
