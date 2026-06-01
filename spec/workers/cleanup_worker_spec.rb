@@ -140,7 +140,7 @@ RSpec.describe CleanupWorker, type: :worker do
       end
     end
 
-    context "per-channel retention override for the 4 cleanup tables (FR-025, TC-027/028)" do
+    context "per-channel retention override for the 3 cleanup tables (FR-025, TC-027/028)" do
       it "honors a channel:<uuid> override (180d) for ccv_snapshots" do
         other_channel = create(:channel)
         other_stream = create(:stream, channel: other_channel)
@@ -285,7 +285,10 @@ RSpec.describe CleanupWorker, type: :worker do
 
     context "cleanup_audit_logs" do
       it "writes a success row per cleanup sub-run (TC-034)" do
-        expect { described_class.new.perform }.to change { CleanupAuditLog.where(status: :success).count }.by(6)
+        # PR 1e-B (2026-06-01): chat_messages sub_run dropped — 5 :success rows expected
+        # (signals, sessions, ccv, chatters, tih). cleanup_audit_logs sub-run writes :skipped
+        # via record_audit, not :success. Pre-1e-B was 6.
+        expect { described_class.new.perform }.to change { CleanupAuditLog.where(status: :success).count }.by(5)
         expect(CleanupAuditLog.where(table_name: "tih", status: :success)).to exist
         expect(CleanupAuditLog.where(table_name: "ti_signals", status: :success)).to exist
       end
@@ -321,7 +324,7 @@ RSpec.describe CleanupWorker, type: :worker do
 
         expect { described_class.new.perform }.to raise_error(CleanupWorker::SubRunFailures, /signals/)
 
-        # TIH cleanup (sub-run #6, the pre-launch blocker) still ran:
+        # TIH cleanup (sub-run #5, the pre-launch blocker) still ran:
         expect(TrustIndexHistory.exists?(intermediate.id)).to be false
         expect(TrustIndexHistory.exists?(final.id)).to be true
         # The healthy sub-runs each still wrote a success audit row:
