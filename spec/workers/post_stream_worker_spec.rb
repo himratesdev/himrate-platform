@@ -23,6 +23,7 @@ RSpec.describe PostStreamWorker do
     allow(TiDivergenceAlerter).to receive(:check)
     allow(PostStreamNotificationService).to receive(:broadcast_stream_ended)
     allow(StreamerReputationRefreshWorker).to receive(:perform_async)
+    allow(MlFeatureExtractionWorker).to receive(:perform_async)
     allow(StreamExpiringWorker).to receive(:perform_at)
     allow(Trends::LatestTihRefreshWorker).to receive(:perform_in)
     allow(Trends::AggregationWorker).to receive(:perform_async)
@@ -86,6 +87,16 @@ RSpec.describe PostStreamWorker do
 
       expect(Trends::AggregationWorker).to have_received(:perform_async)
         .with(channel.id, stream.started_at.to_date.iso8601)
+    end
+
+    # EPIC ML-FEATURE-EXTRACTOR PR1 (CR-247 S2): downstream ML feature persistence.
+    # AC2: After PostStreamWorker run, MlFeatureExtractionWorker is enqueued with stream.id.
+    # Worker itself is idempotent (find_or_initialize on stream_id+version), so re-enqueue
+    # on Sidekiq retry is harmless.
+    it "enqueues MlFeatureExtractionWorker after Reputation refresh (CR-247 S2)" do
+      described_class.new.perform(stream.id)
+
+      expect(MlFeatureExtractionWorker).to have_received(:perform_async).with(stream.id)
     end
 
     it "schedules stream_expiring worker at ended_at + 17h" do

@@ -57,6 +57,11 @@ class PostStreamWorker
       # TASK-037 FR-006: Reputation refresh
       StreamerReputationRefreshWorker.perform_async(stream.channel_id)
 
+      # EPIC ML-FEATURE-EXTRACTOR PR1: persist per-stream LightGBM-ready feature vector.
+      # Async (queue :post_stream) — no downstream worker depends on the row being ready
+      # immediately; ML training queries window 24h+ data. Idempotent at worker level.
+      MlFeatureExtractionWorker.perform_async(stream.id)
+
       # TASK-086 FR-032: refresh the latest_tih_per_stream MV (per-stream final TIH).
       # No stream arg — REFRESH ... CONCURRENTLY is a full refresh, not per-stream
       # incremental. The 2-min delay ensures the final compute above committed; the
