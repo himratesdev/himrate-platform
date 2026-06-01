@@ -42,6 +42,28 @@ RSpec.describe PostStreamWorker do
       expect(report.generated_at).to be_present
     end
 
+    # BUG-TI-SIGNAL-BREAKDOWN regression guard (2026-06-01): build_signals_summary MUST
+    # populate from TIH.signal_breakdown JSON column. The `signals` PG table is dead-write
+    # post TrustIndex::Engine refactor — old TiSignal.where(...) returned empty {} for every
+    # post-stream report. The summary is the canonical per-signal trace stored in
+    # PostStreamReport.signals_data; empty broke the $4.99 stream report endpoint.
+    it "populates signals_data from TIH.signal_breakdown JSON column (not empty signals PG table)" do
+      tih = TrustIndexHistory.find_by!(stream: stream)
+      tih.update!(signal_breakdown: {
+        "auth_ratio" => { "value" => 0.0, "weight" => 0.21, "confidence" => 1.0, "contribution" => 0.0 },
+        "chat_behavior" => { "value" => 0.13, "weight" => 0.17, "confidence" => 0.95, "contribution" => 0.0221 }
+      })
+
+      described_class.new.perform(stream.id)
+
+      report = PostStreamReport.last
+      summary = report.signals_data || report["signals_data"] || {}
+      expect(summary).to be_a(Hash)
+      expect(summary.keys).to contain_exactly("auth_ratio", "chat_behavior")
+      expect(summary["auth_ratio"]).to include("value" => 0.0, "weight" => 0.21, "confidence" => 1.0)
+      expect(summary["chat_behavior"]).to include("value" => 0.13, "weight" => 0.17, "confidence" => 0.95)
+    end
+
     it "broadcasts stream_ended notification" do
       described_class.new.perform(stream.id)
 

@@ -133,14 +133,14 @@ module Trust
       breakdown.map do |signal_type, data|
         next nil unless data.is_a?(Hash)
 
-        value = data["value"]&.to_f
-        weight = data["weight"]&.to_f
         {
           type: signal_type,
-          value: value,
+          value: data["value"]&.to_f,
           confidence: data["confidence"]&.to_f,
-          weight: weight,
-          contribution: data["contribution"]&.to_f || (value && weight ? (value * weight).round(4) : nil),
+          weight: data["weight"]&.to_f,
+          # contribution is always written by TrustIndex::Engine (engine.rb:116-121); read
+          # canonical, no defensive fallback — schema drift should surface, not be papered over.
+          contribution: data["contribution"]&.to_f,
           metadata: nil
         }
       end.compact

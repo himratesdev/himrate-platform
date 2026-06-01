@@ -24,7 +24,7 @@ RSpec.describe "Trust API", type: :request do
       confidence: 0.85,
       classification: "needs_review",
       cold_start_status: "full",
-      signal_breakdown: { auth_ratio: { value: 0.15, confidence: 0.9 } },
+      signal_breakdown: { auth_ratio: { value: 0.15, weight: 0.21, confidence: 0.9, contribution: 0.0315 } },
       calculated_at: 1.minute.ago)
   end
 
@@ -74,7 +74,9 @@ RSpec.describe "Trust API", type: :request do
       auth_ratio = breakdown.find { |s| s["type"] == "auth_ratio" }
       expect(auth_ratio).to be_present
       expect(auth_ratio["value"]).to eq(0.15)
+      expect(auth_ratio["weight"]).to eq(0.21)
       expect(auth_ratio["confidence"]).to eq(0.9)
+      expect(auth_ratio["contribution"]).to eq(0.0315)
     end
 
     # TC-004: Free expired → headline + expired flag
