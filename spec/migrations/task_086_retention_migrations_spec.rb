@@ -11,9 +11,11 @@ RSpec.describe "TASK-086 retention migrations", type: :model do
     # migration, idempotent — on_duplicate: :skip) and verify the rows it produces.
     before { CleanupRetentionConfigSeeder.seed! }
 
-    it "seeds retention_days for trust_index_histories and the 4 cleanup tables" do
+    it "seeds retention_days for trust_index_histories and the 3 cleanup tables" do
+      # PR 1e-B (TASK-251.14): chat_messages dropped — retention now CH-side; expected
+      # cleanup table set is now {ti_signals, ccv_snapshots, chatters_snapshots}.
       expect(SignalConfiguration.value_for("trust_index_histories", "default", "retention_days")).to eq(90)
-      %w[ti_signals ccv_snapshots chatters_snapshots chat_messages].each do |table|
+      %w[ti_signals ccv_snapshots chatters_snapshots].each do |table|
         expect(SignalConfiguration.value_for("cleanup", table, "retention_days")).to eq(90)
       end
     end

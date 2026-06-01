@@ -81,7 +81,8 @@ RSpec.describe CleanupWorker, type: :worker do
     # is now ClickHouse-side (TTL on `himrate.chat_messages` MergeTree). Cleanup worker no longer
     # touches chat retention. The per-channel override semantics for ChatMessage are obsolete.
 
-    # --- MIN_RETENTION_DAYS floor applies to ALL 5 time-series tables, not just TIH (PG re-review W3) ---
+    # --- MIN_RETENTION_DAYS floor applies to ALL 4 time-series tables, not just TIH (PG re-review W3).
+    # PR 1e-B (2026-06-01): chat_messages dropped, count reduced from 5 → 4. ---
 
     context "MIN_RETENTION_DAYS floor on a non-TIH table (ti_signals)" do
       it "clamps a misconfigured ti_signals retention_days=0 to MIN_RETENTION_DAYS — rows inside the 7d floor survive" do
@@ -112,9 +113,9 @@ RSpec.describe CleanupWorker, type: :worker do
       it "clamps a misconfigured chatters_snapshots retention_days=0 to MIN_RETENTION_DAYS — rows inside the 7d floor survive" do
         SignalConfiguration.where(signal_type: "cleanup", category: "chatters_snapshots", param_name: "retention_days").update_all(param_value: 0)
         ActiveSupport::CurrentAttributes.clear_all
-        # CR P0: no :chatters_snapshot factory exists; use direct .create! to match the
-        # pattern at line 70 (model validates unique_chatters_count + total_messages_count
-        # presence). Setting both to 0 keeps the fixture minimal.
+        # CR P0: no :chatters_snapshot factory exists; use direct .create! matching line 70.
+        # Model validates unique_chatters_count presence (total_messages_count is DB-level
+        # NOT NULL only). Setting both to 0 keeps the fixture minimal + DB-safe.
         kept_in_floor = ChattersSnapshot.create!(stream: stream, unique_chatters_count: 0, total_messages_count: 0, timestamp: 3.days.ago)
         deleted_past_floor = ChattersSnapshot.create!(stream: stream, unique_chatters_count: 0, total_messages_count: 0, timestamp: 10.days.ago)
 

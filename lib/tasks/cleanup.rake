@@ -5,7 +5,7 @@
 #   rake cleanup:initial_backfill[table,dry_run]
 #     One-shot historical cleanup for a single table (chunked, throttled, statement_timeout).
 #     dry_run defaults to TRUE — prints a preview (eligible counts + sample) and exits.
-#     table ∈ tih | ti_signals | ccv_snapshots | chatters_snapshots | chat_messages
+#     table ∈ tih | ti_signals | ccv_snapshots | chatters_snapshots
 #       rake cleanup:initial_backfill[tih]            # dry-run preview (safe default)
 #       rake cleanup:initial_backfill[tih,false]      # actual cleanup
 #

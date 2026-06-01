@@ -14,7 +14,7 @@
 | Flipper флаг | `:cleanup_worker` — в `FlipperDefaults::ALL_FLAGS` ⇒ **enabled-by-default на каждом boot** |
 | Cron | nightly (`config/initializers/sidekiq_cron.rb`) |
 | Retention config | таблица `signal_configurations` (rows seeded миграцией `20260512100001_seed_cleanup_retention_thresholds.rb`); `SignalConfiguration` — source of truth, `DEFAULT_RETENTION_DAYS = 90` — last-resort fallback |
-| Retention floor | `CleanupWorker::MIN_RETENTION_DAYS = 7` — `retention_days` **любой** из 5 таблиц клампится снизу до 7д (worker, rake-backfill, и валидация `SignalConfiguration` — защита от misconfigured/обнулённого admin-row `retention_days = 0`). Для `trust_index_histories` сверх этого работает ещё и conservation rule (FR-002/003) |
+| Retention floor | `CleanupWorker::MIN_RETENTION_DAYS = 7` — `retention_days` **любой** из 4 таблиц клампится снизу до 7д (worker, rake-backfill, и валидация `SignalConfiguration` — защита от misconfigured/обнулённого admin-row `retention_days = 0`). Для `trust_index_histories` сверх этого работает ещё и conservation rule (FR-002/003) |
 | TIH conservation (FR-002/003) | rank-1 (финальная) TIH на каждый stream и **все** TIH live-стримов (`streams.ended_at IS NULL`) **никогда** не удаляются |
 | Audit | таблица `cleanup_audit_logs` (retention indefinite — никогда не auto-удаляется); по строке на sub-run (`success` / `partial` / `error` / `skipped`) |
 | Auto-disable | 3 подряд `error`-строки для таблицы ⇒ `Cleanup::AutoDisableService` выключает `:cleanup_worker` + critical Alertmanager alert |
