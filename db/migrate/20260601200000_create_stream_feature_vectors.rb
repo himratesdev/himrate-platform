@@ -1,8 +1,15 @@
 # frozen_string_literal: true
 
 # EPIC ML-FEATURE-EXTRACTOR PR1: stream_feature_vectors — LightGBM-ready tabular features
-# computed per-stream-completion. 30 columns per BFT 15_ML-Pipeline.md §3.2, 6 feature groups:
+# computed per-stream-completion. 25 columns per BFT 15_ML-Pipeline.md §3.2, 6 feature groups:
 # Viewer (4) · Chat (7) · Account (4) · Growth (4) · Stability (3) · Maturity (3).
+#
+# NB on the "30 vs 25" delta: BFT §3.2 lists 30 entries, but 4 of those (auth_ratio,
+# follower_only_mode, cross_channel_score, known_bot_ratio) are LIVE TI signals already
+# computed by `app/services/trust_index/signals/` and persisted in TrustIndexHistory.
+# Duplicating them as feature_vector columns would create a sync hazard. ML training will
+# join `stream_feature_vectors` with `trust_index_histories` via stream_id. The 5th BFT
+# entry (`peak_to_average_ccv_ratio`) IS here as a feature (just relisted under "Viewer").
 #
 # Composite PK (stream_id, version) — version stamps allow schema evolution without
 # data loss (rerun new extractor on existing streams, keep old version for ML model
@@ -65,15 +72,14 @@ class CreateStreamFeatureVectors < ActiveRecord::Migration[8.0]
     # FK to streams (cascading delete preserves referential integrity on stream removal)
     add_foreign_key :stream_feature_vectors, :streams, on_delete: :cascade
 
-    # Indexes for ML training queries:
-    # - calculated_at: window queries для retraining (last N days)
-    # - stream_id: single-stream lookup (rare but useful for debugging)
+    # Index for ML training window queries (retraining job pulls last N days).
+    # CR-247 N3: NO secondary index on stream_id — the composite PK (stream_id, version)
+    # already creates a btree with stream_id as leading column; PG can satisfy
+    # WHERE stream_id = ? via the PK index. Extra index = write cost without lookup benefit.
     add_index :stream_feature_vectors, :calculated_at
-    add_index :stream_feature_vectors, :stream_id
   end
 
   def down
-    remove_index :stream_feature_vectors, :stream_id
     remove_index :stream_feature_vectors, :calculated_at
     drop_table :stream_feature_vectors
   end

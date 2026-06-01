@@ -10,7 +10,8 @@ RSpec.describe StreamFeatureVector do
   end
 
   describe "validations" do
-    it { is_expected.to validate_presence_of(:stream_id) }
+    # CR-247 N1: stream_id presence is enforced by belongs_to (required by default in Rails 8.1),
+    # not by explicit validates. The belongs_to(:stream) matcher covers it.
     it { is_expected.to validate_presence_of(:calculated_at) }
     it { is_expected.to validate_presence_of(:version) }
   end
@@ -78,6 +79,31 @@ RSpec.describe StreamFeatureVector do
       result = described_class.for_training_window(30.days)
       expect(result).to include(recent_fv)
       expect(result).not_to include(old_fv)
+    end
+  end
+
+  # CR-247 N4: AC4 explicitly states "Cascade on Stream.destroy removes feature_vector rows".
+  # Both DB-level (FK on_delete: :cascade in migration) and Rails-level (dependent: :destroy)
+  # cascades exist; this spec exercises the Rails path (most common via app code).
+  describe "cascade destroy via Stream (AC4)" do
+    it "removes feature_vector rows when parent Stream is destroyed" do
+      fv = create(:stream_feature_vector, stream: stream)
+      expect(StreamFeatureVector.where(stream_id: stream.id).count).to eq(1)
+
+      stream.destroy!
+
+      expect(StreamFeatureVector.where(stream_id: fv.stream_id).count).to eq(0)
+    end
+
+    it "removes ALL versions when parent Stream destroyed (composite PK cascade)" do
+      v1 = create(:stream_feature_vector, stream: stream, version: 1)
+      v2 = create(:stream_feature_vector, stream: stream, version: 2)
+      expect(StreamFeatureVector.where(stream_id: stream.id).count).to eq(2)
+
+      stream.destroy!
+
+      expect(StreamFeatureVector.where(stream_id: v1.stream_id).count).to eq(0)
+      expect(StreamFeatureVector.where(stream_id: v2.stream_id).count).to eq(0)
     end
   end
 end

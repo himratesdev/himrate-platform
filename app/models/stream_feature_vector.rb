@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # EPIC ML-FEATURE-EXTRACTOR PR1: ActiveRecord model для stream_feature_vectors.
-# 30 tabular features computed per-stream-completion by Ml::FeatureExtractor service +
+# 25 tabular features computed per-stream-completion by Ml::FeatureExtractor service +
 # MlFeatureExtractionWorker. Composite PK (stream_id, version) supports schema evolution.
 #
 # All feature columns numeric or nullable — LightGBM tree models handle NULL natively
@@ -10,9 +10,11 @@
 class StreamFeatureVector < ApplicationRecord
   self.primary_key = [ :stream_id, :version ]
 
+  # CR-247 N1: explicit `validates :stream_id, presence: true` removed — Rails 8.1
+  # `belongs_to :stream` is required by default (config.active_record.belongs_to_required_by_default = true),
+  # so the explicit validation is a no-op duplicate.
   belongs_to :stream
 
-  validates :stream_id, presence: true
   validates :version, presence: true, numericality: { only_integer: true, greater_than: 0 }
   validates :calculated_at, presence: true
 
@@ -20,10 +22,9 @@ class StreamFeatureVector < ApplicationRecord
   scope :latest_per_stream, -> { order(version: :desc) }
 
   # Sample for ML training window (last N days of completed streams).
-  scope :for_training_window, ->(window) {
-    where("calculated_at > ?", window.ago)
-      .where.not(calculated_at: nil)
-  }
+  # CR-247 N2: dropped `where.not(calculated_at: nil)` — migration enforces
+  # `t.datetime :calculated_at, null: false`, so the clause never excludes rows.
+  scope :for_training_window, ->(window) { where("calculated_at > ?", window.ago) }
 
   # All 30 feature column names — used by ML training pipeline introspection
   # + spec assertions for completeness.

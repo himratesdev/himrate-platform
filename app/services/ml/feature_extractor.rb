@@ -1,13 +1,17 @@
 # frozen_string_literal: true
 
 # EPIC ML-FEATURE-EXTRACTOR PR1 (framework wireframe): orchestrates per-stream-completion
-# extraction of 30 LightGBM-ready tabular features. Delegates per-group implementation to
+# extraction of 25 LightGBM-ready tabular features. Delegates per-group implementation to
 # `Ml::Features::*` service modules (added in PR2-7).
 #
-# Returns a Hash with all 30 feature keys; values are nil when source data insufficient
+# Returns a Hash with all 25 feature keys; values are nil when source data insufficient
 # (cold-start, no chatters, no CCV snapshots, etc.) — LightGBM trees handle NULL natively
 # via missing-value splits. PR1 wireframe returns all-nil; per-feature implementations
 # light up incrementally в PR2-7 (Viewer/Chat/Account/Growth/Stability/Maturity).
+#
+# NB: BFT 15_ML-Pipeline.md §3.2 lists 30 entries, but 4 (auth_ratio, follower_only_mode,
+# cross_channel_score, known_bot_ratio) are already live TI signals persisted в
+# TrustIndexHistory.signal_breakdown JSON — ML training joins both tables, no duplication.
 #
 # Caller: MlFeatureExtractionWorker, triggered by PostStreamWorker after final TI compute.
 module Ml
@@ -18,7 +22,7 @@ module Ml
       @stream = stream
     end
 
-    # Returns flat Hash of 30 feature keys → numeric values or nil (insufficient data).
+    # Returns flat Hash of 25 feature keys → numeric values or nil (insufficient data).
     # Order matches StreamFeatureVector::FEATURE_COLUMNS for round-trip safety.
     def call
       {
