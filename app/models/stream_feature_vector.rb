@@ -26,7 +26,7 @@ class StreamFeatureVector < ApplicationRecord
   # `t.datetime :calculated_at, null: false`, so the clause never excludes rows.
   scope :for_training_window, ->(window) { where("calculated_at > ?", window.ago) }
 
-  # All 30 feature column names — used by ML training pipeline introspection
+  # All 25 feature column names — used by ML training pipeline introspection
   # + spec assertions for completeness.
   FEATURE_COLUMNS = %i[
     chatter_to_ccv_ratio
