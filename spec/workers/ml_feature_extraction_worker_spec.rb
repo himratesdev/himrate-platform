@@ -40,7 +40,19 @@ RSpec.describe MlFeatureExtractionWorker do
       expect(fv.calculated_at).to be > first_calc
     end
 
-    it "writes extractor_metadata jsonb" do
+    # CR-249 M2 (iter-2): PR2 made viewer features live → cold-start streams (no snapshots)
+    # now correctly populate `insufficient_data_reasons[:viewer]` для всех 4 viewer features.
+    # Seed enough source data to exercise the happy-path metadata shape (empty reasons),
+    # which matches the test's stated intent (verify jsonb structure + schema_version).
+    it "writes extractor_metadata jsonb (happy-path, all viewer data sufficient)" do
+      # ≥3 CCV snapshots + ≥3 chatters snapshots + ≥30 prior streams с avg_ccv
+      # → ViewerSignals returns 4 numeric features, no insufficient reasons.
+      3.times { |i| create(:ccv_snapshot, stream: stream, ccv_count: 500, timestamp: (5 - i).minutes.ago) }
+      3.times { |i| create(:chatters_snapshot, stream: stream, unique_chatters_count: 50, timestamp: (5 - i).minutes.ago) }
+      # Mark current stream completed + seed 29 prior so longitudinal CV has ≥3 history.
+      stream.update!(ended_at: Time.current, avg_ccv: 500)
+      29.times { |i| create(:stream, channel: stream.channel, ended_at: (i + 1).hours.ago, avg_ccv: 500) }
+
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
       expect(fv.extractor_metadata).to include(
@@ -50,7 +62,10 @@ RSpec.describe MlFeatureExtractionWorker do
       )
     end
 
-    it "all 25 feature columns are nil at PR1 (wireframe baseline)" do
+    # CR-249 N1 fold-in (iter-2): copy update — cold-start stream still gets nil for
+    # all 25 features (viewer signals return nil under their insufficient-data branches
+    # for streams без CCV/chatters/history). Assertion stays valid; comment renamed.
+    it "all 25 feature columns are nil for cold-start stream (no snapshots / no history)" do
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
       expect(fv.populated_feature_count).to eq(0)
