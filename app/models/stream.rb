@@ -31,6 +31,10 @@ class Stream < ApplicationRecord
   # other than associations) → bulk SQL DELETE is correct + faster than per-row :destroy.
   # If a future Notification adds audit/websocket callbacks, switch to :destroy.
   has_many :notifications, dependent: :delete_all
+  # EPIC ML-FEATURE-EXTRACTOR PR1: per-stream ML feature row (composite PK stream_id+version).
+  # FK on_delete: :cascade in the migration handles physical cascade; Rails dependent: :destroy
+  # is here for ActiveRecord-managed lifecycle (e.g. tests + Phase C-style cleanup tooling).
+  has_many :feature_vectors, class_name: "StreamFeatureVector", dependent: :destroy
 
   MERGE_STATUSES = %w[separate merged primary secondary].freeze
 
