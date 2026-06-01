@@ -139,17 +139,25 @@ class PostStreamWorker
     report
   end
 
+  # BUG-TI-SIGNAL-BREAKDOWN (2026-06-01): read signals from latest TIH.signal_breakdown
+  # JSON column. The `signals` PG table is dead-write since TrustIndex::Engine refactor;
+  # TiSignal.where lookups returned 0 rows → post-stream reports stored an empty summary.
+  # Same fix pattern as Trust::ShowService#signal_breakdown_for_stream.
   def build_signals_summary(stream)
-    TiSignal.where(stream_id: stream.id)
-            .select("DISTINCT ON (signal_type) signal_type, value, confidence, weight_in_ti")
-            .order(:signal_type, timestamp: :desc)
-            .each_with_object({}) do |sig, summary|
-              summary[sig.signal_type] = {
-                value: sig.value.to_f,
-                confidence: sig.confidence&.to_f,
-                weight: sig.weight_in_ti&.to_f
-              }
-            end
+    tih = TrustIndexHistory.where(stream_id: stream.id).order(calculated_at: :desc).first
+    return {} unless tih
+
+    breakdown = tih.signal_breakdown
+    return {} unless breakdown.is_a?(Hash)
+
+    breakdown.each_with_object({}) do |(signal_type, data), summary|
+      next unless data.is_a?(Hash)
+      summary[signal_type] = {
+        value: data["value"]&.to_f,
+        confidence: data["confidence"]&.to_f,
+        weight: data["weight"]&.to_f
+      }
+    end
   end
 
   def schedule_expiring_warning(stream)

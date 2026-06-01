@@ -59,6 +59,24 @@ RSpec.describe "Trust API", type: :request do
       expect(data["is_live"]).to be true
     end
 
+    # BUG-TI-SIGNAL-BREAKDOWN regression guard (2026-06-01): signal_breakdown MUST contain
+    # the signals from TIH.signal_breakdown JSON column (was always [] due to TiSignal table
+    # dead-write since TrustIndex::Engine refactor — extension drill_down panel empty).
+    it "populates signal_breakdown array from TIH.signal_breakdown JSON column for Free + live" do
+      create(:stream, channel: channel, started_at: 30.minutes.ago, ended_at: nil)
+
+      get "/api/v1/channels/#{channel.id}/trust", headers: headers_free
+
+      data = response.parsed_body["data"]
+      breakdown = data["signal_breakdown"]
+      expect(breakdown).to be_an(Array)
+      expect(breakdown).not_to be_empty
+      auth_ratio = breakdown.find { |s| s["type"] == "auth_ratio" }
+      expect(auth_ratio).to be_present
+      expect(auth_ratio["value"]).to eq(0.15)
+      expect(auth_ratio["confidence"]).to eq(0.9)
+    end
+
     # TC-004: Free expired → headline + expired flag
     it "returns headline with expired flag for Free when window closed" do
       # All streams ended > 18h ago
