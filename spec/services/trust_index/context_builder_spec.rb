@@ -98,4 +98,58 @@ RSpec.describe TrustIndex::ContextBuilder do
     context = described_class.build(stream)
     expect(context[:stream_duration_min]).to be_between(59, 61)
   end
+
+  # BUG-SCW-CROSS-CHANNEL (2026-06-02): fetch_cross_channel has two paths.
+  #   - Flipper OFF (default): legacy CH `cross_channel` query (24h scan — preserved as fallback).
+  #   - Flipper ON: CH `stream_chatters` (pick 500) + CrossChannelDigest.bulk_lookup (PG, ~5ms).
+  describe "fetch_cross_channel (BUG-SCW-CROSS-CHANNEL digest path)" do
+    context "when Flipper :cross_channel_digest is OFF" do
+      before { allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(false) }
+
+      it "delegates to the legacy CH cross_channel scan" do
+        expect(Clickhouse::ChatQueries).to receive(:cross_channel)
+          .with(stream, instance_of(ActiveSupport::TimeWithZone))
+          .and_return("alice" => 3)
+        expect(Clickhouse::ChatQueries).not_to receive(:stream_chatters)
+        expect(CrossChannelDigest).not_to receive(:bulk_lookup)
+
+        context = described_class.build(stream)
+        expect(context[:cross_channel_counts]).to eq("alice" => 3)
+      end
+    end
+
+    context "when Flipper :cross_channel_digest is ON" do
+      before { allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(true) }
+
+      it "uses CH stream_chatters + PG digest bulk_lookup (no 24h CH scan)" do
+        CrossChannelDigest.upsert_all([
+          { username: "alice", distinct_channels_24h: 4, refreshed_at: Time.current },
+          { username: "bob",   distinct_channels_24h: 2, refreshed_at: Time.current }
+        ], unique_by: :username)
+
+        expect(Clickhouse::ChatQueries).to receive(:stream_chatters).with(stream).and_return(%w[alice bob])
+        expect(Clickhouse::ChatQueries).not_to receive(:cross_channel)
+
+        context = described_class.build(stream)
+        expect(context[:cross_channel_counts]).to eq("alice" => 4, "bob" => 2)
+      end
+
+      it "returns {} when CH returns no chatters (no PG lookup attempted)" do
+        expect(Clickhouse::ChatQueries).to receive(:stream_chatters).with(stream).and_return([])
+        expect(CrossChannelDigest).not_to receive(:bulk_lookup)
+
+        context = described_class.build(stream)
+        expect(context[:cross_channel_counts]).to eq({})
+      end
+
+      it "returns {} (and logs) when the PG lookup raises StatementInvalid (graceful fallback)" do
+        allow(Clickhouse::ChatQueries).to receive(:stream_chatters).and_return(%w[alice])
+        allow(CrossChannelDigest).to receive(:bulk_lookup).and_raise(ActiveRecord::StatementInvalid.new("boom"))
+        expect(Rails.logger).to receive(:warn).with(/cross_channel digest lookup failed/)
+
+        context = described_class.build(stream)
+        expect(context[:cross_channel_counts]).to eq({})
+      end
+    end
+  end
 end

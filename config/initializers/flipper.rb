@@ -144,9 +144,13 @@ module FlipperDefaults
     billing_auto_subscription_creation: "BUG-012", # Dev/staging only: ChannelsController#track
     # auto-creates Subscription if missing. Production: flag OFF — Subscription must pre-exist
     # (payment provider webhook creates it). Prevents masking missing billing integration.
-    accessory_auto_remediation: "BUG-010 PR3" # Kill switch для AutoRemediation::TriggerService
+    accessory_auto_remediation: "BUG-010 PR3", # Kill switch для AutoRemediation::TriggerService
     # GitHub workflow_dispatch. Default OFF — operators enable через
     # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.
+    cross_channel_digest: "BUG-SCW-CROSS-CHANNEL" # CrossChannelDigestRefreshWorker + ContextBuilder
+    # short-circuit (read digest table instead of CH 24h scan). OFF by default — enable per-env
+    # after the worker has populated the digest at least once (cron */5 min) and DV confirms
+    # SCW latency drop. Toggling OFF reverts ContextBuilder to the original CH path.
   }.freeze
 end
 

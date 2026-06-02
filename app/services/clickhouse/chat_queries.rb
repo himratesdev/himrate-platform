@@ -79,16 +79,13 @@ module Clickhouse
     # the 24h edge). RAW scan (not an MV) so the window is exact (0-divergence vs PG); uniqExact
     # matches PG's COUNT(DISTINCT). ORDER BY username + LIMIT picks the same deterministic 500 as
     # the PG path.
+    #
+    # BUG-SCW-CROSS-CHANNEL (2026-06-02): kept as the fallback path when Flipper[:cross_channel_digest]
+    # is OFF (or a deploy-rollback). The hot path is now ContextBuilder → CrossChannelDigest.bulk_lookup
+    # (one PG SELECT instead of a 24h CH scan); see app/services/trust_index/context_builder.rb.
     def cross_channel(stream, since)
       since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
-      username_rows = Clickhouse.client.select(<<~SQL)
-        SELECT DISTINCT username
-        FROM chat_messages
-        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
-        ORDER BY username
-        LIMIT #{CROSS_CHANNEL_CHATTER_LIMIT}
-      SQL
-      usernames = username_rows.map { |r| r["username"] }
+      usernames = stream_chatters(stream)
       return {} if usernames.empty?
 
       quoted = usernames.map { |u| "'#{escape_string_literal(u)}'" }.join(",")
@@ -103,6 +100,25 @@ module Clickhouse
     rescue Clickhouse::Error => e
       Rails.logger.warn("Clickhouse::ChatQueries: cross_channel failed (#{e.class})")
       {}
+    end
+
+    # Pick the deterministic 500 usernames who posted in this stream (mirrors the q1 username
+    # selection that `cross_channel` used to run inline). Extracted so the digest-backed path
+    # (BUG-SCW-CROSS-CHANNEL) can share the same chatter set without re-running the join-style
+    # second query — ContextBuilder calls this on the hot path and then looks up the count via
+    # CrossChannelDigest.bulk_lookup.
+    def stream_chatters(stream)
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT DISTINCT username
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
+        ORDER BY username
+        LIMIT #{CROSS_CHANNEL_CHATTER_LIMIT}
+      SQL
+      rows.map { |r| r["username"] }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: stream_chatters failed (#{e.class})")
+      []
     end
 
     # ClickHouse string-literal escape: backslash first (CH single-quoted strings honor C-style
