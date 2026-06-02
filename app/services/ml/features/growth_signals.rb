@@ -2,15 +2,30 @@
 
 # EPIC ML-FEATURE-EXTRACTOR PR5 — Growth signals (4 features) per BFT 15_ML-Pipeline.md §3.2.
 #
-# Data source: `FollowerSnapshot` (channel-level daily snapshot from `FollowerSnapshotWorker`)
-# + `Stream` (channel lifetime) for attribution attribution. RaidAttribution lives inside
-# Stream — `belongs_to :stream` — so stream-presence in the window implicitly covers the raid
-# case. Conversely a spike on a day without ANY stream is unattributed (no organic surface
-# to credit the followers to — characteristic of purchased growth).
+# Data source: `FollowerSnapshot` (channel-level snapshot from `FollowerSnapshotWorker`,
+# nominally daily but the worker tolerates skipped days under backlog — see M2 note below)
+# + `Stream` (channel lifetime) for attribution. RaidAttribution lives inside Stream —
+# `belongs_to :stream` — so stream-presence in the window implicitly covers the raid case.
+# Conversely a spike on a day without ANY stream is unattributed (no organic surface to
+# credit the followers to — characteristic of purchased growth).
 #
 # Window: 90 days (matches `FollowerSnapshotWorker` retention assumption and `WINDOW = 90.days`
 # convention from BFT §3.2 Growth). Per-feature cold-start: returns nil if source data
 # insufficient, records reason in `insufficient_data_reasons` for observability.
+#
+# CR-253 M1 (follow-up — NOT fixed in this PR per reviewer guidance): `WINDOW.ago` anchors
+# to call-time, not `@stream.ended_at`. Live extraction path is fine (worker fires immediately
+# from PostStreamWorker, queue latency bounded), but training-time backfill / schema_version
+# bumps will compute against a different window for the same (stream_id, version) — breaks
+# determinism. EPIC-wide concern (PR2-PR4 use the same pattern); separate cleanup PR will
+# anchor every windowed source to `@stream.ended_at || @stream.started_at`.
+#
+# CR-253 M2: "daily" in `daily_deltas` is shorthand for consecutive-snapshot delta — the
+# `FollowerSnapshotWorker` cadence (`STALE_AFTER = 1.day`, queue `:monitoring`, capped at
+# `MAX_PER_RUN = 200`) targets one row per channel per day, but tolerates skipped days for
+# backlogged channels. So a single delta typically spans 1 day, occasionally 2-5. LightGBM
+# tolerates this noise; if we ever want time-normalized growth rate we'd divide by the actual
+# gap-in-seconds. Constants kept as `MIN_SNAPSHOTS_FOR_*` (snapshots, not days) для clarity.
 #
 # Math choices:
 # - `follower_growth_cv_90d` = std/|mean| of daily deltas — captures volatility independent
@@ -58,13 +73,19 @@ module Ml
           .pluck(:timestamp, :followers_count)
       end
 
-      # Consecutive deltas. size = follower_snapshots.size - 1.
+      # Consecutive-snapshot deltas (NOT calendar-day deltas — see CR-253 M2 note above).
+      # size = follower_snapshots.size - 1.
       def daily_deltas
         @daily_deltas ||= follower_snapshots.each_cons(2).map { |(_, c0), (_, c1)| c1 - c0 }
       end
 
       # All stream starts in the 90d window — used for attributed_spike_ratio AND
       # growth_engagement_correlation. Pluck once; both consumers iterate the array.
+      #
+      # CR-253 L3: includes `@stream` itself (the just-ended stream is an engagement event
+      # in the most recent snapshot interval — intentional, NOT a bug). We do NOT
+      # `.where.not(id: @stream.id)` это out: the channel WAS streaming when the latest
+      # follower spike landed, that's exactly the attribution semantics we want.
       def stream_starts
         @stream_starts ||= Stream
           .for_channel(@stream.channel_id)
@@ -122,9 +143,14 @@ module Ml
         std = Math.sqrt(variance)
         threshold = mean + SPIKE_THRESHOLD_SIGMA * std
 
-        # Collect spike intervals as (t0, t1) bounds — keep both bounds for stream attribution.
-        spike_intervals = follower_snapshots.each_cons(2).with_index.filter_map { |((t0, _), (t1, _)), i|
-          [ t0, t1 ] if daily_deltas[i] > threshold
+        # CR-253 L4: split the dense `each_cons.with_index.filter_map { |((t0,_),(t1,_)),i| }`
+        # into a clearer two-step build — first pair snapshot intervals to their deltas,
+        # then filter by threshold. CR-253 L2 note: mean+2σ is computed over the SAME delta
+        # series — for a series with one isolated jump the threshold gets pulled up by the
+        # spike itself; that's standard practice for σ-based detectors.
+        interval_to_delta = follower_snapshots.each_cons(2).zip(daily_deltas)
+        spike_intervals = interval_to_delta.filter_map { |((t0, _), (t1, _)), delta|
+          [ t0, t1 ] if delta > threshold
         }
 
         if spike_intervals.empty?
