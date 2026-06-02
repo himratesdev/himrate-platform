@@ -132,14 +132,15 @@ RSpec.describe Ml::Features::GrowthSignals do
       expect(ratio).to eq(1.0)
     end
 
-    it "without any stream → attributed_spike_ratio = 0.0" do
-      # CR-256 P1: re-seed snapshots anchored на новый stream_no_history.ended_at, иначе
-      # all 8 snapshots fall after the new stream's extraction_anchor and get excluded
-      # by the upper-bound filter → window has 0 deltas → nil + insufficient_snapshots.
+    it "without any stream in spike interval → attributed_spike_ratio = 0.0" do
+      # CR-256 P1: a stream whose own started_at falls in the spike interval would still
+      # attribute the spike to itself. Anchor stream_no_history.started_at 10 days BEFORE
+      # its ended_at — its only stream is far before the spike interval [ended_at - 1d, ended_at],
+      # so spike has no attributing stream → ratio = 0/1 = 0.0.
       Stream.where(channel: channel).destroy_all
       FollowerSnapshot.where(channel: channel).delete_all
       stream_no_history = create(:stream, channel: channel,
-                                 started_at: 2.hours.ago, ended_at: 1.hour.ago)
+                                 started_at: 10.days.ago, ended_at: 1.hour.ago)
       counts = [ 1000, 1005, 1010, 1015, 1020, 1025, 1030, 1530 ]
       counts.reverse.each_with_index do |count, days_ago|
         FollowerSnapshot.create!(channel: channel,
