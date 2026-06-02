@@ -61,6 +61,44 @@ RSpec.describe Ml::Features::AccountSignals do
     end
   end
 
+  describe "#call (profiles exist but all twitch_created_at nil — CR-251 N3)" do
+    # M1 (iter-2) introduced a new reachable branch: cached profiles exist (passes
+    # insufficient_account_data_reason ladder) but ALL have nil twitch_created_at.
+    # Age-based features fall into "no_profiles_with_creation_date" reason.
+    it "returns nil for age/Gini with 'no_profiles_with_creation_date' reason" do
+      15.times do |i|
+        login = "ndchatter_#{i}"
+        create(:per_user_bot_score, stream: stream, username: login)
+        ChatterProfile.create!(
+          login: login, twitch_user_id: "u_#{i}",
+          twitch_created_at: nil, # пробел в кеше
+          followers_count: 10, follows_count: 5, fetched_at: Time.current
+        )
+      end
+
+      result = account.call
+      expect(result[:avg_account_age_days]).to be_nil
+      expect(result[:account_creation_date_clustering_gini]).to be_nil
+      expect(account.insufficient_data_reasons[:avg_account_age_days]).to eq("no_profiles_with_creation_date")
+      expect(account.insufficient_data_reasons[:account_creation_date_clustering_gini]).to eq("no_profiles_with_creation_date")
+    end
+
+    it "profile_completeness_ratio still computes (doesn't depend on creation date)" do
+      15.times do |i|
+        login = "ndchatter_pc_#{i}"
+        create(:per_user_bot_score, stream: stream, username: login)
+        ChatterProfile.create!(
+          login: login, twitch_user_id: "u_pc_#{i}",
+          twitch_created_at: nil,
+          followers_count: 10, follows_count: 5, fetched_at: Time.current
+        )
+      end
+
+      result = account.call
+      expect(result[:profile_completeness_ratio]).to eq(1.0)
+    end
+  end
+
   describe "#call (happy-path — ≥10 cached profiles)" do
     before { seed_chatters(15) }
 

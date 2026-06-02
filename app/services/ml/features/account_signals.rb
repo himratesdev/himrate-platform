@@ -34,9 +34,10 @@ module Ml
 
       private
 
-      # Stream's chatter usernames from PerUserBotScore. CR-251 N2: the (stream_id, username)
-      # UNIQUE constraint (migration 20260423112233_add_unique_index_per_user_bot_scores) means
-      # pluck already returns distinct values — no extra `.distinct` needed.
+      # Stream's chatter usernames from PerUserBotScore. CR-251 N2/N4: the (stream_id, username)
+      # UNIQUE constraint (migration `20260330200001_add_classification_to_per_user_bot_scores`,
+      # TASK-027 — `idx_bot_scores_stream_username`) means pluck already returns distinct values
+      # — no extra `.distinct` needed.
       def stream_chatter_usernames
         @stream_chatter_usernames ||= @stream.per_user_bot_scores.pluck(:username).compact
       end
