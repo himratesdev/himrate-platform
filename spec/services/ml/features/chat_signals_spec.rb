@@ -82,6 +82,37 @@ RSpec.describe Ml::Features::ChatSignals do
     end
   end
 
+  # CR-252 S1 (PR4 hotfix): regression test для MAX_INTER_MESSAGE_INTERVAL_SEC cap.
+  # DV PR #251 caught real value 9.27M sec overflowing numeric(10,3). Hotfix adds 24h
+  # sanity cap in service layer + widens column. Without this regression test, a future
+  # refactor could silently drop the cap и reintroduce overflow path.
+  describe "#call (outlier cap — PR4 hotfix regression)" do
+    before do
+      allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).with(stream).and_return(
+        total_messages: 100, unique_messages: 50, unique_chatters: 20,
+        messages_with_emotes: 0, single_message_chatters: 5,
+        message_entropy_bits: 4.0,
+        mean_inter_msg_sec: 9_272_712.0, # actual persisted MAX from staging — pre-cap overflows numeric(10,3)
+        std_inter_msg_sec: 100.0
+      )
+    end
+
+    it "caps avg_inter_message_interval_sec at MAX_INTER_MESSAGE_INTERVAL_SEC (24h)" do
+      expect(chat.call[:avg_inter_message_interval_sec]).to eq(described_class::MAX_INTER_MESSAGE_INTERVAL_SEC.to_f)
+    end
+
+    it "preserves sub-cap values unchanged" do
+      allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).with(stream).and_return(
+        total_messages: 100, unique_messages: 50, unique_chatters: 20,
+        messages_with_emotes: 0, single_message_chatters: 5,
+        message_entropy_bits: 4.0,
+        mean_inter_msg_sec: 3600.5, # 1h — well below 24h cap
+        std_inter_msg_sec: 100.0
+      )
+      expect(chat.call[:avg_inter_message_interval_sec]).to eq(3600.5)
+    end
+  end
+
   describe "#call (insufficient — below MIN_MESSAGES_FOR_RATIO_FEATURES)" do
     before do
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).with(stream).and_return(

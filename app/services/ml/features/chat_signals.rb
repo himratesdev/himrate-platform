@@ -16,6 +16,12 @@ module Ml
     class ChatSignals
       MIN_MESSAGES_FOR_RATIO_FEATURES = 50 # below ~50 privmsgs the distribution-based stats are noise
       MIN_MESSAGES_FOR_TIMING = 10         # need ≥10 messages for meaningful inter-message stats
+      # Sanity cap для inter-message timing — anything beyond 24h is a data anomaly
+      # (offline→online cycle splice, sparse niche stream, CH timestamp glitch).
+      # PR4 hotfix: persisted max was 9.27M sec ≈ 107 days, overflowing numeric(10,3).
+      # Widened column to numeric(14,3) in migration 20260602010000; service caps here
+      # defensively так что raw outliers don't poison downstream ML training.
+      MAX_INTER_MESSAGE_INTERVAL_SEC = 86_400 # 24h
 
       def initialize(stream)
         @stream = stream
@@ -111,7 +117,8 @@ module Ml
         val = agg[:mean_inter_msg_sec]
         return record_insufficient(:avg_inter_message_interval_sec, "ch_returned_nil_mean") if val.nil?
 
-        val.round(3)
+        # PR4 hotfix: cap at 24h sanity bound (see MAX_INTER_MESSAGE_INTERVAL_SEC docstring).
+        [ val, MAX_INTER_MESSAGE_INTERVAL_SEC.to_f ].min.round(3)
       end
 
       # CV of inter-message intervals = std / mean. Low CV = regular cadence (bot-like);
