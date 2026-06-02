@@ -64,11 +64,14 @@ module Ml
       # Last MAX_STREAM_HISTORY trust_index_scores (stream-scoped — calculated_at on stream-end TI).
       # `TrustIndexHistory.stream_id` is nullable (TI can be channel-scoped too); we pick only
       # stream-scoped rows для stream-to-stream stability, not channel-aggregate noise.
+      # CR-256 P1: both upper AND lower bounds anchored — `calculated_at BETWEEN window_start
+      # AND extraction_anchor`. Without the upper bound a backfill replay would pick up TIH
+      # rows for streams completed after `@stream.ended_at`.
       def trust_index_scores
         @trust_index_scores ||= TrustIndexHistory
           .for_channel(@stream.channel_id)
           .where.not(stream_id: nil)
-          .where("calculated_at >= ?", window_start)
+          .where("calculated_at >= ? AND calculated_at <= ?", window_start, extraction_anchor)
           .order(calculated_at: :desc)
           .limit(MAX_STREAM_HISTORY)
           .pluck(:trust_index_score)
@@ -77,11 +80,12 @@ module Ml
 
       # Last MAX_STREAM_HISTORY completed Stream rows for the channel (ended_at IS NOT NULL,
       # within 90d of extraction anchor). Ordered most-recent-first.
+      # CR-256 P1: both upper AND lower bounds anchored.
       def recent_streams
         @recent_streams ||= Stream
           .for_channel(@stream.channel_id)
           .where.not(ended_at: nil)
-          .where("ended_at >= ?", window_start)
+          .where("ended_at >= ? AND ended_at <= ?", window_start, extraction_anchor)
           .order(ended_at: :desc)
           .limit(MAX_STREAM_HISTORY)
           .to_a

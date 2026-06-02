@@ -88,8 +88,7 @@ module Ml
         profiles = profiles_with_creation_date
         return record_insufficient(:avg_account_age_days, "no_profiles_with_creation_date") if profiles.empty?
 
-        anchor = extraction_anchor
-        ages_days = profiles.map { |p| ((anchor - p.twitch_created_at) / 1.day).to_f }
+        ages_days = profiles.map { |p| ((extraction_anchor - p.twitch_created_at) / 1.day).to_f }
         (ages_days.sum / ages_days.size).round(2)
       end
 
@@ -103,8 +102,7 @@ module Ml
         profiles = profiles_with_creation_date
         return record_insufficient(:account_creation_date_clustering_gini, "no_profiles_with_creation_date") if profiles.empty?
 
-        anchor = extraction_anchor
-        ages_days = profiles.map { |p| ((anchor - p.twitch_created_at) / 1.day).to_f }.sort
+        ages_days = profiles.map { |p| ((extraction_anchor - p.twitch_created_at) / 1.day).to_f }.sort
         gini_coefficient(ages_days).round(4)
       end
 
@@ -136,7 +134,13 @@ module Ml
 
         # Channel doesn't declare `has_many :follower_snapshots` (FollowerSnapshot has the
         # belongs_to :channel inverse only); direct query is the canonical lookup.
-        latest_snapshot = FollowerSnapshot.where(channel_id: @stream.channel_id).order(timestamp: :desc).first
+        # CR-256 P1: anchor to "latest at-or-before extraction_anchor", not global latest —
+        # otherwise replay-time backfill picks up newer snapshots and divides by a different
+        # denominator than the immediate post-stream run.
+        latest_snapshot = FollowerSnapshot
+                            .where(channel_id: @stream.channel_id)
+                            .where("timestamp <= ?", extraction_anchor)
+                            .order(timestamp: :desc).first
         return record_insufficient(:engagement_participation_ratio, "no_follower_snapshot") if latest_snapshot.nil?
 
         followers = latest_snapshot.followers_count.to_i

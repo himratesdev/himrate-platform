@@ -58,45 +58,134 @@ RSpec.describe "ML feature extraction determinism (CR-253 M1)" do
     end
   end
 
+  # CR-256 P3 (spec hygiene): use `around { |ex| travel { ex.run } }` instead of bare
+  # `travel … travel_back` — guarantees clock reset even if an assertion raises mid-block.
+
   it "GrowthSignals: features identical between immediate run and +5h-later run" do
     immediate = Ml::Features::GrowthSignals.new(stream).call
-    travel 5.hours
-    later = Ml::Features::GrowthSignals.new(stream).call
-    travel_back
-    expect(later).to eq(immediate), "growth features drifted: immediate=#{immediate.inspect}, +5h=#{later.inspect}"
+    travel(5.hours) do
+      later = Ml::Features::GrowthSignals.new(stream).call
+      expect(later).to eq(immediate), "growth features drifted: immediate=#{immediate.inspect}, +5h=#{later.inspect}"
+    end
   end
 
   it "StabilitySignals: features identical between immediate run and +5h-later run" do
     immediate = Ml::Features::StabilitySignals.new(stream).call
-    travel 5.hours
-    later = Ml::Features::StabilitySignals.new(stream).call
-    travel_back
-    expect(later).to eq(immediate), "stability features drifted: immediate=#{immediate.inspect}, +5h=#{later.inspect}"
+    travel(5.hours) do
+      later = Ml::Features::StabilitySignals.new(stream).call
+      expect(later).to eq(immediate), "stability features drifted: immediate=#{immediate.inspect}, +5h=#{later.inspect}"
+    end
   end
 
   it "MaturitySignals: features identical between immediate run and +5h-later run" do
     immediate = Ml::Features::MaturitySignals.new(stream).call
-    travel 5.hours
-    later = Ml::Features::MaturitySignals.new(stream).call
-    travel_back
-    expect(later).to eq(immediate), "maturity features drifted: immediate=#{immediate.inspect}, +5h=#{later.inspect}"
+    travel(5.hours) do
+      later = Ml::Features::MaturitySignals.new(stream).call
+      expect(later).to eq(immediate), "maturity features drifted: immediate=#{immediate.inspect}, +5h=#{later.inspect}"
+    end
   end
 
   it "AccountSignals: features identical between immediate run and +5h-later run" do
     immediate = Ml::Features::AccountSignals.new(stream).call
-    travel 5.hours
-    later = Ml::Features::AccountSignals.new(stream).call
-    travel_back
-    expect(later).to eq(immediate), "account features drifted: immediate=#{immediate.inspect}, +5h=#{later.inspect}"
+    travel(5.hours) do
+      later = Ml::Features::AccountSignals.new(stream).call
+      expect(later).to eq(immediate), "account features drifted: immediate=#{immediate.inspect}, +5h=#{later.inspect}"
+    end
   end
 
   it "extreme delayed-queue scenario: same features after 30 days replay" do
     immediate = Ml::Features::MaturitySignals.new(stream).call
-    travel 30.days
-    delayed_replay = Ml::Features::MaturitySignals.new(stream).call
-    travel_back
-    expect(delayed_replay[:account_age_days_capped]).to eq(immediate[:account_age_days_capped]),
-           "account_age_days_capped drifted by 30d replay (anchor not applied): " \
-           "immediate=#{immediate[:account_age_days_capped]}, +30d=#{delayed_replay[:account_age_days_capped]}"
+    travel(30.days) do
+      delayed_replay = Ml::Features::MaturitySignals.new(stream).call
+      expect(delayed_replay[:account_age_days_capped]).to eq(immediate[:account_age_days_capped]),
+             "account_age_days_capped drifted by 30d replay (anchor not applied): " \
+             "immediate=#{immediate[:account_age_days_capped]}, +30d=#{delayed_replay[:account_age_days_capped]}"
+    end
+  end
+
+  # CR-256 P1 spec coverage: insert source rows AFTER `stream.ended_at` between immediate
+  # and replay — full upper-bound anchoring must EXCLUDE these from the window.
+  describe "upper-bound anchoring — post-anchor source rows excluded on replay" do
+    it "GrowthSignals: post-anchor FollowerSnapshot does NOT change features" do
+      immediate = Ml::Features::GrowthSignals.new(stream).call
+      # Create a new snapshot AFTER stream.ended_at — represents data that didn't exist
+      # at extraction time. Replay must ignore it.
+      create(:follower_snapshot,
+             channel: channel,
+             followers_count: 99_999, # outlier value — would visibly shift CV / churn if leaked
+             timestamp: stream.ended_at + 2.hours)
+      travel(5.hours) do
+        replay = Ml::Features::GrowthSignals.new(stream).call
+        expect(replay).to eq(immediate),
+               "growth features leaked post-anchor FollowerSnapshot — replay=#{replay.inspect}"
+      end
+    end
+
+    it "StabilitySignals: post-anchor TIH does NOT change features" do
+      immediate = Ml::Features::StabilitySignals.new(stream).call
+      future_stream = create(:stream, channel: channel,
+                             started_at: stream.ended_at + 1.hour,
+                             ended_at: stream.ended_at + 2.hours)
+      TrustIndexHistory.create!(
+        channel: channel, stream: future_stream,
+        trust_index_score: 10, # outlier — would shift std if leaked
+        calculated_at: stream.ended_at + 2.hours
+      )
+      travel(5.hours) do
+        replay = Ml::Features::StabilitySignals.new(stream).call
+        expect(replay).to eq(immediate),
+               "stability features leaked post-anchor TIH — replay=#{replay.inspect}"
+      end
+    end
+
+    it "MaturitySignals: post-anchor completed Stream does NOT change features" do
+      immediate = Ml::Features::MaturitySignals.new(stream).call
+      # New completed stream after our @stream — would inflate total_streams_capped / hours
+      # without the upper-bound filter on completed_stream_durations_sec.
+      create(:stream, channel: channel,
+             started_at: stream.ended_at + 1.hour,
+             ended_at: stream.ended_at + 2.hours)
+      travel(5.hours) do
+        replay = Ml::Features::MaturitySignals.new(stream).call
+        expect(replay).to eq(immediate),
+               "maturity features leaked post-anchor stream — replay=#{replay.inspect}"
+      end
+    end
+
+    it "AccountSignals.engagement_participation_ratio: post-anchor FollowerSnapshot does NOT shift denominator" do
+      immediate = Ml::Features::AccountSignals.new(stream).call[:engagement_participation_ratio]
+      # New snapshot with 10× followers — would invalidate the original-time engagement ratio.
+      create(:follower_snapshot,
+             channel: channel,
+             followers_count: (stream.channel.follower_snapshots.maximum(:followers_count) || 1000) * 10,
+             timestamp: stream.ended_at + 2.hours)
+      travel(5.hours) do
+        replay = Ml::Features::AccountSignals.new(stream).call[:engagement_participation_ratio]
+        expect(replay).to eq(immediate),
+               "engagement_participation_ratio leaked post-anchor FollowerSnapshot — " \
+               "immediate=#{immediate.inspect}, replay=#{replay.inspect}"
+      end
+    end
+  end
+
+  # CR-256 P2 (scope clarification): time-anchor determinism does NOT cover data-side
+  # mutability of `ChatterProfile.{followers,follows}_count` (refreshed by
+  # `ChatterProfileRefreshWorker` on a staleness cadence). A backfill weeks later sees the
+  # CURRENT cached values for the same set of chatters. Snapshotting these on-extract
+  # requires per-stream column extension on `stream_feature_vectors` — separate follow-up
+  # ticket. This spec documents the boundary, not the fix.
+  describe "P2 — data-side mutability boundary (informational, not a regression)" do
+    it "documents that ChatterProfile mutation can drift profile_completeness_ratio" do
+      immediate = Ml::Features::AccountSignals.new(stream).call[:profile_completeness_ratio]
+      # Simulate worker refreshing ChatterProfile cache with stale-flipped-to-empty values.
+      ChatterProfile.where(login: stream.per_user_bot_scores.pluck(:username))
+                    .update_all(followers_count: 0, follows_count: 0)
+      replay = Ml::Features::AccountSignals.new(stream).call[:profile_completeness_ratio]
+      # Document: time anchor doesn't save us here — values legitimately moved.
+      expect(replay).not_to eq(immediate),
+             "expected demonstration of P2 mutability drift — if this fails the data " \
+             "model changed (e.g. per-stream snapshot extension landed) and this spec " \
+             "should be updated"
+    end
   end
 end

@@ -78,10 +78,13 @@ module Ml
       end
 
       # Ordered (timestamp, count) tuples over the 90d window — anchored to `@stream.ended_at`.
+      # CR-256 P1: both upper AND lower bounds anchored — `timestamp BETWEEN window_start AND
+      # extraction_anchor`. Without the upper bound, a replay-time backfill could pick up
+      # FollowerSnapshot rows created after the stream ended.
       def follower_snapshots
         @follower_snapshots ||= FollowerSnapshot
           .where(channel_id: @stream.channel_id)
-          .where("timestamp >= ?", window_start)
+          .where("timestamp >= ? AND timestamp <= ?", window_start, extraction_anchor)
           .order(:timestamp)
           .pluck(:timestamp, :followers_count)
       end
@@ -99,10 +102,13 @@ module Ml
       # in the most recent snapshot interval — intentional, NOT a bug). We do NOT
       # `.where.not(id: @stream.id)` это out: the channel WAS streaming when the latest
       # follower spike landed, that's exactly the attribution semantics we want.
+      # CR-256 P1: both bounds anchored — also `started_at <= extraction_anchor` so a stream
+      # that began after `@stream.ended_at` (multi-week backfill replay scenario) isn't pulled
+      # into spike attribution or engagement correlation.
       def stream_starts
         @stream_starts ||= Stream
           .for_channel(@stream.channel_id)
-          .where("started_at >= ?", window_start)
+          .where("started_at >= ? AND started_at <= ?", window_start, extraction_anchor)
           .pluck(:started_at)
       end
 

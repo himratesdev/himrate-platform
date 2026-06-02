@@ -71,9 +71,15 @@ module Ml
       # The slice is bounded by stream-history-of-channel — same order of magnitude as PR6's
       # `recent_streams` pluck (≤MAX_STREAM_HISTORY in steady-state for active channels;
       # potentially larger for back-catalog channels but still single-channel-bounded).
+      #
+      # CR-256 P1: anchor the upper bound to `extraction_anchor` — `total_streams_capped` and
+      # `total_hours_capped` reflect the channel's history AT END-OF-BROADCAST, not at replay
+      # time. Without this filter, a 30-day-later backfill would over-count streams completed
+      # in the interval.
       def completed_stream_durations_sec
         @completed_stream_durations_sec ||= channel.streams
           .where.not(ended_at: nil)
+          .where("ended_at <= ?", extraction_anchor)
           .pluck(:started_at, :ended_at)
           .map { |started_at, ended_at| (ended_at - started_at).to_f }
       end
