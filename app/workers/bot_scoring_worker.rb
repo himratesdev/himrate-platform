@@ -118,11 +118,12 @@ class BotScoringWorker
 
   # Per-user CV timing + Shannon entropy + custom-emote signal.
   #
-  # PR #259 (2026-06-02 perf-debt): three separate CH scans (chatter_timestamps + _messages +
-  # _emotes) consolidated into ONE via `chatter_raw_data`. CH benchmark 2026-06-02 measured each
-  # of the old calls at 549-2084ms (full-scan with column projection); the three combined ate
-  # ~1.6s out of typical 3-7s BSW#perform. Consolidated scan returns same per-user arrays in a
-  # single round-trip with one query plan + one disk pass.
+  # PR #261 (2026-06-02 perf-debt) consolidated three separate CH full-scans into ONE via
+  # `chatter_raw_data`. The pre-261 implementation (three methods on ChatQueries — timestamps,
+  # messages, emotes — each 549-2084ms) was the heaviest portion of BSW#perform (~1.6s of 3-7s
+  # typical). Consolidated scan returns same per-user arrays in a single round-trip / one disk
+  # pass. The three legacy methods were removed entirely in PR #263 (Phase 3 H) — no callers
+  # remained after #261 cutover.
   def enrich_chat_stats(stream, chatters)
     raw = Clickhouse::ChatQueries.chatter_raw_data(stream)
     raw.each do |username, data|

@@ -218,65 +218,6 @@ RSpec.describe Clickhouse::ChatQueries do
     end
   end
 
-  describe ".chatter_timestamps" do
-    let(:stream) { instance_double(Stream, id: stream_id) }
-
-    it "returns Hash { username => [Time, ...] } ordered ascending" do
-      ts_a1 = "2026-05-31 10:00:01"; ts_a2 = "2026-05-31 10:00:05"; ts_b = "2026-05-31 10:00:03"
-      expect(ch).to receive(:select).with(
-        a_string_matching(/SELECT username, timestamp/)
-          .and(a_string_matching(/msg_type = 'privmsg'/))
-          .and(a_string_matching(/username != ''/))
-          .and(a_string_matching(/ORDER BY username, timestamp/))
-      ).and_return([
-                     { "username" => "alice", "timestamp" => ts_a1 },
-                     { "username" => "alice", "timestamp" => ts_a2 },
-                     { "username" => "bob",   "timestamp" => ts_b }
-                   ])
-
-      result = described_class.chatter_timestamps(stream)
-      expect(result.keys).to contain_exactly("alice", "bob")
-      expect(result["alice"].size).to eq(2)
-      expect(result["alice"].first).to be_a(Time)
-    end
-
-    it "returns {} on Clickhouse::Error" do
-      allow(ch).to receive(:select).and_raise(Clickhouse::QueryError, "boom")
-      expect(described_class.chatter_timestamps(stream)).to eq({})
-    end
-  end
-
-  describe ".chatter_messages" do
-    let(:stream) { instance_double(Stream, id: stream_id) }
-
-    it "groups by username with privmsg + non-empty message_text filters" do
-      expect(ch).to receive(:select).with(
-        a_string_matching(/SELECT username, message_text/)
-          .and(a_string_matching(/msg_type = 'privmsg'/))
-          .and(a_string_matching(/username != ''/))
-          .and(a_string_matching(/message_text != ''/))
-      ).and_return([
-                     { "username" => "alice", "message_text" => "hi" },
-                     { "username" => "alice", "message_text" => "bye" }
-                   ])
-
-      expect(described_class.chatter_messages(stream)).to eq("alice" => [ "hi", "bye" ])
-    end
-  end
-
-  describe ".chatter_emotes" do
-    let(:stream) { instance_double(Stream, id: stream_id) }
-
-    it "groups by username with non-empty emotes filter" do
-      expect(ch).to receive(:select).with(
-        a_string_matching(/SELECT username, emotes/)
-          .and(a_string_matching(/emotes != ''/))
-      ).and_return([ { "username" => "alice", "emotes" => "25:0-4/50:6-9" } ])
-
-      expect(described_class.chatter_emotes(stream)).to eq("alice" => [ "25:0-4/50:6-9" ])
-    end
-  end
-
   # PR #259 (2026-06-02 perf-debt): single CH scan returning all 3 per-user arrays
   # (timestamps + messages + emote_strings) — replaces 3 separate full-scans on chat_messages.
   describe ".chatter_raw_data" do

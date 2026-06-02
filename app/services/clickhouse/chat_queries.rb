@@ -217,59 +217,6 @@ module Clickhouse
       {}
     end
 
-    # Mirrors BotScoringWorker#enrich_chat_stats — per-user (username, timestamp) tuples in privmsg
-    # order, used to compute CV timing (std/mean of inter-message intervals). PG path used a heavy
-    # `.pluck.group_by`; this query is identical semantically and the column-store load is trivial
-    # for typical per-stream chat sizes (≤200k messages).
-    #
-    # PR #259 (2026-06-02): preserved as fallback / backwards-compat. Hot path uses
-    # `chatter_raw_data` which folds this query + chatter_messages + chatter_emotes into one
-    # CH scan. Keep this method until callers are confirmed to be solely BSW (then it can be
-    # removed in a follow-up).
-    def chatter_timestamps(stream)
-      validate_stream_uuid!(stream.id)
-      rows = Clickhouse.client.select(<<~SQL)
-        SELECT username, timestamp
-        FROM chat_messages
-        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg' AND username != ''
-        ORDER BY username, timestamp
-      SQL
-      rows.group_by { |r| r["username"] }.transform_values { |pairs| pairs.map { |r| Time.parse("#{r['timestamp']} UTC") } }
-    rescue Clickhouse::Error => e
-      Rails.logger.warn("Clickhouse::ChatQueries: chatter_timestamps failed (#{e.class})")
-      {}
-    end
-
-    # Mirrors BotScoringWorker#enrich_chat_stats — per-user message-text array for Shannon-entropy.
-    def chatter_messages(stream)
-      validate_stream_uuid!(stream.id)
-      rows = Clickhouse.client.select(<<~SQL)
-        SELECT username, message_text
-        FROM chat_messages
-        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
-          AND username != '' AND message_text != ''
-      SQL
-      rows.group_by { |r| r["username"] }.transform_values { |pairs| pairs.map { |r| r["message_text"] } }
-    rescue Clickhouse::Error => e
-      Rails.logger.warn("Clickhouse::ChatQueries: chatter_messages failed (#{e.class})")
-      {}
-    end
-
-    # Mirrors BotScoringWorker#enrich_chat_stats — per-user emotes payload (split count → has_custom_emotes).
-    def chatter_emotes(stream)
-      validate_stream_uuid!(stream.id)
-      rows = Clickhouse.client.select(<<~SQL)
-        SELECT username, emotes
-        FROM chat_messages
-        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
-          AND username != '' AND emotes != ''
-      SQL
-      rows.group_by { |r| r["username"] }.transform_values { |pairs| pairs.map { |r| r["emotes"] } }
-    rescue Clickhouse::Error => e
-      Rails.logger.warn("Clickhouse::ChatQueries: chatter_emotes failed (#{e.class})")
-      {}
-    end
-
     # Mirrors BotScoringWorker#fetch_cross_channel_counts — { username => distinct_channel_count }
     # over the given window. Differs from ChatQueries.cross_channel above (which takes a stream and
     # picks 500 chatters itself) by accepting a pre-resolved usernames array.
