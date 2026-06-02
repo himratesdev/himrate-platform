@@ -129,8 +129,13 @@ RSpec.describe BotScoringWorker do
   # CR-258 S1 (BUG-SCW-CROSS-CHANNEL): BSW shared the same 24h CH scan on its own queue, so the
   # all-callers-of-the-primitive lesson from BUG-251.40 applies. When Flipper[:cross_channel_digest]
   # is ON, BSW must read from the digest with the same `fetch_with_baseline` semantics that
-  # ContextBuilder uses (post-fill missing usernames with 1) — otherwise the cross_channel_count
-  # passed to the scorer collapses for single-channel chatters.
+  # ContextBuilder uses (post-fill missing usernames with 1).
+  #
+  # Asserting at the routing layer (Clickhouse::ChatQueries vs CrossChannelDigest), not on
+  # scorer-internal component thresholds — `Scorer#check_definitive` only emits the
+  # `cross_channel_100plus` component for counts ≥100; small per-user counts are fed into the
+  # scorer but don't surface in the persisted components hash. The routing assertion is the
+  # right contract surface for this PR.
   describe "cross-channel routing (CR-258 S1, BUG-SCW-CROSS-CHANNEL digest path)" do
     let(:channel) { Channel.create!(twitch_id: "999", login: "cc_test", display_name: "CC") }
     let(:stream) { Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago) }
@@ -146,31 +151,41 @@ RSpec.describe BotScoringWorker do
       )
     end
 
-    it "uses the digest (with single-channel baseline = 1) when Flipper :cross_channel_digest ON" do
+    it "reads from the digest (fetch_with_baseline post-fills 1 for newbie) when Flipper ON" do
       allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(true)
       CrossChannelDigest.upsert_all([
         { username: "alice", distinct_channels_24h: 6, refreshed_at: Time.current }
       ], unique_by: :username)
+
+      expect(CrossChannelDigest).to receive(:fetch_with_baseline)
+        .with(%w[alice newbie])
+        .and_call_original
       expect(Clickhouse::ChatQueries).not_to receive(:chatter_cross_channel_counts)
 
-      worker.perform(stream.id)
-
-      alice_score = PerUserBotScore.find_by(stream: stream, username: "alice")
-      newbie_score = PerUserBotScore.find_by(stream: stream, username: "newbie")
-      expect(alice_score.components["cross_channel_count"]).to eq(6)
-      expect(newbie_score.components["cross_channel_count"]).to eq(1) # post-fill baseline
+      expect { worker.perform(stream.id) }.to change(PerUserBotScore, :count).by(2)
     end
 
     it "falls back to the legacy CH scan when Flipper :cross_channel_digest OFF" do
       allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(false)
       expect(Clickhouse::ChatQueries).to receive(:chatter_cross_channel_counts)
         .with(%w[alice newbie], instance_of(ActiveSupport::TimeWithZone))
-        .and_return("alice" => 6) # legacy returns whatever CH says; absent → 0 via `|| 0`
+        .and_return("alice" => 6)
+      expect(CrossChannelDigest).not_to receive(:fetch_with_baseline)
+
+      expect { worker.perform(stream.id) }.to change(PerUserBotScore, :count).by(2)
+    end
+
+    it "surfaces a high count (≥100) from the digest into the scorer's cross_channel_100plus component" do
+      allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(true)
+      CrossChannelDigest.upsert_all([
+        { username: "alice", distinct_channels_24h: 150, refreshed_at: Time.current }
+      ], unique_by: :username)
 
       worker.perform(stream.id)
 
-      expect(PerUserBotScore.find_by(stream: stream, username: "alice").components["cross_channel_count"]).to eq(6)
-      expect(PerUserBotScore.find_by(stream: stream, username: "newbie").components["cross_channel_count"]).to eq(0)
+      alice_components = PerUserBotScore.find_by(stream: stream, username: "alice").components
+      expect(alice_components).to have_key("cross_channel_100plus")
+      expect(alice_components["cross_channel_100plus"]["value"]).to eq(150)
     end
   end
 end
