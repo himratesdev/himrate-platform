@@ -50,6 +50,17 @@ module Ml
 
       private
 
+      # CR-253 M1 cleanup: anchor 90d window to `@stream.ended_at` (fallback `started_at`)
+      # instead of call-time `Time.current`. Deterministic across delayed-queue / replay
+      # / training backfill — same (stream_id, version) row always derives from same window.
+      def extraction_anchor
+        @extraction_anchor ||= @stream.ended_at || @stream.started_at
+      end
+
+      def window_start
+        @window_start ||= extraction_anchor - MAX_DAYS_HISTORY.days
+      end
+
       # Last MAX_STREAM_HISTORY trust_index_scores (stream-scoped — calculated_at on stream-end TI).
       # `TrustIndexHistory.stream_id` is nullable (TI can be channel-scoped too); we pick only
       # stream-scoped rows для stream-to-stream stability, not channel-aggregate noise.
@@ -57,7 +68,7 @@ module Ml
         @trust_index_scores ||= TrustIndexHistory
           .for_channel(@stream.channel_id)
           .where.not(stream_id: nil)
-          .where("calculated_at >= ?", MAX_DAYS_HISTORY.days.ago)
+          .where("calculated_at >= ?", window_start)
           .order(calculated_at: :desc)
           .limit(MAX_STREAM_HISTORY)
           .pluck(:trust_index_score)
@@ -65,12 +76,12 @@ module Ml
       end
 
       # Last MAX_STREAM_HISTORY completed Stream rows for the channel (ended_at IS NOT NULL,
-      # within 90d). Ordered most-recent-first.
+      # within 90d of extraction anchor). Ordered most-recent-first.
       def recent_streams
         @recent_streams ||= Stream
           .for_channel(@stream.channel_id)
           .where.not(ended_at: nil)
-          .where("ended_at >= ?", MAX_DAYS_HISTORY.days.ago)
+          .where("ended_at >= ?", window_start)
           .order(ended_at: :desc)
           .limit(MAX_STREAM_HISTORY)
           .to_a

@@ -57,6 +57,15 @@ module Ml
         @channel ||= @stream.channel
       end
 
+      # CR-253 M1 cleanup: anchor age computation to `@stream.ended_at` (fallback
+      # `started_at`) instead of `Time.current`. Deterministic feature derivation across
+      # delayed-queue / replay / training backfill — same (stream_id, version) row's
+      # `account_age_days_capped` always equals "channel age at end-of-broadcast", not
+      # "channel age at MLFE invocation".
+      def extraction_anchor
+        @extraction_anchor ||= @stream.ended_at || @stream.started_at
+      end
+
       # CR-255 Nit-2: pluck (started_at, ended_at) once per extraction and reuse the array for
       # both COUNT and SUM-of-durations — halves PG round-trips vs separate `.count + .sum`.
       # The slice is bounded by stream-history-of-channel — same order of magnitude as PR6's
@@ -75,7 +84,7 @@ module Ml
           insufficient_data_reasons[:account_age_days_capped] = "no_twitch_created_at_yet"
           return nil
         end
-        age_days = (Time.current - twitch_created_at) / 1.day.to_f
+        age_days = (extraction_anchor - twitch_created_at) / 1.day.to_f
         [ age_days, AGE_CAP_DAYS ].min.round(2)
       end
 
