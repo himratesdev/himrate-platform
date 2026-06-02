@@ -58,8 +58,8 @@ servers:
   # 2026-06-02: dedicated Sidekiq role для :signal_compute queue.
   # Same bottleneck pattern as stream_worker (BUG-251.40-F) — PR #229 created dedicated
   # :signal_compute queue + weight=6 in default `job` role, но c=5 total threads ×
-  # 6/42 weighted slot = ~0.7 effective thread (~2.5k jobs/hr drain at typical SCW
-  # latency). Observed enqueue rate ~25-90k jobs/hr (428 live streams × StreamMonitor
+  # ~12.5% weighted slot (6/48 sum of all queue weights в sidekiq.yml :queues) =
+  # ~0.625 effective thread (~2.5k jobs/hr drain at typical SCW latency). Observed enqueue rate ~25-90k jobs/hr (428 live streams × StreamMonitor
   # каждую минуту = 25.7k/hr floor; plus BotScoringWorker force-enqueue post-stream =
   # spikes to 90k/hr). Net growth +5.5k..+92k jobs/hr → :signal_compute backlog grew
   # 619k → 804k in 2h (2026-06-02 audit). Two-day trend: 670k (2026-05-31) → 992k
