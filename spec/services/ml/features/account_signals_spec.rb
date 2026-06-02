@@ -116,5 +116,15 @@ RSpec.describe Ml::Features::AccountSignals do
       expect(result[:engagement_participation_ratio]).to be_nil
       expect(account.insufficient_data_reasons[:engagement_participation_ratio]).to eq("no_follower_snapshot")
     end
+
+    # CR-251 S1 (iter-2): distinguish no_follower_snapshot vs zero_followers
+    it "nil with 'zero_followers' when snapshot exists но followers_count = 0 (brand-new channel)" do
+      seed_chatters(5)
+      create(:follower_snapshot, channel: channel, followers_count: 0, timestamp: 1.hour.ago)
+
+      result = account.call
+      expect(result[:engagement_participation_ratio]).to be_nil
+      expect(account.insufficient_data_reasons[:engagement_participation_ratio]).to eq("zero_followers")
+    end
   end
 end
