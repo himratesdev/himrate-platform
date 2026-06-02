@@ -102,6 +102,10 @@ RSpec.describe CrossChannelDigestRefreshWorker do
       allow(redis).to receive(:set).and_return(nil) # SETNX fails — another tick is in flight
       expect(ch_client).not_to receive(:select)
       expect(CrossChannelDigest).not_to receive(:upsert_all)
+      # CR-258 iter-2 M-iter2-1: the loser tick must NOT DEL the winner's lock in its ensure-block.
+      # Without the @lock_held guard, ensure ran unconditionally and the loser's release_lock
+      # would have wiped the winner's key.
+      expect(redis).not_to receive(:del)
       expect(Rails.logger).to receive(:info).with(/overlap lock held/)
 
       worker.perform

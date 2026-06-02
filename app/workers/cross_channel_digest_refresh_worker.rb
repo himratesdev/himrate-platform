@@ -40,7 +40,13 @@ class CrossChannelDigestRefreshWorker
 
   def perform
     return unless Flipper.enabled?(:cross_channel_digest)
-    return unless acquire_lock
+
+    # CR-258 iter-2 M-iter2-1: track our acquisition. `ensure` runs unconditionally including
+    # the `return unless acquire_lock` short-circuit — without this guard the LOSING tick would
+    # DEL the WINNING tick's key on its way out, defeating the overlap guard exactly under the
+    # concurrency scenario S2 was added to prevent.
+    @lock_held = acquire_lock
+    return unless @lock_held
 
     started = Time.current
     rows = fetch_clickhouse_aggregations
@@ -52,14 +58,16 @@ class CrossChannelDigestRefreshWorker
       "CrossChannelDigestRefreshWorker: scanned=#{rows.size} upserted=#{upserted} pruned=#{deleted} duration_ms=#{duration_ms}"
     )
   ensure
-    release_lock
+    release_lock if @lock_held
   end
 
   private
 
   # CR-258 S2: SETNX with TTL — second concurrent tick will SETNX-fail and return early. On
   # Redis outage, fail OPEN (do the refresh anyway — duplicate CH load is the lesser evil vs.
-  # stale digest data, which silently regresses the signal).
+  # stale digest data, which silently regresses the signal). On fail-open path `@lock_held`
+  # remains true so the unconditional release attempt in `ensure` is safe — it'll either DEL
+  # a stale lock (we left no lock to release) or no-op on the same Redis-down error path.
   def acquire_lock
     acquired = Sidekiq.redis { |c| c.set(OVERLAP_LOCK_KEY, Process.pid.to_s, nx: true, ex: OVERLAP_LOCK_TTL) }
     unless acquired
