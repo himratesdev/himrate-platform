@@ -105,6 +105,9 @@ RSpec.describe MlFeatureExtractionWorker do
         s.update!(started_at: s.ended_at - 2.hours) # 2h duration для chat-rate calc
       end
 
+      # PR7: seed channel.twitch_created_at so MaturitySignals can compute account_age.
+      stream.channel.update!(twitch_created_at: 500.days.ago)
+
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
       expect(fv.extractor_metadata).to include(
@@ -122,6 +125,11 @@ RSpec.describe MlFeatureExtractionWorker do
       # PR6: stability always carries viewer_retention deferred-EPIC reason (by design).
       expect(reasons["stability"]["viewer_retention_avg_sec"])
         .to eq("requires_viewer_session_tracking_separate_epic")
+      # PR7: maturity группа НЕ карет insufficient reasons когда twitch_created_at populated.
+      expect(reasons).not_to have_key("maturity")
+      # PR7: maturity feature values populated.
+      expect(fv.account_age_days_capped).to eq(365.0) # 500 days → capped at 365
+      expect(fv.total_streams_capped).to be > 0
     end
 
     # CR-249 N1 fold-in (iter-2): copy update — cold-start stream still gets nil for
