@@ -159,8 +159,18 @@ class BotScoringWorker
 
   # FR-010: Cross-channel presence from chat_messages (24h window).
   # PR 1e-A: ClickHouse-backed (matches Clickhouse::ChatQueries.chatter_cross_channel_counts).
+  # CR-258 S1: Flipper[:cross_channel_digest] also routes BSW through the same digest used by
+  # ContextBuilder — same 24h window, same shape, same `fetch_with_baseline` semantics (so
+  # single-channel chatters return 1, preserving the legacy contract). The legacy CH path
+  # remains as the fallback when the flag is OFF (rollback-safe).
   def fetch_cross_channel_counts(usernames)
-    Clickhouse::ChatQueries.chatter_cross_channel_counts(usernames, 24.hours.ago)
+    return {} if usernames.empty?
+
+    if Flipper.enabled?(:cross_channel_digest)
+      CrossChannelDigest.fetch_with_baseline(usernames)
+    else
+      Clickhouse::ChatQueries.chatter_cross_channel_counts(usernames, 24.hours.ago)
+    end
   end
 
   # TASK-251.W2b: look up cached Twitch profiles for the scored chatters (one query, no N+1,

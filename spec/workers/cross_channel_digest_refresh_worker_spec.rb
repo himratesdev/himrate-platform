@@ -5,10 +5,16 @@ require "rails_helper"
 RSpec.describe CrossChannelDigestRefreshWorker do
   let(:worker) { described_class.new }
   let(:ch_client) { instance_double(Clickhouse::Client) }
+  let(:redis) { instance_double(Redis) }
 
   before do
     allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(true)
     allow(Clickhouse).to receive(:client).and_return(ch_client)
+    # CR-258 S2: most tests expect the lock to be acquired (no overlap). Specific overlap-skip
+    # test below overrides this.
+    allow(Sidekiq).to receive(:redis).and_yield(redis)
+    allow(redis).to receive(:set).with(described_class::OVERLAP_LOCK_KEY, anything, nx: true, ex: described_class::OVERLAP_LOCK_TTL).and_return(true)
+    allow(redis).to receive(:del).with(described_class::OVERLAP_LOCK_KEY).and_return(1)
   end
 
   it "skips when Flipper :cross_channel_digest disabled" do
@@ -86,5 +92,39 @@ RSpec.describe CrossChannelDigestRefreshWorker do
     worker.perform
 
     expect(CrossChannelDigest.count).to eq(described_class::UPSERT_BATCH_SIZE + 5)
+  end
+
+  # CR-258 S2: overlap guard. If CH aggregation runs past the 5-min cron interval (the exact
+  # scenario this PR is meant to mitigate), the next cron tick must NOT spawn a second
+  # concurrent worker that piles a duplicate CH scan on already-stressed CH.
+  describe "overlap lock (CR-258 S2)" do
+    it "skips the run entirely when the lock is held by another worker" do
+      allow(redis).to receive(:set).and_return(nil) # SETNX fails — another tick is in flight
+      expect(ch_client).not_to receive(:select)
+      expect(CrossChannelDigest).not_to receive(:upsert_all)
+      expect(Rails.logger).to receive(:info).with(/overlap lock held/)
+
+      worker.perform
+    end
+
+    it "releases the lock after a successful run (next tick can acquire)" do
+      allow(ch_client).to receive(:select).and_return([])
+      expect(redis).to receive(:del).with(described_class::OVERLAP_LOCK_KEY)
+      worker.perform
+    end
+
+    it "releases the lock even if the run raises (ensure-block)" do
+      allow(ch_client).to receive(:select).and_raise(StandardError.new("unexpected"))
+      expect(redis).to receive(:del).with(described_class::OVERLAP_LOCK_KEY)
+      expect { worker.perform }.to raise_error(StandardError, "unexpected")
+    end
+
+    it "proceeds (fail-open) when Redis is unavailable for lock acquire" do
+      allow(redis).to receive(:set).and_raise(Redis::CannotConnectError.new("redis down"))
+      expect(ch_client).to receive(:select).and_return([])
+      expect(Rails.logger).to receive(:warn).with(/lock acquire failed/)
+
+      worker.perform
+    end
   end
 end

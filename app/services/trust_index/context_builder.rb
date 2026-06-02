@@ -127,7 +127,11 @@ module TrustIndex
           usernames = Clickhouse::ChatQueries.stream_chatters(stream)
           return {} if usernames.empty?
 
-          CrossChannelDigest.bulk_lookup(usernames)
+          # CR-258 M1: fetch_with_baseline post-fills single-channel chatters with 1 so the
+          # downstream signal's denominator (`cross_channel_counts.size`) stays stable across
+          # the Flipper flip — the digest filters `HAVING c > 1` for compactness, not because
+          # those chatters don't count.
+          CrossChannelDigest.fetch_with_baseline(usernames)
         else
           Clickhouse::ChatQueries.cross_channel(stream, 24.hours.ago.change(usec: 0))
         end

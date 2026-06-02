@@ -58,4 +58,35 @@ RSpec.describe CrossChannelDigest do
       expect(result).to eq("bob" => 2)
     end
   end
+
+  # CR-258 M1: legacy CH `cross_channel` returned EVERY chatter (single-channel with value 1
+  # included). The signal `TrustIndex::Signals::CrossChannelPresence` uses `Hash#size` as the
+  # denominator — dropping the long-tail (digest worker filters `HAVING c > 1` to keep table
+  # compact) would silently inflate the signal value 5-10×. `.fetch_with_baseline` post-fills
+  # absent usernames with 1 to preserve the legacy denominator semantics.
+  describe ".fetch_with_baseline" do
+    let(:t) { Time.current }
+
+    before do
+      described_class.upsert_all([
+        { username: "alice", distinct_channels_24h: 4, refreshed_at: t },
+        { username: "carol", distinct_channels_24h: 7, refreshed_at: t }
+      ], unique_by: :username)
+    end
+
+    it "returns digest value for multi-channel chatters and 1 for absent (single-channel) ones" do
+      result = described_class.fetch_with_baseline(%w[alice carol newbie])
+      expect(result).to eq("alice" => 4, "carol" => 7, "newbie" => 1)
+    end
+
+    it "returns Hash#size equal to input size — denominator stability for the signal" do
+      result = described_class.fetch_with_baseline(%w[alice carol newbie bob])
+      expect(result.size).to eq(4)
+    end
+
+    it "returns {} for empty input" do
+      expect(described_class.fetch_with_baseline([])).to eq({})
+      expect(described_class.fetch_with_baseline(nil)).to eq({})
+    end
+  end
 end

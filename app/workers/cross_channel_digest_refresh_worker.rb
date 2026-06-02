@@ -26,21 +26,57 @@ class CrossChannelDigestRefreshWorker
   # anyway, so delete them to keep the table bounded as the active-chatter set churns.
   STALE_AFTER = 25.hours
 
+  # CR-258 S2: overlap guard. The cron tick fires every 5 min, but the CH aggregation could
+  # take longer when CH is under load (the exact scenario this PR exists to mitigate, so
+  # transient slowdowns during rollout are realistic). Without a guard the next tick would
+  # spawn a SECOND concurrent worker → 2× CH scans on already-stressed CH, defeating the perf
+  # gain. The PG side (upsert + delete) is idempotent so no data corruption, only CH load.
+  #
+  # Redis SETNX with a TTL slightly under the cron interval gives single-flight semantics
+  # without the sidekiq-unique-jobs dependency. Sidekiq retries are disabled below (retry: 1
+  # = at-most-2 attempts) so a stale lock from a crash unwinds at most one cron tick later.
+  OVERLAP_LOCK_KEY = "cross_channel_digest_refresh:lock"
+  OVERLAP_LOCK_TTL = 4.minutes.to_i # cron is */5; the next tick lands 5 min later — guard ≈ cron - safety
+
   def perform
     return unless Flipper.enabled?(:cross_channel_digest)
+    return unless acquire_lock
 
     started = Time.current
     rows = fetch_clickhouse_aggregations
     upserted = upsert_in_batches(rows, started)
-    deleted = prune_stale(started)
+    deleted = prune_stale
 
     duration_ms = ((Time.current - started) * 1000).to_i
     Rails.logger.info(
       "CrossChannelDigestRefreshWorker: scanned=#{rows.size} upserted=#{upserted} pruned=#{deleted} duration_ms=#{duration_ms}"
     )
+  ensure
+    release_lock
   end
 
   private
+
+  # CR-258 S2: SETNX with TTL — second concurrent tick will SETNX-fail and return early. On
+  # Redis outage, fail OPEN (do the refresh anyway — duplicate CH load is the lesser evil vs.
+  # stale digest data, which silently regresses the signal).
+  def acquire_lock
+    acquired = Sidekiq.redis { |c| c.set(OVERLAP_LOCK_KEY, Process.pid.to_s, nx: true, ex: OVERLAP_LOCK_TTL) }
+    unless acquired
+      Rails.logger.info("CrossChannelDigestRefreshWorker: overlap lock held, skipping this tick")
+      return false
+    end
+    true
+  rescue Redis::BaseError => e
+    Rails.logger.warn("CrossChannelDigestRefreshWorker: lock acquire failed (#{e.message}) — proceeding anyway")
+    true
+  end
+
+  def release_lock
+    Sidekiq.redis { |c| c.del(OVERLAP_LOCK_KEY) }
+  rescue Redis::BaseError
+    nil # best-effort; TTL releases it anyway
+  end
 
   # Single CH aggregation over the 24h `chat_messages` slice. `HAVING c > 1` drops the
   # single-channel chatters (~80-90% of the long tail) — they contribute nothing to a
@@ -79,8 +115,12 @@ class CrossChannelDigestRefreshWorker
   # Delete digest rows older than STALE_AFTER. The refresh window is rolling-24h, so anything not
   # rewritten this cycle and last touched > 25h ago has effectively disappeared from the active
   # set — pruning keeps the table size bounded as the chatter population churns.
-  def prune_stale(now)
-    cutoff = now - STALE_AFTER
+  #
+  # CR-258 N2: cutoff is computed at prune time (not at perform start) — if the CH aggregation
+  # takes a long time, drifting the cutoff a few seconds is harmless against a 25h margin but
+  # is the more obviously-correct expression of "stale = NOT touched in last 25h from now".
+  def prune_stale
+    cutoff = Time.current - STALE_AFTER
     CrossChannelDigest.where("refreshed_at < ?", cutoff).delete_all
   end
 end

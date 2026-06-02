@@ -16,8 +16,9 @@ class CrossChannelDigest < ApplicationRecord
   validates :refreshed_at, presence: true
 
   # Look up the cached distinct-channel count for a batch of usernames. Returns
-  # Hash<String, Integer> for the matches; absent usernames are omitted (caller treats as 0 / not
-  # cached yet, e.g. fresh chatter not seen by the last refresh cycle).
+  # Hash<String, Integer> ONLY for usernames present in the digest (multi-channel chatters that
+  # passed `HAVING c > 1` in the refresh worker). Absent usernames are omitted — callers should
+  # use {.fetch_with_baseline} unless they specifically want raw digest contents.
   #
   # Case-sensitive: writer (CrossChannelDigestRefreshWorker) sources usernames from CH
   # chat_messages which is already IRC-lowercase, and the digest-path reader (ContextBuilder via
@@ -26,5 +27,23 @@ class CrossChannelDigest < ApplicationRecord
     return {} if usernames.nil? || usernames.empty?
 
     where(username: usernames).pluck(:username, :distinct_channels_24h).to_h
+  end
+
+  # CR-258 M1: legacy `Clickhouse::ChatQueries.cross_channel` returned EVERY chatter in the
+  # stream (single-channel ones with value 1 included). The downstream signal
+  # `TrustIndex::Signals::CrossChannelPresence` uses `cross_channel_counts.size` as the
+  # denominator for both value and confidence — dropping single-channel chatters (the ~80-90%
+  # long tail filtered by `HAVING c > 1` for digest table compactness) would silently inflate
+  # the signal value 5-10× on Flipper flip.
+  #
+  # This method preserves the legacy contract: every requested username appears in the result,
+  # with the digest value for multi-channel chatters and the implicit 1 for single-channel
+  # ones (they posted at minimum in this stream's channel, by definition of being in the
+  # `stream_chatters` set passed in).
+  def self.fetch_with_baseline(usernames)
+    return {} if usernames.nil? || usernames.empty?
+
+    hits = bulk_lookup(usernames)
+    usernames.each_with_object(hits) { |u, h| h[u] ||= 1 }
   end
 end

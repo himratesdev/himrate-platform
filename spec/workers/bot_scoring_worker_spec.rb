@@ -120,4 +120,52 @@ RSpec.describe BotScoringWorker do
 
     expect { worker.perform(stream.id) }.not_to change(PerUserBotScore, :count)
   end
+
+  # CR-258 S1 (BUG-SCW-CROSS-CHANNEL): BSW shared the same 24h CH scan on its own queue, so the
+  # all-callers-of-the-primitive lesson from BUG-251.40 applies. When Flipper[:cross_channel_digest]
+  # is ON, BSW must read from the digest with the same `fetch_with_baseline` semantics that
+  # ContextBuilder uses (post-fill missing usernames with 1) — otherwise the cross_channel_count
+  # passed to the scorer collapses for single-channel chatters.
+  describe "cross-channel routing (CR-258 S1, BUG-SCW-CROSS-CHANNEL digest path)" do
+    let(:channel) { Channel.create!(twitch_id: "999", login: "cc_test", display_name: "CC") }
+    let(:stream) { Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago) }
+
+    before do
+      allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).with(stream).and_return(
+        "alice"  => aggregation("alice"),
+        "newbie" => aggregation("newbie")
+      )
+      allow_any_instance_of(KnownBotService).to receive(:check_batch).and_return(
+        "alice"  => { bot: false, confidence: 0.0, sources: [] },
+        "newbie" => { bot: false, confidence: 0.0, sources: [] }
+      )
+    end
+
+    it "uses the digest (with single-channel baseline = 1) when Flipper :cross_channel_digest ON" do
+      allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(true)
+      CrossChannelDigest.upsert_all([
+        { username: "alice", distinct_channels_24h: 6, refreshed_at: Time.current }
+      ], unique_by: :username)
+      expect(Clickhouse::ChatQueries).not_to receive(:chatter_cross_channel_counts)
+
+      worker.perform(stream.id)
+
+      alice_score = PerUserBotScore.find_by(stream: stream, username: "alice")
+      newbie_score = PerUserBotScore.find_by(stream: stream, username: "newbie")
+      expect(alice_score.components["cross_channel_count"]).to eq(6)
+      expect(newbie_score.components["cross_channel_count"]).to eq(1) # post-fill baseline
+    end
+
+    it "falls back to the legacy CH scan when Flipper :cross_channel_digest OFF" do
+      allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(false)
+      expect(Clickhouse::ChatQueries).to receive(:chatter_cross_channel_counts)
+        .with(%w[alice newbie], instance_of(ActiveSupport::TimeWithZone))
+        .and_return("alice" => 6) # legacy returns whatever CH says; absent → 0 via `|| 0`
+
+      worker.perform(stream.id)
+
+      expect(PerUserBotScore.find_by(stream: stream, username: "alice").components["cross_channel_count"]).to eq(6)
+      expect(PerUserBotScore.find_by(stream: stream, username: "newbie").components["cross_channel_count"]).to eq(0)
+    end
+  end
 end
