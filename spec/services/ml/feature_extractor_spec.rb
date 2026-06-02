@@ -19,18 +19,19 @@ RSpec.describe Ml::FeatureExtractor do
       expect(result.keys).to match_array(StreamFeatureVector::FEATURE_COLUMNS)
     end
 
-    it "PR4-7 groups still nil (Account/Growth/Stability/Maturity yet to land)" do
+    it "PR5-7 groups still nil (Growth/Stability/Maturity yet to land)" do
       # Stub CH calls to avoid live Clickhouse hits в test env (PR3 chat features delegate)
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
 
       result = extractor.call
-      pr47_pending_keys = StreamFeatureVector::FEATURE_COLUMNS - %i[
+      pr57_pending_keys = StreamFeatureVector::FEATURE_COLUMNS - %i[
         chatter_to_ccv_ratio peak_to_average_ccv_ratio ccv_coefficient_of_variation ccv_tier_stickiness
         message_entropy unique_message_ratio single_message_chatter_ratio emote_only_ratio
         avg_inter_message_interval_sec timing_regularity_score nlp_contextual_relevance_score
+        avg_account_age_days account_creation_date_clustering_gini profile_completeness_ratio engagement_participation_ratio
       ]
-      pr47_pending_keys.each do |k|
-        expect(result[k]).to be_nil, "expected #{k} to be nil pending PR4-7"
+      pr57_pending_keys.each do |k|
+        expect(result[k]).to be_nil, "expected #{k} to be nil pending PR5-7"
       end
     end
 
@@ -65,6 +66,28 @@ RSpec.describe Ml::FeatureExtractor do
       expect(result[:timing_regularity_score]).to eq(0.5)
       expect(result[:nlp_contextual_relevance_score]).to be_nil # deferred ONNX EPIC
     end
+
+    # PR4: AccountSignals delegation — extractor returns numeric account features when
+    # ChatterProfile cache + FollowerSnapshot data sufficient.
+    it "delegates account features to Ml::Features::AccountSignals (PR4)" do
+      allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
+      channel = stream.channel
+      create(:follower_snapshot, channel: channel, followers_count: 1000, timestamp: 1.hour.ago)
+      15.times do |i|
+        login = "u_#{i}"
+        create(:per_user_bot_score, stream: stream, username: login)
+        ChatterProfile.create!(
+          login: login, twitch_user_id: "tu_#{i}",
+          twitch_created_at: (500 + i * 50).days.ago,
+          followers_count: 10, follows_count: 5, fetched_at: Time.current
+        )
+      end
+
+      result = extractor.call
+      expect(result[:avg_account_age_days]).to be_a(Numeric)
+      expect(result[:profile_completeness_ratio]).to eq(1.0)
+      expect(result[:engagement_participation_ratio]).to eq(0.015) # 15/1000
+    end
   end
 
   describe "#metadata" do
@@ -82,6 +105,12 @@ RSpec.describe Ml::FeatureExtractor do
         nlp_contextual_relevance_score: 0.7
       )
       allow_any_instance_of(Ml::Features::ChatSignals).to receive(:insufficient_data_reasons).and_return({})
+      # PR4: stub AccountSignals too для all-clean scenario
+      allow_any_instance_of(Ml::Features::AccountSignals).to receive(:call).and_return(
+        avg_account_age_days: 1500.0, account_creation_date_clustering_gini: 0.3,
+        profile_completeness_ratio: 0.8, engagement_participation_ratio: 0.02
+      )
+      allow_any_instance_of(Ml::Features::AccountSignals).to receive(:insufficient_data_reasons).and_return({})
       extractor.call
 
       meta = extractor.metadata
@@ -92,13 +121,15 @@ RSpec.describe Ml::FeatureExtractor do
 
     it "captures per-group insufficient_data_reasons when features go nil" do
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
-      extractor.call # no CCV snapshots → viewer reports 4 reasons; no chat → chat reports 7 reasons
+      extractor.call # cold-start stream → viewer/chat/account all report reasons
 
       meta = extractor.metadata
       expect(meta[:insufficient_data_reasons]).to have_key(:viewer)
       expect(meta[:insufficient_data_reasons]).to have_key(:chat)
+      expect(meta[:insufficient_data_reasons]).to have_key(:account)
       expect(meta[:insufficient_data_reasons][:viewer].keys).to include(:chatter_to_ccv_ratio)
       expect(meta[:insufficient_data_reasons][:chat][:nlp_contextual_relevance_score]).to eq("requires_nlp_inference_layer_separate_epic")
+      expect(meta[:insufficient_data_reasons][:account].values.uniq).to eq([ "no_chatters" ])
     end
   end
 end
