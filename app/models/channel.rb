@@ -38,7 +38,7 @@ class Channel < ApplicationRecord
     # date — drives MaturitySignals.account_age_days_capped.
     #
     # CR-255 Nit-4: use `Time.zone.parse` (not `Time.parse`) so a future TZ-aware Rails
-    # config tweak doesn't drift between сompare-by-equality assertions and persisted UTC.
+    # config tweak doesn't drift between compare-by-equality assertions and persisted UTC.
     # Helix always returns ISO-8601 with explicit `Z`, so functionally equivalent today —
     # convention alignment with other Rails Time-from-string call-sites in the codebase.
     helix_created_at = user["created_at"].presence&.then { |raw| Time.zone.parse(raw) }

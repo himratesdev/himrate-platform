@@ -59,7 +59,7 @@ module Ml
 
       # CR-255 Nit-2: pluck (started_at, ended_at) once per extraction and reuse the array for
       # both COUNT and SUM-of-durations — halves PG round-trips vs separate `.count + .sum`.
-      # The slice is bounded по stream-history-of-channel — same order of magnitude as PR6's
+      # The slice is bounded by stream-history-of-channel — same order of magnitude as PR6's
       # `recent_streams` pluck (≤MAX_STREAM_HISTORY in steady-state for active channels;
       # potentially larger for back-catalog channels but still single-channel-bounded).
       def completed_stream_durations_sec
