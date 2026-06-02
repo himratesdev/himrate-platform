@@ -21,6 +21,14 @@ RSpec.describe MlFeatureExtractionWorker do
     end
   end
 
+  before do
+    # PR3: ChatSignals queries ClickHouse via `Clickhouse::ChatQueries.chat_feature_aggregates`.
+    # CH client isn't available in test env (no docker accessory); default-stub returns empty
+    # Hash so ChatSignals sees insufficient data branch. Individual tests overriding this stub
+    # для happy-path scenarios.
+    allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
+  end
+
   describe "#perform" do
     it "persists 1 StreamFeatureVector row per stream at SCHEMA_VERSION" do
       expect { worker.perform(stream.id) }.to change(StreamFeatureVector, :count).by(1)
@@ -44,21 +52,36 @@ RSpec.describe MlFeatureExtractionWorker do
     # now correctly populate `insufficient_data_reasons[:viewer]` для всех 4 viewer features.
     # Seed enough source data to exercise the happy-path metadata shape (empty reasons),
     # which matches the test's stated intent (verify jsonb structure + schema_version).
-    it "writes extractor_metadata jsonb (happy-path, all viewer data sufficient)" do
+    it "writes extractor_metadata jsonb (happy-path, all viewer+chat data sufficient)" do
       # ≥3 CCV snapshots + ≥3 chatters snapshots + ≥30 prior streams с avg_ccv
-      # → ViewerSignals returns 4 numeric features, no insufficient reasons.
+      # → ViewerSignals returns 4 numeric features.
       3.times { |i| create(:ccv_snapshot, stream: stream, ccv_count: 500, timestamp: (5 - i).minutes.ago) }
       3.times { |i| create(:chatters_snapshot, stream: stream, unique_chatters_count: 50, timestamp: (5 - i).minutes.ago) }
-      # Mark current stream completed + seed 29 prior so longitudinal CV has ≥3 history.
       stream.update!(ended_at: Time.current, avg_ccv: 500)
       29.times { |i| create(:stream, channel: stream.channel, ended_at: (i + 1).hours.ago, avg_ccv: 500) }
+
+      # PR3 (iter-1 fix): stub ChatQueries with sufficient aggregates so ChatSignals reports
+      # no insufficient reasons either. NLP feature still nil with its deferred-EPIC reason —
+      # but that's a documented exception, not "insufficient data" semantically.
+      # Worker spec just verifies metadata jsonb structure, so allow reasons={"chat"=>{...}}
+      # iff only the NLP key is present (matches production behavior post-PR3).
+      allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return(
+        total_messages: 1000, unique_messages: 700, unique_chatters: 200,
+        messages_with_emotes: 300, single_message_chatters: 60,
+        message_entropy_bits: 5.5, mean_inter_msg_sec: 0.6, std_inter_msg_sec: 0.3
+      )
 
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
       expect(fv.extractor_metadata).to include(
         "schema_version" => Ml::FeatureExtractor::SCHEMA_VERSION,
-        "stream_id" => stream.id,
-        "insufficient_data_reasons" => {}
+        "stream_id" => stream.id
+      )
+      # PR3: chat group has only the deferred NLP reason; viewer group fully clean.
+      reasons = fv.extractor_metadata["insufficient_data_reasons"]
+      expect(reasons).not_to have_key("viewer")
+      expect(reasons["chat"]).to eq(
+        "nlp_contextual_relevance_score" => "requires_nlp_inference_layer_separate_epic"
       )
     end
 
@@ -66,6 +89,9 @@ RSpec.describe MlFeatureExtractionWorker do
     # all 25 features (viewer signals return nil under their insufficient-data branches
     # for streams без CCV/chatters/history). Assertion stays valid; comment renamed.
     it "all 25 feature columns are nil for cold-start stream (no snapshots / no history)" do
+      # PR3: stub CH so ChatSignals doesn't try a live query in test env
+      allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
+
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
       expect(fv.populated_feature_count).to eq(0)
