@@ -19,8 +19,9 @@ class CrossChannelDigest < ApplicationRecord
   # Hash<String, Integer> for the matches; absent usernames are omitted (caller treats as 0 / not
   # cached yet, e.g. fresh chatter not seen by the last refresh cycle).
   #
-  # Citext primary key makes the lookup case-insensitive, so callers can pass usernames as they
-  # came from CH/Apollo without normalizing first.
+  # Case-sensitive: writer (CrossChannelDigestRefreshWorker) sources usernames from CH
+  # chat_messages which is already IRC-lowercase, and the digest-path reader (ContextBuilder via
+  # Clickhouse::ChatQueries.stream_chatters) reads the same lowercase column — both sides agree.
   def self.bulk_lookup(usernames)
     return {} if usernames.nil? || usernames.empty?
 

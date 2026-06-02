@@ -50,10 +50,12 @@ RSpec.describe CrossChannelDigest do
       expect(described_class.bulk_lookup(nil)).to eq({})
     end
 
-    it "is case-insensitive (citext primary key)" do
-      result = described_class.bulk_lookup(%w[ALICE Bob])
-      expect(result.keys.map(&:downcase)).to match_array(%w[alice bob])
-      expect(result.values.sort).to eq([ 2, 4 ])
+    # No case-folding: Twitch IRC pre-normalizes usernames to lowercase and the writer
+    # (CrossChannelDigestRefreshWorker) sources them from CH chat_messages — so all reads/writes
+    # are already lowercase. A mismatched-case lookup is a caller bug, не подсмотренная feature.
+    it "treats lookup case-sensitively (lowercase normalized at write time)" do
+      result = described_class.bulk_lookup(%w[ALICE bob])
+      expect(result).to eq("bob" => 2)
     end
   end
 end

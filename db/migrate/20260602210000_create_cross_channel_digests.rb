@@ -7,17 +7,14 @@
 #
 # Refresh worker writes ~50-100k rows / 5min via bulk upsert; ContextBuilder lookup becomes a
 # single indexed PG SELECT per stream (vs the per-stream CH 24h scan it replaces). Username key
-# follows Twitch login normalization (case-insensitive — citext) — IRC sends lowercase, but
-# Apollo/cache can surface mixed-case usernames, so citext keeps lookups stable.
+# uses plain TEXT — both writers (ClickHouse aggregations) and readers (Clickhouse::ChatQueries
+# .stream_chatters) source usernames from `chat_messages`, where IRC pre-normalizes to lowercase,
+# so there's no case-mismatch surface to defend against here.
 
 class CreateCrossChannelDigests < ActiveRecord::Migration[8.0]
   def up
-    safety_assured do
-      execute "CREATE EXTENSION IF NOT EXISTS citext"
-    end
-
     create_table :cross_channel_digests, id: false, primary_key: :username do |t|
-      t.citext :username, null: false, primary_key: true
+      t.text :username, null: false, primary_key: true
       t.integer :distinct_channels_24h, null: false
       t.datetime :refreshed_at, null: false
     end
