@@ -12,6 +12,11 @@ RSpec.describe BotScoringWorker do
 
   before do
     allow(Flipper).to receive(:enabled?).with(:bot_scoring).and_return(true)
+    # CR-258 S1: BSW now checks Flipper[:cross_channel_digest] inside fetch_cross_channel_counts.
+    # Default OFF so legacy `Clickhouse::ChatQueries.chatter_cross_channel_counts` path is exercised
+    # by all pre-existing tests; the new dedicated `describe "cross-channel routing"` block flips
+    # it ON explicitly.
+    allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(false)
     # Default: no chat returned. Each test overrides the methods it depends on.
     allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).and_return({})
     allow(Clickhouse::ChatQueries).to receive(:chatter_timestamps).and_return({})
