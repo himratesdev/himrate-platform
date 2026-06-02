@@ -13,12 +13,12 @@
 # convention from BFT §3.2 Growth). Per-feature cold-start: returns nil if source data
 # insufficient, records reason in `insufficient_data_reasons` for observability.
 #
-# CR-253 M1 (follow-up — NOT fixed in this PR per reviewer guidance): `WINDOW.ago` anchors
-# to call-time, not `@stream.ended_at`. Live extraction path is fine (worker fires immediately
-# from PostStreamWorker, queue latency bounded), but training-time backfill / schema_version
-# bumps will compute against a different window for the same (stream_id, version) — breaks
-# determinism. EPIC-wide concern (PR2-PR4 use the same pattern); separate cleanup PR will
-# anchor every windowed source to `@stream.ended_at || @stream.started_at`.
+# CR-253 M1 cleanup (PR #256): `WINDOW.ago` replaced with `extraction_anchor - WINDOW` where
+# `extraction_anchor = @stream.ended_at || @stream.started_at`. Anchoring to the stream's
+# end-of-broadcast timestamp makes feature derivation deterministic across delayed-queue
+# invocations, schema_version replays, and training-time backfill. EPIC-wide cleanup applied
+# in same PR to AccountSignals (Time.current → anchor), StabilitySignals (.days.ago → anchor),
+# and MaturitySignals (Time.current → anchor).
 #
 # CR-253 M2: "daily" in `daily_deltas` is shorthand for consecutive-snapshot delta — the
 # `FollowerSnapshotWorker` cadence (`STALE_AFTER = 1.day`, queue `:monitoring`, capped at
@@ -64,11 +64,27 @@ module Ml
 
       private
 
-      # Ordered (timestamp, count) tuples over the 90d window.
+      # CR-253 M1 cleanup: anchor windowed queries to `@stream.ended_at` (fallback
+      # `started_at` for in-flight streams). Previously `WINDOW.ago` (call-time anchor) →
+      # non-deterministic for delayed-queue / schema_version replay / training backfill.
+      # MLFE worker fires post-stream-end so `ended_at` is virtually always present;
+      # `started_at` fallback covers the rare in-flight worker invocation path.
+      def extraction_anchor
+        @extraction_anchor ||= @stream.ended_at || @stream.started_at
+      end
+
+      def window_start
+        @window_start ||= extraction_anchor - WINDOW
+      end
+
+      # Ordered (timestamp, count) tuples over the 90d window — anchored to `@stream.ended_at`.
+      # CR-256 P1: both upper AND lower bounds anchored — `timestamp BETWEEN window_start AND
+      # extraction_anchor`. Without the upper bound, a replay-time backfill could pick up
+      # FollowerSnapshot rows created after the stream ended.
       def follower_snapshots
         @follower_snapshots ||= FollowerSnapshot
           .where(channel_id: @stream.channel_id)
-          .where("timestamp >= ?", WINDOW.ago)
+          .where("timestamp >= ? AND timestamp <= ?", window_start, extraction_anchor)
           .order(:timestamp)
           .pluck(:timestamp, :followers_count)
       end
@@ -86,10 +102,13 @@ module Ml
       # in the most recent snapshot interval — intentional, NOT a bug). We do NOT
       # `.where.not(id: @stream.id)` это out: the channel WAS streaming when the latest
       # follower spike landed, that's exactly the attribution semantics we want.
+      # CR-256 P1: both bounds anchored — also `started_at <= extraction_anchor` so a stream
+      # that began after `@stream.ended_at` (multi-week backfill replay scenario) isn't pulled
+      # into spike attribution or engagement correlation.
       def stream_starts
         @stream_starts ||= Stream
           .for_channel(@stream.channel_id)
-          .where("started_at >= ?", WINDOW.ago)
+          .where("started_at >= ? AND started_at <= ?", window_start, extraction_anchor)
           .pluck(:started_at)
       end
 

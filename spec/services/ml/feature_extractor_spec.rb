@@ -111,9 +111,13 @@ RSpec.describe Ml::FeatureExtractor do
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
       channel = stream.channel
       # 8 steady-growth snapshots (≥ MIN_SNAPSHOTS_FOR_CV) — clean CV = 0 + 0 churn.
+      # CR-256 P1: anchor timestamps to stream.ended_at so all 8 fall within
+      # [extraction_anchor - 90d, extraction_anchor]. Without anchor, `0.days.ago` lands
+      # microseconds after stream.ended_at → excluded by new upper-bound filter.
       counts = (0..7).map { |i| 1000 + 10 * i }
       counts.reverse.each_with_index do |c, days_ago|
-        create(:follower_snapshot, channel: channel, followers_count: c, timestamp: days_ago.days.ago)
+        create(:follower_snapshot, channel: channel, followers_count: c,
+               timestamp: stream.ended_at - days_ago.days)
       end
 
       result = extractor.call
@@ -128,7 +132,9 @@ RSpec.describe Ml::FeatureExtractor do
     it "delegates account features to Ml::Features::AccountSignals (PR4)" do
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
       channel = stream.channel
-      create(:follower_snapshot, channel: channel, followers_count: 1000, timestamp: 1.hour.ago)
+      # CR-256 P1: follower_snapshot anchored to stream.ended_at - 1.hour so it's pre-anchor.
+      create(:follower_snapshot, channel: channel, followers_count: 1000,
+             timestamp: stream.ended_at - 1.hour)
       15.times do |i|
         login = "u_#{i}"
         create(:per_user_bot_score, stream: stream, username: login)

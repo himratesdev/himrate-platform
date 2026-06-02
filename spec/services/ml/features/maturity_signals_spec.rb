@@ -76,13 +76,18 @@ RSpec.describe Ml::Features::MaturitySignals do
   describe "#call (streams cap saturation)" do
     before do
       # 250 completed streams of 1 min each — exceeds STREAMS_CAP=200.
+      # CR-256 P1: all prior streams anchored BEFORE stream.ended_at so upper-bound filter
+      # includes them. Without this shift, half of the 250 would be after stream.ended_at
+      # (factory default 1.hour.ago) and excluded.
       250.times do |i|
         create(:stream, channel: channel,
-               started_at: (i + 1).minutes.ago, ended_at: i.minutes.ago)
+               started_at: stream.ended_at - (i + 2).minutes,
+               ended_at: stream.ended_at - (i + 1).minutes)
       end
     end
 
     it "total_streams_capped saturates at 200" do
+      # 250 priors + current `stream` (also ended) = 251, capped at 200.
       expect(maturity.call[:total_streams_capped]).to eq(200)
     end
   end
@@ -90,8 +95,9 @@ RSpec.describe Ml::Features::MaturitySignals do
   describe "#call (hours cap saturation)" do
     before do
       # 50 streams of 24h each = 1200 hours, exceeds HOURS_CAP=1000.
+      # CR-256 P1: anchor before stream.ended_at; spread streams in the 200d window pre-anchor.
       50.times do |i|
-        start_at = (200 + i).days.ago
+        start_at = stream.ended_at - (200 + i).days
         create(:stream, channel: channel, started_at: start_at, ended_at: start_at + 24.hours)
       end
     end
@@ -104,10 +110,16 @@ RSpec.describe Ml::Features::MaturitySignals do
   describe "#call (in-flight stream excluded from total_streams / total_hours)" do
     before do
       channel.update!(twitch_created_at: 200.days.ago)
-      # 3 completed streams.
+      # 3 completed streams. CR-256 P1: anchor against stream.started_at (= extraction_anchor
+      # fallback for in-flight streams). Without shift, fixtures pre-Time.current would still
+      # be excluded because extraction_anchor falls back to started_at = 3.hours.ago, and
+      # `.days.ago` snapshots are way after that.
+      # CR-256-iter2 style nit: clearer two-step form (computed start, then start + 1.hour).
       3.times do |i|
+        prior_started = stream.started_at - (10 + i).days
         create(:stream, channel: channel,
-               started_at: (10 + i).days.ago, ended_at: (10 + i).days.ago + 1.hour)
+               started_at: prior_started,
+               ended_at: prior_started + 1.hour)
       end
       # `stream` itself has ended_at=1.hour.ago by default (factory). Reset it to in-flight.
       stream.update!(ended_at: nil)

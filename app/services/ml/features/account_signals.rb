@@ -34,6 +34,17 @@ module Ml
 
       private
 
+      # CR-253 M1 cleanup: anchor every temporal derivation to `@stream.ended_at` (fallback
+      # `started_at` for in-flight streams — though MLFE worker fires post-stream-end, so
+      # ended_at is virtually always present). Replaces previous `Time.current` anchor so a
+      # delayed-queue or schema_version replay produces deterministic feature values for the
+      # same (stream_id, version). Without this anchor, ML training-time backfill would
+      # compute features against the backfill clock — drifting from the training-label
+      # semantics that captured the stream at end-of-broadcast.
+      def extraction_anchor
+        @extraction_anchor ||= @stream.ended_at || @stream.started_at
+      end
+
       # Stream's chatter usernames from PerUserBotScore. CR-251 N2/N4: the (stream_id, username)
       # UNIQUE constraint (migration `20260330200001_add_classification_to_per_user_bot_scores`,
       # TASK-027 — `idx_bot_scores_stream_username`) means pluck already returns distinct values
@@ -77,8 +88,7 @@ module Ml
         profiles = profiles_with_creation_date
         return record_insufficient(:avg_account_age_days, "no_profiles_with_creation_date") if profiles.empty?
 
-        now = Time.current
-        ages_days = profiles.map { |p| ((now - p.twitch_created_at) / 1.day).to_f }
+        ages_days = profiles.map { |p| ((extraction_anchor - p.twitch_created_at) / 1.day).to_f }
         (ages_days.sum / ages_days.size).round(2)
       end
 
@@ -92,8 +102,7 @@ module Ml
         profiles = profiles_with_creation_date
         return record_insufficient(:account_creation_date_clustering_gini, "no_profiles_with_creation_date") if profiles.empty?
 
-        now = Time.current
-        ages_days = profiles.map { |p| ((now - p.twitch_created_at) / 1.day).to_f }.sort
+        ages_days = profiles.map { |p| ((extraction_anchor - p.twitch_created_at) / 1.day).to_f }.sort
         gini_coefficient(ages_days).round(4)
       end
 
@@ -125,7 +134,13 @@ module Ml
 
         # Channel doesn't declare `has_many :follower_snapshots` (FollowerSnapshot has the
         # belongs_to :channel inverse only); direct query is the canonical lookup.
-        latest_snapshot = FollowerSnapshot.where(channel_id: @stream.channel_id).order(timestamp: :desc).first
+        # CR-256 P1: anchor to "latest at-or-before extraction_anchor", not global latest —
+        # otherwise replay-time backfill picks up newer snapshots and divides by a different
+        # denominator than the immediate post-stream run.
+        latest_snapshot = FollowerSnapshot
+                            .where(channel_id: @stream.channel_id)
+                            .where("timestamp <= ?", extraction_anchor)
+                            .order(timestamp: :desc).first
         return record_insufficient(:engagement_participation_ratio, "no_follower_snapshot") if latest_snapshot.nil?
 
         followers = latest_snapshot.followers_count.to_i
