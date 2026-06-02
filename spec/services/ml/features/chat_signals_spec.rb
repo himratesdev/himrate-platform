@@ -71,6 +71,15 @@ RSpec.describe Ml::Features::ChatSignals do
     it "computes avg_inter_message_interval_sec from CH mean" do
       expect(chat.call[:avg_inter_message_interval_sec]).to eq(0.6)
     end
+
+    it "computes timing_regularity_score as CV (std/mean)" do
+      expect(chat.call[:timing_regularity_score]).to eq(0.5) # 0.3/0.6
+    end
+
+    it "nlp_contextual_relevance_score deferred — returns nil + records reason" do
+      expect(chat.call[:nlp_contextual_relevance_score]).to be_nil
+      expect(chat.insufficient_data_reasons[:nlp_contextual_relevance_score]).to eq("requires_nlp_inference_layer_separate_epic")
+    end
   end
 
   # CR-252 S1 (PR4 hotfix): regression test для MAX_INTER_MESSAGE_INTERVAL_SEC cap.
@@ -101,15 +110,6 @@ RSpec.describe Ml::Features::ChatSignals do
         std_inter_msg_sec: 100.0
       )
       expect(chat.call[:avg_inter_message_interval_sec]).to eq(3600.5)
-    end
-
-    it "computes timing_regularity_score as CV (std/mean)" do
-      expect(chat.call[:timing_regularity_score]).to eq(0.5) # 0.3/0.6
-    end
-
-    it "nlp_contextual_relevance_score deferred — returns nil + records reason" do
-      expect(chat.call[:nlp_contextual_relevance_score]).to be_nil
-      expect(chat.insufficient_data_reasons[:nlp_contextual_relevance_score]).to eq("requires_nlp_inference_layer_separate_epic")
     end
   end
 
