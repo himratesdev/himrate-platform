@@ -19,19 +19,20 @@ RSpec.describe Ml::FeatureExtractor do
       expect(result.keys).to match_array(StreamFeatureVector::FEATURE_COLUMNS)
     end
 
-    it "PR5-7 groups still nil (Growth/Stability/Maturity yet to land)" do
+    it "PR6-7 groups still nil (Stability/Maturity yet to land)" do
       # Stub CH calls to avoid live Clickhouse hits в test env (PR3 chat features delegate)
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
 
       result = extractor.call
-      pr57_pending_keys = StreamFeatureVector::FEATURE_COLUMNS - %i[
+      pr67_pending_keys = StreamFeatureVector::FEATURE_COLUMNS - %i[
         chatter_to_ccv_ratio peak_to_average_ccv_ratio ccv_coefficient_of_variation ccv_tier_stickiness
         message_entropy unique_message_ratio single_message_chatter_ratio emote_only_ratio
         avg_inter_message_interval_sec timing_regularity_score nlp_contextual_relevance_score
         avg_account_age_days account_creation_date_clustering_gini profile_completeness_ratio engagement_participation_ratio
+        follower_growth_cv_90d growth_engagement_correlation follow_unfollow_churn_rate attributed_spike_ratio
       ]
-      pr57_pending_keys.each do |k|
-        expect(result[k]).to be_nil, "expected #{k} to be nil pending PR5-7"
+      pr67_pending_keys.each do |k|
+        expect(result[k]).to be_nil, "expected #{k} to be nil pending PR6-7"
       end
     end
 
@@ -65,6 +66,24 @@ RSpec.describe Ml::FeatureExtractor do
       expect(result[:unique_message_ratio]).to eq(0.7)
       expect(result[:timing_regularity_score]).to eq(0.5)
       expect(result[:nlp_contextual_relevance_score]).to be_nil # deferred ONNX EPIC
+    end
+
+    # PR5: GrowthSignals delegation — extractor returns numeric growth features when
+    # FollowerSnapshot history sufficient (≥7 snapshots in 90d window).
+    it "delegates growth features to Ml::Features::GrowthSignals (PR5)" do
+      allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
+      channel = stream.channel
+      # 8 steady-growth snapshots (≥ MIN_SNAPSHOTS_FOR_CV) — clean CV = 0 + 0 churn.
+      counts = (0..7).map { |i| 1000 + 10 * i }
+      counts.reverse.each_with_index do |c, days_ago|
+        create(:follower_snapshot, channel: channel, followers_count: c, timestamp: days_ago.days.ago)
+      end
+
+      result = extractor.call
+      expect(result[:follower_growth_cv_90d]).to be_within(0.001).of(0.0)
+      expect(result[:follow_unfollow_churn_rate]).to eq(0.0)
+      expect(result[:attributed_spike_ratio]).to be_nil # no σ-based spike on linear growth
+      # growth_engagement_correlation can be nil (no streams = zero variance engagement series)
     end
 
     # PR4: AccountSignals delegation — extractor returns numeric account features when
@@ -111,6 +130,12 @@ RSpec.describe Ml::FeatureExtractor do
         profile_completeness_ratio: 0.8, engagement_participation_ratio: 0.02
       )
       allow_any_instance_of(Ml::Features::AccountSignals).to receive(:insufficient_data_reasons).and_return({})
+      # PR5: stub GrowthSignals для all-clean scenario
+      allow_any_instance_of(Ml::Features::GrowthSignals).to receive(:call).and_return(
+        follower_growth_cv_90d: 0.4, growth_engagement_correlation: 0.6,
+        follow_unfollow_churn_rate: 0.1, attributed_spike_ratio: 0.8
+      )
+      allow_any_instance_of(Ml::Features::GrowthSignals).to receive(:insufficient_data_reasons).and_return({})
       extractor.call
 
       meta = extractor.metadata
@@ -121,15 +146,17 @@ RSpec.describe Ml::FeatureExtractor do
 
     it "captures per-group insufficient_data_reasons when features go nil" do
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
-      extractor.call # cold-start stream → viewer/chat/account all report reasons
+      extractor.call # cold-start stream → viewer/chat/account/growth all report reasons
 
       meta = extractor.metadata
       expect(meta[:insufficient_data_reasons]).to have_key(:viewer)
       expect(meta[:insufficient_data_reasons]).to have_key(:chat)
       expect(meta[:insufficient_data_reasons]).to have_key(:account)
+      expect(meta[:insufficient_data_reasons]).to have_key(:growth)
       expect(meta[:insufficient_data_reasons][:viewer].keys).to include(:chatter_to_ccv_ratio)
       expect(meta[:insufficient_data_reasons][:chat][:nlp_contextual_relevance_score]).to eq("requires_nlp_inference_layer_separate_epic")
       expect(meta[:insufficient_data_reasons][:account].values.uniq).to eq([ "no_chatters" ])
+      expect(meta[:insufficient_data_reasons][:growth].values.uniq).to eq([ "insufficient_snapshots" ])
     end
   end
 end

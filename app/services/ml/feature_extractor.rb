@@ -29,6 +29,7 @@ module Ml
       viewer_features = collect_viewer_features
       chat_features = collect_chat_features
       account_features = collect_account_features
+      growth_features = collect_growth_features
 
       {
         # Viewer (PR2 — live) — Ml::Features::ViewerSignals
@@ -54,11 +55,11 @@ module Ml
         profile_completeness_ratio: account_features[:profile_completeness_ratio],
         engagement_participation_ratio: account_features[:engagement_participation_ratio],
 
-        # Growth (PR5) — Ml::Features::GrowthSignals
-        follower_growth_cv_90d: nil,
-        growth_engagement_correlation: nil,
-        follow_unfollow_churn_rate: nil,
-        attributed_spike_ratio: nil,
+        # Growth (PR5 — live) — Ml::Features::GrowthSignals
+        follower_growth_cv_90d: growth_features[:follower_growth_cv_90d],
+        growth_engagement_correlation: growth_features[:growth_engagement_correlation],
+        follow_unfollow_churn_rate: growth_features[:follow_unfollow_churn_rate],
+        attributed_spike_ratio: growth_features[:attributed_spike_ratio],
 
         # Stability (PR6) — Ml::Features::StabilitySignals
         trust_index_30d_std: nil,
@@ -103,6 +104,14 @@ module Ml
       features = account.call
       reasons = account.insufficient_data_reasons
       @insufficient_data_reasons[:account] = reasons if reasons.any?
+      features
+    end
+
+    def collect_growth_features
+      growth = Ml::Features::GrowthSignals.new(@stream)
+      features = growth.call
+      reasons = growth.insufficient_data_reasons
+      @insufficient_data_reasons[:growth] = reasons if reasons.any?
       features
     end
   end
