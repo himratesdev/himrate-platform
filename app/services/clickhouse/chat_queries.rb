@@ -187,10 +187,45 @@ module Clickhouse
       {}
     end
 
+    # PR #259 (2026-06-02 perf-debt): consolidated raw-scan replacement for chatter_timestamps +
+    # chatter_messages + chatter_emotes. Three separate full-scans of the same chat_messages
+    # partition (one per column projection) collapse to a SINGLE scan with all four columns,
+    # then split client-side. BSW post-stream-end scan time drops ~3× (3 scans @ ~800ms each
+    # → 1 scan @ ~800ms; CH benchmark 2026-06-02 confirmed 549-2084ms per old call).
+    #
+    # Returns Hash { username => { timestamps: [Time], messages: [String], emote_strings: [String] } }
+    # — exact superset of the per-method shapes the old three calls produced. Filters preserve the
+    # old semantics: `message_text != ''` and `emotes != ''` filters happen Ruby-side after the
+    # single scan so the consolidated query plan stays simple (one stream_id + msg_type predicate).
+    def chatter_raw_data(stream)
+      validate_stream_uuid!(stream.id)
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT username, timestamp, message_text, emotes
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg' AND username != ''
+        ORDER BY username, timestamp
+      SQL
+      rows.group_by { |r| r["username"] }.transform_values do |group|
+        {
+          timestamps:    group.map { |r| Time.parse("#{r['timestamp']} UTC") },
+          messages:      group.filter_map { |r| r["message_text"] unless r["message_text"].nil? || r["message_text"] == "" },
+          emote_strings: group.filter_map { |r| r["emotes"] unless r["emotes"].nil? || r["emotes"] == "" }
+        }
+      end
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: chatter_raw_data failed (#{e.class})")
+      {}
+    end
+
     # Mirrors BotScoringWorker#enrich_chat_stats — per-user (username, timestamp) tuples in privmsg
     # order, used to compute CV timing (std/mean of inter-message intervals). PG path used a heavy
     # `.pluck.group_by`; this query is identical semantically and the column-store load is trivial
     # for typical per-stream chat sizes (≤200k messages).
+    #
+    # PR #259 (2026-06-02): preserved as fallback / backwards-compat. Hot path uses
+    # `chatter_raw_data` which folds this query + chatter_messages + chatter_emotes into one
+    # CH scan. Keep this method until callers are confirmed to be solely BSW (then it can be
+    # removed in a follow-up).
     def chatter_timestamps(stream)
       validate_stream_uuid!(stream.id)
       rows = Clickhouse.client.select(<<~SQL)

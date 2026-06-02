@@ -116,44 +116,51 @@ class BotScoringWorker
     chatters
   end
 
-  # Per-user CV timing + Shannon entropy + custom-emote signal. Each of the three CH queries
-  # returns Hash { username => [values...] } so the in-Ruby maths stays identical to the
-  # PG-era implementation (just the data fetch is column-store now).
+  # Per-user CV timing + Shannon entropy + custom-emote signal.
+  #
+  # PR #259 (2026-06-02 perf-debt): three separate CH scans (chatter_timestamps + _messages +
+  # _emotes) consolidated into ONE via `chatter_raw_data`. CH benchmark 2026-06-02 measured each
+  # of the old calls at 549-2084ms (full-scan with column projection); the three combined ate
+  # ~1.6s out of typical 3-7s BSW#perform. Consolidated scan returns same per-user arrays in a
+  # single round-trip with one query plan + one disk pass.
   def enrich_chat_stats(stream, chatters)
-    user_timestamps = Clickhouse::ChatQueries.chatter_timestamps(stream)
-    user_timestamps.each do |username, timestamps|
+    raw = Clickhouse::ChatQueries.chatter_raw_data(stream)
+    raw.each do |username, data|
       next unless chatters[username]
-      next if timestamps.size < 3
 
-      # CV timing: std(intervals) / mean(intervals)
-      intervals = timestamps.each_cons(2).map { |a, b| (b - a).to_f }
-      mean = intervals.sum / intervals.size
-      if mean > 0
-        std = Math.sqrt(intervals.sum { |i| (i - mean)**2 } / intervals.size)
-        cv = std / mean
-        chatters[username][:chat_stats][:cv_timing] = cv
+      # CV timing: std(intervals) / mean(intervals). Requires ≥3 timestamps for one interval pair.
+      if data[:timestamps].size >= 3
+        intervals = data[:timestamps].each_cons(2).map { |a, b| (b - a).to_f }
+        mean = intervals.sum / intervals.size
+        if mean > 0
+          std = Math.sqrt(intervals.sum { |i| (i - mean)**2 } / intervals.size)
+          chatters[username][:chat_stats][:cv_timing] = std / mean
+        end
       end
-    end
 
-    user_messages = Clickhouse::ChatQueries.chatter_messages(stream)
-    user_messages.each do |username, texts|
-      next unless chatters[username]
-      next if texts.size < 3
+      # Shannon entropy over word frequency. Requires ≥3 non-empty messages for stable signal.
+      if data[:messages].size >= 3
+        words = data[:messages].join(" ").downcase.split(/\s+/)
+        freq = words.tally
+        total = words.size.to_f
+        entropy = -freq.values.sum { |c| p = c / total; p * Math.log2(p) }
+        chatters[username][:chat_stats][:entropy] = entropy
+      end
 
-      # Shannon entropy over word frequency
-      words = texts.join(" ").downcase.split(/\s+/)
-      freq = words.tally
-      total = words.size.to_f
-      entropy = -freq.values.sum { |c| p = c / total; p * Math.log2(p) }
-      chatters[username][:chat_stats][:entropy] = entropy
-    end
-
-    user_emotes = Clickhouse::ChatQueries.chatter_emotes(stream)
-    user_emotes.each do |username, emote_strings|
-      next unless chatters[username]
-
-      total_emotes = emote_strings.sum { |e| e.split("/").size }
-      chatters[username][:chat_stats][:has_custom_emotes] = total_emotes > 0 ? 1.0 : 0.0
+      # CR M1 (PR #261 iter-2): preserve OLD `chatter_emotes` SQL semantics — the legacy method
+      # filtered `WHERE emotes != ''` server-side, so users with no non-empty emote rows never
+      # entered the Ruby loop, leaving `:has_custom_emotes` UNSET (nil) in their chat_stats.
+      #
+      # `BotDetection::Scorer#score_chat_behavior` (`bot_detection/scorer.rb:150`) has a
+      # `:zero_custom_emotes` branch guarded by `has_custom_emotes && msg_count>=8 && has_custom_emotes==0.0`.
+      # Setting 0.0 (truthy in Ruby) instead of leaving nil flips ≥8-msg no-emote chatters into a
+      # +0.35 bot-suspicion penalty they did NOT carry under the old path — a silent scoring
+      # regression invisible at the CH-perf layer.
+      #
+      # Gate the write on `emote_strings.any?` so the marker is set ONLY for chatters who actually
+      # have non-empty emote payloads (mirrors the old SQL filter exactly). Total emote count is
+      # not needed: any non-empty row has `.split("/").size >= 1` by definition.
+      chatters[username][:chat_stats][:has_custom_emotes] = 1.0 if data[:emote_strings].any?
     end
   end
 

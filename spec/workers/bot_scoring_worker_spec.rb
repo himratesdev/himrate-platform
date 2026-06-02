@@ -19,9 +19,9 @@ RSpec.describe BotScoringWorker do
     allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(false)
     # Default: no chat returned. Each test overrides the methods it depends on.
     allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).and_return({})
-    allow(Clickhouse::ChatQueries).to receive(:chatter_timestamps).and_return({})
-    allow(Clickhouse::ChatQueries).to receive(:chatter_messages).and_return({})
-    allow(Clickhouse::ChatQueries).to receive(:chatter_emotes).and_return({})
+    # PR #259 (perf-debt): three old per-column scans (chatter_timestamps + _messages + _emotes)
+    # consolidated into single chatter_raw_data scan. Default empty → enrichment loop no-ops.
+    allow(Clickhouse::ChatQueries).to receive(:chatter_raw_data).and_return({})
     allow(Clickhouse::ChatQueries).to receive(:chatter_cross_channel_counts).and_return({})
   end
 
@@ -124,6 +124,53 @@ RSpec.describe BotScoringWorker do
     # chatter_aggregations stub already defaults to {} via the top-level before block.
 
     expect { worker.perform(stream.id) }.not_to change(PerUserBotScore, :count)
+  end
+
+  # CR-261 S1: regression guard — the consolidation of 3 CH scans into chatter_raw_data must
+  # preserve the OLD `chatter_emotes` server-side filter `WHERE emotes != ''`. The legacy code
+  # never iterated users without emotes, leaving `:has_custom_emotes` nil — and the scorer's
+  # `:zero_custom_emotes` branch (Scorer#score_chat_behavior:150) uses `has_custom_emotes && …
+  # && == 0.0`, so nil short-circuits but 0.0 (truthy) doesn't. CR iter-1 caught a silent +0.35
+  # bot-suspicion regression for every ≥8-msg no-emote chatter. This spec exercises both paths
+  # (emoter + non-emoter) end-to-end through BSW and asserts the scorer components.
+  it "preserves legacy emote-filter semantics: no-emote chatter does NOT get :zero_custom_emotes penalty (CR-261 M1 regression guard)" do
+    channel = Channel.create!(twitch_id: "789", login: "emote_parity", display_name: "EP")
+    stream = Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
+
+    # Two users:
+    #   - alice: 10 privmsgs, 0 emotes → legacy left :has_custom_emotes nil → :zero_custom_emotes NOT applied
+    #   - bob:   10 privmsgs, 3 emoter rows → :has_custom_emotes = 1.0 → :zero_custom_emotes also NOT applied
+    # Both have message_count >= 8 (the scorer guard).
+    allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).with(stream).and_return(
+      "alice" => aggregation("alice", msg_count: 10),
+      "bob"   => aggregation("bob", msg_count: 10)
+    )
+    allow(Clickhouse::ChatQueries).to receive(:chatter_raw_data).with(stream).and_return(
+      "alice" => {
+        timestamps:    (1..10).map { |i| stream.started_at + i.seconds },
+        messages:      (1..10).map { |i| "msg #{i}" },
+        emote_strings: []  # ← no emotes; legacy SQL filter would have skipped this user entirely
+      },
+      "bob" => {
+        timestamps:    (1..10).map { |i| stream.started_at + i.seconds },
+        messages:      (1..10).map { |i| "msg #{i}" },
+        emote_strings: [ "25:0-4", "50:0-4", "303:0-4" ]
+      }
+    )
+    allow_any_instance_of(KnownBotService).to receive(:check_batch).and_return(
+      "alice" => { bot: false, confidence: 0.0, sources: [] },
+      "bob"   => { bot: false, confidence: 0.0, sources: [] }
+    )
+
+    worker.perform(stream.id)
+
+    alice_components = PerUserBotScore.find_by(stream: stream, username: "alice").components.keys.map(&:to_s)
+    bob_components   = PerUserBotScore.find_by(stream: stream, username: "bob").components.keys.map(&:to_s)
+    # Neither chatter should fire the :zero_custom_emotes branch:
+    #   - alice: nil-emote semantics preserved → branch short-circuits
+    #   - bob: has emotes → :has_custom_emotes == 1.0, branch doesn't match (== 0.0 check)
+    expect(alice_components).not_to include("zero_custom_emotes")
+    expect(bob_components).not_to include("zero_custom_emotes")
   end
 
   # CR-258 S1 (BUG-SCW-CROSS-CHANNEL): BSW shared the same 24h CH scan on its own queue, so the
