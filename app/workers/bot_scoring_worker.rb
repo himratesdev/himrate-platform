@@ -138,7 +138,7 @@ class BotScoringWorker
         end
       end
 
-      # Shannon entropy over word frequency. Requires ≥3 non-empty messages для stable signal.
+      # Shannon entropy over word frequency. Requires ≥3 non-empty messages for stable signal.
       if data[:messages].size >= 3
         words = data[:messages].join(" ").downcase.split(/\s+/)
         freq = words.tally
@@ -147,9 +147,20 @@ class BotScoringWorker
         chatters[username][:chat_stats][:entropy] = entropy
       end
 
-      # Emote presence: any non-empty emotes payload → has_custom_emotes = 1.0
-      total_emotes = data[:emote_strings].sum { |e| e.split("/").size }
-      chatters[username][:chat_stats][:has_custom_emotes] = total_emotes > 0 ? 1.0 : 0.0
+      # CR M1 (PR #261 iter-2): preserve OLD `chatter_emotes` SQL semantics — the legacy method
+      # filtered `WHERE emotes != ''` server-side, so users with no non-empty emote rows never
+      # entered the Ruby loop, leaving `:has_custom_emotes` UNSET (nil) in their chat_stats.
+      #
+      # `BotDetection::Scorer#score_chat_behavior` (`bot_detection/scorer.rb:150`) has a
+      # `:zero_custom_emotes` branch guarded by `has_custom_emotes && msg_count>=8 && has_custom_emotes==0.0`.
+      # Setting 0.0 (truthy in Ruby) instead of leaving nil flips ≥8-msg no-emote chatters into a
+      # +0.35 bot-suspicion penalty they did NOT carry under the old path — a silent scoring
+      # regression invisible at the CH-perf layer.
+      #
+      # Gate the write on `emote_strings.any?` so the marker is set ONLY for chatters who actually
+      # have non-empty emote payloads (mirrors the old SQL filter exactly). Total emote count is
+      # not needed: any non-empty row has `.split("/").size >= 1` by definition.
+      chatters[username][:chat_stats][:has_custom_emotes] = 1.0 if data[:emote_strings].any?
     end
   end
 
