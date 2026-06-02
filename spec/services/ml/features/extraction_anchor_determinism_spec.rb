@@ -154,10 +154,13 @@ RSpec.describe "ML feature extraction determinism (CR-253 M1)" do
 
     it "AccountSignals.engagement_participation_ratio: post-anchor FollowerSnapshot does NOT shift denominator" do
       immediate = Ml::Features::AccountSignals.new(stream).call[:engagement_participation_ratio]
-      # New snapshot with 10× followers — would invalidate the original-time engagement ratio.
+      # New snapshot with 10× followers — would invalidate the original-time engagement ratio
+      # if the upper-bound filter weren't in place. `Channel` doesn't declare
+      # `has_many :follower_snapshots` (one-direction belongs_to-only), so direct query.
+      max_in_window = FollowerSnapshot.where(channel: channel).maximum(:followers_count) || 1000
       create(:follower_snapshot,
              channel: channel,
-             followers_count: (stream.channel.follower_snapshots.maximum(:followers_count) || 1000) * 10,
+             followers_count: max_in_window * 10,
              timestamp: stream.ended_at + 2.hours)
       travel(5.hours) do
         replay = Ml::Features::AccountSignals.new(stream).call[:engagement_participation_ratio]

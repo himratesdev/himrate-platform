@@ -7,10 +7,14 @@ RSpec.describe Ml::Features::GrowthSignals do
   let(:stream) { create(:stream, channel: channel) }
   let(:growth) { described_class.new(stream) }
 
-  # Helper: seed N consecutive daily FollowerSnapshot rows ending today.
+  # Helper: seed N consecutive daily FollowerSnapshot rows ending at the stream's
+  # extraction anchor (`stream.ended_at`). CR-256 P1: anchored to stream.ended_at so
+  # the new upper-bound filter (`timestamp <= extraction_anchor`) includes all seeded
+  # snapshots. Previously defaulted to `Time.current` which sat past stream.ended_at
+  # (factory default `1.hour.ago`) — would now be excluded by the upper bound.
   # `counts` Array<Integer> — each consecutive pair = next day delta.
   # Returns the snapshot timestamps for use in stream-attribution helpers.
-  def seed_snapshots(counts, end_at: Time.current)
+  def seed_snapshots(counts, end_at: stream.ended_at)
     timestamps = []
     counts.reverse.each_with_index do |count, days_ago|
       ts = end_at - days_ago.days
@@ -129,11 +133,19 @@ RSpec.describe Ml::Features::GrowthSignals do
     end
 
     it "without any stream → attributed_spike_ratio = 0.0" do
+      # CR-256 P1: re-seed snapshots anchored на новый stream_no_history.ended_at, иначе
+      # all 8 snapshots fall after the new stream's extraction_anchor and get excluded
+      # by the upper-bound filter → window has 0 deltas → nil + insufficient_snapshots.
       Stream.where(channel: channel).destroy_all
-      # Place anchor stream WAY outside 90d window so stream_starts is empty for the
-      # spike interval — factory default `started_at: 3.hours.ago` would fall inside
-      # the spike interval and falsely attribute the spike.
-      stream_no_history = create(:stream, channel: channel, started_at: 200.days.ago, ended_at: 199.days.ago)
+      FollowerSnapshot.where(channel: channel).delete_all
+      stream_no_history = create(:stream, channel: channel,
+                                 started_at: 2.hours.ago, ended_at: 1.hour.ago)
+      counts = [ 1000, 1005, 1010, 1015, 1020, 1025, 1030, 1530 ]
+      counts.reverse.each_with_index do |count, days_ago|
+        FollowerSnapshot.create!(channel: channel,
+                                 timestamp: stream_no_history.ended_at - days_ago.days,
+                                 followers_count: count)
+      end
       growth_no_streams = described_class.new(stream_no_history)
       expect(growth_no_streams.call[:attributed_spike_ratio]).to eq(0.0)
     end
@@ -161,10 +173,12 @@ RSpec.describe Ml::Features::GrowthSignals do
     before do
       # 8 snapshots inside window + 5 snapshots OUTSIDE window (>90d ago) — outside ignored.
       seed_snapshots([ 100, 200, 300, 400, 500, 600, 700, 800 ])
+      # CR-256 P1: anchor against stream.ended_at so out-of-window snapshots are unambiguously
+      # >90d before extraction_anchor (not just >90d before Time.current).
       5.times do |i|
         FollowerSnapshot.create!(
           channel: channel,
-          timestamp: (100 + i).days.ago, # 100..104 days ago, all > 90d
+          timestamp: stream.ended_at - (100 + i).days, # 100..104 days pre-anchor, all > 90d
           followers_count: 50 + i
         )
       end

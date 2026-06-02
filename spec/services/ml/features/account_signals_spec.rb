@@ -129,21 +129,24 @@ RSpec.describe Ml::Features::AccountSignals do
   end
 
   describe "#engagement_participation_ratio" do
+    # CR-256 P1: fixture timestamps anchored to stream.ended_at, NOT Time.current. Without
+    # this shift, `1.hour.ago` evaluates microseconds later than stream's ended_at and gets
+    # excluded by the new upper-bound filter on `latest_snapshot`.
     it "computes unique_chatters / channel.followers (latest FollowerSnapshot)" do
       seed_chatters(5) # 5 unique chatters
-      create(:follower_snapshot, channel: channel, followers_count: 1000, timestamp: 1.hour.ago)
+      create(:follower_snapshot, channel: channel, followers_count: 1000, timestamp: stream.ended_at - 1.hour)
 
       result = account.call
       expect(result[:engagement_participation_ratio]).to eq(0.005) # 5/1000
     end
 
-    it "uses LATEST snapshot when multiple exist" do
+    it "uses LATEST at-or-before extraction_anchor snapshot when multiple exist" do
       seed_chatters(5)
-      create(:follower_snapshot, channel: channel, followers_count: 5000, timestamp: 2.hours.ago)
-      create(:follower_snapshot, channel: channel, followers_count: 100, timestamp: 1.hour.ago)
+      create(:follower_snapshot, channel: channel, followers_count: 5000, timestamp: stream.ended_at - 2.hours)
+      create(:follower_snapshot, channel: channel, followers_count: 100, timestamp: stream.ended_at - 1.hour)
 
       result = account.call
-      expect(result[:engagement_participation_ratio]).to eq(0.05) # 5/100 — latest snapshot
+      expect(result[:engagement_participation_ratio]).to eq(0.05) # 5/100 — latest at-or-before anchor
     end
 
     it "nil when no follower snapshot exists" do
@@ -158,7 +161,7 @@ RSpec.describe Ml::Features::AccountSignals do
     # CR-251 S1 (iter-2): distinguish no_follower_snapshot vs zero_followers
     it "nil with 'zero_followers' when snapshot exists но followers_count = 0 (brand-new channel)" do
       seed_chatters(5)
-      create(:follower_snapshot, channel: channel, followers_count: 0, timestamp: 1.hour.ago)
+      create(:follower_snapshot, channel: channel, followers_count: 0, timestamp: stream.ended_at - 1.hour)
 
       result = account.call
       expect(result[:engagement_participation_ratio]).to be_nil
