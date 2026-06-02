@@ -77,7 +77,18 @@ module Twitch
 
       JSON.parse(response.body.to_s).dig("data")
     rescue HTTP::Error => e
+      # Phase 2 G rescue audit M3: EventSub is operationally critical — losing
+      # subscribe/list/delete silently means realtime data plane degraded with no
+      # alert. Capture on transport failure (DNS / TLS / connection-reset). Logger
+      # alone wasn't enough — log noise drowned signal during PR 1e-B period.
       Rails.logger.error("EventSub list error: #{e.message}")
+      if defined?(Sentry)
+        Sentry.with_scope do |scope|
+          scope.set_tags(eventsub_operation: "list")
+          scope.set_fingerprint([ "eventsub", "list", e.class.name ])
+          Sentry.capture_exception(e)
+        end
+      end
       nil
     end
 
@@ -116,7 +127,18 @@ module Twitch
         nil
       end
     rescue HTTP::Error => e
+      # Phase 2 G rescue audit M3: subscribe loss = silent realtime data plane
+      # degradation. Capture so we get alerted when Twitch starts returning
+      # transport errors (DNS / TLS handshake / reset) — those don't reach 4xx/5xx
+      # parsing below and were previously logger-only.
       Rails.logger.error("EventSub create error: #{type} — #{e.message}")
+      if defined?(Sentry)
+        Sentry.with_scope do |scope|
+          scope.set_tags(eventsub_operation: "create", eventsub_type: type)
+          scope.set_fingerprint([ "eventsub", "create", e.class.name ])
+          Sentry.capture_exception(e)
+        end
+      end
       nil
     end
 
@@ -130,7 +152,17 @@ module Twitch
 
       response.status.to_i == 204
     rescue HTTP::Error => e
+      # Phase 2 G rescue audit M3: delete failure = orphaned subscription
+      # consuming Twitch quota (10k limit per app). Capture so quota drift is
+      # visible before we hit the cap.
       Rails.logger.error("EventSub delete error: #{subscription_id} — #{e.message}")
+      if defined?(Sentry)
+        Sentry.with_scope do |scope|
+          scope.set_tags(eventsub_operation: "delete", subscription_id: subscription_id)
+          scope.set_fingerprint([ "eventsub", "delete", e.class.name ])
+          Sentry.capture_exception(e)
+        end
+      end
       false
     end
   end

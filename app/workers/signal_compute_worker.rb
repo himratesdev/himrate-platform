@@ -4,6 +4,14 @@
 # Orchestrates full pipeline: context → signals → interaction → anomaly → TI/ERV → persist → publish.
 # Triggered by StreamMonitorWorker (live, per stream) and BotScoringWorker (final, post-stream).
 # Throttle from DB (signal_configurations). Flipper[:signal_compute] gate.
+#
+# Telemetry (Phase 2 G, 2026-06-03): each pipeline stage emits a tagged
+# ActiveSupport::Notifications event ("scw.<stage>") + Sentry breadcrumb. When a
+# stage raises, Sentry.capture_exception is called with stage + stream_id tagged
+# in the scope so failures land in Sentry pre-grouped by stage. This addresses
+# the «probe ONE function ≠ end-to-end verified» pattern documented in
+# `memory/feedback_telemetry_first_diagnostic.md` — when SCW fails, we now know
+# WHICH stage from the tagged event without re-deriving from log lines.
 
 class SignalComputeWorker
   include Sidekiq::Job
@@ -16,6 +24,21 @@ class SignalComputeWorker
   THROTTLE_KEY_PREFIX = "signal_compute:throttle:"
   PUBLISH_CHANNEL_PREFIX = "ti:updates:"
   DEFAULT_THROTTLE_SECONDS = 30
+
+  # Ordered list of pipeline stage names. Each is the AS::N event suffix
+  # ("scw.<stage>") + Sentry breadcrumb category. Kept here as a single source
+  # so the spec can assert exhaustive coverage.
+  PIPELINE_STAGES = %w[
+    context_build
+    signals_compute
+    interaction_matrix
+    anomaly_alerter
+    engine_compute
+    extra_detectors
+    cache_invalidate
+    publish_update
+    signal_health_track
+  ].freeze
 
   # FR-009: Dead letter — anomaly record on exhausted retries
   sidekiq_retries_exhausted do |job, ex|
@@ -52,38 +75,58 @@ class SignalComputeWorker
     started_at = Time.current
 
     # FR-003: Build context
-    context = TrustIndex::ContextBuilder.build(stream)
+    context = instrument_stage("context_build", stream_id) do
+      TrustIndex::ContextBuilder.build(stream)
+    end
 
     # FR-004: Full pipeline
-    signal_results = TrustIndex::Signals::Registry.compute_all(context)
-    interaction_output = TrustIndex::Signals::InteractionMatrix.apply(signal_results)
+    signal_results = instrument_stage("signals_compute", stream_id) do
+      TrustIndex::Signals::Registry.compute_all(context)
+    end
+
+    interaction_output = instrument_stage("interaction_matrix", stream_id) do
+      TrustIndex::Signals::InteractionMatrix.apply(signal_results)
+    end
+
     # TASK-039 FR-019: enqueue attribution pipeline для каждой созданной anomaly.
     # AnomalyAlerter returns Array anomaly IDs (newly created, после dedup).
-    anomaly_ids = TrustIndex::Signals::AnomalyAlerter.check(stream, interaction_output[:results])
+    anomaly_ids = instrument_stage("anomaly_alerter", stream_id) do
+      TrustIndex::Signals::AnomalyAlerter.check(stream, interaction_output[:results])
+    end
     anomaly_ids.each { |id| Trends::AnomalyAttributionWorker.perform_async(id) }
 
-    result = TrustIndex::Engine.new.compute(
-      signal_results: interaction_output[:results],
-      stream: stream,
-      ccv: context[:latest_ccv] || 0,
-      category: context[:category] || "default"
-    )
+    result = instrument_stage("engine_compute", stream_id) do
+      TrustIndex::Engine.new.compute(
+        signal_results: interaction_output[:results],
+        stream: stream,
+        ccv: context[:latest_ccv] || 0,
+        category: context[:category] || "default"
+      )
+    end
 
     # TASK-085 FR-014/015 (ADR-085 D-6 + D-8b): NEW detectors extend AnomalyAlerter pattern.
     # Run AFTER Engine.compute (writes TrustIndexHistory + ErvEstimate) но ДО invalidate_api_cache
     # (D-8b race window prevention — fresh anomalies visible immediately on next poll).
-    extra_anomaly_ids = TrustIndex::Signals::TiDropDetector.check(stream) +
-                        TrustIndex::Signals::ErvDivergenceDetector.check(stream)
+    extra_anomaly_ids = instrument_stage("extra_detectors", stream_id) do
+      TrustIndex::Signals::TiDropDetector.check(stream) +
+        TrustIndex::Signals::ErvDivergenceDetector.check(stream)
+    end
     extra_anomaly_ids.each { |id| Trends::AnomalyAttributionWorker.perform_async(id) }
 
     # TASK-032 CR #16: Explicit cache invalidation after TI compute
-    invalidate_api_cache(stream.channel_id)
+    instrument_stage("cache_invalidate", stream_id) do
+      invalidate_api_cache(stream.channel_id)
+    end
 
     # FR-005: Redis publish
-    publish_update(stream, result)
+    instrument_stage("publish_update", stream_id) do
+      publish_update(stream, result)
+    end
 
     # FR-010: Signal health tracking
-    track_signal_health(signal_results)
+    instrument_stage("signal_health_track", stream_id) do
+      track_signal_health(signal_results)
+    end
 
     duration_ms = ((Time.current - started_at) * 1000).to_i
     Rails.logger.info(
@@ -94,6 +137,35 @@ class SignalComputeWorker
   end
 
   private
+
+  # Wraps a stage with AS::N instrumentation + Sentry breadcrumb + error capture.
+  # AS::N event name = "scw.<stage>" so subscribers (Sentry sidekiq integration,
+  # custom log subscribers, future Prometheus exporters) can filter by stage.
+  # On exception: tag Sentry scope with stage + stream_id, capture, re-raise so
+  # Sidekiq retry semantics remain unchanged.
+  def instrument_stage(stage_name, stream_id)
+    event_name = "scw.#{stage_name}"
+    ActiveSupport::Notifications.instrument(event_name, stream_id: stream_id) do
+      if defined?(Sentry)
+        Sentry.add_breadcrumb(Sentry::Breadcrumb.new(
+          category: "scw.stage",
+          message: stage_name,
+          data: { stream_id: stream_id },
+          level: "info"
+        ))
+      end
+      yield
+    end
+  rescue StandardError => e
+    if defined?(Sentry)
+      Sentry.with_scope do |scope|
+        scope.set_tags(scw_stage: stage_name, stream_id: stream_id)
+        scope.set_fingerprint([ "scw", stage_name, e.class.name ])
+        Sentry.capture_exception(e)
+      end
+    end
+    raise
+  end
 
   def throttled?(stream_id)
     ttl = throttle_ttl

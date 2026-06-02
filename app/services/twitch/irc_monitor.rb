@@ -264,8 +264,11 @@ module Twitch
         flushed += 1
       end
       Rails.logger.info("IrcMonitor: flushed #{flushed} messages from memory buffer to Redis")
-    rescue Redis::BaseError
-      # Redis still down — messages stay in memory buffer for next attempt
+    rescue Redis::BaseError => e
+      # Phase 2 G rescue audit M4: previously silent — memory buffer
+      # backpressure invisible. Logger.warn (NOT capture_exception — это steady
+      # state under Redis outage, не event) so ops can grep for it during incident.
+      Rails.logger.warn("IrcMonitor: Redis still unavailable during flush — #{@memory_buffer.size} messages held in memory (#{e.message})")
     end
 
     # === Reconnect ===
@@ -452,8 +455,12 @@ module Twitch
         last_message_at: @last_message_at.iso8601,
         uptime_seconds: (Time.current - @started_at).to_i
       }.to_json)
-    rescue Redis::BaseError
-      # Non-critical
+    rescue Redis::BaseError => e
+      # Phase 2 G rescue audit M4: heartbeat write failure used to be silent —
+      # health checks see stale `connected: true` indefinitely. Logger.debug (not
+      # warn — heartbeat runs every cycle, would spam under Redis outage; the
+      # message-flush rescue above already surfaces the broader Redis state).
+      Rails.logger.debug("IrcMonitor: heartbeat write failed (#{e.message})")
     end
   end
 end

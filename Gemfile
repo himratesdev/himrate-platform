@@ -55,6 +55,14 @@ gem "sidekiq", "~> 7.0"
 gem "sidekiq-cron", "~> 2.0"
 gem "connection_pool", "~> 2.5"
 
+# Error tracking + structured telemetry. DSN configured via SENTRY_DSN env;
+# absent DSN = silent no-op (initializer doesn't raise). PVA enrollment chain
+# already calls `Sentry.capture_exception(e) if defined?(Sentry)` defensively —
+# installing the gem activates those callsites + future SCW stage breadcrumbs.
+gem "sentry-ruby", "~> 5.21"
+gem "sentry-rails", "~> 5.21"
+gem "sentry-sidekiq", "~> 5.21"
+
 # RSpec for testing
 group :development, :test do
   gem "rspec-rails", "~> 7.0"

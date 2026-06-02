@@ -479,7 +479,19 @@ module Twitch
         item
       end
     rescue JSON::ParserError => e
+      # Phase 2 G rescue audit M1: batch shape failure was logger-only — invisible
+      # when Twitch ships GQL response contract change. Caller sees `[]` indistinguishable
+      # from genuine empty batch. Capture so we get alerted on shape break, not on
+      # transient errors (those are 4xx/5xx handled upstream — never reach here).
       Rails.logger.error("Twitch GQL batch JSON parse error: #{e.message}")
+      if defined?(Sentry)
+        Sentry.with_scope do |scope|
+          scope.set_tags(twitch_gql_failure: "batch_json_parse")
+          scope.set_fingerprint([ "twitch_gql_batch_json_parse" ])
+          scope.set_context("response", { body_preview: response.body.to_s.truncate(500) })
+          Sentry.capture_exception(e)
+        end
+      end
       []
     end
 
