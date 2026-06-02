@@ -230,6 +230,20 @@ class RaidDetectionWorker
     # BotScoringWorker uses (post PR #231 cutover). Window aligned to the prior PG `> ?` shape
     # by passing `CROSS_CHANNEL_WINDOW.ago` directly (chatter_cross_channel_counts uses `>` on
     # the cutoff so the open boundary matches).
+    #
+    # CR-258 N-iter2-1 (BUG-SCW-CROSS-CHANNEL): intentionally NOT routed through the digest
+    # path that ContextBuilder + BotScoringWorker use. Three reasons it's safe to keep on the
+    # legacy CH scan here:
+    #   1. Denominator is `newcomers.size` (below), not `counts.size` — the M1 denominator-
+    #      collapse risk that motivated `fetch_with_baseline` doesn't apply.
+    #   2. `CROSS_CHANNEL_MIN = 10` is well above the digest's `HAVING c > 1` filter — the
+    #      single-channel chatters omitted from the digest would not have flipped `in_many`
+    #      either way.
+    #   3. Worker runs */5 min on `:monitoring` (sparse raid traffic, ~20/hour) — not the
+    #      :signal_compute hot path the digest was built to relieve.
+    # If the CH scan latency becomes a problem here too (currently it isn't — `newcomers` set
+    # is small per-raid), revisit then; today a third call site reading from a still-OK CH
+    # primitive is the right trade-off.
     counts = Clickhouse::ChatQueries.chatter_cross_channel_counts(newcomers, CROSS_CHANNEL_WINDOW.ago)
     return blank_signal if counts.empty?
 

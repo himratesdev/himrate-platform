@@ -110,14 +110,34 @@ module TrustIndex
       # Limited to stream's chatters to keep query bounded.
       CROSS_CHANNEL_CHATTER_LIMIT = 500
 
-      # CR-206 Should-2: capture-once `24.hours.ago` here so a single absolute timestamp drives
-      # the CH query (a server-side `now()` would drift across the 24h boundary across the
-      # multi-step query).
-      # PR 1e-A: post-cutover this is CH-only; sub-second usec zeroing is preserved so future
-      # comparisons against any other store (e.g. a historical PG snapshot for forensics) still
-      # filter at the same second-resolution boundary.
+      # BUG-SCW-CROSS-CHANNEL (2026-06-02): the original implementation ran a 24h full-scan of
+      # `chat_messages` (5-8s/call, 82-88% of SignalComputeWorker work) — root cause of the
+      # :signal_compute backlog. The digest path pre-computes (username → distinct_channels_24h)
+      # once per 5min via CrossChannelDigestRefreshWorker; the hot read becomes pick-500-chatters
+      # (CH, ~0.3-2s) + bulk_lookup (PG, ~5ms) instead of the second join-style 24h scan.
+      #
+      # Flipper[:cross_channel_digest] gates the new path so we can enable per-env after the
+      # refresh worker has populated the digest at least once (cron */5 min), and roll back
+      # instantly by disabling the flag if anything regresses.
+      #
+      # CR-206 Should-2 (preserved on fallback): capture-once `24.hours.ago` so a single absolute
+      # timestamp drives the CH query (a server-side `now()` would drift across the 24h boundary).
       def fetch_cross_channel(stream)
-        Clickhouse::ChatQueries.cross_channel(stream, 24.hours.ago.change(usec: 0))
+        if Flipper.enabled?(:cross_channel_digest)
+          usernames = Clickhouse::ChatQueries.stream_chatters(stream)
+          return {} if usernames.empty?
+
+          # CR-258 M1: fetch_with_baseline post-fills single-channel chatters with 1 so the
+          # downstream signal's denominator (`cross_channel_counts.size`) stays stable across
+          # the Flipper flip — the digest filters `HAVING c > 1` for compactness, not because
+          # those chatters don't count.
+          CrossChannelDigest.fetch_with_baseline(usernames)
+        else
+          Clickhouse::ChatQueries.cross_channel(stream, 24.hours.ago.change(usec: 0))
+        end
+      rescue ActiveRecord::StatementInvalid => e
+        Rails.logger.warn("ContextBuilder: cross_channel digest lookup failed (#{e.message})")
+        {}
       end
 
       def fetch_raids(stream)

@@ -100,6 +100,33 @@ RSpec.describe Clickhouse::ChatQueries do
     end
   end
 
+  # BUG-SCW-CROSS-CHANNEL (2026-06-02): the q1 username pick was extracted so the digest-backed
+  # ContextBuilder path can call it without the heavy q2 24h scan that `cross_channel` still runs.
+  describe ".stream_chatters" do
+    it "returns the deterministic ORDER BY username LIMIT 500 chatter list" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT DISTINCT username/)
+          .and(a_string_matching(/stream_id = '#{stream.id}'/))
+          .and(a_string_matching(/ORDER BY username/))
+          .and(a_string_matching(/LIMIT 500/))
+      ).and_return([ { "username" => "alice" }, { "username" => "bob" } ])
+
+      expect(described_class.stream_chatters(stream)).to eq(%w[alice bob])
+    end
+
+    it "returns [] when CH returns no rows" do
+      expect(ch).to receive(:select).and_return([])
+      expect(described_class.stream_chatters(stream)).to eq([])
+    end
+
+    it "returns [] (and logs) when CH raises a query error — caller treats as no-data" do
+      expect(ch).to receive(:select).and_raise(Clickhouse::QueryError.new("CH down"))
+      expect(Rails.logger).to receive(:warn).with(/stream_chatters failed/)
+
+      expect(described_class.stream_chatters(stream)).to eq([])
+    end
+  end
+
   describe "integration (real ClickHouse)", :clickhouse do
     let(:real_client) { Clickhouse.client }
     let(:t) { Time.current.utc }

@@ -200,6 +200,18 @@ Sidekiq.configure_server do |config|
         "class" => "PersonalAnalytics::Enrollment::EnrollmentBackfillSweepWorker",
         "queue" => "monitoring",
         "description" => "TASK-113 Δ-1 Wave 1 (FR-016 OQ-8): sweep stuck enrollments >10min → partial_timeout"
+      },
+      # BUG-SCW-CROSS-CHANNEL (2026-06-02): refresh the (username → distinct_channels_24h)
+      # digest table from a single CH scan, replacing the per-stream 24h CH scan that
+      # ContextBuilder used inside the SignalComputeWorker hot path (root cause: O(N) on a
+      # 12.34M-row 24h slice = 5-8s/call, 82-88% of SCW work). Gated by Flipper[:cross_channel_digest]
+      # so the refresh runs even before ContextBuilder switches over — once digest is populated +
+      # verified, enable the flag to flip the read path.
+      "cross_channel_digest_refresh" => {
+        "cron" => "*/5 * * * *", # Every 5 min — drift on 24h window ~0.3% (acceptable)
+        "class" => "CrossChannelDigestRefreshWorker",
+        "queue" => "monitoring",
+        "description" => "BUG-SCW-CROSS-CHANNEL: refresh CrossChannelDigest from CH (1 scan/5min, replaces 7×/sec per-stream scans). Gated :cross_channel_digest."
       }
     }
 
