@@ -58,8 +58,10 @@ RSpec.describe "ML feature extraction determinism (CR-253 M1)" do
     end
   end
 
-  # CR-256 P3 (spec hygiene): use `around { |ex| travel { ex.run } }` instead of bare
-  # `travel … travel_back` — guarantees clock reset even if an assertion raises mid-block.
+  # CR-256 P3 (spec hygiene): use the `travel(N) do … end` block form instead of bare
+  # `travel … travel_back` pair — guarantees clock reset on assertion raise mid-block
+  # (block form ensures `travel_back` runs via ensure semantics in
+  # `ActiveSupport::Testing::TimeHelpers`).
 
   it "GrowthSignals: features identical between immediate run and +5h-later run" do
     immediate = Ml::Features::GrowthSignals.new(stream).call

@@ -114,10 +114,12 @@ RSpec.describe Ml::Features::MaturitySignals do
       # fallback for in-flight streams). Without shift, fixtures pre-Time.current would still
       # be excluded because extraction_anchor falls back to started_at = 3.hours.ago, and
       # `.days.ago` snapshots are way after that.
+      # CR-256-iter2 style nit: clearer two-step form (computed start, then start + 1.hour).
       3.times do |i|
+        prior_started = stream.started_at - (10 + i).days
         create(:stream, channel: channel,
-               started_at: stream.started_at - (10 + i).days,
-               ended_at: stream.started_at - ((10 + i).days - 1.hour))
+               started_at: prior_started,
+               ended_at: prior_started + 1.hour)
       end
       # `stream` itself has ended_at=1.hour.ago by default (factory). Reset it to in-flight.
       stream.update!(ended_at: nil)
