@@ -30,6 +30,7 @@ module Ml
       chat_features = collect_chat_features
       account_features = collect_account_features
       growth_features = collect_growth_features
+      stability_features = collect_stability_features
 
       {
         # Viewer (PR2 — live) — Ml::Features::ViewerSignals
@@ -61,10 +62,13 @@ module Ml
         follow_unfollow_churn_rate: growth_features[:follow_unfollow_churn_rate],
         attributed_spike_ratio: growth_features[:attributed_spike_ratio],
 
-        # Stability (PR6) — Ml::Features::StabilitySignals
-        trust_index_30d_std: nil,
-        chat_rate_30d_cv: nil,
-        viewer_retention_avg_sec: nil,
+        # Stability (PR6 — live, 2/3) — Ml::Features::StabilitySignals.
+        # viewer_retention_avg_sec deferred to separate viewer_session_tracking EPIC
+        # (per [[feedback-no-throwaway-go-to-final-architecture]] — chat-only proxy would
+        # bias against the lurker majority).
+        trust_index_30d_std: stability_features[:trust_index_30d_std],
+        chat_rate_30d_cv: stability_features[:chat_rate_30d_cv],
+        viewer_retention_avg_sec: stability_features[:viewer_retention_avg_sec],
 
         # Maturity (PR7) — Ml::Features::MaturitySignals
         account_age_days_capped: nil,
@@ -112,6 +116,14 @@ module Ml
       features = growth.call
       reasons = growth.insufficient_data_reasons
       @insufficient_data_reasons[:growth] = reasons if reasons.any?
+      features
+    end
+
+    def collect_stability_features
+      stability = Ml::Features::StabilitySignals.new(@stream)
+      features = stability.call
+      reasons = stability.insufficient_data_reasons
+      @insufficient_data_reasons[:stability] = reasons if reasons.any?
       features
     end
   end
