@@ -19,20 +19,22 @@ RSpec.describe Ml::FeatureExtractor do
       expect(result.keys).to match_array(StreamFeatureVector::FEATURE_COLUMNS)
     end
 
-    it "PR6-7 groups still nil (Stability/Maturity yet to land)" do
-      # Stub CH calls to avoid live Clickhouse hits в test env (PR3 chat features delegate)
+    it "PR7 group still nil (Maturity yet to land)" do
+      # Stub CH calls to avoid live Clickhouse hits в test env
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
+      allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams).and_return({})
 
       result = extractor.call
-      pr67_pending_keys = StreamFeatureVector::FEATURE_COLUMNS - %i[
+      pr7_pending_keys = StreamFeatureVector::FEATURE_COLUMNS - %i[
         chatter_to_ccv_ratio peak_to_average_ccv_ratio ccv_coefficient_of_variation ccv_tier_stickiness
         message_entropy unique_message_ratio single_message_chatter_ratio emote_only_ratio
         avg_inter_message_interval_sec timing_regularity_score nlp_contextual_relevance_score
         avg_account_age_days account_creation_date_clustering_gini profile_completeness_ratio engagement_participation_ratio
         follower_growth_cv_90d growth_engagement_correlation follow_unfollow_churn_rate attributed_spike_ratio
+        trust_index_30d_std chat_rate_30d_cv viewer_retention_avg_sec
       ]
-      pr67_pending_keys.each do |k|
-        expect(result[k]).to be_nil, "expected #{k} to be nil pending PR6-7"
+      pr7_pending_keys.each do |k|
+        expect(result[k]).to be_nil, "expected #{k} to be nil pending PR7"
       end
     end
 
@@ -66,6 +68,29 @@ RSpec.describe Ml::FeatureExtractor do
       expect(result[:unique_message_ratio]).to eq(0.7)
       expect(result[:timing_regularity_score]).to eq(0.5)
       expect(result[:nlp_contextual_relevance_score]).to be_nil # deferred ONNX EPIC
+    end
+
+    # PR6: StabilitySignals delegation — extractor returns numeric stability features when
+    # TIH + Stream history sufficient (≥5 streams).
+    it "delegates stability features to Ml::Features::StabilitySignals (PR6)" do
+      allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
+      allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams).and_return({})
+      channel = stream.channel
+      # Seed 6 TIH rows linked to past streams with varying TI scores (≥ MIN_HISTORY_FOR_VARIANCE).
+      6.times do |i|
+        past = create(:stream, channel: channel, ended_at: (i + 1).hours.ago)
+        TrustIndexHistory.create!(
+          channel: channel, stream: past,
+          trust_index_score: 75 + i, # 75..80
+          calculated_at: (i + 1).hours.ago
+        )
+      end
+
+      result = extractor.call
+      expect(result[:trust_index_30d_std]).to be_a(Numeric)
+      expect(result[:trust_index_30d_std]).to be > 0.0
+      # viewer_retention_avg_sec always nil — deferred (viewer_session_tracking EPIC)
+      expect(result[:viewer_retention_avg_sec]).to be_nil
     end
 
     # PR5: GrowthSignals delegation — extractor returns numeric growth features when
@@ -136,6 +161,12 @@ RSpec.describe Ml::FeatureExtractor do
         follow_unfollow_churn_rate: 0.1, attributed_spike_ratio: 0.8
       )
       allow_any_instance_of(Ml::Features::GrowthSignals).to receive(:insufficient_data_reasons).and_return({})
+      # PR6: stub StabilitySignals для all-clean scenario (viewer_retention остаётся
+      # deferred-reason; the test asserts `reasons == {}` — see special-case below).
+      allow_any_instance_of(Ml::Features::StabilitySignals).to receive(:call).and_return(
+        trust_index_30d_std: 5.0, chat_rate_30d_cv: 0.3, viewer_retention_avg_sec: nil
+      )
+      allow_any_instance_of(Ml::Features::StabilitySignals).to receive(:insufficient_data_reasons).and_return({})
       extractor.call
 
       meta = extractor.metadata
@@ -146,17 +177,23 @@ RSpec.describe Ml::FeatureExtractor do
 
     it "captures per-group insufficient_data_reasons when features go nil" do
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
-      extractor.call # cold-start stream → viewer/chat/account/growth all report reasons
+      allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams).and_return({})
+      extractor.call # cold-start stream → viewer/chat/account/growth/stability all report reasons
 
       meta = extractor.metadata
       expect(meta[:insufficient_data_reasons]).to have_key(:viewer)
       expect(meta[:insufficient_data_reasons]).to have_key(:chat)
       expect(meta[:insufficient_data_reasons]).to have_key(:account)
       expect(meta[:insufficient_data_reasons]).to have_key(:growth)
+      expect(meta[:insufficient_data_reasons]).to have_key(:stability)
       expect(meta[:insufficient_data_reasons][:viewer].keys).to include(:chatter_to_ccv_ratio)
       expect(meta[:insufficient_data_reasons][:chat][:nlp_contextual_relevance_score]).to eq("requires_nlp_inference_layer_separate_epic")
       expect(meta[:insufficient_data_reasons][:account].values.uniq).to eq([ "no_chatters" ])
       expect(meta[:insufficient_data_reasons][:growth].values.uniq).to eq([ "insufficient_snapshots" ])
+      # Stability: 2 data-dependent reasons + viewer_retention deferred (separate EPIC).
+      expect(meta[:insufficient_data_reasons][:stability][:trust_index_30d_std]).to eq("insufficient_trust_index_history")
+      expect(meta[:insufficient_data_reasons][:stability][:viewer_retention_avg_sec])
+        .to eq("requires_viewer_session_tracking_separate_epic")
     end
   end
 end

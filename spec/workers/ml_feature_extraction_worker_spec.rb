@@ -90,21 +90,38 @@ RSpec.describe MlFeatureExtractionWorker do
                timestamp: (14 - i).days.ago)
       end
 
+      # PR6: stub CH privmsg counts so chat_rate_30d_cv can compute over 5+ streams.
+      allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams) do |ids|
+        ids.each_with_index.to_h { |id, i| [ id, 5000 + (i * 100) ] }
+      end
+      # PR6: seed 6+ TIH rows linked to past streams для trust_index_30d_std happy-path.
+      # 29 prior streams created above — link 6 of them to TIH rows.
+      Stream.where(channel: stream.channel).where.not(id: stream.id).limit(6).each_with_index do |s, i|
+        TrustIndexHistory.create!(
+          channel: stream.channel, stream: s,
+          trust_index_score: 75 + i,
+          calculated_at: (i + 1).hours.ago
+        )
+        s.update!(started_at: s.ended_at - 2.hours) # 2h duration для chat-rate calc
+      end
+
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
       expect(fv.extractor_metadata).to include(
         "schema_version" => Ml::FeatureExtractor::SCHEMA_VERSION,
         "stream_id" => stream.id
       )
-      # PR5: chat group has only deferred NLP reason; viewer+account+growth fully clean
-      # (growth may still report :attributed_spike_ratio = no_spike_days если σ low,
-      # but that's expected behavior, not a failure — assert only the cleaner groups).
+      # PR6: chat group has only deferred NLP reason; viewer+account fully clean;
+      # growth + stability may carry deferred-EPIC or low-σ reasons (expected, not failure).
       reasons = fv.extractor_metadata["insufficient_data_reasons"]
       expect(reasons).not_to have_key("viewer")
       expect(reasons).not_to have_key("account")
       expect(reasons["chat"]).to eq(
         "nlp_contextual_relevance_score" => "requires_nlp_inference_layer_separate_epic"
       )
+      # PR6: stability always carries viewer_retention deferred-EPIC reason (by design).
+      expect(reasons["stability"]["viewer_retention_avg_sec"])
+        .to eq("requires_viewer_session_tracking_separate_epic")
     end
 
     # CR-249 N1 fold-in (iter-2): copy update — cold-start stream still gets nil for

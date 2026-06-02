@@ -432,6 +432,29 @@ module Clickhouse
       {}
     end
 
+    # ─── ML stability aggregations (Ml::Features::StabilitySignals, PR6) ──────
+    # Batched per-stream total privmsg count, used to derive chat-rate CV across N streams.
+    # No time-since filter — каждая stream сама определяет свой window via `started_at..ended_at`,
+    # CH `chat_messages.stream_id` уже фильтрует to the stream lifecycle. Returns
+    # Hash { stream_id => total_privmsgs }; streams без privmsgs absent from the Hash so caller
+    # can use `.to_i` for 0-default safely.
+    def privmsg_counts_for_streams(stream_ids)
+      return {} if stream_ids.empty?
+
+      validate_stream_uuid!(stream_ids)
+      quoted = stream_ids.map { |sid| "'#{sid}'" }.join(",")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT stream_id, count() AS total
+        FROM chat_messages
+        WHERE stream_id IN (#{quoted}) AND msg_type = 'privmsg' AND username != ''
+        GROUP BY stream_id
+      SQL
+      rows.to_h { |r| [ r["stream_id"], r["total"].to_i ] }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: privmsg_counts_for_streams failed (#{e.class})")
+      {}
+    end
+
     # Mirrors StreamMonitorWorker#fetch_chat_activity — batched per-stream chat activity over the
     # given window. Returns Hash { stream_id => { unique: n, total: n } } for the streams that had
     # any privmsg in the window (others absent from the Hash, matching the PG groupby behaviour).
