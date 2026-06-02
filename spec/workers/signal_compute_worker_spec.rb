@@ -107,4 +107,54 @@ RSpec.describe SignalComputeWorker do
       expect(Trends::AnomalyAttributionWorker).to have_received(:perform_async).with(id)
     end
   end
+
+  # Phase 2 G telemetry (2026-06-03): each pipeline stage MUST emit a tagged
+  # ActiveSupport::Notifications event. Subscriber chain (Sentry breadcrumbs,
+  # future Prometheus exporter) depends on these. Regression guard against the
+  # «probe ONE function ≠ end-to-end verified» pattern — if a stage is silently
+  # dropped from instrumentation, telemetry blind-spot reappears.
+  describe "pipeline stage instrumentation (Phase 2 G)" do
+    it "emits an AS::N event for every PIPELINE_STAGES entry" do
+      observed_events = []
+      subscriber = ActiveSupport::Notifications.subscribe(/^scw\./) do |name, _start, _finish, _id, payload|
+        observed_events << [ name, payload[:stream_id] ]
+      end
+
+      worker.perform(stream.id)
+
+      ActiveSupport::Notifications.unsubscribe(subscriber)
+
+      observed_names = observed_events.map(&:first)
+      described_class::PIPELINE_STAGES.each do |stage|
+        expect(observed_names).to include("scw.#{stage}"),
+          "expected SCW stage 'scw.#{stage}' to be instrumented — telemetry blind-spot " \
+          "if missing (per memory/feedback_telemetry_first_diagnostic.md)"
+      end
+
+      observed_stream_ids = observed_events.map(&:last).uniq
+      expect(observed_stream_ids).to eq([ stream.id ]),
+        "every stage event must tag stream_id for downstream filtering"
+    end
+
+    it "tags Sentry scope + re-raises when a stage raises (preserves Sidekiq retry)" do
+      skip "sentry-ruby not loaded in test env" unless defined?(Sentry)
+
+      allow(TrustIndex::Signals::Registry).to receive(:compute_all).and_raise(RuntimeError, "boom")
+
+      scope_double = instance_double(Sentry::Scope)
+      allow(scope_double).to receive(:set_tags)
+      allow(scope_double).to receive(:set_fingerprint)
+      allow(Sentry).to receive(:with_scope).and_yield(scope_double)
+      allow(Sentry).to receive(:capture_exception)
+      allow(Sentry).to receive(:add_breadcrumb)
+
+      expect { worker.perform(stream.id) }.to raise_error(RuntimeError, "boom")
+
+      expect(scope_double).to have_received(:set_tags)
+        .with(hash_including(scw_stage: "signals_compute", stream_id: stream.id))
+      expect(scope_double).to have_received(:set_fingerprint)
+        .with([ "scw", "signals_compute", "RuntimeError" ])
+      expect(Sentry).to have_received(:capture_exception)
+    end
+  end
 end
