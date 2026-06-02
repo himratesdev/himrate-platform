@@ -39,9 +39,11 @@ module TrustIndex
       # — 30 ≈ "follower-only any-duration alone" or "subscriber-only + slow-mode", i.e.
       # the minimum bar a serious channel runs. Below this = chat is effectively open.
       CPS_NEUTRAL_THRESHOLD = 30
-      # Max signal value at CPS=0 (fully open). 0.3 × weight 0.07 ≈ 2.1% TI penalty —
-      # small enough to never drive an honest open-chat streamer below "trusted" tier on
-      # its own; large enough to surface in audit when paired with other suspicious signals.
+      # Max signal value at CPS=0 (fully open). 0.3 × normalized weight ≈0.07 (seed 0.05
+      # renormalized across 11 available signals in Engine#compute_raw_ti) ≈ 2.1% TI
+      # penalty — small enough to never drive an honest open-chat streamer below
+      # "trusted" tier on its own; large enough to surface in audit when paired with
+      # other suspicious signals.
       MAX_VALUE_AT_ZERO_CPS = 0.3
 
       def calculate(context)

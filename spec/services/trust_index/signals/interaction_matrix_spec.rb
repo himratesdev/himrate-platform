@@ -7,9 +7,12 @@ RSpec.describe TrustIndex::Signals::InteractionMatrix do
     TrustIndex::Signals::BaseSignal::Result.new(value: value, confidence: confidence, metadata: metadata)
   end
 
-  it "amplifies known_bot_match when CPS is low (vulnerable channel)" do
+  # Phase 4 J PR-A CR iter-1 Should Fix (2026-06-03): CPS-touching examples use values
+  # in the post-PR signal range [0.0, 0.3] — values 0.8/0.9 the real signal can no longer
+  # emit. cond_min in DEFAULT_RULES is now 0.2 (was 0.7).
+  it "amplifies known_bot_match when CPS is wide-open (vulnerable channel, value≥0.2)" do
     results = {
-      "channel_protection_score" => make_result(value: 0.8),
+      "channel_protection_score" => make_result(value: 0.25), # above new cond_min 0.2
       "known_bot_match" => make_result(value: 0.1),
       "auth_ratio" => make_result(value: 0.0)
     }
@@ -32,9 +35,9 @@ RSpec.describe TrustIndex::Signals::InteractionMatrix do
     expect(new_step).to be < 0.6 # dampened
   end
 
-  it "does not modify signals below thresholds" do
+  it "does not modify signals below thresholds (Recrent-like CPS=0.15 stays below cond_min)" do
     results = {
-      "channel_protection_score" => make_result(value: 0.3), # below 0.7 threshold
+      "channel_protection_score" => make_result(value: 0.15), # below post-PR cond_min 0.2
       "known_bot_match" => make_result(value: 0.1),
       "auth_ratio" => make_result(value: 0.0)
     }
@@ -44,9 +47,9 @@ RSpec.describe TrustIndex::Signals::InteractionMatrix do
     expect(output[:results]["known_bot_match"].value).to eq(0.1) # unchanged
   end
 
-  it "clamps values to 0-1 after amplification" do
+  it "clamps values to 0-1 after amplification (use post-PR max CPS = 0.3)" do
     results = {
-      "channel_protection_score" => make_result(value: 0.9),
+      "channel_protection_score" => make_result(value: 0.3), # post-PR max value
       "known_bot_match" => make_result(value: 0.9) # × 1.3 = 1.17 → clamped to 1.0
     }
 
