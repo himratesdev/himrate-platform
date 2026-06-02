@@ -28,6 +28,7 @@ module Ml
     def call
       viewer_features = collect_viewer_features
       chat_features = collect_chat_features
+      account_features = collect_account_features
 
       {
         # Viewer (PR2 — live) — Ml::Features::ViewerSignals
@@ -47,11 +48,11 @@ module Ml
         timing_regularity_score: chat_features[:timing_regularity_score],
         nlp_contextual_relevance_score: chat_features[:nlp_contextual_relevance_score],
 
-        # Account (PR4) — Ml::Features::AccountSignals
-        avg_account_age_days: nil,
-        account_creation_date_clustering_gini: nil,
-        profile_completeness_ratio: nil,
-        engagement_participation_ratio: nil,
+        # Account (PR4 — live) — Ml::Features::AccountSignals
+        avg_account_age_days: account_features[:avg_account_age_days],
+        account_creation_date_clustering_gini: account_features[:account_creation_date_clustering_gini],
+        profile_completeness_ratio: account_features[:profile_completeness_ratio],
+        engagement_participation_ratio: account_features[:engagement_participation_ratio],
 
         # Growth (PR5) — Ml::Features::GrowthSignals
         follower_growth_cv_90d: nil,
@@ -94,6 +95,14 @@ module Ml
       features = chat.call
       reasons = chat.insufficient_data_reasons
       @insufficient_data_reasons[:chat] = reasons if reasons.any?
+      features
+    end
+
+    def collect_account_features
+      account = Ml::Features::AccountSignals.new(@stream)
+      features = account.call
+      reasons = account.insufficient_data_reasons
+      @insufficient_data_reasons[:account] = reasons if reasons.any?
       features
     end
   end

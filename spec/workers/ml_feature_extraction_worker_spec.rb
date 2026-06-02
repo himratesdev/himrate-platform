@@ -52,7 +52,7 @@ RSpec.describe MlFeatureExtractionWorker do
     # now correctly populate `insufficient_data_reasons[:viewer]` для всех 4 viewer features.
     # Seed enough source data to exercise the happy-path metadata shape (empty reasons),
     # which matches the test's stated intent (verify jsonb structure + schema_version).
-    it "writes extractor_metadata jsonb (happy-path, all viewer+chat data sufficient)" do
+    it "writes extractor_metadata jsonb (happy-path, all viewer+chat+account data sufficient)" do
       # ≥3 CCV snapshots + ≥3 chatters snapshots + ≥30 prior streams с avg_ccv
       # → ViewerSignals returns 4 numeric features.
       3.times { |i| create(:ccv_snapshot, stream: stream, ccv_count: 500, timestamp: (5 - i).minutes.ago) }
@@ -60,16 +60,26 @@ RSpec.describe MlFeatureExtractionWorker do
       stream.update!(ended_at: Time.current, avg_ccv: 500)
       29.times { |i| create(:stream, channel: stream.channel, ended_at: (i + 1).hours.ago, avg_ccv: 500) }
 
-      # PR3 (iter-1 fix): stub ChatQueries with sufficient aggregates so ChatSignals reports
-      # no insufficient reasons either. NLP feature still nil with its deferred-EPIC reason —
-      # but that's a documented exception, not "insufficient data" semantically.
-      # Worker spec just verifies metadata jsonb structure, so allow reasons={"chat"=>{...}}
-      # iff only the NLP key is present (matches production behavior post-PR3).
+      # PR3: stub ChatQueries with sufficient aggregates so ChatSignals reports
+      # no insufficient reasons either. NLP feature still nil with its deferred-EPIC reason.
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return(
         total_messages: 1000, unique_messages: 700, unique_chatters: 200,
         messages_with_emotes: 300, single_message_chatters: 60,
         message_entropy_bits: 5.5, mean_inter_msg_sec: 0.6, std_inter_msg_sec: 0.3
       )
+
+      # PR4: seed ≥10 chatters с ChatterProfile + FollowerSnapshot so AccountSignals
+      # returns 4 numeric features without insufficient reasons.
+      15.times do |i|
+        login = "acct_chatter_#{i}"
+        create(:per_user_bot_score, stream: stream, username: login)
+        ChatterProfile.create!(
+          login: login, twitch_user_id: "acct_tu_#{i}",
+          twitch_created_at: (500 + i * 50).days.ago,
+          followers_count: 10, follows_count: 5, fetched_at: Time.current
+        )
+      end
+      create(:follower_snapshot, channel: stream.channel, followers_count: 1500, timestamp: 1.hour.ago)
 
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
@@ -77,9 +87,10 @@ RSpec.describe MlFeatureExtractionWorker do
         "schema_version" => Ml::FeatureExtractor::SCHEMA_VERSION,
         "stream_id" => stream.id
       )
-      # PR3: chat group has only the deferred NLP reason; viewer group fully clean.
+      # PR4: chat group has only deferred NLP reason; viewer+account groups fully clean.
       reasons = fv.extractor_metadata["insufficient_data_reasons"]
       expect(reasons).not_to have_key("viewer")
+      expect(reasons).not_to have_key("account")
       expect(reasons["chat"]).to eq(
         "nlp_contextual_relevance_score" => "requires_nlp_inference_layer_separate_epic"
       )
