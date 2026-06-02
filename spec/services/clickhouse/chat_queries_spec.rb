@@ -277,6 +277,48 @@ RSpec.describe Clickhouse::ChatQueries do
     end
   end
 
+  # PR #259 (2026-06-02 perf-debt): single CH scan returning all 3 per-user arrays
+  # (timestamps + messages + emote_strings) — replaces 3 separate full-scans on chat_messages.
+  describe ".chatter_raw_data" do
+    let(:stream) { instance_double(Stream, id: stream_id) }
+
+    it "issues ONE CH scan returning all per-user arrays grouped by username" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT username, timestamp, message_text, emotes/)
+          .and(a_string_matching(/stream_id = '#{stream_id}'/))
+          .and(a_string_matching(/msg_type = 'privmsg'/))
+          .and(a_string_matching(/username != ''/))
+          .and(a_string_matching(/ORDER BY username, timestamp/))
+      ).and_return([
+                     { "username" => "alice", "timestamp" => "2026-06-02 12:00:00", "message_text" => "hi",    "emotes" => "" },
+                     { "username" => "alice", "timestamp" => "2026-06-02 12:00:01", "message_text" => "bye",   "emotes" => "25:0-4" },
+                     { "username" => "alice", "timestamp" => "2026-06-02 12:00:05", "message_text" => "",      "emotes" => "" },
+                     { "username" => "bob",   "timestamp" => "2026-06-02 12:01:00", "message_text" => "hello", "emotes" => "50:0-3" }
+                   ])
+
+      result = described_class.chatter_raw_data(stream)
+
+      expect(result.keys).to match_array(%w[alice bob])
+      expect(result["alice"][:timestamps].size).to eq(3) # all rows
+      expect(result["alice"][:timestamps].first).to be_a(Time)
+      expect(result["alice"][:messages]).to eq(%w[hi bye]) # message_text != '' filter
+      expect(result["alice"][:emote_strings]).to eq([ "25:0-4" ])  # emotes != '' filter
+      expect(result["bob"][:timestamps].size).to eq(1)
+      expect(result["bob"][:messages]).to eq([ "hello" ])
+      expect(result["bob"][:emote_strings]).to eq([ "50:0-3" ])
+    end
+
+    it "returns {} on Clickhouse::Error (graceful — BSW skips enrichment, falls back to base scoring)" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::QueryError, "boom")
+      expect(described_class.chatter_raw_data(stream)).to eq({})
+    end
+
+    it "validates stream UUID (rejects malformed input)" do
+      bad_stream = instance_double(Stream, id: "not-a-uuid")
+      expect { described_class.chatter_raw_data(bad_stream) }.to raise_error(ArgumentError, /not a UUID/)
+    end
+  end
+
   describe ".chatter_cross_channel_counts" do
     it "returns {} on empty usernames (no SQL roundtrip)" do
       expect(ch).not_to receive(:select)

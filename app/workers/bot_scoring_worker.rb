@@ -116,43 +116,39 @@ class BotScoringWorker
     chatters
   end
 
-  # Per-user CV timing + Shannon entropy + custom-emote signal. Each of the three CH queries
-  # returns Hash { username => [values...] } so the in-Ruby maths stays identical to the
-  # PG-era implementation (just the data fetch is column-store now).
+  # Per-user CV timing + Shannon entropy + custom-emote signal.
+  #
+  # PR #259 (2026-06-02 perf-debt): three separate CH scans (chatter_timestamps + _messages +
+  # _emotes) consolidated into ONE via `chatter_raw_data`. CH benchmark 2026-06-02 measured each
+  # of the old calls at 549-2084ms (full-scan with column projection); the three combined ate
+  # ~1.6s out of typical 3-7s BSW#perform. Consolidated scan returns same per-user arrays in a
+  # single round-trip with one query plan + one disk pass.
   def enrich_chat_stats(stream, chatters)
-    user_timestamps = Clickhouse::ChatQueries.chatter_timestamps(stream)
-    user_timestamps.each do |username, timestamps|
+    raw = Clickhouse::ChatQueries.chatter_raw_data(stream)
+    raw.each do |username, data|
       next unless chatters[username]
-      next if timestamps.size < 3
 
-      # CV timing: std(intervals) / mean(intervals)
-      intervals = timestamps.each_cons(2).map { |a, b| (b - a).to_f }
-      mean = intervals.sum / intervals.size
-      if mean > 0
-        std = Math.sqrt(intervals.sum { |i| (i - mean)**2 } / intervals.size)
-        cv = std / mean
-        chatters[username][:chat_stats][:cv_timing] = cv
+      # CV timing: std(intervals) / mean(intervals). Requires ≥3 timestamps for one interval pair.
+      if data[:timestamps].size >= 3
+        intervals = data[:timestamps].each_cons(2).map { |a, b| (b - a).to_f }
+        mean = intervals.sum / intervals.size
+        if mean > 0
+          std = Math.sqrt(intervals.sum { |i| (i - mean)**2 } / intervals.size)
+          chatters[username][:chat_stats][:cv_timing] = std / mean
+        end
       end
-    end
 
-    user_messages = Clickhouse::ChatQueries.chatter_messages(stream)
-    user_messages.each do |username, texts|
-      next unless chatters[username]
-      next if texts.size < 3
+      # Shannon entropy over word frequency. Requires ≥3 non-empty messages для stable signal.
+      if data[:messages].size >= 3
+        words = data[:messages].join(" ").downcase.split(/\s+/)
+        freq = words.tally
+        total = words.size.to_f
+        entropy = -freq.values.sum { |c| p = c / total; p * Math.log2(p) }
+        chatters[username][:chat_stats][:entropy] = entropy
+      end
 
-      # Shannon entropy over word frequency
-      words = texts.join(" ").downcase.split(/\s+/)
-      freq = words.tally
-      total = words.size.to_f
-      entropy = -freq.values.sum { |c| p = c / total; p * Math.log2(p) }
-      chatters[username][:chat_stats][:entropy] = entropy
-    end
-
-    user_emotes = Clickhouse::ChatQueries.chatter_emotes(stream)
-    user_emotes.each do |username, emote_strings|
-      next unless chatters[username]
-
-      total_emotes = emote_strings.sum { |e| e.split("/").size }
+      # Emote presence: any non-empty emotes payload → has_custom_emotes = 1.0
+      total_emotes = data[:emote_strings].sum { |e| e.split("/").size }
       chatters[username][:chat_stats][:has_custom_emotes] = total_emotes > 0 ? 1.0 : 0.0
     end
   end

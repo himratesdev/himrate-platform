@@ -19,9 +19,9 @@ RSpec.describe BotScoringWorker do
     allow(Flipper).to receive(:enabled?).with(:cross_channel_digest).and_return(false)
     # Default: no chat returned. Each test overrides the methods it depends on.
     allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).and_return({})
-    allow(Clickhouse::ChatQueries).to receive(:chatter_timestamps).and_return({})
-    allow(Clickhouse::ChatQueries).to receive(:chatter_messages).and_return({})
-    allow(Clickhouse::ChatQueries).to receive(:chatter_emotes).and_return({})
+    # PR #259 (perf-debt): three old per-column scans (chatter_timestamps + _messages + _emotes)
+    # consolidated into single chatter_raw_data scan. Default empty → enrichment loop no-ops.
+    allow(Clickhouse::ChatQueries).to receive(:chatter_raw_data).and_return({})
     allow(Clickhouse::ChatQueries).to receive(:chatter_cross_channel_counts).and_return({})
   end
 
