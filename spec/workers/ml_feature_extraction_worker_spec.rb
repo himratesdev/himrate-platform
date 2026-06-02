@@ -69,7 +69,9 @@ RSpec.describe MlFeatureExtractionWorker do
       )
 
       # PR4: seed ≥10 chatters с ChatterProfile + FollowerSnapshot so AccountSignals
-      # returns 4 numeric features without insufficient reasons.
+      # returns 4 numeric features without insufficient reasons. PR5: seed ≥14 daily
+      # snapshots (covers both MIN_SNAPSHOTS_FOR_CV=7 and MIN_SNAPSHOTS_FOR_CORRELATION=14)
+      # so GrowthSignals doesn't report insufficient either.
       15.times do |i|
         login = "acct_chatter_#{i}"
         create(:per_user_bot_score, stream: stream, username: login)
@@ -79,7 +81,14 @@ RSpec.describe MlFeatureExtractionWorker do
           followers_count: 10, follows_count: 5, fetched_at: Time.current
         )
       end
-      create(:follower_snapshot, channel: stream.channel, followers_count: 1500, timestamp: 1.hour.ago)
+      # 15 follower snapshots steadily growing — exercises every Growth feature happy path
+      # (CV/correlation needs ≥14 daily deltas; volatile distribution drives non-zero results).
+      (0..14).each do |i|
+        create(:follower_snapshot,
+               channel: stream.channel,
+               followers_count: 1500 + i * 10 + ((-1)**i) * 3, # mild oscillation → non-zero σ
+               timestamp: (14 - i).days.ago)
+      end
 
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
@@ -87,7 +96,9 @@ RSpec.describe MlFeatureExtractionWorker do
         "schema_version" => Ml::FeatureExtractor::SCHEMA_VERSION,
         "stream_id" => stream.id
       )
-      # PR4: chat group has only deferred NLP reason; viewer+account groups fully clean.
+      # PR5: chat group has only deferred NLP reason; viewer+account+growth fully clean
+      # (growth may still report :attributed_spike_ratio = no_spike_days если σ low,
+      # but that's expected behavior, not a failure — assert only the cleaner groups).
       reasons = fv.extractor_metadata["insufficient_data_reasons"]
       expect(reasons).not_to have_key("viewer")
       expect(reasons).not_to have_key("account")
