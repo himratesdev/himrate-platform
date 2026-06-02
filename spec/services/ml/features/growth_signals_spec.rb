@@ -130,7 +130,10 @@ RSpec.describe Ml::Features::GrowthSignals do
 
     it "without any stream → attributed_spike_ratio = 0.0" do
       Stream.where(channel: channel).destroy_all
-      stream_no_history = create(:stream, channel: channel)
+      # Place anchor stream WAY outside 90d window so stream_starts is empty for the
+      # spike interval — factory default `started_at: 3.hours.ago` would fall inside
+      # the spike interval and falsely attribute the spike.
+      stream_no_history = create(:stream, channel: channel, started_at: 200.days.ago, ended_at: 199.days.ago)
       growth_no_streams = described_class.new(stream_no_history)
       expect(growth_no_streams.call[:attributed_spike_ratio]).to eq(0.0)
     end
