@@ -31,6 +31,7 @@ module Ml
       account_features = collect_account_features
       growth_features = collect_growth_features
       stability_features = collect_stability_features
+      maturity_features = collect_maturity_features
 
       {
         # Viewer (PR2 — live) — Ml::Features::ViewerSignals
@@ -70,10 +71,10 @@ module Ml
         chat_rate_30d_cv: stability_features[:chat_rate_30d_cv],
         viewer_retention_avg_sec: stability_features[:viewer_retention_avg_sec],
 
-        # Maturity (PR7) — Ml::Features::MaturitySignals
-        account_age_days_capped: nil,
-        total_streams_capped: nil,
-        total_hours_capped: nil
+        # Maturity (PR7 — live, EPIC closing) — Ml::Features::MaturitySignals
+        account_age_days_capped: maturity_features[:account_age_days_capped],
+        total_streams_capped: maturity_features[:total_streams_capped],
+        total_hours_capped: maturity_features[:total_hours_capped]
       }
     end
 
@@ -124,6 +125,14 @@ module Ml
       features = stability.call
       reasons = stability.insufficient_data_reasons
       @insufficient_data_reasons[:stability] = reasons if reasons.any?
+      features
+    end
+
+    def collect_maturity_features
+      maturity = Ml::Features::MaturitySignals.new(@stream)
+      features = maturity.call
+      reasons = maturity.insufficient_data_reasons
+      @insufficient_data_reasons[:maturity] = reasons if reasons.any?
       features
     end
   end

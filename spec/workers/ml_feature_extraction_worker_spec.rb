@@ -105,6 +105,9 @@ RSpec.describe MlFeatureExtractionWorker do
         s.update!(started_at: s.ended_at - 2.hours) # 2h duration для chat-rate calc
       end
 
+      # PR7: seed channel.twitch_created_at so MaturitySignals can compute account_age.
+      stream.channel.update!(twitch_created_at: 500.days.ago)
+
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
       expect(fv.extractor_metadata).to include(
@@ -122,18 +125,32 @@ RSpec.describe MlFeatureExtractionWorker do
       # PR6: stability always carries viewer_retention deferred-EPIC reason (by design).
       expect(reasons["stability"]["viewer_retention_avg_sec"])
         .to eq("requires_viewer_session_tracking_separate_epic")
+      # PR7: maturity группа НЕ карет insufficient reasons когда twitch_created_at populated.
+      expect(reasons).not_to have_key("maturity")
+      # PR7: maturity feature values populated.
+      expect(fv.account_age_days_capped).to eq(365.0) # 500 days → capped at 365
+      expect(fv.total_streams_capped).to be > 0
     end
 
-    # CR-249 N1 fold-in (iter-2): copy update — cold-start stream still gets nil for
-    # all 25 features (viewer signals return nil under their insufficient-data branches
-    # for streams без CCV/chatters/history). Assertion stays valid; comment renamed.
-    it "all 25 feature columns are nil for cold-start stream (no snapshots / no history)" do
-      # PR3: stub CH so ChatSignals doesn't try a live query in test env
+    # CR-249 N1 fold-in: cold-start stream — 23/25 features nil; 2 maturity features always
+    # populate because PR7 MaturitySignals counts streams/hours from PG (the current ended
+    # stream itself + its duration). account_age_days_capped REMAINS nil (no twitch_created_at).
+    # All other groups (Viewer/Chat/Account/Growth/Stability) return nil under insufficient-data.
+    it "cold-start stream — only 2 maturity features populate (no twitch_created_at, no history)" do
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
+      allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams).and_return({})
 
       worker.perform(stream.id)
       fv = StreamFeatureVector.find_by(stream_id: stream.id)
-      expect(fv.populated_feature_count).to eq(0)
+      # PR7: total_streams_capped (= 1, current ended stream) + total_hours_capped (~2h
+      # from factory default 3.hours.ago..1.hour.ago) — pure PG counts, no external data.
+      expect(fv.total_streams_capped).to eq(1)
+      expect(fv.total_hours_capped).to be > 0
+      # account_age_days_capped nil — no twitch_created_at yet.
+      expect(fv.account_age_days_capped).to be_nil
+      # All 23 other features nil — insufficient data on cold-start channel.
+      other_nil_keys = StreamFeatureVector::FEATURE_COLUMNS - %i[total_streams_capped total_hours_capped]
+      other_nil_keys.each { |k| expect(fv.public_send(k)).to be_nil, "expected #{k} to be nil for cold-start" }
     end
 
     it "warns + returns gracefully when stream not found (deleted between enqueue and execute)" do

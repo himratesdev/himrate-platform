@@ -19,23 +19,15 @@ RSpec.describe Ml::FeatureExtractor do
       expect(result.keys).to match_array(StreamFeatureVector::FEATURE_COLUMNS)
     end
 
-    it "PR7 group still nil (Maturity yet to land)" do
+    it "all 25 feature keys present in result hash (PR7 — EPIC closing)" do
       # Stub CH calls to avoid live Clickhouse hits в test env
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
       allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams).and_return({})
 
       result = extractor.call
-      pr7_pending_keys = StreamFeatureVector::FEATURE_COLUMNS - %i[
-        chatter_to_ccv_ratio peak_to_average_ccv_ratio ccv_coefficient_of_variation ccv_tier_stickiness
-        message_entropy unique_message_ratio single_message_chatter_ratio emote_only_ratio
-        avg_inter_message_interval_sec timing_regularity_score nlp_contextual_relevance_score
-        avg_account_age_days account_creation_date_clustering_gini profile_completeness_ratio engagement_participation_ratio
-        follower_growth_cv_90d growth_engagement_correlation follow_unfollow_churn_rate attributed_spike_ratio
-        trust_index_30d_std chat_rate_30d_cv viewer_retention_avg_sec
-      ]
-      pr7_pending_keys.each do |k|
-        expect(result[k]).to be_nil, "expected #{k} to be nil pending PR7"
-      end
+      expect(result.keys).to match_array(StreamFeatureVector::FEATURE_COLUMNS)
+      # All 25 keys delegated to live services — values may be nil per-feature cold-start,
+      # but every key MUST be present (FEATURE_COLUMNS round-trip safety).
     end
 
     # PR2: ViewerSignals delegation — extractor returns numeric viewer features when data
@@ -68,6 +60,26 @@ RSpec.describe Ml::FeatureExtractor do
       expect(result[:unique_message_ratio]).to eq(0.7)
       expect(result[:timing_regularity_score]).to eq(0.5)
       expect(result[:nlp_contextual_relevance_score]).to be_nil # deferred ONNX EPIC
+    end
+
+    # PR7: MaturitySignals delegation — extractor returns numeric maturity features
+    # populated directly from Channel + Stream PG tables.
+    it "delegates maturity features to Ml::Features::MaturitySignals (PR7)" do
+      allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
+      allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams).and_return({})
+      channel = stream.channel
+      channel.update!(twitch_created_at: 800.days.ago) # >365 → capped
+      # 3 completed prior streams of 1h each.
+      3.times do |i|
+        create(:stream, channel: channel,
+               started_at: (10 + i).days.ago, ended_at: (10 + i).days.ago + 1.hour)
+      end
+      stream.update!(started_at: 30.minutes.ago, ended_at: Time.current) # 0.5h
+
+      result = extractor.call
+      expect(result[:account_age_days_capped]).to eq(365.0) # capped
+      expect(result[:total_streams_capped]).to eq(4) # 3 priors + current
+      expect(result[:total_hours_capped]).to be_within(0.01).of(3.5)
     end
 
     # PR6: StabilitySignals delegation — extractor returns numeric stability features when
@@ -167,6 +179,11 @@ RSpec.describe Ml::FeatureExtractor do
         trust_index_30d_std: 5.0, chat_rate_30d_cv: 0.3, viewer_retention_avg_sec: nil
       )
       allow_any_instance_of(Ml::Features::StabilitySignals).to receive(:insufficient_data_reasons).and_return({})
+      # PR7: stub MaturitySignals для all-clean scenario
+      allow_any_instance_of(Ml::Features::MaturitySignals).to receive(:call).and_return(
+        account_age_days_capped: 365.0, total_streams_capped: 50, total_hours_capped: 120.5
+      )
+      allow_any_instance_of(Ml::Features::MaturitySignals).to receive(:insufficient_data_reasons).and_return({})
       extractor.call
 
       meta = extractor.metadata
@@ -178,7 +195,7 @@ RSpec.describe Ml::FeatureExtractor do
     it "captures per-group insufficient_data_reasons when features go nil" do
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
       allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams).and_return({})
-      extractor.call # cold-start stream → viewer/chat/account/growth/stability all report reasons
+      extractor.call # cold-start stream → viewer/chat/account/growth/stability/maturity all report reasons
 
       meta = extractor.metadata
       expect(meta[:insufficient_data_reasons]).to have_key(:viewer)
@@ -186,6 +203,7 @@ RSpec.describe Ml::FeatureExtractor do
       expect(meta[:insufficient_data_reasons]).to have_key(:account)
       expect(meta[:insufficient_data_reasons]).to have_key(:growth)
       expect(meta[:insufficient_data_reasons]).to have_key(:stability)
+      expect(meta[:insufficient_data_reasons]).to have_key(:maturity)
       expect(meta[:insufficient_data_reasons][:viewer].keys).to include(:chatter_to_ccv_ratio)
       expect(meta[:insufficient_data_reasons][:chat][:nlp_contextual_relevance_score]).to eq("requires_nlp_inference_layer_separate_epic")
       expect(meta[:insufficient_data_reasons][:account].values.uniq).to eq([ "no_chatters" ])
@@ -194,6 +212,9 @@ RSpec.describe Ml::FeatureExtractor do
       expect(meta[:insufficient_data_reasons][:stability][:trust_index_30d_std]).to eq("insufficient_trust_index_history")
       expect(meta[:insufficient_data_reasons][:stability][:viewer_retention_avg_sec])
         .to eq("requires_viewer_session_tracking_separate_epic")
+      # Maturity: cold-start channel has no twitch_created_at (added в PR7 migration,
+      # populated by ChannelMetadataRefreshWorker on next sync — organic backfill).
+      expect(meta[:insufficient_data_reasons][:maturity][:account_age_days_capped]).to eq("no_twitch_created_at_yet")
     end
   end
 end

@@ -32,11 +32,23 @@ class Channel < ApplicationRecord
   # ("" = normal user / cleared bio is meaningful, must not stay stale). Stamps metadata_synced_at.
   # The caller persists (save!/update!).
   def assign_helix_metadata(user)
+    # `created_at` may be missing on a banned/deleted user response; keep previous value when
+    # Helix omits it (string presence rejects nil + empty — both safe to skip parsing).
+    # PR7 (MLFE EPIC): twitch_created_at is the broadcaster's Twitch-side account creation
+    # date — drives MaturitySignals.account_age_days_capped.
+    #
+    # CR-255 Nit-4: use `Time.zone.parse` (not `Time.parse`) so a future TZ-aware Rails
+    # config tweak doesn't drift between compare-by-equality assertions and persisted UTC.
+    # Helix always returns ISO-8601 with explicit `Z`, so functionally equivalent today —
+    # convention alignment with other Rails Time-from-string call-sites in the codebase.
+    helix_created_at = user["created_at"].presence&.then { |raw| Time.zone.parse(raw) }
+
     assign_attributes(
       display_name: user["display_name"].presence || display_name,
       profile_image_url: user["profile_image_url"].presence || profile_image_url,
       broadcaster_type: user["broadcaster_type"],
       description: user["description"],
+      twitch_created_at: helix_created_at || twitch_created_at,
       metadata_synced_at: Time.current
     )
   end
