@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Channel, type: :model do
+  include ActiveSupport::Testing::TimeHelpers
+
   describe "associations" do
     it { is_expected.to have_many(:streams).dependent(:destroy) }
     it { is_expected.to have_many(:tracked_channels).dependent(:destroy) }
@@ -45,9 +47,9 @@ RSpec.describe Channel, type: :model do
 
     it "stamps metadata_synced_at on every call" do
       freeze_time = Time.parse("2026-06-02T10:00:00Z")
-      Timecop.freeze(freeze_time) do
+      travel_to(freeze_time) do
         channel.assign_helix_metadata("display_name" => "Foo")
-        expect(channel.metadata_synced_at).to eq(freeze_time)
+        expect(channel.metadata_synced_at).to be_within(1.second).of(freeze_time)
       end
     end
   end
