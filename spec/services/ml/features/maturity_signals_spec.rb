@@ -3,6 +3,8 @@
 require "rails_helper"
 
 RSpec.describe Ml::Features::MaturitySignals do
+  include ActiveSupport::Testing::TimeHelpers
+
   let(:channel) { create(:channel) }
   let(:stream) { create(:stream, channel: channel) }
   let(:maturity) { described_class.new(stream) }
@@ -27,7 +29,13 @@ RSpec.describe Ml::Features::MaturitySignals do
   end
 
   describe "#call (happy-path — established channel)" do
+    # CR-255 Nit-6: pin time so `eq(365.0)` cap check stays stable regardless of when the
+    # CI clock ticks. `twitch_created_at` set to 700d before frozen "now" → age = 700d,
+    # cap of 365 fires deterministically.
+    let(:now) { Time.zone.parse("2026-06-02T12:00:00Z") }
+
     before do
+      travel_to(now)
       channel.update!(twitch_created_at: 700.days.ago)
       # 5 completed prior streams of 2h each + current 1h stream.
       5.times do |i|
@@ -36,6 +44,8 @@ RSpec.describe Ml::Features::MaturitySignals do
       end
       stream.update!(started_at: 1.hour.ago, ended_at: Time.current)
     end
+
+    after { travel_back }
 
     it "account_age_days_capped capped at 365 (channel >1yr old)" do
       expect(maturity.call[:account_age_days_capped]).to eq(365.0)
