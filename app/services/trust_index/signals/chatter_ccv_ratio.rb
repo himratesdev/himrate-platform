@@ -31,6 +31,25 @@
 # rather than falling through to the prior hardcoded `0.10`. The Engine's
 # `confidence>0` filter then drops the signal cleanly. Eliminates the silent
 # baseline-misfire that produced the median TI=77 floor on honest big streams.
+#
+# Phase 4 J PR-E calibration (2026-06-03 BUG-TI-CALIBRATION-SMALL-STREAMERS):
+# previously the `unless unique_chatters_60min` abstain check only fired on nil
+# (CH query failure). When CH returned an explicit zero — e.g. IRC never joined
+# this channel (capacity full / late subscription / monitor restart), or
+# `mv_stream_minute_target` MV still backfilling, or chat_messages rows missing
+# during the 60-min window — the signal proceeded to `ratio = 0 / ccv = 0` and
+# produced value=1.0 (MAX bot). Live probe 2026-06-03 caught three honest small
+# RU streamers (kepa_mita ccv=569 → TI=76, ckaiba9 ccv=425 → TI=72,
+# restoratorgame ccv=205 → TI=83) where chatter_ccv_ratio contributed full bot
+# weight, all because unique_chatters_60min returned 0 (not nil). Doc:
+# `_tasks/BUG-TI-CALIBRATION-SMALL-STREAMERS/CONTEXT.md`. Fix: abstain when
+# `unique_chatters_60min` is nil OR zero. The cost of false-abstain (signal
+# gives no info when chat truly empty for 60min) is acceptable — other signals
+# (auth_ratio, account_profile_scoring, raid_attribution) cover the "no humans
+# = bots" case more reliably, and silent 60-min chat with active ccv is more
+# often an ingest gap than a bot-only audience. Distinguishes "no signal data"
+# (abstain) from "low signal data" (penalize via ratio formula). Engine
+# `confidence>0` filter drops the abstain cleanly.
 
 module TrustIndex
   module Signals
@@ -55,7 +74,10 @@ module TrustIndex
         stream_duration_min = context[:stream_duration_min] || 0
 
         return insufficient(reason: "no_ccv") unless ccv&.positive?
-        return insufficient(reason: "no_irc_data") unless unique_chatters_60min
+        # Phase 4 J PR-E (2026-06-03): abstain on nil OR zero — see class
+        # docstring for the small-streamer ingest-gap incident that motivates
+        # this. `&.positive?` short-circuits on nil and excludes 0 / negative.
+        return insufficient(reason: "no_irc_data") unless unique_chatters_60min&.positive?
 
         params = config_params(category)
         base_expected_min = params["expected_ratio_min"]&.to_f

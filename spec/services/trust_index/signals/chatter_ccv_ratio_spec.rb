@@ -114,4 +114,41 @@ RSpec.describe TrustIndex::Signals::ChatterCcvRatio do
       expect(result.metadata[:reason]).to eq("no_baseline_config")
     end
   end
+
+  # BUG-TI-CALIBRATION-SMALL-STREAMERS — Phase 4 J PR-E (2026-06-03).
+  describe "Phase 4 J PR-E — abstain on unique_chatters_60min == 0 (ingest gap, not bot signal)" do
+    it "abstains (not max bot) when unique_chatters_60min is zero" do
+      # Pre-PR-E: 0 / ccv = 0, ratio < baseline → value = (baseline - 0) / baseline = 1.0
+      # → contribution = weight × 1.0 × confidence = MAX bot drag (~14% TI penalty).
+      # Three honest small RU streamers (kepa_mita ccv=569 / ckaiba9 ccv=425 /
+      # restoratorgame ccv=205) hit this 2026-06-03 with TI=76/72/83. Root cause:
+      # CH MV `mv_stream_minute_target` had no rows for the stream because IRC
+      # never subscribed (capacity / late join / monitor restart) — not because
+      # the audience was bot-only.
+      # Post-PR-E: abstain reason="no_irc_data" + confidence=0.0 so
+      # Engine#compute_raw_ti drops the signal cleanly. Other signals
+      # (auth_ratio, account_profile_scoring) still expose bot-only audiences
+      # via independent paths.
+      result = signal.calculate(unique_chatters_60min: 0, latest_ccv: 569, category: "gaming", stream_duration_min: 60)
+      expect(result.value).to be_nil
+      expect(result.confidence).to eq(0.0)
+      expect(result.metadata[:reason]).to eq("no_irc_data")
+    end
+
+    it "still penalizes (non-zero but very-low ratio = chatters truly missing relative to ccv)" do
+      # 5 chatters in 60min across 569 ccv = ratio 0.0088. Gaming baseline 0.04 ×
+      # shrink 1.0 = 0.04. value = (0.04 - 0.0088) / 0.04 ≈ 0.78. This branch
+      # remains live — we only abstain on the EXACT-zero ingest-gap signature,
+      # not on "low but observed" chat activity.
+      result = signal.calculate(unique_chatters_60min: 5, latest_ccv: 569, category: "gaming", stream_duration_min: 60)
+      expect(result.value).to be > 0.5
+      expect(result.value).to be < 1.0
+    end
+
+    it "still abstains on nil (pre-existing behavior preserved)" do
+      result = signal.calculate(unique_chatters_60min: nil, latest_ccv: 569, category: "gaming", stream_duration_min: 60)
+      expect(result.value).to be_nil
+      expect(result.metadata[:reason]).to eq("no_irc_data")
+    end
+  end
 end
