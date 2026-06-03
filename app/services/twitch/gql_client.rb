@@ -108,9 +108,16 @@ module Twitch
     # cheaper. Rate-limit safety: 50 concurrent CommunityTab POSTs on a single VPS to a single
     # IP can trip Twitch GQL throttle (~800 req/min/IP anecdotal). Workers should call this at
     # most once per ~5min per channel (e.g. before each ChattersPresenceSnapshot write on big
-    # streams). Honors :rate_limit_error class by retrying the surviving threads — partial
-    # failures degrade gracefully (returns whatever sample size we did get + telemetry on the
-    # successful_calls vs concurrent_calls).
+    # streams). Each thread inherits the per-call 3-retry / exponential-backoff behavior of
+    # `community_tab → execute` (`MAX_RETRIES` + `BACKOFF_BASE`); threads that exhaust retries
+    # return nil (after their own internal `RateLimitError` rescue) and are dropped from the
+    # aggregate via `compact`. There is NO surviving-thread retry at the wrapper layer.
+    #
+    # Shape note: the returned `:count` is `total_present` (always non-negative Integer,
+    # populated from `sum_present` when every result's `chatters.count` was absent).
+    # `community_tab` returns the raw `chatters["count"]` which may be nil. Callers checking
+    # `result[:count].nil?` therefore behave differently between the two methods — use
+    # `:successful_calls` to detect "did any thread succeed" instead.
     def community_tab_parallel(channel_login:, concurrent_calls: 50)
       return nil if channel_login.blank?
       concurrent_calls = concurrent_calls.to_i.clamp(1, 50)

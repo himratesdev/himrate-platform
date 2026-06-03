@@ -210,10 +210,10 @@ RSpec.describe Twitch::GqlClient do
     end
 
     it "returns nil when every thread errors (graceful aggregate failure)" do
-      # WebMock with no matching stub → HTTP::ConnectionError, our community_tab
-      # rescues in execute() and returns nil. Parallel wrapper sees all-nil results.
+      # Stub returns a GQL errors-only response (no `data.channel.chatters`).
+      # community_tab's `data.dig(...,"chatters")` resolves to nil → community_tab returns nil
+      # → parallel wrapper sees `results == []` after compact → returns nil.
       stub_gql_request(body_includes: "CommunityTab", response: { errors: [ { message: "boom" } ] })
-      # community_tab returns nil (chatters nil), so results becomes empty after compact.
       expect(client.community_tab_parallel(channel_login: "lost", concurrent_calls: 3)).to be_nil
     end
 
