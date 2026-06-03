@@ -93,6 +93,93 @@ module Twitch
       }
     end
 
+    # G-3 (BUG-251.31): Parallel chatter sweep — sidesteps the 100-entry viewers[] ceiling on
+    # big channels. Twitch's CommunityTab returns a **random ~100-viewer sample per call**, NOT
+    # a deterministic head slice. Firing N concurrent calls + Set-deduping the unions captures
+    # the long tail (verified ViewerMetrics 0.9.951 implementation: api-manager.js
+    # `getViewerListParallel(channelName, 50)` — Chrome Web Store deployed extension uses the
+    # identical pattern). 50 concurrent × ~100 random/call ≈ up to ~5k unique chatters on
+    # mid/large streams where a single CommunityTab call returns only the first 100 in the
+    # sample. Broadcasters/moderators/vips/staff arrays are deterministic & uncapped, so they
+    # only get deduped (no extra benefit from N>1, but free).
+    #
+    # When to use: callers seeing `chatters[:count] > 100 && chatters[:viewers].size == 100`
+    # (i.e. the cap was hit). For small channels the single-call `community_tab` is fine and
+    # cheaper. Rate-limit safety: 50 concurrent CommunityTab POSTs on a single VPS to a single
+    # IP can trip Twitch GQL throttle (~800 req/min/IP anecdotal). Workers should call this at
+    # most once per ~5min per channel (e.g. before each ChattersPresenceSnapshot write on big
+    # streams). Each thread inherits the per-call 3-retry / exponential-backoff behavior of
+    # `community_tab → execute` (`MAX_RETRIES` + `BACKOFF_BASE`); threads that exhaust retries
+    # return nil (after their own internal `RateLimitError` rescue) and are dropped from the
+    # aggregate via `compact`. There is NO surviving-thread retry at the wrapper layer.
+    #
+    # Shape note: the returned `:count` is `total_present` (always non-negative Integer,
+    # populated from `sum_present` when every result's `chatters.count` was absent).
+    # `community_tab` returns the raw `chatters["count"]` which may be nil. Callers checking
+    # `result[:count].nil?` therefore behave differently between the two methods — use
+    # `:successful_calls` to detect "did any thread succeed" instead.
+    def community_tab_parallel(channel_login:, concurrent_calls: 50)
+      return nil if channel_login.blank?
+      concurrent_calls = concurrent_calls.to_i.clamp(1, 50)
+
+      threads = Array.new(concurrent_calls) do
+        Thread.new do
+          community_tab(channel_login: channel_login)
+        rescue StandardError => e
+          Rails.logger.warn("[gql:community_tab_parallel] thread error: #{e.class}: #{e.message}")
+          nil
+        end
+      end
+      results = threads.map(&:value).compact
+
+      return nil if results.empty?
+
+      broadcasters_set = Set.new
+      moderators_set = Set.new
+      vips_set = Set.new
+      staff_set = Set.new
+      viewers_set = Set.new
+      max_count = 0
+      viewers_per_call = []
+
+      results.each do |r|
+        broadcasters_set.merge(r[:broadcasters] || [])
+        moderators_set.merge(r[:moderators] || [])
+        vips_set.merge(r[:vips] || [])
+        staff_set.merge(r[:staff] || [])
+        viewers_set.merge(r[:viewers] || [])
+        max_count = [ max_count, r[:count].to_i ].max
+        viewers_per_call << (r[:viewers] || []).size
+      end
+
+      broadcasters = broadcasters_set.to_a
+      moderators = moderators_set.to_a
+      vips = vips_set.to_a
+      staff = staff_set.to_a
+      viewers = viewers_set.to_a
+      sum_present = broadcasters.size + moderators.size + vips.size + staff.size + viewers.size
+      total_present = max_count.positive? ? max_count : sum_present
+
+      total_viewer_samples = viewers_per_call.sum
+      dedupe_ratio = total_viewer_samples.positive? ? (viewers.size.to_f / total_viewer_samples).round(4) : 0.0
+
+      {
+        broadcasters: broadcasters,
+        moderators: moderators,
+        vips: vips,
+        staff: staff,
+        viewers: viewers,
+        count: total_present,
+        total_present: total_present,
+        all_logins: broadcasters + moderators + vips + staff + viewers,
+        parallel_calls: concurrent_calls,
+        successful_calls: results.size,
+        unique_viewer_logins: viewers.size,
+        viewer_samples_total: total_viewer_samples,
+        dedupe_ratio: dedupe_ratio
+      }
+    end
+
     # FR-004: Chatters count (registered chat-connected total). Works server-side via Android
     # Client-ID (BUG-251.30 verified 2026-05-29 — was previously integrity-gated under web ID).
     def channel_chatters_count(channel_login:)
