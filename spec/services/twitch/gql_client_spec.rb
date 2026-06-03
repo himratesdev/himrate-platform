@@ -152,6 +152,88 @@ RSpec.describe Twitch::GqlClient do
     end
   end
 
+  # === G-3 (BUG-251.31): Parallel CommunityTab sweep ===
+
+  describe "#community_tab_parallel" do
+    it "fires N concurrent CommunityTab calls and dedupes viewer unions" do
+      # Stub returns the SAME payload to every concurrent request. WebMock can't
+      # selectively rotate per-thread, but the dedupe path still exercises Set merge +
+      # the per-call telemetry counters. (Live Twitch returns a different ~100-viewer
+      # random sample each call — that's the runtime benefit; here we cover the merge
+      # logic + telemetry shape.)
+      stub_gql_request(body_includes: "CommunityTab", response: {
+        data: { channel: { chatters: {
+          broadcasters: [ { login: "streamer" } ],
+          moderators: [ { login: "mod1" } ],
+          vips: [ { login: "vip1" } ],
+          staff: [],
+          viewers: [ { login: "viewerA" }, { login: "viewerB" }, { login: "viewerC" } ],
+          count: 350
+        } } }
+      })
+
+      result = client.community_tab_parallel(channel_login: "streamer", concurrent_calls: 5)
+
+      # Dedupe yields the same unique set as single call (because stub is identical),
+      # but the merge path ran 5x and telemetry reflects the work.
+      expect(result[:broadcasters]).to eq([ "streamer" ])
+      expect(result[:moderators]).to eq([ "mod1" ])
+      expect(result[:vips]).to eq([ "vip1" ])
+      expect(result[:viewers].sort).to eq(%w[viewerA viewerB viewerC])
+      expect(result[:count]).to eq(350) # max_count carried through from authoritative chatters.count
+      expect(result[:total_present]).to eq(350)
+      expect(result[:parallel_calls]).to eq(5)
+      expect(result[:successful_calls]).to eq(5)
+      expect(result[:unique_viewer_logins]).to eq(3)
+      expect(result[:viewer_samples_total]).to eq(15) # 5 calls × 3 viewers/call
+      expect(result[:dedupe_ratio]).to eq(0.2)         # 3 unique / 15 samples
+    end
+
+    it "clamps concurrent_calls to [1, 50]" do
+      stub_gql_request(body_includes: "CommunityTab", response: {
+        data: { channel: { chatters: {
+          broadcasters: [], moderators: [], vips: [], staff: [],
+          viewers: [ { login: "v1" } ], count: 1
+        } } }
+      })
+
+      under = client.community_tab_parallel(channel_login: "s", concurrent_calls: 0)
+      expect(under[:parallel_calls]).to eq(1)
+
+      over = client.community_tab_parallel(channel_login: "s", concurrent_calls: 999)
+      expect(over[:parallel_calls]).to eq(50)
+    end
+
+    it "returns nil when channel_login is blank" do
+      expect(client.community_tab_parallel(channel_login: "")).to be_nil
+      expect(client.community_tab_parallel(channel_login: nil)).to be_nil
+    end
+
+    it "returns nil when every thread errors (graceful aggregate failure)" do
+      # WebMock with no matching stub → HTTP::ConnectionError, our community_tab
+      # rescues in execute() and returns nil. Parallel wrapper sees all-nil results.
+      stub_gql_request(body_includes: "CommunityTab", response: { errors: [ { message: "boom" } ] })
+      # community_tab returns nil (chatters nil), so results becomes empty after compact.
+      expect(client.community_tab_parallel(channel_login: "lost", concurrent_calls: 3)).to be_nil
+    end
+
+    it "falls back to sum_present when authoritative count is absent" do
+      stub_gql_request(body_includes: "CommunityTab", response: {
+        data: { channel: { chatters: {
+          broadcasters: [ { login: "b" } ],
+          moderators: [ { login: "m" } ],
+          vips: [], staff: [],
+          viewers: [ { login: "v" } ]
+          # NB: no "count" key
+        } } }
+      })
+
+      result = client.community_tab_parallel(channel_login: "s", concurrent_calls: 2)
+      expect(result[:count]).to eq(3)         # 1 + 1 + 1 fallback
+      expect(result[:total_present]).to eq(3)
+    end
+  end
+
   # === FR-004: GetChannelChattersCount ===
 
   describe "#channel_chatters_count" do
