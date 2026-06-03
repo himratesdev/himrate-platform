@@ -9,10 +9,41 @@ RSpec.describe TrustIndex::ErvCalculator do
     expect(result[:erv_percent]).to eq(72.0)
   end
 
-  it "assigns green label for ERV 85%" do
+  # Phase 4 J PR-D: top tier (90-100) gets «Аудитория реальная» / «Audience is
+  # real» per PO directive 2026-06-02. Mid-green band (80-89) keeps «Аномалий не
+  # замечено» neutral phrasing. Both stay green-colored — no downstream client
+  # break.
+  it "assigns top-tier «Аудитория реальная» for ERV ≥ 90 (Phase 4 J PR-D)" do
+    result = described_class.compute(ti_score: 95, ccv: 1000, confidence: 0.9)
+    expect(result[:label]).to eq("Аудитория реальная")
+    expect(result[:label_en]).to eq("Audience is real")
+    expect(result[:label_color]).to eq("green")
+  end
+
+  it "assigns excellent at exactly TI=90 (boundary lower)" do
+    result = described_class.compute(ti_score: 90, ccv: 1000, confidence: 0.9)
+    expect(result[:label]).to eq("Аудитория реальная")
+  end
+
+  it "assigns excellent at TI=100 (boundary upper)" do
+    result = described_class.compute(ti_score: 100, ccv: 1000, confidence: 0.9)
+    expect(result[:label]).to eq("Аудитория реальная")
+  end
+
+  it "assigns green label for ERV 85% (mid-green band 80-89)" do
     result = described_class.compute(ti_score: 85, ccv: 1000, confidence: 0.9)
     expect(result[:label]).to eq("Аномалий не замечено")
     expect(result[:label_color]).to eq("green")
+  end
+
+  it "assigns green at exactly TI=89 (boundary upper of mid-green)" do
+    result = described_class.compute(ti_score: 89, ccv: 1000, confidence: 0.9)
+    expect(result[:label]).to eq("Аномалий не замечено")
+  end
+
+  it "assigns green at exactly TI=80 (boundary lower of mid-green)" do
+    result = described_class.compute(ti_score: 80, ccv: 1000, confidence: 0.9)
+    expect(result[:label]).to eq("Аномалий не замечено")
   end
 
   it "assigns yellow label for ERV 55%" do
