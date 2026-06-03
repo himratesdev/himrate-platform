@@ -119,9 +119,16 @@ jobs:
     # BUG-251.17b: 15m was too tight once deploy_timeout went to 120s (BUG-251.17; now 240s — deploy-fix). Under live VPS
     # load each role's boot can take several minutes, and kamal rolls every role (web/irc/job/
     # whisper_worker) serially after the image build → total exceeded 15m and GitHub cancelled
-    # mid-roll (left whisper_worker on the old SHA). 30m covers build + a slow 4-role serial roll
-    # under contention. Wall-clock budget only; root cause = VPS capacity (separate hardware track).
-    timeout-minutes: 30
+    # mid-roll (left whisper_worker on the old SHA). 30m covered build + a slow 4-role serial roll
+    # under contention.
+    #
+    # 2026-06-03 follow-up: PR #274 added the 8th app role (monitoring_worker). Worst-case wall-time
+    # = build (~5m) + 8 roles × deploy_timeout 240s = ~5m + 32m = ~37m. The PR #274 first deploy
+    # cancelled at 30m with whisper/stream/signal_compute/signals/monitoring_worker still on the
+    # old SHA. Bumped to 45m: 8 roles × 240s = 32m for the roll itself + 13m headroom for build /
+    # push / lock / boot waits. Wall-clock budget only; root cause = VPS capacity (separate
+    # hardware track, Phase 7 R).
+    timeout-minutes: 45
     permissions:
       packages: write
       contents: read
