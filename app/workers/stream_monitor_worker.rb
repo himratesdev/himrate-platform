@@ -69,8 +69,29 @@ class StreamMonitorWorker
 
         # TASK-030: Trigger signal computation after data saved
         SignalComputeWorker.perform_async(stream.id) if ccv || chat || present
+
+        # BUG-251.31 G-3 PR-A2: detect big channel + viewers[] cap hit → enqueue async
+        # parallel sweep. Throttled per-channel inside the worker via Redis SETNX (default
+        # 5min). Worker itself flag-gated (:big_channel_chatter_sweep) so this enqueue is a
+        # no-op until the flag is enabled on staging.
+        enqueue_big_channel_sweep_if_needed(stream, present)
       end
     end
+  end
+
+  # PR-A2: enqueue Twitch::BigChannelChatterSweepWorker when the single-call CommunityTab
+  # is likely sample-capped. Twitch caps `viewers[]` at 100 entries; if we see
+  # `viewers_count_present == 100` AND `total_present > 100`, the response was a 100-sample
+  # of the chatter pool — running a parallel sweep recovers the long tail. For channels with
+  # ≤100 chatters there's nothing to recover, so the gate is exact at the cap.
+  def enqueue_big_channel_sweep_if_needed(stream, present)
+    return unless present
+
+    viewers_in_response = present[:viewers_count_present].to_i
+    total_count = present[:total_present].to_i
+    return unless viewers_in_response >= 100 && total_count > viewers_in_response
+
+    Twitch::BigChannelChatterSweepWorker.perform_async(stream.channel.id)
   end
 
   # BUG-251.30 CR-iter1 Should-1: combined StreamMetadata + CommunityTab batch.

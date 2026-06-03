@@ -147,10 +147,16 @@ module FlipperDefaults
     accessory_auto_remediation: "BUG-010 PR3", # Kill switch для AutoRemediation::TriggerService
     # GitHub workflow_dispatch. Default OFF — operators enable через
     # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.
-    cross_channel_digest: "BUG-SCW-CROSS-CHANNEL" # CrossChannelDigestRefreshWorker + ContextBuilder
+    cross_channel_digest: "BUG-SCW-CROSS-CHANNEL", # CrossChannelDigestRefreshWorker + ContextBuilder
     # short-circuit (read digest table instead of CH 24h scan). OFF by default — enable per-env
     # after the worker has populated the digest at least once (cron */5 min) and DV confirms
     # SCW latency drop. Toggling OFF reverts ContextBuilder to the original CH path.
+    big_channel_chatter_sweep: "BUG-251.31-G3-PR-A2" # Twitch::BigChannelChatterSweepWorker: opt-in
+    # parallel CommunityTab sweep on big channels where the single call hit the 100-viewers[] cap.
+    # StreamMonitorWorker enqueues per-channel when cap detected; this flag is the runtime gate
+    # so the wire-up can ship behind a kill-switch and be enabled only after rake-probe
+    # measurement (validated 2026-06-03 on summit1g: 1781 unique viewers vs 100 cap-hit, dedupe
+    # 0.89, 602ms for 20-parallel). OFF by default; PR-A3 will add ChattersSnapshot persistence.
   }.freeze
 end
 
