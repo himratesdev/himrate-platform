@@ -40,7 +40,20 @@ CREATE TABLE IF NOT EXISTS chat_messages
 
     timestamp          DateTime64(3),
     -- Ingestion bookkeeping (observability / dual-write lag). DateTime DEFAULT now() costs ~nothing.
-    inserted_at        DateTime DEFAULT now()
+    inserted_at        DateTime DEFAULT now(),
+
+    -- Phase 6 M (2026-06-03): bloom_filter skipping index on stream_id. The primary ORDER BY is
+    -- (channel_login, timestamp) — purpose-built for ContextBuilder's per-channel windowed scans.
+    -- But `stream_id` lookups (Clickhouse::ChatQueries.privmsg_counts_for_streams, called by the
+    -- Ml::Features::StabilitySignals#chat_rates_per_stream batch path) filter ONLY by stream_id
+    -- with no channel_login / timestamp predicate, so without this index they full-scan all daily
+    -- partitions in the retention window (~50M+ rows / 7 days at staging volume) on every call —
+    -- measured 6× variance same query (196ms → 1293ms) before the index. Bloom filter granules
+    -- skip ~99% of granules per partition for a typical per-stream lookup. GRANULARITY 4 = one
+    -- bloom filter entry per 4 index granules (8192 rows × 4 = 32k rows per bloom entry) — balances
+    -- storage cost (~1-2% of table size) vs skip resolution. Doc:
+    -- _tasks/Phase-6-M-privmsg-variance/CONTEXT.md.
+    INDEX idx_stream_id stream_id TYPE bloom_filter GRANULARITY 4
 )
 ENGINE = MergeTree
 ORDER BY (channel_login, timestamp) -- per-channel / per-stream windowed scans + cross-channel

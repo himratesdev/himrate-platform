@@ -161,5 +161,24 @@ RSpec.describe Clickhouse::Client do
     it "has applied the committed schema (clickhouse:setup) — chat_messages is queryable" do
       expect { client.execute("SELECT count() FROM chat_messages") }.not_to raise_error
     end
+
+    # Phase 6 M (2026-06-03): integration check that the bloom_filter skipping index actually
+    # exists on the CH server, not just in the .sql file. The schema unit spec verifies the file
+    # registers the index; this verifies the rake task applied it to the test database. Two
+    # provisioning paths converge here — 001's CREATE TABLE (fresh CI db) and 003's ALTER (older
+    # databases) — so the post-condition (index visible in `system.data_skipping_indices`) is the
+    # contract both must satisfy. Future refactors that drop the index from CREATE TABLE without
+    # also delivering it via ALTER would fail this assertion.
+    it "has materialized the idx_stream_id bloom_filter skipping index on chat_messages" do
+      rows = client.select(<<~SQL.squish)
+        SELECT name, type, expr, granularity
+        FROM system.data_skipping_indices
+        WHERE table = 'chat_messages' AND name = 'idx_stream_id'
+      SQL
+      expect(rows.size).to eq(1), "expected idx_stream_id index on chat_messages, got: #{rows.inspect}"
+      expect(rows.first["type"]).to eq("bloom_filter")
+      expect(rows.first["expr"]).to eq("stream_id")
+      expect(rows.first["granularity"].to_i).to eq(4)
+    end
   end
 end

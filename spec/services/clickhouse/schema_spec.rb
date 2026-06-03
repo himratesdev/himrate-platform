@@ -45,5 +45,29 @@ RSpec.describe Clickhouse::Schema do
       expect(files).to eq(files.sort)
       expect(files.map { |f| File.basename(f) }).to include("001_chat_messages.sql")
     end
+
+    # Phase 6 M (2026-06-03): the bloom_filter skipping index on chat_messages.stream_id is
+    # provisioned in two complementary places. Fresh environments (CI, new prod) pick it up via
+    # the CREATE TABLE clause in 001; existing CH instances need the standalone ALTER+MATERIALIZE
+    # in 003. We assert BOTH live in the manifest so a future refactor can't silently drop one.
+    it "ships the bloom_filter skipping index in both 001 (CREATE TABLE) and 003 (ALTER backfill)" do
+      basenames = described_class.files.map { |f| File.basename(f) }
+      expect(basenames).to include("003_add_stream_id_index_to_chat_messages.sql")
+
+      create_table_sql = File.read(Clickhouse::Schema::DIR.join("001_chat_messages.sql"))
+      expect(create_table_sql).to match(/INDEX\s+idx_stream_id\s+stream_id\s+TYPE\s+bloom_filter\s+GRANULARITY\s+4/i)
+
+      backfill_sql = File.read(Clickhouse::Schema::DIR.join("003_add_stream_id_index_to_chat_messages.sql"))
+      expect(backfill_sql).to match(/ALTER TABLE chat_messages\s+ADD INDEX IF NOT EXISTS idx_stream_id/i)
+      expect(backfill_sql).to match(/MATERIALIZE INDEX idx_stream_id/i)
+
+      # Two executable statements (ADD + MATERIALIZE) — the splitter must surface both so the
+      # rake task applies the materialization, not just the registration. Without MATERIALIZE,
+      # existing partitions stay unindexed → no perf win until a part is organically rewritten.
+      statements = described_class.statements(backfill_sql)
+      expect(statements.size).to eq(2)
+      expect(statements[0]).to match(/ADD INDEX/i)
+      expect(statements[1]).to match(/MATERIALIZE INDEX/i)
+    end
   end
 end
