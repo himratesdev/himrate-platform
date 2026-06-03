@@ -90,10 +90,13 @@ RSpec.describe TrustIndex::Signals::ChatterCcvRatio do
       expect(result.value).to be > 0.4
     end
 
-    it "abstains (insufficient + confidence 0) when no baseline configured for category" do
+    it "falls through to default category when the named category is uncalibrated" do
       result = signal.calculate(unique_chatters_60min: 100, latest_ccv: 5000, category: "newly_added_uncalibrated_category", stream_duration_min: 60)
-      # category lookup falls through to "default" inside SignalConfiguration.params_for,
-      # default has expected_ratio_min seeded → still resolves OK.
+      # SignalConfiguration.params_for retries with category="default" when the
+      # named category returns no rows; default has expected_ratio_min seeded so
+      # the signal resolves rather than abstaining. This documents the lookup
+      # behavior — only when the row is entirely missing (next example) does the
+      # signal abstain.
       expect(result.value).not_to be_nil
     end
 
