@@ -104,6 +104,51 @@ servers:
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
+  # 2026-06-03 Phase 7 O follow-up: dedicated Sidekiq role для :monitoring queue.
+  # Same starvation pattern as signals_worker (PR #270) / signal_compute_worker (PR #257) /
+  # stream_worker (BUG-251.40-F):
+  # `:monitoring` weight=1 in default `job` role (lowest tier in sidekiq.yml :queues —
+  # `bot_scoring`/`signal_compute`/`stream_lifecycle` w=6, `signals` w=5, `chat` w=4,
+  # `pva_*`/`post_stream`/`default` w=3, `notifications`/`accessory_ops` w=2,
+  # `monitoring`/`long_running` w=1; weight sum = 6+6+6+5+4+3+3+3+3+3+2+2+1+1 = 48).
+  # Weighted-fetch share = 1 / 48 ≈ 2.08% of fetch slots × 5 threads ≈ ~0.10 effective
+  # thread per :monitoring job.
+  # Live-trigger workload after PR #269 (Twitch::BigChannelChatterSweepWorker, ~14s/job
+  # for 20-parallel CommunityTab probe + Set-dedupe + persistence chain): drain ≈ 0.11
+  # thread × 1 job / 14s = ~0.008 jobs/sec = ~700 jobs/day on `job` role.
+  # Enqueue rate measured 2026-06-03: ≈ 4 jobs/min (95 jobs auto-enqueued within ~3 min
+  # of `:big_channel_chatter_sweep` flag flip; sustained ~4/min steady-state by
+  # StreamMonitorWorker tier1 gate + SETNX 5-min throttle per channel) = ~5760/day.
+  # Result: queue grew from 43k (pre-compact 2026-06-03 14:47Z) → 58k (16:53Z) in ~2h on
+  # `job` role, latency ~55k seconds (15h-old jobs ≡ stream they targeted has long ended).
+  # Same fix shape as PR #270: strict-precedence role processes ONLY :monitoring queue
+  # with c=2 dedicated threads (lower than signals_worker c=5 — each BigChannelChatterSweep
+  # job is heavy 14s wall clock with 20-thread GQL fan-out, so c=2 = max 40 concurrent
+  # outbound HTTP @ peak; stays under the ~800 req/min Twitch GQL Helix soft cap observed
+  # elsewhere). Expected drain: ~2 threads × 1 job / 14s = ~0.14 j/s = ~12k/hr → 58k backlog
+  # drains in ~5h. :monitoring queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat
+  # и fallback (default job role подхватит если monitoring_worker role упадёт). 20 worker
+  # classes enqueue onto :monitoring (full list: app/workers grep for `queue: :monitoring` /
+  # `sidekiq_options queue: :monitoring`); high-volume dominant = Twitch::BigChannelChatterSweepWorker
+  # (~4/min steady-state post-PR #269 flag flip); low-volume periodic scheduler tail =
+  # StreamMonitorWorker, MonitoredLiveDetectorWorker, CleanupWorker, RaidDetectionWorker,
+  # ChannelMetadataRefreshWorker, ChatterProfileRefreshWorker, FollowerSnapshotWorker,
+  # BotListRefreshWorker, StaleStreamSweepWorker, SidekiqHealthMonitorWorker, ChannelDiscoveryWorker,
+  # ChannelPruneWorker, CrossChannelDigestRefreshWorker, Trends::NightlyAggregationWorker, +
+  # 5 PersonalAnalytics::* scheduler workers. Strict-precedence consumer of the SAME queue is
+  # the entire migration; no per-worker code changes required. c=2 sizing dominated by
+  # BigChannelChatterSweep cost profile — other 19 classes are scheduler/periodic and trivial.
+  #
+  # Role naming: matches queue (`monitoring_worker` ↔ `-q monitoring`) per the symmetry
+  # established by `stream_worker` ↔ `-q stream_lifecycle`, `signals_worker` ↔ `-q signals`.
+  monitoring_worker:
+    hosts:
+      - 194.135.85.159
+    cmd: bundle exec sidekiq -q monitoring -c 2
+    proxy: false
+    options:
+      health-cmd: "ruby -e 'puts :ok'"
+      health-interval: 10s
   irc:
     hosts:
       - 194.135.85.159
