@@ -2,7 +2,32 @@
 
 # TASK-028 FR-006: Channel Protection Score (CPS) signal.
 # CPS 0-100 from 7 channel settings. Low CPS = vulnerable to bots.
-# Signal value inverted: 1.0 - CPS/100 (high value = more suspicious).
+#
+# Phase 4 J calibration (2026-06-03): CPS measures the CHANNEL OWNER's protective
+# settings (follower-only mode / sub-only mode / slow mode / emote-only / verified-account
+# requirement), NOT chatter behavior. An honest streamer who keeps chat open trades
+# protection for accessibility — they are not at fault for the openness, and the
+# audience reality (real viewers vs bots) is captured by the other 7 signals
+# (auth_ratio / chat_behavior / known_bot_match / raid_attribution / chatter_ccv_ratio
+# / cross_channel_presence / account_profile_scoring).
+#
+# Pre-Phase-4-J behavior penalized open channels linearly: `value = 1.0 - CPS/100`,
+# so a CPS=20 channel contributed `0.8 * weight ≈ 5.6%` TI drag. That dragged honest
+# big-streamer scores (Recrent: 6482 ccv, blueMark partner) from a deserved ~100 down to
+# 87 — surfaced via [[feedback-verify-on-live-streamer-strict-enforcement]] strict-verify
+# violation incident 2026-06-02.
+#
+# Post-Phase-4-J semantics:
+#   - CPS ≥ CPS_NEUTRAL_THRESHOLD (30) → value = 0.0 (neutral; protection is the streamer's
+#     choice, not a bot indicator). Above-threshold protection is good but does not earn
+#     additional credit vs the baseline.
+#   - CPS < 30 → linear penalty up to MAX_VALUE_AT_ZERO_CPS (0.3) at CPS=0. Even a fully
+#     unprotected channel contributes ≤0.3 × weight 0.07 = ~2.1% TI penalty — significant
+#     only when the channel is in the "anyone can chat without verification" tier where a
+#     bot raid would meet zero friction.
+#
+# Per [[feedback-no-throwaway-go-to-final-architecture]] the signal is retained (it still
+# measures real risk exposure) — only the directionality + magnitude is fixed.
 
 module TrustIndex
   module Signals
@@ -10,13 +35,34 @@ module TrustIndex
       def name = "Channel Protection Score"
       def signal_type = "channel_protection_score"
 
+      # Threshold above which the signal contributes nothing. Tied to the cps_breakdown
+      # — 30 ≈ "follower-only any-duration alone" or "subscriber-only + slow-mode", i.e.
+      # the minimum bar a serious channel runs. Below this = chat is effectively open.
+      CPS_NEUTRAL_THRESHOLD = 30
+      # Max signal value at CPS=0 (fully open). 0.3 × normalized weight ≈0.07 (seed 0.05
+      # renormalized across 11 available signals in Engine#compute_raw_ti) ≈ 2.1% TI
+      # penalty — small enough to never drive an honest open-chat streamer below
+      # "trusted" tier on its own; large enough to surface in audit when paired with
+      # other suspicious signals.
+      MAX_VALUE_AT_ZERO_CPS = 0.3
+
       def calculate(context)
         config = context[:channel_protection_config]
 
-        return result(value: 1.0, confidence: 0.0, metadata: { reason: "no_config" }) unless config
+        # No config = no signal contribution. Pre-Phase-4-J this returned value=1.0 with
+        # confidence=0.0; the confidence-zero guard in Engine#compute_raw_ti drops it from
+        # the available signals so the bot_score was unaffected — but a value=1.0 emitted
+        # on a no-data branch is a footgun (any future refactor that surfaces low-confidence
+        # signals would suddenly apply a max-penalty no-config row to every fresh channel).
+        return result(value: 0.0, confidence: 0.0, metadata: { reason: "no_config" }) unless config
 
         cps = compute_cps(config)
-        value = 1.0 - cps / 100.0
+
+        value = if cps >= CPS_NEUTRAL_THRESHOLD
+                  0.0
+        else
+                  ((CPS_NEUTRAL_THRESHOLD - cps).to_f / 100.0).clamp(0.0, MAX_VALUE_AT_ZERO_CPS)
+        end
 
         freshness = config.respond_to?(:last_checked_at) && config.last_checked_at
         confidence = freshness && freshness > 1.hour.ago ? 1.0 : 0.5

@@ -30,7 +30,11 @@ RSpec.describe TrustIndex::Signals::ChannelProtectionScore do
     OpenStruct.new(defaults.merge(attrs))
   end
 
-  it "returns CPS=100, signal=0.0 for all protections ON" do
+  # Phase 4 J calibration (2026-06-03): signal value is neutral (0.0) above CPS_NEUTRAL_THRESHOLD
+  # and contributes at most MAX_VALUE_AT_ZERO_CPS=0.3 at CPS=0. Pre-Phase-4-J the signal returned
+  # `1.0 - CPS/100` which penalized honest open-chat streamers (Recrent: blueMark partner, CPS=20,
+  # contributed 5.6% TI drag → final TI=87 instead of deserved ~100).
+  it "returns signal=0.0 for fully protected channel (CPS=100, above neutral threshold)" do
     config = make_config(
       verified_account_required: true,  # 30
       followers_only_duration_min: 30,  # 30 (positive duration)
@@ -43,18 +47,49 @@ RSpec.describe TrustIndex::Signals::ChannelProtectionScore do
     expect(result.metadata[:cps]).to eq(100)
   end
 
-  it "returns CPS=0, signal=1.0 for no protections" do
+  it "returns signal=0.3 (max penalty) for fully unprotected channel (CPS=0)" do
     config = make_config
     result = signal.calculate(channel_protection_config: config)
-    expect(result.value).to eq(1.0)
+    expect(result.value).to eq(described_class::MAX_VALUE_AT_ZERO_CPS)
     expect(result.metadata[:cps]).to eq(0)
   end
 
-  it "returns signal=1.0 with confidence=0.0 when no config" do
+  it "returns signal=0.0 with confidence=0.0 when no config (no-data branch — was 1.0 pre-Phase-4-J footgun)" do
     result = signal.calculate(channel_protection_config: nil)
-    expect(result.value).to eq(1.0)
+    expect(result.value).to eq(0.0)
     expect(result.confidence).to eq(0.0)
     expect(result.metadata[:reason]).to eq("no_config")
+  end
+
+  describe "Phase 4 J calibration thresholds" do
+    it "returns signal=0.0 for CPS at exactly the neutral threshold (30)" do
+      config = make_config(followers_only_duration_min: 60) # 30 pts
+      result = signal.calculate(channel_protection_config: config)
+      expect(result.metadata[:cps]).to eq(30)
+      expect(result.value).to eq(0.0)
+    end
+
+    it "returns small positive signal for CPS just below threshold (20, sub-only-alone)" do
+      config = make_config(subs_only_enabled: true) # 20 pts
+      result = signal.calculate(channel_protection_config: config)
+      expect(result.metadata[:cps]).to eq(20)
+      # (30 - 20) / 100 = 0.10
+      expect(result.value).to be_within(0.001).of(0.10)
+    end
+
+    it "Recrent-like open channel (CPS=15, follower-only any-duration) caps below trusted-tier impact" do
+      config = make_config(followers_only_duration_min: 0) # 15 pts
+      result = signal.calculate(channel_protection_config: config)
+      expect(result.metadata[:cps]).to eq(15)
+      # (30 - 15) / 100 = 0.15. With weight 0.07 → ~1.05% TI penalty (vs 5.6% pre-Phase-4-J).
+      expect(result.value).to be_within(0.001).of(0.15)
+    end
+
+    it "linear penalty above MAX cap at CPS=0 (never exceeds MAX_VALUE_AT_ZERO_CPS)" do
+      config = make_config
+      result = signal.calculate(channel_protection_config: config)
+      expect(result.value).to eq(0.3) # (30 - 0) / 100 = 0.3, exactly equals cap
+    end
   end
 
   describe "individual component scoring" do
@@ -98,11 +133,12 @@ RSpec.describe TrustIndex::Signals::ChannelProtectionScore do
     end
   end
 
-  it "calculates partial CPS correctly (verified + slow_mode 60s)" do
+  it "calculates partial CPS correctly (verified + slow_mode 60s — above threshold = neutral signal)" do
     config = make_config(verified_account_required: true, slow_mode_seconds: 60)
     result = signal.calculate(channel_protection_config: config)
     expect(result.metadata[:cps]).to eq(45) # 30 + 15
-    expect(result.value).to be_within(0.01).of(0.55)
+    # CPS=45 > threshold=30 → signal value = 0.0 (post-Phase-4-J).
+    expect(result.value).to eq(0.0)
   end
 
   it "returns confidence=0.5 for stale config (>1h old)" do

@@ -9,13 +9,21 @@ module TrustIndex
     class InteractionMatrix
       # Default interaction rules (amplification / dampening).
       # Format: [condition_signal, condition_threshold, target_signal, target_threshold, multiplier]
+      #
+      # Phase 4 J PR-A re-anchoring (2026-06-03, CR iter-1 Must Fix #1):
+      # `channel_protection_score` now emits in the range [0.0, 0.3] (cap =
+      # MAX_VALUE_AT_ZERO_CPS). CPS cond_min retuned 0.7 → 0.2 so amplification fires
+      # only on the truly wide-open tail (CPS ≤ ~10), not on honest open-chat streamers
+      # like Recrent (CPS=15 → value=0.15, below cond_min). The intent — combining
+      # owner-side openness with chatter-side bot signals — is preserved; only the
+      # numeric range is re-anchored to the post-PR signal contract.
       DEFAULT_RULES = [
-        # Low CPS (vulnerable) + known bots → amplify known_bot signal
-        { condition: "channel_protection_score", cond_min: 0.7,
+        # Wide-open CPS (≤ ~10) + known bots → amplify known_bot signal
+        { condition: "channel_protection_score", cond_min: 0.2,
           target: "known_bot_match", target_min: 0.05, multiplier: 1.3 },
 
-        # Low CPS + cross-channel presence → amplify cross_channel
-        { condition: "channel_protection_score", cond_min: 0.7,
+        # Wide-open CPS + cross-channel presence → amplify cross_channel
+        { condition: "channel_protection_score", cond_min: 0.2,
           target: "cross_channel_presence", target_min: 0.05, multiplier: 1.3 },
 
         # CCV step function + CCV-chat divergence → both amplified

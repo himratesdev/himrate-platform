@@ -82,7 +82,12 @@ if defined?(SignalConfiguration)
     { signal_type: "ccv_step_function", category: "default", param_name: "alert_threshold", param_value: 0.5 },
     { signal_type: "ccv_tier_clustering", category: "default", param_name: "alert_threshold", param_value: 0.6 },
     { signal_type: "chat_behavior", category: "default", param_name: "alert_threshold", param_value: 0.5 },
-    { signal_type: "channel_protection_score", category: "default", param_name: "alert_threshold", param_value: 0.8 },
+    # Phase 4 J PR-A (2026-06-03, CR iter-1 Must Fix #2): channel_protection_score
+    # alert_threshold removed. CPS measures owner-side protective settings, not
+    # chatter-side bot risk — an honest streamer with open chat is not anomalous, so
+    # waking an operator on it = noise, not alert. The other 7 chatter-side signals
+    # carry the bot-detection load. Removal supersedes the prior threshold=0.8 which
+    # became unreachable when CPS signal max dropped 1.0 → 0.3 in this PR.
     { signal_type: "cross_channel_presence", category: "default", param_name: "alert_threshold", param_value: 0.3 },
     { signal_type: "known_bot_match", category: "default", param_name: "alert_threshold", param_value: 0.2 },
     { signal_type: "raid_attribution", category: "default", param_name: "alert_threshold", param_value: 0.5 },
@@ -114,6 +119,16 @@ if defined?(SignalConfiguration)
     record.param_value = config[:param_value]
     record.save!
   end
+
+  # Phase 4 J PR-A (2026-06-03, CR iter-1 Must Fix #2): clean up the obsolete CPS
+  # alert_threshold row from prior seeds. Without this delete, re-running seeds
+  # leaves a dead threshold=0.8 row that the AnomalyAlerter would never trigger
+  # against (signal max is now 0.3). Idempotent — no-op if row already absent.
+  SignalConfiguration.where(
+    signal_type: "channel_protection_score",
+    category: "default",
+    param_name: "alert_threshold"
+  ).delete_all
   # rubocop:enable Metrics/BlockLength
 
   puts "Seed complete: #{SignalConfiguration.count} signal configurations"
