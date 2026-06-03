@@ -169,11 +169,15 @@ RSpec.describe Clickhouse::Client do
     # databases) — so the post-condition (index visible in `system.data_skipping_indices`) is the
     # contract both must satisfy. Future refactors that drop the index from CREATE TABLE without
     # also delivering it via ALTER would fail this assertion.
+    #
+    # Scoped to `database = currentDatabase()` — `system.data_skipping_indices` is server-wide,
+    # so without the predicate the assertion could silently pick up a same-named index in another
+    # CH database that happened to share `chat_messages`. CR-iter1 Nit-2.
     it "has materialized the idx_stream_id bloom_filter skipping index on chat_messages" do
       rows = client.select(<<~SQL.squish)
         SELECT name, type, expr, granularity
         FROM system.data_skipping_indices
-        WHERE table = 'chat_messages' AND name = 'idx_stream_id'
+        WHERE database = currentDatabase() AND table = 'chat_messages' AND name = 'idx_stream_id'
       SQL
       expect(rows.size).to eq(1), "expected idx_stream_id index on chat_messages, got: #{rows.inspect}"
       expect(rows.first["type"]).to eq("bloom_filter")

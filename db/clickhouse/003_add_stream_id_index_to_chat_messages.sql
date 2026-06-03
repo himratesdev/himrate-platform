@@ -13,8 +13,15 @@
 --   3794ms. Bloom filter ~1-2% storage overhead skips ~99% of granules per partition for typical
 --   per-stream lookups → expected 200-3000ms → 20-200ms (≥10× win) and variance < 2× target.
 --
--- IDEMPOTENT: `IF NOT EXISTS` on ADD INDEX = no-op if the column already has it. `MATERIALIZE` is
--- safe to re-run (background mutation; the mutation log dedupes by index name + table version).
+-- IDEMPOTENCY: `IF NOT EXISTS` on ADD INDEX = no-op if the index already exists. MATERIALIZE,
+-- however, is NOT content-deduped by CH — each `ALTER TABLE … MATERIALIZE INDEX` call appends a
+-- fresh row to `system.mutations` regardless of part state. `bin/docker-entrypoint` re-runs
+-- `clickhouse:setup` on every container boot, so this file queues one MATERIALIZE per app boot.
+-- Practical cost is small in CH 24.x: re-running MATERIALIZE on parts that already carry the
+-- index file is a fast no-op rewrite at the part level (no actual data re-indexing), so
+-- `system.mutations` grows by ~1 row per deploy without per-part work. If that history ever
+-- bothers ops, the cleanup is `SYSTEM DROP MUTATION` or one of CH's mutation-log retention knobs;
+-- for now the simpler always-MATERIALIZE keeps the file's contract clean.
 --
 -- MATERIALIZE is REQUIRED — `ADD INDEX` only registers the index in the schema; existing parts
 -- stay unindexed until either a `MATERIALIZE INDEX` is issued (rewrites their secondary index
