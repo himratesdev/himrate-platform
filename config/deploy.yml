@@ -76,6 +76,27 @@ servers:
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
+  # 2026-06-03 Phase 7 O: dedicated Sidekiq role для :signals queue.
+  # Same starvation pattern as signal_compute_worker (PR #257) / stream_worker (BUG-251.40-F):
+  # `:signals` weight=5 in default `job` role with 5 threads × shared weighted fetch
+  # → effective fetch slice ~5/48 ≈ 0.5 thread → 8 jobs/hour processed
+  # (measured 2026-06-03: 4 Trends::AnomalyAttributionWorker completions over 30min
+  # vs 1,023,832-job backlog actively fed at ~1k/hr by SignalComputeWorker anomaly_ids).
+  # Backlog ETA at current drain rate: 300+ days. Same fix shape as PR #257: strict
+  # precedence role processes ONLY :signals queue with c=5 dedicated threads.
+  # :signals queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat и fallback
+  # (default job role подхватит если trends_attribution_worker role упадёт). Workers
+  # AnomalyAttributionWorker + AggregationWorker (88.8%/11.2% of :signals scanned 1k
+  # 2026-06-03) keep `queue: :signals` — strict-precedence consumer of the SAME queue
+  # is the entire migration; no per-worker code changes required.
+  trends_attribution_worker:
+    hosts:
+      - 194.135.85.159
+    cmd: bundle exec sidekiq -q signals -c 5
+    proxy: false
+    options:
+      health-cmd: "ruby -e 'puts :ok'"
+      health-interval: 10s
   irc:
     hosts:
       - 194.135.85.159
