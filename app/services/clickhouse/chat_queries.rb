@@ -402,17 +402,39 @@ module Clickhouse
 
       # 3. Inter-message intervals — use window function over timestamps.
       # Cast to Float64 for sub-second precision (DateTime64 -> seconds since epoch).
+      #
+      # 2026-06-03 BUG-chat-feature-aggregates-mean-inter-msg-sec: the inner
+      # `lagInFrame(timestamp, 1) OVER (ORDER BY timestamp)` returned the
+      # DateTime64 default (1970-01-01 00:00:00 UTC), NOT NULL, for the first row
+      # in the window. So `diff_sec` for the first row was
+      # `(stream_first_ts_ms - 0) / 1000` ≈ 1.7e9 / 1000 ≈ 1.7e6 seconds (~20 days
+      # for a 2026 timestamp). The `WHERE diff_sec > 0` filter did NOT exclude
+      # that giant value because it was positive (just bogus). One outlier row
+      # then dominated the mean across the rest of the stream — measured
+      # 2026-06-03 staging on mogorree stream (1673 privmsgs):
+      # `mean_inter_msg_sec = 1,116,996 sec ≈ 13 days` vs expected ~5-10s.
+      # Downstream impact: this value is written to `stream_feature_vectors`
+      # MLFE (ml/features/chat_signals.rb) → training-corpus contamination.
+      #
+      # Fix: compute `row_number() OVER (ORDER BY timestamp)` alongside the lag
+      # diff, then filter `WHERE rn > 1` to drop the first row whose lag has no
+      # predecessor. (CH 24.8 `lagInFrame(_, _, default)` rejects NULL because
+      # the supertype must match the argument type DateTime64(3) — Code 36
+      # BAD_ARGUMENTS. row_number gating is the canonical alternative.)
+      # `diff_sec > 0` retained as a sanity guard against clock-skew /
+      # out-of-order ingestion.
       timing = Clickhouse.client.select(<<~SQL).first
         SELECT
           avg(diff_sec)        AS mean_inter_msg_sec,
           stddevSamp(diff_sec) AS std_inter_msg_sec
         FROM (
           SELECT
-            (toUnixTimestamp64Milli(timestamp) - toUnixTimestamp64Milli(lagInFrame(timestamp, 1) OVER (ORDER BY timestamp))) / 1000.0 AS diff_sec
+            (toUnixTimestamp64Milli(timestamp) - toUnixTimestamp64Milli(lagInFrame(timestamp, 1) OVER (ORDER BY timestamp))) / 1000.0 AS diff_sec,
+            row_number() OVER (ORDER BY timestamp) AS rn
           FROM chat_messages
           WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
         )
-        WHERE diff_sec IS NOT NULL AND diff_sec > 0
+        WHERE rn > 1 AND diff_sec > 0
       SQL
 
       {

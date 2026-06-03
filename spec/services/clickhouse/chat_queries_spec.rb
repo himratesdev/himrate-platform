@@ -488,4 +488,55 @@ RSpec.describe Clickhouse::ChatQueries do
         .to raise_error(ArgumentError)
     end
   end
+
+  # 2026-06-03 BUG-chat-feature-aggregates-mean-inter-msg-sec regression guard.
+  # Documents the SQL contract that fixed the lagInFrame first-row outlier
+  # (mean=1,116,996s on mogorree pre-fix → 14.578s post-fix, staging 2026-06-03).
+  # Locks in the row_number-gating shape so a future refactor (e.g. swap
+  # `lagInFrame` for `neighbor()`, or removal of `rn`) silently reintroducing
+  # the 1.7e6-sec first-row outlier into stream_feature_vectors MLFE training
+  # rows would fail the spec.
+  describe ".chat_feature_aggregates" do
+    it "renders timing subquery with row_number gating + lagInFrame ORDER BY timestamp" do
+      # Query #1 (counts + entropy) and Query #2 (single_message_chatters) are
+      # also asserted to lock the 3-query shape and prevent accidental
+      # consolidation (Phase 6 L profiling 2026-06-03 showed CH CTE inlining
+      # makes consolidation 2-4× SLOWER).
+      expect(ch).to receive(:select).with(
+        a_string_matching(/WITH stream_msgs AS/)
+          .and(a_string_matching(/stream_id = '#{stream_id}' AND msg_type = 'privmsg' AND username != ''/))
+          .and(a_string_matching(/uniqExact\(message_text\)/))
+      ).and_return([ {
+        "total_messages" => 1673,
+        "unique_messages" => 1200,
+        "unique_chatters" => 166,
+        "messages_with_emotes" => 200,
+        "message_entropy_bits" => 5.2
+      } ])
+
+      expect(ch).to receive(:select).with(
+        a_string_matching(/GROUP BY username HAVING count\(\) = 1/)
+      ).and_return([ { "single_message_chatters" => 58 } ])
+
+      expect(ch).to receive(:select).with(
+        # CR-271 S1 — these two assertions are the regression guard for the
+        # 2026-06-03 mean_inter_msg_sec bug:
+        a_string_matching(/row_number\(\) OVER \(ORDER BY timestamp\) AS rn/)
+          .and(a_string_matching(/WHERE rn > 1 AND diff_sec > 0/))
+          .and(a_string_matching(/lagInFrame\(timestamp, 1\) OVER \(ORDER BY timestamp\)/))
+      ).and_return([ { "mean_inter_msg_sec" => 14.578, "std_inter_msg_sec" => 24.721 } ])
+
+      result = described_class.chat_feature_aggregates(stream)
+      expect(result).to include(
+        total_messages: 1673,
+        unique_messages: 1200,
+        unique_chatters: 166,
+        messages_with_emotes: 200,
+        message_entropy_bits: 5.2,
+        single_message_chatters: 58,
+        mean_inter_msg_sec: 14.578,
+        std_inter_msg_sec: 24.721
+      )
+    end
+  end
 end
