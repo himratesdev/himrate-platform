@@ -28,16 +28,35 @@
 module Twitch
   class BigChannelChatterSweepWorker
     include Sidekiq::Job
-    sidekiq_options queue: :job, retry: 2
+    # CR iter-1 M1: `:job` is a Kamal ROLE name, not a registered Sidekiq queue
+    # (see config/sidekiq.yml :queues:) — enqueueing there would silently lose
+    # jobs once the flag flips on. Sibling out-of-band Twitch-GQL probes
+    # (CrossChannelDigestRefreshWorker, FollowerSnapshotWorker, ChatterProfileRefreshWorker,
+    # StaleStreamSweepWorker, StreamMonitorWorker, ChannelDiscoveryWorker,
+    # CleanupWorker) all use `:monitoring` — same class of work.
+    sidekiq_options queue: :monitoring, retry: 2
 
     SWEEP_THROTTLE_KEY_PREFIX = "twitch:big_chatter_sweep:throttle:"
     SWEEP_THROTTLE_TTL = ENV.fetch("BIG_CHANNEL_CHATTER_SWEEP_TTL", "300").to_i  # 5 min default
     DEFAULT_CONCURRENT_CALLS = ENV.fetch("BIG_CHANNEL_CHATTER_SWEEP_PARALLEL", "20").to_i
+    # CR iter-1 S2: wall-clock ceiling on the whole sweep. Each inner thread inherits
+    # community_tab → execute's 5s timeout × 3 retries (≈20s worst-case per thread); the
+    # threads run concurrently, so the bound for the whole sweep is the slowest thread,
+    # not the sum. 30s gives ~50% headroom over that worst case and matches the staging
+    # GQL response p99 envelope. Beyond this we explicitly fail the job (retry once via
+    # Sidekiq's `retry: 2`) rather than tie up a `:monitoring` thread indefinitely.
+    SWEEP_WALL_CEILING_SEC = ENV.fetch("BIG_CHANNEL_CHATTER_SWEEP_WALL_CEILING_SEC", "30").to_i
+
+    class SweepTimeoutError < StandardError; end
 
     def perform(channel_id, concurrent_calls = DEFAULT_CONCURRENT_CALLS)
       return unless Flipper.enabled?(:big_channel_chatter_sweep)
 
-      channel = Channel.find_by(id: channel_id)
+      # CR iter-1 N1: respect Channel soft-delete contract (other callers in
+      # the codebase use `.active`). For a channel that gets soft-deleted between
+      # StreamMonitorWorker enqueue and worker execution, we'd otherwise still
+      # fire 20 Twitch GQL calls to log observability we'll never use.
+      channel = Channel.active.find_by(id: channel_id)
       return unless channel
       return if channel.login.blank?
 
@@ -49,14 +68,22 @@ module Twitch
       end
 
       t0 = Time.current
-      result = Twitch::GqlClient.new.community_tab_parallel(
-        channel_login: channel.login,
-        concurrent_calls: concurrent_calls
-      )
+      result =
+        begin
+          Timeout.timeout(SWEEP_WALL_CEILING_SEC, SweepTimeoutError) do
+            Twitch::GqlClient.new.community_tab_parallel(
+              channel_login: channel.login,
+              concurrent_calls: concurrent_calls
+            )
+          end
+        rescue SweepTimeoutError
+          Rails.logger.warn("[BigChannelChatterSweep] channel=#{channel.login} exceeded #{SWEEP_WALL_CEILING_SEC}s wall ceiling — aborted")
+          nil
+        end
       elapsed_ms = ((Time.current - t0) * 1000).round
 
       if result.nil?
-        Rails.logger.warn("[BigChannelChatterSweep] channel=#{channel.login} returned nil — all threads errored")
+        Rails.logger.warn("[BigChannelChatterSweep] channel=#{channel.login} returned nil — all threads errored or hit wall ceiling")
         return
       end
 

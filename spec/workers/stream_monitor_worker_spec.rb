@@ -287,6 +287,59 @@ RSpec.describe StreamMonitorWorker do
     expect { worker.perform }.not_to change { stream.ccv_snapshots.count }
   end
 
+  # BUG-251.31 G-3 PR-A2 (CR iter-1 S1): orchestrator gate. Twitch caps `viewers[]` at 100
+  # entries; if a single CommunityTab call returns viewers_count_present==100 AND
+  # total_present>100, the response was a sample and we enqueue a parallel sweep to recover
+  # the long tail.
+  describe "BigChannelChatterSweepWorker enqueue gate" do
+    let(:base_viewers) { (1..100).map { |i| { "login" => "viewer#{i}" } } }
+
+    def stub_chatters(viewers:, count: 250)
+      allow(gql).to receive(:batch).and_return(
+        [
+          { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } },
+          { "data" => { "channel" => { "chatters" => {
+            "broadcasters" => [],
+            "moderators" => [],
+            "vips" => [],
+            "staff" => [],
+            "viewers" => viewers,
+            "count" => count
+          } } } }
+        ]
+      )
+    end
+
+    it "enqueues sweep when viewers[]==100 AND total_present>100 (cap-hit signature)" do
+      stub_chatters(viewers: base_viewers, count: 250)
+      expect(Twitch::BigChannelChatterSweepWorker).to receive(:perform_async).with(channel.id)
+      worker.perform
+    end
+
+    it "skips when viewers[]==100 AND total_present==100 (boundary — no cap hit)" do
+      stub_chatters(viewers: base_viewers, count: 100)
+      expect(Twitch::BigChannelChatterSweepWorker).not_to receive(:perform_async)
+      worker.perform
+    end
+
+    it "skips when viewers[]<100 (small channel, nothing to recover)" do
+      stub_chatters(viewers: base_viewers.first(50), count: 50)
+      expect(Twitch::BigChannelChatterSweepWorker).not_to receive(:perform_async)
+      worker.perform
+    end
+
+    it "skips when chatters block absent (community_tab nil)" do
+      allow(gql).to receive(:batch).and_return(
+        [
+          { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } },
+          { "data" => { "channel" => { "chatters" => nil } } }
+        ]
+      )
+      expect(Twitch::BigChannelChatterSweepWorker).not_to receive(:perform_async)
+      worker.perform
+    end
+  end
+
   it "skips when no active streams" do
     Stream.where(ended_at: nil).update_all(ended_at: Time.current)
     expect { worker.perform }.not_to change { CcvSnapshot.count }
