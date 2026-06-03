@@ -29,8 +29,12 @@
 # `ChattersSnapshot` row of the channel's currently-live stream. StreamMonitor
 # always writes a fresh snapshot with the 100-capped viewer_logins from the
 # single CommunityTab call; we replace that capped set with the union from N
-# parallel calls (deduped) so downstream consumers (AuthRatio signal,
-# CrossChannelPresence, BotScorer chatter enrichment) see the long tail.
+# parallel calls (deduped) so the LONG TAIL is available on disk for future
+# consumer wiring (AuthRatio variant that reads viewer_logins, CrossChannelPresence
+# direct-PG variant, BotScorer enrichment pass over the deduped set). Today there
+# are zero readers of `viewer_logins` — the persistence is forward-looking
+# per [[feedback-build-for-years]]: write it once the moment we have the data,
+# wire consumers in subsequent PRs without a separate backfill pass.
 # Skip persistence when the sweep returned fewer unique chatters than the
 # existing snapshot — e.g., transient partial-fail returns 80/100 unique;
 # we don't want to regress data. Only `viewer_logins`, `chatters_present_total`,

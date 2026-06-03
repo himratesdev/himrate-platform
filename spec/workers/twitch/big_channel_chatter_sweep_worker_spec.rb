@@ -128,9 +128,10 @@ RSpec.describe Twitch::BigChannelChatterSweepWorker do
     end
 
     it "merges sweep all_logins into latest snapshot's viewer_logins" do
+      # Union size = existing(6) + sweep.all_logins(1784) − 2 dupes (mod1, mod2 overlap;
+      # summit1g is new from sweep side; vip1/v1/v2/v3 are unique to existing). Result: 1788.
       expect { worker.perform(channel.id) }.to change { snapshot.reload.viewer_logins.size }
-        .from(6).to(1781 + 3)  # 1784 = sweep all_logins (1784) ∪ existing (6) — 5 dupes from "summit1g" + "mod1/mod2" overlap
-        .or(change { snapshot.reload.viewer_logins.size }.from(6).to(a_value > 1780))
+        .from(6).to(1788)
     end
 
     it "updates chatters_present_total to max(existing, sweep.count)" do
