@@ -477,9 +477,11 @@ module Twitch
       end
     rescue HTTP::TimeoutError => e
       Rails.logger.error("Twitch GQL batch timeout: #{e.message}")
+      capture_batch_failure(e, kind: "execute_batch_timeout", operations: operations, retries: retries)
       Array.new(operations.size)
     rescue HTTP::ConnectionError => e
       Rails.logger.error("Twitch GQL batch connection error: #{e.message}")
+      capture_batch_failure(e, kind: "execute_batch_connection", operations: operations, retries: retries)
       Array.new(operations.size)
     end
 
@@ -508,9 +510,11 @@ module Twitch
       end
     rescue HTTP::TimeoutError => e
       Rails.logger.error("Twitch GQL persisted-batch timeout: #{e.message}")
+      capture_batch_failure(e, kind: "execute_batch_persisted_timeout", operations: operations, retries: retries)
       Array.new(operations.size)
     rescue HTTP::ConnectionError => e
       Rails.logger.error("Twitch GQL persisted-batch connection error: #{e.message}")
+      capture_batch_failure(e, kind: "execute_batch_persisted_connection", operations: operations, retries: retries)
       Array.new(operations.size)
     end
 
@@ -580,6 +584,28 @@ module Twitch
         end
       end
       []
+    end
+
+    # Phase 2 G2 rescue audit M2: batch HTTP failure was logger-only — when Twitch GQL
+    # endpoint flaps or congestion hits, every batch returns `Array.new(operations.size)`
+    # (parallel array of nils) and callers can't distinguish "all operations had nil result"
+    # from "batch errored out entirely". The Rails.logger.error stream gets noisy fast on
+    # flap (~250/min Twitch GQL transients per known issue), so we Sentry-capture with a
+    # tagged fingerprint that consolidates the alert by failure kind + retry-attempt,
+    # avoiding both invisibility AND alert-storm. The fingerprint includes `kind` so
+    # `execute_batch_timeout` vs `execute_batch_persisted_connection` are separate alerts.
+    def capture_batch_failure(error, kind:, operations:, retries:)
+      return unless defined?(Sentry)
+
+      Sentry.with_scope do |scope|
+        scope.set_tags(twitch_gql_failure: kind, retry_attempt: retries)
+        scope.set_fingerprint([ "twitch_gql_batch_failure", kind ])
+        scope.set_context("batch", {
+          operation_count: operations.size,
+          retries: retries
+        })
+        Sentry.capture_exception(error)
+      end
     end
 
     def parse_user_profile(user)

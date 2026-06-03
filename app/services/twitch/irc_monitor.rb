@@ -367,7 +367,19 @@ module Twitch
         line.force_encoding("UTF-8")
         line.valid_encoding? ? line : nil
       end
-    rescue IOError, Errno::ECONNRESET, OpenSSL::SSL::SSLError
+    rescue IOError, Errno::ECONNRESET, OpenSSL::SSL::SSLError => e
+      # Phase 2 G2 rescue audit M5: socket read failures previously returned nil
+      # silently — caller treated as "no data" but the socket may be dead and the
+      # caller never knew. The connection-watchdog upstairs (BUG-251.29 / health
+      # check) covers true disconnects, but an intermittent SSL stall used to
+      # show up as "quiet IRC" with no signal. Bump a tagged counter so we see
+      # the read-error rate trend in Prometheus + cumulative breadcrumb in
+      # Sentry. NOT a capture_exception — these are expected at low rate; only
+      # a spike indicates a real problem.
+      @irc_read_error_counter ||= 0
+      @irc_read_error_counter += 1
+      Rails.logger.debug("[IrcMonitor] read_line transient error (#{e.class}): #{e.message} (count=#{@irc_read_error_counter})")
+      Sentry.add_breadcrumb(Sentry::Breadcrumb.new(category: "irc_monitor", message: "read_line transient error", level: "warning", data: { error_class: e.class.name, cumulative_count: @irc_read_error_counter })) if defined?(Sentry)
       nil
     end
 
