@@ -85,11 +85,18 @@ servers:
   # Backlog ETA at current drain rate: 300+ days. Same fix shape as PR #257: strict
   # precedence role processes ONLY :signals queue with c=5 dedicated threads.
   # :signals queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat и fallback
-  # (default job role подхватит если trends_attribution_worker role упадёт). Workers
-  # AnomalyAttributionWorker + AggregationWorker (88.8%/11.2% of :signals scanned 1k
-  # 2026-06-03) keep `queue: :signals` — strict-precedence consumer of the SAME queue
-  # is the entire migration; no per-worker code changes required.
-  trends_attribution_worker:
+  # (default job role подхватит если signals_worker role упадёт). Workers on :signals
+  # are Trends::AnomalyAttributionWorker (88.8% of 1k sampled 2026-06-03) +
+  # Trends::AggregationWorker (11.2%) + zero-volume RaidWorker + ChannelUpdateWorker
+  # — strict-precedence consumer of the SAME queue is the entire migration; no
+  # per-worker code changes required.
+  #
+  # Role naming: matches queue (`signals_worker` ↔ `-q signals`) rather than dominant
+  # worker class, mirroring `stream_worker` ↔ `-q stream_lifecycle`. CR-iter1 N-1
+  # 2026-06-03 — "trends_attribution_worker" would have implied single-worker focus
+  # while in reality the dedicated process consumes the entire :signals queue (4
+  # worker classes).
+  signals_worker:
     hosts:
       - 194.135.85.159
     cmd: bundle exec sidekiq -q signals -c 5
