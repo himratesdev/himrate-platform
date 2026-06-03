@@ -23,8 +23,9 @@
 
 module TrustIndex
   class ErvCalculator
-    # Phase 4 J PR-D: 4-tier labels (was 3-tier pre-PR). Order matters — first
-    # range match wins in resolve_label, so put the most specific top band first.
+    # Phase 4 J PR-D: 4-tier labels (was 3-tier pre-PR). Tiers are disjoint and
+    # exhaustive over [0..100]; resolve_label returns on first match so the order
+    # below is hash-iteration order but correctness doesn't depend on it.
     LABELS = {
       excellent: { range: 90..100, ru: "Аудитория реальная", en: "Audience is real", color: "green" },
       green: { range: 80..89, ru: "Аномалий не замечено", en: "No anomalies detected", color: "green" },
