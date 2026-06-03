@@ -131,7 +131,7 @@ servers:
   # classes enqueue onto :monitoring (full list: app/workers grep for `queue: :monitoring` /
   # `sidekiq_options queue: :monitoring`); high-volume dominant = Twitch::BigChannelChatterSweepWorker
   # (~4/min steady-state post-PR #269 flag flip); low-volume periodic scheduler tail =
-  # Twitch::StreamMonitorWorker, MonitoredLiveDetectorWorker, CleanupWorker, RaidDetectionWorker,
+  # StreamMonitorWorker, MonitoredLiveDetectorWorker, CleanupWorker, RaidDetectionWorker,
   # ChannelMetadataRefreshWorker, ChatterProfileRefreshWorker, FollowerSnapshotWorker,
   # BotListRefreshWorker, StaleStreamSweepWorker, SidekiqHealthMonitorWorker, ChannelDiscoveryWorker,
   # ChannelPruneWorker, CrossChannelDigestRefreshWorker, Trends::NightlyAggregationWorker, +
