@@ -24,6 +24,23 @@
 # live big channels (replay-the-rake-probe-but-async). Logs the dedupe ratio,
 # unique-viewer count, single vs parallel coverage so we have a production
 # dataset before PR-A3 wires the sweep result into ChattersSnapshot persistence.
+#
+# 2026-06-03 PR-A3: persist the bigger viewer_logins set into the LATEST
+# `ChattersSnapshot` row of the channel's currently-live stream. StreamMonitor
+# always writes a fresh snapshot with the 100-capped viewer_logins from the
+# single CommunityTab call; we replace that capped set with the union from N
+# parallel calls (deduped) so the LONG TAIL is available on disk for future
+# consumer wiring (AuthRatio variant that reads viewer_logins, CrossChannelPresence
+# direct-PG variant, BotScorer enrichment pass over the deduped set). Today there
+# are zero readers of `viewer_logins` — the persistence is forward-looking
+# per [[feedback-build-for-years]]: write it once the moment we have the data,
+# wire consumers in subsequent PRs without a separate backfill pass.
+# Skip persistence when the sweep returned fewer unique chatters than the
+# existing snapshot — e.g., transient partial-fail returns 80/100 unique;
+# we don't want to regress data. Only `viewer_logins`, `chatters_present_total`,
+# `viewers_count_present` are updated; role-bucket counts
+# (broadcasters/moderators/vips/staff) are uncapped in single call so the
+# sweep doesn't add value there.
 
 module Twitch
   class BigChannelChatterSweepWorker
@@ -94,6 +111,8 @@ module Twitch
         "count=#{result[:count]} elapsed_ms=#{elapsed_ms}"
       )
 
+      persisted = persist_sweep_to_latest_snapshot(channel, result)
+
       ActiveSupport::Notifications.instrument(
         "twitch.big_channel_chatter_sweep",
         channel_id: channel_id,
@@ -104,10 +123,81 @@ module Twitch
         viewer_samples_total: result[:viewer_samples_total],
         dedupe_ratio: result[:dedupe_ratio],
         count: result[:count],
-        elapsed_ms: elapsed_ms
+        elapsed_ms: elapsed_ms,
+        persisted: persisted
       )
 
       result
+    end
+
+    private
+
+    # PR-A3: persist the bigger viewer_logins union from the parallel sweep into
+    # the latest `ChattersSnapshot` for the channel's currently-live stream.
+    # Returns a Hash with `:status` (:no_live_stream | :no_snapshot | :no_gain |
+    # :persisted) + counters, or nil if the channel has no live stream.
+    #
+    # No transaction: ChattersSnapshot update is a single PG UPDATE on a single
+    # row. No FK touching, no MV invalidation. Atomic by Rails-default.
+    def persist_sweep_to_latest_snapshot(channel, result)
+      live_stream = channel.streams.where(ended_at: nil).order(started_at: :desc).first
+      return { status: :no_live_stream } unless live_stream
+
+      latest = live_stream.chatters_snapshots.order(timestamp: :desc).first
+      return { status: :no_snapshot, stream_id: live_stream.id } unless latest
+
+      sweep_logins = result[:all_logins] || []
+      sweep_viewers = result[:viewers] || []
+      existing_logins = (latest.viewer_logins || []).to_a
+
+      # Merge: union of existing (which may include role-buckets the sweep didn't
+      # touch — staff/broadcasters) + sweep all_logins (which has the bigger
+      # viewers[] tail). Set semantics dedupes both sides.
+      merged_logins = (existing_logins + sweep_logins).uniq
+      merged_size = merged_logins.size
+      existing_size = existing_logins.size
+
+      if merged_size <= existing_size
+        return {
+          status: :no_gain,
+          stream_id: live_stream.id,
+          existing: existing_size,
+          merged: merged_size
+        }
+      end
+
+      # `chatters_present_total` semantics: prefer Twitch's authoritative `count`
+      # (which is uncapped) if larger than what we have, else keep existing.
+      new_count = [ latest.chatters_present_total.to_i, result[:count].to_i ].max
+      new_count = merged_size if new_count.zero?
+
+      # `viewers_count_present` reflects the deduped viewer-bucket size after sweep.
+      new_viewers_present = [ latest.viewers_count_present.to_i, sweep_viewers.uniq.size ].max
+
+      latest.update!(
+        viewer_logins: merged_logins,
+        chatters_present_total: new_count,
+        viewers_count_present: new_viewers_present
+      )
+
+      Rails.logger.info(
+        "[BigChannelChatterSweep:persist] stream=#{live_stream.id} channel=#{channel.login} " \
+        "viewer_logins #{existing_size}→#{merged_size} (+#{merged_size - existing_size}) " \
+        "chatters_present_total→#{new_count} viewers_count_present→#{new_viewers_present}"
+      )
+
+      {
+        status: :persisted,
+        stream_id: live_stream.id,
+        existing: existing_size,
+        merged: merged_size,
+        delta: merged_size - existing_size,
+        chatters_present_total: new_count,
+        viewers_count_present: new_viewers_present
+      }
+    rescue StandardError => e
+      Rails.logger.warn("[BigChannelChatterSweep:persist] failed channel=#{channel.login}: #{e.class}: #{e.message}")
+      { status: :error, error_class: e.class.name, error_message: e.message }
     end
   end
 end

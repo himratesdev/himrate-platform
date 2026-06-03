@@ -100,4 +100,95 @@ RSpec.describe Twitch::BigChannelChatterSweepWorker do
 
     expect(worker.perform(channel.id)).to be_nil
   end
+
+  # PR-A3: persist bigger viewer_logins union into the latest ChattersSnapshot
+  # of the channel's currently-live stream.
+  describe "ChattersSnapshot persistence" do
+    let(:stream) { create(:stream, channel: channel, ended_at: nil) }
+    let!(:snapshot) do
+      ChattersSnapshot.create!(
+        stream: stream,
+        timestamp: 1.minute.ago,
+        unique_chatters_count: 50,
+        total_messages_count: 200,
+        chatters_present_total: 250,
+        viewer_logins: %w[mod1 mod2 vip1 v1 v2 v3], # 6 capped from single CommunityTab
+        broadcasters_count: 0,
+        moderators_count: 2,
+        vips_count: 1,
+        staff_count: 0,
+        viewers_count_present: 3
+      )
+    end
+
+    before do
+      allow_any_instance_of(Twitch::GqlClient)
+        .to receive(:community_tab_parallel)
+        .and_return(sweep_result)
+    end
+
+    it "merges sweep all_logins into latest snapshot's viewer_logins" do
+      # Union size = existing(6) + sweep.all_logins(1784) − 2 dupes (mod1, mod2 overlap;
+      # summit1g is new from sweep side; vip1/v1/v2/v3 are unique to existing). Result: 1788.
+      expect { worker.perform(channel.id) }.to change { snapshot.reload.viewer_logins.size }
+        .from(6).to(1788)
+    end
+
+    it "updates chatters_present_total to max(existing, sweep.count)" do
+      worker.perform(channel.id)
+      expect(snapshot.reload.chatters_present_total).to eq(8414)  # sweep.count > existing 250
+    end
+
+    it "updates viewers_count_present to max(existing, sweep.viewers.uniq.size)" do
+      worker.perform(channel.id)
+      expect(snapshot.reload.viewers_count_present).to eq(1781)
+    end
+
+    it "emits AS::N event with persisted status :persisted" do
+      events = []
+      ActiveSupport::Notifications.subscribed(->(_n, _s, _f, _i, payload) { events << payload }, "twitch.big_channel_chatter_sweep") do
+        worker.perform(channel.id)
+      end
+      expect(events.first[:persisted]).to include(status: :persisted, stream_id: stream.id, delta: a_value > 1700)
+    end
+
+    it "skips persistence (status :no_gain) when sweep returns SAME or FEWER unique chatters" do
+      smaller_result = sweep_result.merge(
+        all_logins: %w[mod1 mod2 vip1 v1],  # 4 logins, all already in existing 6
+        viewers: %w[v1],
+        unique_viewer_logins: 1
+      )
+      allow_any_instance_of(Twitch::GqlClient).to receive(:community_tab_parallel).and_return(smaller_result)
+
+      events = []
+      ActiveSupport::Notifications.subscribed(->(_n, _s, _f, _i, payload) { events << payload }, "twitch.big_channel_chatter_sweep") do
+        worker.perform(channel.id)
+      end
+
+      expect(events.first[:persisted]).to include(status: :no_gain)
+      expect(snapshot.reload.viewer_logins.size).to eq(6) # unchanged
+    end
+
+    it "reports :no_live_stream when channel has no active stream" do
+      stream.update!(ended_at: 5.minutes.ago)
+
+      events = []
+      ActiveSupport::Notifications.subscribed(->(_n, _s, _f, _i, payload) { events << payload }, "twitch.big_channel_chatter_sweep") do
+        worker.perform(channel.id)
+      end
+
+      expect(events.first[:persisted]).to eq(status: :no_live_stream)
+    end
+
+    it "reports :no_snapshot when live stream has no chatters_snapshots yet" do
+      snapshot.destroy
+
+      events = []
+      ActiveSupport::Notifications.subscribed(->(_n, _s, _f, _i, payload) { events << payload }, "twitch.big_channel_chatter_sweep") do
+        worker.perform(channel.id)
+      end
+
+      expect(events.first[:persisted]).to include(status: :no_snapshot, stream_id: stream.id)
+    end
+  end
 end
