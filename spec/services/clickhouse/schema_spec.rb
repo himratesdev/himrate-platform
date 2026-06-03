@@ -46,4 +46,36 @@ RSpec.describe Clickhouse::Schema do
       expect(files.map { |f| File.basename(f) }).to include("001_chat_messages.sql")
     end
   end
+
+  # Phase 6 M (2026-06-03): the bloom_filter skipping index on chat_messages.stream_id is
+  # provisioned in two complementary places. Fresh environments (CI, new prod) pick it up via the
+  # CREATE TABLE clause in 001; existing CH instances need the standalone ALTER+MATERIALIZE in
+  # 003. We assert BOTH live in the manifest so a future refactor can't silently drop one. Split
+  # out from `.files` per CR-iter1 Nit-3 since this exercises file content + statement splitter,
+  # not the `.files` lister.
+  describe "Phase 6 M idx_stream_id provisioning" do
+    it "ships the bloom_filter skipping index in both 001 (CREATE TABLE) and 003 (ALTER backfill)" do
+      basenames = described_class.files.map { |f| File.basename(f) }
+      expect(basenames).to include("003_add_stream_id_index_to_chat_messages.sql")
+
+      create_table_sql = File.read(Clickhouse::Schema::DIR.join("001_chat_messages.sql"))
+      expect(create_table_sql).to match(/INDEX\s+idx_stream_id\s+stream_id\s+TYPE\s+bloom_filter\s+GRANULARITY\s+4/i)
+
+      backfill_sql = File.read(Clickhouse::Schema::DIR.join("003_add_stream_id_index_to_chat_messages.sql"))
+      expect(backfill_sql).to match(/ALTER TABLE chat_messages\s+ADD INDEX IF NOT EXISTS idx_stream_id/i)
+      expect(backfill_sql).to match(/MATERIALIZE INDEX idx_stream_id/i)
+    end
+
+    it "surfaces both ADD INDEX and MATERIALIZE INDEX statements via the splitter (rake applies both)" do
+      backfill_sql = File.read(Clickhouse::Schema::DIR.join("003_add_stream_id_index_to_chat_messages.sql"))
+
+      # Without MATERIALIZE, existing partitions stay unindexed → no perf win until a part is
+      # organically rewritten via OPTIMIZE / MERGE. The splitter contract is the gate that catches
+      # a future refactor accidentally squashing the two statements into one.
+      statements = described_class.statements(backfill_sql)
+      expect(statements.size).to eq(2)
+      expect(statements[0]).to match(/ADD INDEX/i)
+      expect(statements[1]).to match(/MATERIALIZE INDEX/i)
+    end
+  end
 end
