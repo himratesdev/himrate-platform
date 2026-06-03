@@ -35,6 +35,12 @@ module Twitch
     PING_INTERVAL = 270          # 4.5 min (Twitch expects response within 5 min)
     PING_TIMEOUT = 10            # seconds to wait for PONG after self-initiated PING
     STALE_CHANNEL_HOURS = 6      # auto-PART if no stream.offline received
+    # Phase 2 G2 CR iter-1 M5-2: `read_line` fires ~1Hz; without throttling a sustained transient
+    # error stream would overrun sentry-ruby's default 100-breadcrumb buffer in ~100s. Emit a
+    # Sentry capture_message (with fingerprint per error class) only every Nth cumulative error so
+    # alerts consolidate into a single Sentry issue per class and stay actionable rather than
+    # storm-rolling.
+    BREADCRUMB_THROTTLE_N = ENV.fetch("IRC_READ_ERROR_SENTRY_THROTTLE", "100").to_i
 
     class Error < StandardError; end
 
@@ -369,17 +375,36 @@ module Twitch
       end
     rescue IOError, Errno::ECONNRESET, OpenSSL::SSL::SSLError => e
       # Phase 2 G2 rescue audit M5: socket read failures previously returned nil
-      # silently — caller treated as "no data" but the socket may be dead and the
-      # caller never knew. The connection-watchdog upstairs (BUG-251.29 / health
-      # check) covers true disconnects, but an intermittent SSL stall used to
-      # show up as "quiet IRC" with no signal. Bump a tagged counter so we see
-      # the read-error rate trend in Prometheus + cumulative breadcrumb in
-      # Sentry. NOT a capture_exception — these are expected at low rate; only
-      # a spike indicates a real problem.
+      # silently — caller treated as "no data" but the socket may be flaking. The
+      # connection-watchdog upstairs (BUG-251.29 / health check) covers true
+      # disconnects, but an intermittent SSL stall used to show up as "quiet IRC"
+      # with no signal. CR iter-1 M5-1: `bin/irc_monitor` is a long-lived process
+      # with no upstream `Sentry.capture_exception` path, so breadcrumbs alone
+      # never reach Sentry — and `Rails.logger.debug` is suppressed at the
+      # production `info` log level. Net signal was zero. CR iter-1 M5-2:
+      # `read_line` fires ~1Hz from `listen_loop`, so an unthrottled emit would
+      # overrun sentry-ruby's default 100-breadcrumb buffer in ~100s, polluting
+      # diagnostic context for any unrelated capture.
+      #
+      # Fix: bump an instance-local cumulative counter on every error (cheap,
+      # in-process), upgrade the log line to `warn` so it lands in Loki without
+      # raising the verbosity floor past the existing `send failed` warnings,
+      # and emit a Sentry `capture_message` only every BREADCRUMB_THROTTLE_N
+      # errors so the alert consolidates into a single Sentry issue per
+      # `error_class` (fingerprint includes class) and the breadcrumb buffer is
+      # not flooded. Sentry will still flush on `capture_message` even without an
+      # upstream `capture_exception`.
       @irc_read_error_counter ||= 0
       @irc_read_error_counter += 1
-      Rails.logger.debug("[IrcMonitor] read_line transient error (#{e.class}): #{e.message} (count=#{@irc_read_error_counter})")
-      Sentry.add_breadcrumb(Sentry::Breadcrumb.new(category: "irc_monitor", message: "read_line transient error", level: "warning", data: { error_class: e.class.name, cumulative_count: @irc_read_error_counter })) if defined?(Sentry)
+      Rails.logger.warn("[IrcMonitor] read_line transient error (#{e.class}): #{e.message} (cumulative=#{@irc_read_error_counter})")
+      if defined?(Sentry) && (@irc_read_error_counter % BREADCRUMB_THROTTLE_N).zero?
+        Sentry.with_scope do |scope|
+          scope.set_tags(irc_read_error: e.class.name.to_s)
+          scope.set_fingerprint([ "irc_monitor_read_line_transient", e.class.name.to_s ])
+          scope.set_context("irc_read_line", { cumulative_count: @irc_read_error_counter })
+          Sentry.capture_message("IrcMonitor read_line transient errors crossed threshold", level: :warning)
+        end
+      end
       nil
     end
 

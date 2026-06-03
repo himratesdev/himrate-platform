@@ -477,11 +477,11 @@ module Twitch
       end
     rescue HTTP::TimeoutError => e
       Rails.logger.error("Twitch GQL batch timeout: #{e.message}")
-      capture_batch_failure(e, kind: "execute_batch_timeout", operations: operations, retries: retries)
+      capture_batch_failure(e, kind: "execute_batch_timeout", operation_count: operations.size, retries: retries)
       Array.new(operations.size)
     rescue HTTP::ConnectionError => e
       Rails.logger.error("Twitch GQL batch connection error: #{e.message}")
-      capture_batch_failure(e, kind: "execute_batch_connection", operations: operations, retries: retries)
+      capture_batch_failure(e, kind: "execute_batch_connection", operation_count: operations.size, retries: retries)
       Array.new(operations.size)
     end
 
@@ -510,11 +510,11 @@ module Twitch
       end
     rescue HTTP::TimeoutError => e
       Rails.logger.error("Twitch GQL persisted-batch timeout: #{e.message}")
-      capture_batch_failure(e, kind: "execute_batch_persisted_timeout", operations: operations, retries: retries)
+      capture_batch_failure(e, kind: "execute_batch_persisted_timeout", operation_count: operations.size, retries: retries)
       Array.new(operations.size)
     rescue HTTP::ConnectionError => e
       Rails.logger.error("Twitch GQL persisted-batch connection error: #{e.message}")
-      capture_batch_failure(e, kind: "execute_batch_persisted_connection", operations: operations, retries: retries)
+      capture_batch_failure(e, kind: "execute_batch_persisted_connection", operation_count: operations.size, retries: retries)
       Array.new(operations.size)
     end
 
@@ -591,17 +591,22 @@ module Twitch
     # (parallel array of nils) and callers can't distinguish "all operations had nil result"
     # from "batch errored out entirely". The Rails.logger.error stream gets noisy fast on
     # flap (~250/min Twitch GQL transients per known issue), so we Sentry-capture with a
-    # tagged fingerprint that consolidates the alert by failure kind + retry-attempt,
-    # avoiding both invisibility AND alert-storm. The fingerprint includes `kind` so
-    # `execute_batch_timeout` vs `execute_batch_persisted_connection` are separate alerts.
-    def capture_batch_failure(error, kind:, operations:, retries:)
+    # fingerprint that consolidates the alert per `kind` (so `execute_batch_timeout` vs
+    # `execute_batch_persisted_connection` are separate Sentry issues). `retry_attempt` is
+    # carried as a TAG (filterable) rather than added to the fingerprint, so retries don't
+    # split a single recurring issue into N separate alerts.
+    #
+    # CR iter-1 N2 cleanup: callers pass operation_count rather than the full operations
+    # array — reduces accidental leakage of operation payloads into Sentry context if this
+    # helper is later extended to capture more shape detail.
+    def capture_batch_failure(error, kind:, operation_count:, retries:)
       return unless defined?(Sentry)
 
       Sentry.with_scope do |scope|
         scope.set_tags(twitch_gql_failure: kind, retry_attempt: retries)
         scope.set_fingerprint([ "twitch_gql_batch_failure", kind ])
         scope.set_context("batch", {
-          operation_count: operations.size,
+          operation_count: operation_count,
           retries: retries
         })
         Sentry.capture_exception(error)
