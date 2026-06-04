@@ -236,16 +236,22 @@ accessories:
     #   adequate for current working-set; allows OS page cache (effective_cache_size)
     #   to handle bulk reads.
     # - effective_cache_size=1GB: planner hint ≈ available OS cache (we observe
-    #   2.2 GiB buff/cache steady-state; conservative 1 GiB leaves headroom for
-    #   container/sidekiq cache).
-    # - work_mem=16MB: per-query operation budget; worst-case 50 concurrent
-    #   connections × 16 MB = 800 MiB peak (Sidekiq pool size = 5/role × 6 roles + web).
+    #   2.7 GiB buff/cache steady-state post-Step-1-and-2 cleanup; conservative
+    #   1 GiB leaves headroom for container/sidekiq cache + future growth).
+    # - work_mem=16MB: per-query operation budget. Current realistic peak ≈
+    #   21 Sidekiq threads (job=5 + whisper=1 + stream=3 + signal_compute=5 +
+    #   signals=5 + monitoring=2) + ~10 web (Puma WEB_CONCURRENCY=2 × ~5 threads) +
+    #   headroom = ~50 active connections × 16 MB ≈ 800 MiB peak. NOTE: PG
+    #   `max_connections` stays at default 100 — theoretical max if fully saturated
+    #   = 1.6 GiB (e.g. ad-hoc rails console + full Sidekiq + irc). Acceptable.
     # - maintenance_work_mem=64MB: VACUUM/CREATE INDEX budget; small DB so 64 MiB
     #   sufficient (avoids reserve for autovacuum spikes).
     #
     # ⚠️ accessory-config-change → requires post-merge `kamal accessory reboot db -d staging`
     # (Kamal deploy does NOT recreate accessories). Brief ~30s PG unavailability during
-    # reboot — Sidekiq/web auto-reconnect on next query.
+    # reboot — Sidekiq/web auto-reconnect on next query. When this rolls forward to
+    # production, the matching reboot is `kamal accessory reboot db -d production`
+    # (separate scheduled change window — runbook in MEASUREMENTS.md).
     cmd: postgres -c shared_buffers=512MB -c effective_cache_size=1GB -c work_mem=16MB -c maintenance_work_mem=64MB
     env:
       secret:
