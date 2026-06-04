@@ -28,11 +28,9 @@ RSpec.describe StreamMonitorWorker do
     )
     # TASK-251.6: chatters now come from chat_messages, not GQL ChattersCount.
 
-    # Tier 2 stubs
+    # Tier 2 stubs (predictions/polls/hype_train queries dropped 2026-06-04 —
+    # Twitch GQL Channel-field drift, see Twitch::GqlClient comment)
     allow(gql).to receive(:chat_room_state).and_return(nil)
-    allow(gql).to receive(:predictions).and_return(nil)
-    allow(gql).to receive(:polls).and_return(nil)
-    allow(gql).to receive(:hype_train).and_return(nil)
 
     # PR 1e-A (2026-05-31): post-CH-cutover fetch_chat_activity queries
     # Clickhouse::ChatQueries.chat_activity_batch instead of PG ChatMessage. Default: no chat.
@@ -231,50 +229,10 @@ RSpec.describe StreamMonitorWorker do
     expect(config.verified_account_required).to be true
   end
 
-  # TC-013: Tier 2 Predictions
-  it "saves prediction participation on Tier 2 cycle" do
-    create(:ccv_snapshot, stream: stream, ccv_count: 1000)
-    allow(gql).to receive(:predictions).and_return({
-      id: "pred-1", title: "Will we win?", total_users: 200, total_points: 50000, outcomes: []
-    })
-
-    Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-    expect { worker.perform }.to change { stream.predictions_polls.count }.by(1)
-
-    record = stream.predictions_polls.order(timestamp: :desc).first
-    expect(record.event_type).to eq("prediction")
-    expect(record.participants_count).to eq(200)
-  end
-
-  # TC-014: Tier 2 Polls
-  it "saves poll participation on Tier 2 cycle" do
-    create(:ccv_snapshot, stream: stream, ccv_count: 1000)
-    allow(gql).to receive(:polls).and_return({
-      id: "poll-1", title: "Fav game?", total_voters: 150, choices: []
-    })
-
-    Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-    expect { worker.perform }.to change { stream.predictions_polls.count }.by(1)
-    expect(stream.predictions_polls.order(timestamp: :desc).first.event_type).to eq("poll")
-  end
-
-  # TC-015: Tier 2 HypeTrain
-  it "saves hype train on Tier 2 cycle" do
-    create(:ccv_snapshot, stream: stream, ccv_count: 1000)
-    allow(gql).to receive(:hype_train).and_return({
-      id: "ht-1", level: 3, progress: 8000, goal: 10000, conductors_count: 45
-    })
-
-    Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-    expect { worker.perform }.to change { stream.predictions_polls.count }.by(1)
-    expect(stream.predictions_polls.order(timestamp: :desc).first.event_type).to eq("hype_train")
-  end
-
-  # TC-016: Skip inactive
-  it "skips when no active predictions/polls" do
-    Redis.new(url: "redis://localhost:6379/1").set("monitor:cycle_count", 4)
-    expect { worker.perform }.not_to change { stream.predictions_polls.count }
-  end
+  # TC-013/014/015/016 removed 2026-06-04 — Predictions/Polls/HypeTrain GQL
+  # queries dropped (Twitch Channel-field drift). PredictionsPoll model
+  # retained for historical rows but no new writes from Tier 2; rolling
+  # window will age remaining rows out via existing retention policy.
 
   # TC-019: Stateless
   it "reads active streams from DB each cycle (stateless)" do
