@@ -33,7 +33,7 @@ class StreamMonitorWorker
     # Tier 1: CCV + chatters (every cycle)
     poll_tier1(active_streams)
 
-    # Tier 2: ChatRoomState + Predictions/Polls/HypeTrain (every 5th cycle)
+    # Tier 2: ChatRoomState (every 5th cycle)
     poll_tier2(active_streams) if (cycle % TIER2_EVERY).zero?
 
     Rails.logger.info("StreamMonitorWorker: cycle #{cycle}, #{active_streams.size} streams")
