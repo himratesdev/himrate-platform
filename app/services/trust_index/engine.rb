@@ -30,28 +30,19 @@ module TrustIndex
 
       # FR-004/005: Cold start assessment + conditional Bayesian shrinkage.
       #
-      # PR-X1 calibration fix per PO directive 2026-06-02 «для clean signals
-      # TI=100 + label «Аудитория реальная»». Pre-PR-X1, apply_bayesian was
-      # called unconditionally — for cold-start channels (3-9 streams, conf 0.3-0.9)
-      # it pulled ti_raw=100 toward population_mean=65 even when every firing
-      # signal reported value=0.0 with confidence=1.0. Live verify on NIX
-      # (35k ccv Dota 2 tournament, 10h live, 6 firing signals all clean) returned
-      # TI=79 / classification=needs_review — a tournament audience tagged as
-      # «аномалия онлайна». Same pattern previously observed on Recrent (TI=87).
+      # Bayesian shrinkage compensates for per-signal sampling noise — it pulls
+      # ti_raw toward population_mean when individual signals report uncertain
+      # data. When signal_confidence is high, signals had enough data and stand
+      # by their result; cold-start uncertainty (channel history depth) is a
+      # separate concern and must not override conclusive signal evidence.
+      # ColdStartGuard still runs and its status is persisted to
+      # `trust_index_histories.cold_start_status` for downstream UI/analysis;
+      # only the score-side coupling is removed when signals are conclusive.
       #
-      # Bayesian shrinkage is mathematically sound when signal data itself is
-      # noisy (the population-mean prior compensates for sampling noise). It is
-      # NOT appropriate when signals report HIGH confidence — that means signals
-      # had enough data and stand by their result. Cold-start uncertainty is a
-      # SEPARATE concern (channel history depth, not stream data quality) and
-      # should NOT override conclusive signal evidence.
-      #
-      # Fix: keep ColdStartGuard reporting (cold_start_status still persisted for
-      # downstream UI/analysis), but skip the Bayesian pull when signal_confidence
-      # >= 0.95. Threshold 0.95 (not 1.0) tolerates float-arithmetic drift when
-      # averaging many per-signal confidences that should each be 1.0.
+      # Threshold 0.95 (not 1.0) tolerates float-rounding drift when averaging
+      # many per-signal confidences that should each equal 1.0.
       cold_start = ColdStartGuard.assess(channel)
-      ti_bayesian = if signal_confidence >= 0.95
+      ti_bayesian = if signal_confidence >= bayesian_skip_threshold
         ti_raw
       else
         apply_bayesian(ti_raw, cold_start[:confidence])
@@ -186,6 +177,17 @@ module TrustIndex
     rescue SignalConfiguration::ConfigurationMissing
       Rails.logger.error("TrustIndex::Engine: population_mean not in DB, using fallback 65")
       65.0
+    end
+
+    # Signal-confidence threshold above which Bayesian shrinkage is skipped (the
+    # signals themselves report enough confidence that the population-mean prior
+    # would only re-introduce noise). Loaded from SignalConfiguration so ops can
+    # tune without redeploy, matching the rest of the engine's calibration
+    # parameters (population_mean, classification thresholds, etc.).
+    def bayesian_skip_threshold
+      SignalConfiguration.value_for("trust_index", "default", "bayesian_skip_threshold").to_f
+    rescue SignalConfiguration::ConfigurationMissing
+      0.95
     end
 
     def persist(stream:, channel:, ti_score:, classification:, cold_start:, erv:,
