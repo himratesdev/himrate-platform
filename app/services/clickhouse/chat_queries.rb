@@ -499,5 +499,37 @@ module Clickhouse
       Rails.logger.warn("Clickhouse::ChatQueries: chat_activity_batch failed (#{e.class})")
       {}
     end
+
+    # G-4 ViewerMetrics parity (BUG-251.31 PR-B): per-viewer first/last seen + message
+    # count for a single stream. Uses the bloom_filter skip index on `stream_id`
+    # (PR #273 Phase 6 M PR-A) — expected p95 50–200ms for typical 100–2000 chatter
+    # streams. Bloom_filter prunes data parts that don't contain the stream_id BEFORE
+    # the full scan, so cost is proportional to chatter count, not chat-messages total.
+    #
+    # Returns: { username => { first_seen_at: Time, last_seen_at: Time, message_count: Integer } }
+    # Empty hash on Clickhouse::Error (rescue) so callers can compose with sweep-side
+    # fallback without raising.
+    def viewer_first_last_seen_per_stream(stream_id)
+      validate_stream_uuid!([ stream_id ])
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT username,
+               toUnixTimestamp64Milli(min(timestamp)) AS first_seen_ms,
+               toUnixTimestamp64Milli(max(timestamp)) AS last_seen_ms,
+               count() AS message_count
+        FROM chat_messages
+        WHERE stream_id = '#{stream_id}' AND msg_type = 'privmsg' AND username != ''
+        GROUP BY username
+      SQL
+      rows.each_with_object({}) do |row, acc|
+        acc[row["username"]] = {
+          first_seen_at: Time.zone.at(row["first_seen_ms"].to_i / 1000.0),
+          last_seen_at: Time.zone.at(row["last_seen_ms"].to_i / 1000.0),
+          message_count: row["message_count"].to_i
+        }
+      end
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: viewer_first_last_seen_per_stream failed (#{e.class})")
+      {}
+    end
   end
 end
