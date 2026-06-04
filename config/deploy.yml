@@ -68,10 +68,33 @@ servers:
   # sustained drain (latency-dependent). Mirror stream_worker / whisper_worker pattern.
   # signal_compute queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat и
   # fallback (default job role подхватит если signal_compute_worker role упадёт).
+  #
+  # 2026-06-04 Phase 7 S (BUG-A2-BSW-CH-EMPTY-NIX, this PR): добавлен `:bot_scoring`
+  # queue к этой роли. Root-cause investigation на NIX live (47k ccv, 7,941 chatters
+  # available, PerUserBotScore=0): BSW jobs накапливаются в `:bot_scoring` queue
+  # (19,829 jobs, NIX имеет 46 enqueued) — НЕ silent-fail, а **queue starvation**.
+  # Default `:job` role c=5 × weight 6/48 = ~0.625 effective thread на :bot_scoring →
+  # ~150-300 jobs/hour drain vs ~600/hour enqueue rate (LiveBotScoringWorker */30 ×
+  # 300 streams). Net growth +300-450/hour → 3 TI signals (ChatBehavior, KnownBotMatch,
+  # AccountProfileScoring) abstain'ят для всех live streams (bot_scores.empty? guard).
+  #
+  # Strict precedence: `-q signal_compute -q bot_scoring` означает signal_compute
+  # processed first, bot_scoring только когда signal_compute idle. Текущий
+  # :signal_compute queue размер ~45 jobs (near-empty) → effectively this container
+  # становится :bot_scoring-dominant с c=5 strict threads. Expected drain:
+  # ~5 threads × 1 job/30-60sec = ~5-10 j/sec = 300-600 j/min = 18k-36k j/hour.
+  # Backlog 19,829 → drained в ~30-60 min. New steady-state: 600 j/hour enqueue
+  # ÷ 5 threads × 30-60s/job = sustainable.
+  #
+  # Mirror PR #257 (signal_compute) / PR #270 (signals_worker) / PR #274
+  # (monitoring_worker) pattern. НЕ добавляем 9-й Kamal role (VPS 2vCPU/7.8GB
+  # уже saturated — adding more concurrent containers usurps Puma boot capacity).
+  # `:bot_scoring` queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat
+  # и fallback (default job role подхватит если signal_compute_worker role упадёт).
   signal_compute_worker:
     hosts:
       - 194.135.85.159
-    cmd: bundle exec sidekiq -q signal_compute -c 5
+    cmd: bundle exec sidekiq -q signal_compute -q bot_scoring -c 5
     proxy: false
     options:
       health-cmd: "ruby -e 'puts :ok'"
