@@ -131,7 +131,11 @@ RSpec.describe Trust::ViewerSessionPresences, type: :service do
         expect(result).to eq([])
       end
 
-      it "tolerates CH error from ChatQueries (chat layer empty, sweep still works)" do
+      it "composes with empty CH result (sweep-only fallback path) — chat layer absent" do
+        # CH layer returns `{}` on Clickhouse::Error via the rescue in
+        # Clickhouse::ChatQueries.viewer_first_last_seen_per_stream (rescue branch covered
+        # directly in chat_queries_spec.rb). Here we verify the consumer composes correctly
+        # when the chat layer is empty for any reason — sweep-side lurkers still surface.
         allow(Clickhouse::ChatQueries).to receive(:viewer_first_last_seen_per_stream)
           .with(stream.id).and_return({})
         create(:chatters_snapshot, stream: stream, timestamp: 30.minutes.ago, viewer_logins: [ "lurker_solo" ])

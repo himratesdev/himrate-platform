@@ -75,22 +75,21 @@ module Trust
       chat_data = chat_first_last_seen
       return chat_data.map { |username, rec| build_result(username, rec, source: "chat") } unless include_lurkers
 
-      sweep_data = sweep_first_last_seen
-      results = []
-      chat_data.each do |username, chat_rec|
-        # Hybrid presence span for chat-active users who ALSO appear in lurker snapshots:
-        # widen the [first_seen, last_seen] interval to the OUTER bound across both sources,
-        # otherwise "% of audience watched <Nmin" undercounts the silent-tail-before-first-msg
-        # and silent-tail-after-last-msg portions. observation_count = chat + sweep so the
-        # field semantically reads "total observations" (privmsgs + snapshot appearances).
-        # CR iter-2 N1.
+      merge_with_lurkers(chat_data, sweep_first_last_seen)
+    end
+
+    # Hybrid merge: widen the [first_seen, last_seen] interval to OUTER bound across both
+    # sources for chat-active users who ALSO appear in lurker snapshots. Otherwise
+    # "% of audience watched <Nmin" undercounts the silent-tail-before-first-msg and
+    # silent-tail-after-last-msg portions. observation_count = chat + sweep so the field
+    # semantically reads "total observations" (privmsgs + snapshot appearances). CR iter-2 N1.
+    def merge_with_lurkers(chat_data, sweep_data)
+      results = chat_data.map do |username, chat_rec|
         sweep_rec = sweep_data.delete(username)
         merged = merge_chat_and_sweep(chat_rec, sweep_rec)
-        results << build_result(username, merged, source: sweep_rec ? "chat+sweep" : "chat")
+        build_result(username, merged, source: sweep_rec ? "chat+sweep" : "chat")
       end
-      sweep_data.each do |username, sweep_rec|
-        results << build_result(username, sweep_rec, source: "sweep")
-      end
+      sweep_data.each { |username, sweep_rec| results << build_result(username, sweep_rec, source: "sweep") }
       results
     end
 
