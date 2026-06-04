@@ -13,9 +13,15 @@ module Trust
   #    PG snapshot rows for the stream → first snapshot login appears in = first_seen,
   #    last snapshot login appears in = last_seen. Minute-grain (snapshot cadence).
   #
-  # Chat-active wins for usernames present in both sources (finer grain). Lurkers fill
-  # the gap that ViewerMetrics-style "% of audience watched <Nmin vs >Nmin" semantics
-  # need for the silent majority.
+  # For usernames present in BOTH sources the result is a HYBRID: `first_seen_at` =
+  # MIN(chat.first, sweep.first), `last_seen_at` = MAX(chat.last, sweep.last),
+  # `observation_count` = chat.privmsgs + sweep.snapshots, `source = "chat+sweep"`.
+  # This captures the silent-tail-before-first-msg and silent-tail-after-last-msg
+  # presence portions for chat-active lurkers (someone who lurks 30 min, types 1 msg,
+  # then lurks 30 more min) — without it, `first_seen_at` would be the first PRIVMSG
+  # and the silent presence span would be invisible to the "% watched <Nmin" callers.
+  # Chat-only (no sweep) and sweep-only (no chat) entries keep their respective
+  # source label.
   #
   # ## Why this layer (vs persisting per-viewer rows)
   #
@@ -67,14 +73,23 @@ module Trust
 
     def call(include_lurkers:)
       chat_data = chat_first_last_seen
-      results = chat_data.map { |username, rec| build_result(username, rec, source: "chat") }
-      return results unless include_lurkers
+      return chat_data.map { |username, rec| build_result(username, rec, source: "chat") } unless include_lurkers
 
-      chat_users = chat_data.keys.to_set
       sweep_data = sweep_first_last_seen
-      sweep_data.each do |username, rec|
-        next if chat_users.include?(username)
-        results << build_result(username, rec, source: "sweep")
+      results = []
+      chat_data.each do |username, chat_rec|
+        # Hybrid presence span for chat-active users who ALSO appear in lurker snapshots:
+        # widen the [first_seen, last_seen] interval to the OUTER bound across both sources,
+        # otherwise "% of audience watched <Nmin" undercounts the silent-tail-before-first-msg
+        # and silent-tail-after-last-msg portions. observation_count = chat + sweep so the
+        # field semantically reads "total observations" (privmsgs + snapshot appearances).
+        # CR iter-2 N1.
+        sweep_rec = sweep_data.delete(username)
+        merged = merge_chat_and_sweep(chat_rec, sweep_rec)
+        results << build_result(username, merged, source: sweep_rec ? "chat+sweep" : "chat")
+      end
+      sweep_data.each do |username, sweep_rec|
+        results << build_result(username, sweep_rec, source: "sweep")
       end
       results
     end
@@ -110,6 +125,15 @@ module Trust
       rec[:first_seen_at] = timestamp if timestamp < rec[:first_seen_at]
       rec[:last_seen_at] = timestamp if timestamp > rec[:last_seen_at]
       rec[:observation_count] += 1
+    end
+
+    def merge_chat_and_sweep(chat_rec, sweep_rec)
+      return chat_rec unless sweep_rec
+      {
+        first_seen_at: [ chat_rec[:first_seen_at], sweep_rec[:first_seen_at] ].min,
+        last_seen_at: [ chat_rec[:last_seen_at], sweep_rec[:last_seen_at] ].max,
+        observation_count: chat_rec[:observation_count] + sweep_rec[:observation_count]
+      }
     end
 
     def build_result(username, rec, source:)

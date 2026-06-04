@@ -539,4 +539,66 @@ RSpec.describe Clickhouse::ChatQueries do
       )
     end
   end
+
+  describe ".viewer_first_last_seen_per_stream" do
+    # G-4 BUG-251.31 PR-B: returns { username => { first_seen_at: Time, last_seen_at: Time,
+    # observation_count: Integer } } from chat_messages MIN/MAX(timestamp) per username.
+    # Bloom_filter idx_stream_id (PR #273) makes this cheap on the stream_id-only filter.
+
+    it "queries chat_messages with stream_id + privmsg + non-empty username, group by username" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT username,/)
+          .and(a_string_matching(/toUnixTimestamp64Milli\(min\(timestamp\)\) AS first_seen_ms/))
+          .and(a_string_matching(/toUnixTimestamp64Milli\(max\(timestamp\)\) AS last_seen_ms/))
+          .and(a_string_matching(/count\(\) AS observation_count/))
+          .and(a_string_matching(/FROM chat_messages/))
+          .and(a_string_matching(/stream_id = '#{stream_id}'/))
+          .and(a_string_matching(/msg_type = 'privmsg'/))
+          .and(a_string_matching(/username != ''/))
+          .and(a_string_matching(/GROUP BY username/))
+      ).and_return([])
+
+      expect(described_class.viewer_first_last_seen_per_stream(stream_id)).to eq({})
+    end
+
+    it "converts CH ms timestamps to UTC Time objects" do
+      first_ms = Time.utc(2026, 5, 28, 12, 5, 0).to_i * 1000
+      last_ms = Time.utc(2026, 5, 28, 12, 30, 0).to_i * 1000
+      allow(ch).to receive(:select).and_return([
+                                                 {
+                                                   "username" => "alice",
+                                                   "first_seen_ms" => first_ms.to_s,
+                                                   "last_seen_ms" => last_ms.to_s,
+                                                   "observation_count" => "5"
+                                                 }
+                                               ])
+
+      result = described_class.viewer_first_last_seen_per_stream(stream_id)
+      expect(result["alice"][:first_seen_at]).to eq(Time.zone.at(first_ms / 1000.0))
+      expect(result["alice"][:last_seen_at]).to eq(Time.zone.at(last_ms / 1000.0))
+      expect(result["alice"][:observation_count]).to eq(5)
+    end
+
+    it "returns one entry per distinct username" do
+      allow(ch).to receive(:select).and_return([
+                                                 { "username" => "alice", "first_seen_ms" => "1717000000000", "last_seen_ms" => "1717000060000", "observation_count" => "2" },
+                                                 { "username" => "bob",   "first_seen_ms" => "1717000010000", "last_seen_ms" => "1717000180000", "observation_count" => "8" }
+                                               ])
+
+      result = described_class.viewer_first_last_seen_per_stream(stream_id)
+      expect(result.keys).to contain_exactly("alice", "bob")
+      expect(result["bob"][:observation_count]).to eq(8)
+    end
+
+    it "raises ArgumentError for non-UUID stream_id (validate_stream_uuid! guard)" do
+      expect {
+        described_class.viewer_first_last_seen_per_stream("not-a-uuid' OR 1=1 --")
+      }.to raise_error(ArgumentError, /not a UUID/)
+    end
+
+    it "returns empty hash on Clickhouse::Error (fail-open for sweep fallback composition)" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::Error.new("connection refused"))
+      expect(described_class.viewer_first_last_seen_per_stream(stream_id)).to eq({})
+    end
+  end
 end

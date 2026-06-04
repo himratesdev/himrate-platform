@@ -59,11 +59,22 @@ RSpec.describe Trust::ViewerSessionPresences, type: :service do
                                    viewer_logins: [ "chatter1", "lurker1", "lurker2" ])
       end
 
-      it "uses 'chat' source for users with chat messages" do
+      it "uses 'chat+sweep' source for chat-active users who also appear in lurker snapshots" do
         result = described_class.for_stream(stream)
         c1 = result.find { |r| r.username == "chatter1" }
-        expect(c1.source).to eq("chat")
-        expect(c1.observation_count).to eq(5) # privmsg count, not snapshot count
+        expect(c1.source).to eq("chat+sweep")
+        # observation_count = chat privmsgs (5) + sweep snapshot appearances (2) = 7
+        expect(c1.observation_count).to eq(7)
+      end
+
+      it "widens chat-active user span to OUTER bounds across both sources" do
+        # chat MIN = 1.hour.ago, chat MAX = 30.minutes.ago
+        # sweep MIN = 55.minutes.ago (snapshot1), sweep MAX = 35.minutes.ago (snapshot2)
+        # Hybrid: MIN(chat=60min, sweep=55min)=60min ago; MAX(chat=30min, sweep=35min)=30min ago
+        result = described_class.for_stream(stream)
+        c1 = result.find { |r| r.username == "chatter1" }
+        expect(c1.first_seen_at).to be_within(2.minutes).of(1.hour.ago)
+        expect(c1.last_seen_at).to be_within(2.minutes).of(30.minutes.ago)
       end
 
       it "uses 'sweep' source for lurkers absent from chat" do
