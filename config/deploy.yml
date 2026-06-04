@@ -223,6 +223,36 @@ accessories:
     image: ghcr.io/himratesdev/himrate-postgres:16-partman-v2
     host: 194.135.85.159
     port: "127.0.0.1:5432:5432"
+    # Phase 7 R Step 4 — PostgreSQL memory tune for shared 3 vCPU / 8 GiB VPS.
+    # Default postgres `shared_buffers` = 25% of host RAM ≈ 2 GiB on 8 GiB box.
+    # OLTP-only workload after CH cutover (PR 1e-A/1e-B, 2026-06-01): chat archive
+    # moved to ClickHouse; PG actively touches ~50-100 MiB of pages (Users, Channels,
+    # Streams, TrustIndexHistory, Sidekiq state, ChattersSnapshot). Other ~1.9 GiB
+    # shared_buffers = wasted on this hardware. Tune to 512 MiB → frees ~900 MiB
+    # for Sidekiq web/job pool + reduces swap pressure (current 100% used).
+    #
+    # Parameters chosen per REVISED-PRE-MIGRATION-OPTIMIZATION-PLAN.md Step 3.
+    # - shared_buffers=512MB: 6.4% RAM — within official 15-25% guidance for cache;
+    #   adequate for current working-set; allows OS page cache (effective_cache_size)
+    #   to handle bulk reads.
+    # - effective_cache_size=1GB: planner hint ≈ available OS cache (we observe
+    #   2.7 GiB buff/cache steady-state post-Step-1-and-2 cleanup; conservative
+    #   1 GiB leaves headroom for container/sidekiq cache + future growth).
+    # - work_mem=16MB: per-query operation budget. Current realistic peak ≈
+    #   21 Sidekiq threads (job=5 + whisper=1 + stream=3 + signal_compute=5 +
+    #   signals=5 + monitoring=2) + ~10 web (Puma WEB_CONCURRENCY=2 × ~5 threads) +
+    #   headroom = ~50 active connections × 16 MB ≈ 800 MiB peak. NOTE: PG
+    #   `max_connections` stays at default 100 — theoretical max if fully saturated
+    #   = 1.6 GiB (e.g. ad-hoc rails console + full Sidekiq + irc). Acceptable.
+    # - maintenance_work_mem=64MB: VACUUM/CREATE INDEX budget; small DB so 64 MiB
+    #   sufficient (avoids reserve for autovacuum spikes).
+    #
+    # ⚠️ accessory-config-change → requires post-merge `kamal accessory reboot db -d staging`
+    # (Kamal deploy does NOT recreate accessories). Brief ~30s PG unavailability during
+    # reboot — Sidekiq/web auto-reconnect on next query. When this rolls forward to
+    # production, the matching reboot is `kamal accessory reboot db -d production`
+    # (separate scheduled change window — runbook in MEASUREMENTS.md).
+    cmd: postgres -c shared_buffers=512MB -c effective_cache_size=1GB -c work_mem=16MB -c maintenance_work_mem=64MB
     env:
       secret:
         - POSTGRES_PASSWORD
