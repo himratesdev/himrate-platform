@@ -12,8 +12,8 @@ RSpec.describe Trust::ViewerSessionPresences, type: :service do
         allow(Clickhouse::ChatQueries).to receive(:viewer_first_last_seen_per_stream)
           .with(stream.id)
           .and_return(
-            "viewer1" => { first_seen_at: 1.hour.ago, last_seen_at: 30.minutes.ago, message_count: 5 },
-            "viewer2" => { first_seen_at: 50.minutes.ago, last_seen_at: 40.minutes.ago, message_count: 1 }
+            "viewer1" => { first_seen_at: 1.hour.ago, last_seen_at: 30.minutes.ago, observation_count: 5 },
+            "viewer2" => { first_seen_at: 50.minutes.ago, last_seen_at: 40.minutes.ago, observation_count: 1 }
           )
       end
 
@@ -24,7 +24,7 @@ RSpec.describe Trust::ViewerSessionPresences, type: :service do
         expect(result.map(&:username)).to contain_exactly("viewer1", "viewer2")
       end
 
-      it "fills observation_count from chat message_count" do
+      it "fills observation_count from chat privmsg count" do
         result = described_class.for_stream(stream, include_lurkers: false)
         v1 = result.find { |r| r.username == "viewer1" }
         expect(v1.observation_count).to eq(5)
@@ -49,7 +49,7 @@ RSpec.describe Trust::ViewerSessionPresences, type: :service do
         allow(Clickhouse::ChatQueries).to receive(:viewer_first_last_seen_per_stream)
           .with(stream.id)
           .and_return(
-            "chatter1" => { first_seen_at: 1.hour.ago, last_seen_at: 30.minutes.ago, message_count: 5 }
+            "chatter1" => { first_seen_at: 1.hour.ago, last_seen_at: 30.minutes.ago, observation_count: 5 }
           )
 
         # Two snapshots; chatter1 appears in both, lurker1 in both, lurker2 only in 2nd
@@ -63,7 +63,7 @@ RSpec.describe Trust::ViewerSessionPresences, type: :service do
         result = described_class.for_stream(stream)
         c1 = result.find { |r| r.username == "chatter1" }
         expect(c1.source).to eq("chat")
-        expect(c1.observation_count).to eq(5) # message_count, not snapshot count
+        expect(c1.observation_count).to eq(5) # privmsg count, not snapshot count
       end
 
       it "uses 'sweep' source for lurkers absent from chat" do

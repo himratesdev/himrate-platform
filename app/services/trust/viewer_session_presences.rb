@@ -98,22 +98,18 @@ module Trust
         .where.not(viewer_logins: nil)
         .order(:timestamp)
         .pluck(:timestamp, :viewer_logins)
-      return {} if snapshots.empty?
-
       acc = {}
       snapshots.each do |timestamp, logins|
-        Array(logins).each do |login|
-          rec = acc[login] ||= {
-            first_seen_at: timestamp,
-            last_seen_at: timestamp,
-            observation_count: 0
-          }
-          rec[:first_seen_at] = timestamp if timestamp < rec[:first_seen_at]
-          rec[:last_seen_at] = timestamp if timestamp > rec[:last_seen_at]
-          rec[:observation_count] += 1
-        end
+        Array(logins).each { |login| accumulate_login(acc, login, timestamp) }
       end
       acc
+    end
+
+    def accumulate_login(acc, login, timestamp)
+      rec = acc[login] ||= { first_seen_at: timestamp, last_seen_at: timestamp, observation_count: 0 }
+      rec[:first_seen_at] = timestamp if timestamp < rec[:first_seen_at]
+      rec[:last_seen_at] = timestamp if timestamp > rec[:last_seen_at]
+      rec[:observation_count] += 1
     end
 
     def build_result(username, rec, source:)

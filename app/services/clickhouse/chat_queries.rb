@@ -506,7 +506,10 @@ module Clickhouse
     # streams. Bloom_filter prunes data parts that don't contain the stream_id BEFORE
     # the full scan, so cost is proportional to chatter count, not chat-messages total.
     #
-    # Returns: { username => { first_seen_at: Time, last_seen_at: Time, message_count: Integer } }
+    # Returns: { username => { first_seen_at: Time, last_seen_at: Time, observation_count: Integer } }
+    # `observation_count` is unified with the sweep-source key (number of "observations" —
+    # PRIVMSGs for chat-source, snapshot appearances for sweep-source) so the consumer in
+    # Trust::ViewerSessionPresences#build_result reads a single field regardless of source.
     # Empty hash on Clickhouse::Error (rescue) so callers can compose with sweep-side
     # fallback without raising.
     def viewer_first_last_seen_per_stream(stream_id)
@@ -515,7 +518,7 @@ module Clickhouse
         SELECT username,
                toUnixTimestamp64Milli(min(timestamp)) AS first_seen_ms,
                toUnixTimestamp64Milli(max(timestamp)) AS last_seen_ms,
-               count() AS message_count
+               count() AS observation_count
         FROM chat_messages
         WHERE stream_id = '#{stream_id}' AND msg_type = 'privmsg' AND username != ''
         GROUP BY username
@@ -524,7 +527,7 @@ module Clickhouse
         acc[row["username"]] = {
           first_seen_at: Time.zone.at(row["first_seen_ms"].to_i / 1000.0),
           last_seen_at: Time.zone.at(row["last_seen_ms"].to_i / 1000.0),
-          message_count: row["message_count"].to_i
+          observation_count: row["observation_count"].to_i
         }
       end
     rescue Clickhouse::Error => e
