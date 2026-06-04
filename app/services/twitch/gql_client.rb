@@ -373,58 +373,17 @@ module Twitch
       end
     end
 
-    # FR-007: Active prediction on channel
-    def predictions(channel_login:)
-      return nil if channel_login.blank?
-
-      result = execute(QUERIES[:predictions], { login: channel_login })
-      event = result&.dig("data", "channel", "activePredictionEvent")
-      return nil unless event && event["status"] == "ACTIVE"
-
-      {
-        id: event["id"],
-        title: event["title"],
-        status: event["status"],
-        total_users: event["outcomes"]&.sum { |o| o["totalUsers"].to_i } || 0,
-        total_points: event["outcomes"]&.sum { |o| o["totalPoints"].to_i } || 0,
-        outcomes: event["outcomes"]&.map { |o| { title: o["title"], total_users: o["totalUsers"], total_points: o["totalPoints"] } }
-      }
-    end
-
-    # FR-007: Active poll on channel
-    def polls(channel_login:)
-      return nil if channel_login.blank?
-
-      result = execute(QUERIES[:polls], { login: channel_login })
-      poll = result&.dig("data", "channel", "currentPoll")
-      return nil unless poll && poll["status"] == "ACTIVE"
-
-      {
-        id: poll["id"],
-        title: poll["title"],
-        total_voters: poll["totalVoters"].to_i,
-        choices: poll["choices"]&.map { |c| { title: c["title"], total_votes: c["totalVotes"] } }
-      }
-    end
-
-    # FR-008: Active hype train on channel
-    def hype_train(channel_login:)
-      return nil if channel_login.blank?
-
-      result = execute(QUERIES[:hype_train], { login: channel_login })
-      train = result&.dig("data", "channel", "hypeTrainExecution")
-      return nil unless train
-
-      {
-        id: train["id"],
-        level: train["level"].to_i,
-        progress: train["progress"].to_i,
-        goal: train["goal"].to_i,
-        conductors_count: train["conductors"]&.size || 0,
-        ends_at: train["endsAt"],
-        started_at: train["startedAt"]
-      }
-    end
+    # FR-007/FR-008 (Twitch GQL drift 2026-06-04): `predictions(channel_login:)`,
+    # `polls(channel_login:)`, and `hype_train(channel_login:)` were removed.
+    # Twitch dropped `Channel.activePredictionEvent`, `Channel.currentPoll`, and
+    # `Channel.hypeTrainExecution` fields from the public GQL schema. Live probe
+    # confirmed each returns `"Cannot query field X on type Channel"`. The methods
+    # and their backing QUERIES[:predictions/:polls/:hype_train] templates have
+    # been deleted along with StreamMonitorWorker.poll_tier2 callers (Sentry
+    # noise + dead data path). PredictionsPoll model retained for historical
+    # rows. Replacement paths (if Twitch reintroduces these features under
+    # different types) require introspection on a staff Client-ID or Apollo
+    # cache walking on twitch.tv — deferred to a separate research EPIC.
 
     # Generic batch: send array of {query:, variables:} in one POST
     def batch(operations)
@@ -834,40 +793,9 @@ module Twitch
         }
       GQL
 
-      predictions: <<~GQL.squish,
-        query ChannelPredictions($login: String!) {
-          channel(name: $login) {
-            activePredictionEvent {
-              id title status
-              outcomes { id title totalPoints totalUsers }
-            }
-          }
-        }
-      GQL
-
-      polls: <<~GQL.squish,
-        query ChannelPolls($login: String!) {
-          channel(name: $login) {
-            currentPoll {
-              id title status
-              choices { id title totalVotes }
-              totalVoters
-            }
-          }
-        }
-      GQL
-
-      hype_train: <<~GQL.squish,
-        query HypeTrain($login: String!) {
-          channel(name: $login) {
-            hypeTrainExecution {
-              id level progress goal
-              conductors { id participationType quantity }
-              endsAt startedAt
-            }
-          }
-        }
-      GQL
+      # predictions/polls/hype_train queries removed 2026-06-04 — see method-level
+      # comment above (Twitch GQL drift; `Channel.{activePredictionEvent, currentPoll,
+      # hypeTrainExecution}` no longer exist).
 
       top_streams: <<~GQL.squish,
         query TopStreams($first: Int!, $gameID: ID) {

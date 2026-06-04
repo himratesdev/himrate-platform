@@ -2,7 +2,10 @@
 
 # TASK-025: Channel Monitoring Orchestrator — periodic polling.
 # Tier 1 (every cycle, 60s): CCV + chatters count → snapshots.
-# Tier 2 (every 5th cycle, ~5min): ChatRoomState, Predictions, Polls, HypeTrain.
+# Tier 2 (every 5th cycle, ~5min): ChatRoomState.
+# (Predictions/Polls/HypeTrain queries removed 2026-06-04 — Twitch GQL drift
+# dropped Channel.{activePredictionEvent, currentPoll, hypeTrainExecution};
+# see Twitch::GqlClient method-level comment.)
 # Stateless: reads active streams from DB each cycle.
 
 class StreamMonitorWorker
@@ -30,7 +33,7 @@ class StreamMonitorWorker
     # Tier 1: CCV + chatters (every cycle)
     poll_tier1(active_streams)
 
-    # Tier 2: ChatRoomState + Predictions/Polls/HypeTrain (every 5th cycle)
+    # Tier 2: ChatRoomState (every 5th cycle)
     poll_tier2(active_streams) if (cycle % TIER2_EVERY).zero?
 
     Rails.logger.info("StreamMonitorWorker: cycle #{cycle}, #{active_streams.size} streams")
@@ -212,17 +215,14 @@ class StreamMonitorWorker
     )
   end
 
-  # === Tier 2: ChatRoomState + Predictions/Polls/HypeTrain ===
+  # === Tier 2: ChatRoomState ===
+  # Predictions/Polls/HypeTrain calls dropped 2026-06-04 (Twitch GQL field
+  # drift — see Twitch::GqlClient). `latest_ccv` lookup removed with them.
 
   def poll_tier2(streams)
     streams.each do |stream|
       login = stream.channel.login
-      latest_ccv = stream.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count) || 0
-
       update_chat_room_state(stream.channel, login)
-      poll_predictions(stream, login, latest_ccv)
-      poll_polls(stream, login, latest_ccv)
-      poll_hype_train(stream, login, latest_ccv)
     end
   end
 
@@ -251,59 +251,12 @@ class StreamMonitorWorker
     Rails.logger.warn("StreamMonitorWorker: ChatRoomState save failed for #{login} (#{e.message})")
   end
 
-  def poll_predictions(stream, login, ccv)
-    data = gql.predictions(channel_login: login)
-    return unless data
-
-    ratio = ccv > 0 ? data[:total_users].to_f / ccv : nil
-
-    PredictionsPoll.create!(
-      stream: stream,
-      event_type: "prediction",
-      participants_count: data[:total_users],
-      ccv_at_time: ccv,
-      participation_ratio: ratio,
-      timestamp: Time.current
-    )
-  rescue ActiveRecord::RecordInvalid => e
-    Rails.logger.warn("StreamMonitorWorker: Prediction save failed (#{e.message})")
-  end
-
-  def poll_polls(stream, login, ccv)
-    data = gql.polls(channel_login: login)
-    return unless data
-
-    ratio = ccv > 0 ? data[:total_voters].to_f / ccv : nil
-
-    PredictionsPoll.create!(
-      stream: stream,
-      event_type: "poll",
-      participants_count: data[:total_voters],
-      ccv_at_time: ccv,
-      participation_ratio: ratio,
-      timestamp: Time.current
-    )
-  rescue ActiveRecord::RecordInvalid => e
-    Rails.logger.warn("StreamMonitorWorker: Poll save failed (#{e.message})")
-  end
-
-  def poll_hype_train(stream, login, ccv)
-    data = gql.hype_train(channel_login: login)
-    return unless data
-
-    ratio = ccv > 0 ? data[:conductors_count].to_f / ccv : nil
-
-    PredictionsPoll.create!(
-      stream: stream,
-      event_type: "hype_train",
-      participants_count: data[:conductors_count],
-      ccv_at_time: ccv,
-      participation_ratio: ratio,
-      timestamp: Time.current
-    )
-  rescue ActiveRecord::RecordInvalid => e
-    Rails.logger.warn("StreamMonitorWorker: HypeTrain save failed (#{e.message})")
-  end
+  # poll_predictions / poll_polls / poll_hype_train removed 2026-06-04.
+  # Twitch dropped Channel.{activePredictionEvent, currentPoll, hypeTrainExecution}
+  # from its public GQL schema; live probe returned "Cannot query field …"
+  # errors at ~3/min per active stream from the monitoring_worker container.
+  # PredictionsPoll model retained for historical rows; future replacement (if
+  # Twitch reintroduces these features) is its own research EPIC.
 
   # === Scheduling ===
 
