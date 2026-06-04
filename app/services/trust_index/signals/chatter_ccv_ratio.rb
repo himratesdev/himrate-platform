@@ -51,8 +51,8 @@
 # (abstain) from "low signal data" (penalize via ratio formula). Engine
 # `confidence>0` filter drops the abstain cleanly.
 #
-# Zero-vs-nil philosophy (Option A per `_tasks/BUG-TI-CALIBRATION-SMALL-STREAMERS/
-# auth-ratio-philosophy-decision.md`, 2026-06-04): this signal ABSTAINS on
+# Zero-vs-nil philosophy (Option A per PO directive 2026-06-04 — full decision
+# rationale in PR #278 description / commit message): this signal ABSTAINS on
 # `unique_chatters_60min = 0`. **Sibling signal `auth_ratio` (PR #220 / BUG-251.30)
 # does the OPPOSITE** — fires MAX bot on `chatters_present_total = 0`. Both are
 # locally correct per their data-source reliability: BSW CommunityTab (auth_ratio

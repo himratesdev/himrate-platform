@@ -30,22 +30,24 @@
 #     (paired migration `20260529110002_recalibrate_auth_ratio_...`).
 #     Multi-channel empirical recalibration tracked under BUG-251.33.
 #
-# Zero-vs-nil philosophy (Option A per `_tasks/BUG-TI-CALIBRATION-SMALL-STREAMERS/
-# auth-ratio-philosophy-decision.md`, 2026-06-04): the `chatters_present.nil?` guard
-# at line 48 fires ONLY on missing data, NOT on zero. When `chatters_present_total = 0`
-# with `ccv > 0`, the signal intentionally PROCEEDS to ratio math → value = 1.0
-# (MAX bot). Rationale: viewbots that ONLY join the video stream (skip IRC entirely)
-# depress chatters_present to literal zero; a legitimate stream nearly always has
-# *some* presence — broadcaster + mods + a few viewers — in the 60s polling window.
-# Source `ChattersSnapshot.chatters_present_total` is populated by BSW (Twitch GQL
-# CommunityTab) with high reliability post-PR #221+#223 (Android Client-ID + Tier-2
-# stability), so zero is a strong signal not an ingest gap. **Contrast with sibling
-# signal `chatter_ccv_ratio` (PR #276, Phase 4 J PR-E):** that signal DOES abstain on
-# `unique_chatters_60min = 0` because its source (CH `mv_stream_minute_target` ←
-# IRC monitor) has known capacity issues (MAX_CHANNELS cap, late-subscribe) where
-# zero often means "ingest gap" rather than "no humans". Both philosophies are
-# locally correct per their data-source reliability profile. If BSW reliability ever
-# degrades (or IRC capacity ever improves) we re-audit and may flip per-source.
+# Zero-vs-nil philosophy (Option A per PO directive 2026-06-04 — full decision
+# rationale in PR #278 description / commit message): the `chatters_present.nil?`
+# guard in `#calculate` fires ONLY on missing data, NOT on zero. When
+# `chatters_present_total = 0` with `ccv > 0`, the signal intentionally PROCEEDS
+# to ratio math → value = 1.0 (MAX bot). Rationale: viewbots that ONLY join the
+# video stream (skip IRC entirely) depress chatters_present to literal zero; a
+# legitimate stream nearly always has *some* presence — broadcaster + mods + a
+# few viewers — in the 60s polling window. Source
+# `ChattersSnapshot.chatters_present_total` is populated by BSW (Twitch GQL
+# CommunityTab) with high reliability post-PR #221+#223 (Android Client-ID +
+# Tier-2 stability), so zero is a strong signal not an ingest gap.
+# **Contrast with sibling signal `chatter_ccv_ratio` (PR #276, Phase 4 J PR-E):**
+# that signal DOES abstain on `unique_chatters_60min = 0` because its source
+# (CH `mv_stream_minute_target` ← IRC monitor) has known capacity issues
+# (MAX_CHANNELS cap, late-subscribe) where zero often means "ingest gap" rather
+# than "no humans". Both philosophies are locally correct per their data-source
+# reliability profile. If BSW reliability ever degrades (or IRC capacity ever
+# improves) we re-audit and may flip per-source.
 
 module TrustIndex
   module Signals
