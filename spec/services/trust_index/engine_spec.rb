@@ -110,15 +110,56 @@ RSpec.describe TrustIndex::Engine do
     expect(tih.cold_start_status).to be_present
   end
 
-  it "applies Bayesian shrinkage for low confidence" do
-    channel2 = Channel.create!(twitch_id: "bay_ch", login: "bay_channel", display_name: "Bayesian")
+  # Phase 4 J PR-F calibration fix per PO directive 2026-06-02 «для clean
+  # signals TI=100 + label «Аудитория реальная»». High-confidence clean signals
+  # must not be pulled down by cold-start Bayesian shrinkage; low-confidence
+  # signals still benefit from the population-mean prior against sampling noise.
+  it "skips Bayesian shrinkage for high-confidence clean signals on cold-start channel" do
+    channel2 = Channel.create!(twitch_id: "cs_clean_ch", login: "cs_clean", display_name: "ColdStartClean")
     stream2 = Stream.create!(channel: channel2, started_at: 2.hours.ago, ended_at: 1.hour.ago)
-    # Only 5 completed streams → confidence = 0.5
+    # Only 5 completed streams (4 here + stream2 finished) → cold_start confidence = 0.5
     4.times { Stream.create!(channel: channel2, started_at: 3.hours.ago, ended_at: 2.hours.ago) }
-    result = engine.compute(signal_results: all_signals(value: 0.0), stream: stream2, ccv: 1000)
-    # TI should be between 65 (pop mean) and 100 (calculated) due to shrinkage
+    result = engine.compute(signal_results: all_signals(value: 0.0, confidence: 1.0), stream: stream2, ccv: 1000)
+    # signal_confidence = 1.0 → Bayesian skipped → ti_raw = 100 returned directly
+    expect(result.ti_score).to eq(100)
+    expect(result.classification).to eq("trusted")
+    # cold_start still reports the channel's history depth — only the scoring math changes
+    expect(result.cold_start[:status]).to eq("provisional_low")
+    expect(result.cold_start[:confidence]).to eq(0.5)
+  end
+
+  it "applies Bayesian shrinkage when signal_confidence is low (noisy data)" do
+    channel3 = Channel.create!(twitch_id: "cs_noisy_ch", login: "cs_noisy", display_name: "ColdStartNoisy")
+    stream3 = Stream.create!(channel: channel3, started_at: 2.hours.ago, ended_at: 1.hour.ago)
+    4.times { Stream.create!(channel: channel3, started_at: 3.hours.ago, ended_at: 2.hours.ago) }
+    # Low per-signal confidence → avg signal_confidence < 0.95 → Bayesian engages
+    result = engine.compute(signal_results: all_signals(value: 0.0, confidence: 0.5), stream: stream3, ccv: 1000)
+    # ti_raw computation: each contribution = 0.0 × 0.5 × weight = 0 → bot_score=0 → ti_raw=100
+    # signal_confidence avg = 0.5 → below 0.95 threshold → Bayesian path taken
+    # cold_start[:confidence] = 0.5 → ti_bayesian = 0.5 × 100 + 0.5 × 65 = 82.5 → rounds to 83
     expect(result.ti_score).to be_between(65, 100)
     expect(result.ti_score).to be < 100
+  end
+
+  # PR-F regression spec: dirty-signal cold-start channels must NOT be pulled
+  # UP toward population_mean=65. Pre-PR-F, ti_raw=30 (clear bot pattern) on a
+  # cold-start channel was elevated to ~54 by Bayesian shrinkage — masking the
+  # anomaly. Post-PR-F, high signal_confidence preserves the raw assessment so
+  # fraud detection works on young channels too. Without this spec a future
+  # refactor could silently re-introduce shrinkage and hide bot patterns on
+  # young channels.
+  it "preserves low TI for high-confidence dirty signals on cold-start channel (no upward shrinkage)" do
+    channel4 = Channel.create!(twitch_id: "cs_dirty_ch", login: "cs_dirty", display_name: "ColdStartDirty")
+    stream4 = Stream.create!(channel: channel4, started_at: 2.hours.ago, ended_at: 1.hour.ago)
+    4.times { Stream.create!(channel: channel4, started_at: 3.hours.ago, ended_at: 2.hours.ago) }
+    # Strong bot pattern: value=0.7 with full confidence on every signal
+    result = engine.compute(signal_results: all_signals(value: 0.7, confidence: 1.0), stream: stream4, ccv: 1000)
+    # ti_raw = (1.0 - 0.7) × 100 = 30; signal_confidence = 1.0 → Bayesian skipped
+    # Pre-PR-F would have been 0.5 × 30 + 0.5 × 65 = 47.5 (suspicious→needs_review)
+    # Post-PR-F stays at 30 → classification "suspicious"
+    expect(result.ti_score).to be <= 35
+    expect(result.classification).to eq("suspicious")
+    expect(result.cold_start[:status]).to eq("provisional_low")
   end
 
   describe "philosophy v2: rehabilitation / penalty event / bonus accelerator code removed" do
