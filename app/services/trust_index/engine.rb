@@ -3,7 +3,9 @@
 # TASK-029 FR-001/002/005/006/010: Trust Index Engine.
 # Aggregates 11 signal results → TI score (0-100) + classification.
 # Weights from signal_configurations DB. Null signals skipped, weights renormalized.
-# Bayesian shrinkage applied when confidence < 1.0.
+# Bayesian shrinkage applied only when signal_confidence < bayesian_skip_threshold
+# (default 0.95 via SignalConfiguration). High-confidence signals stand by their
+# result regardless of cold-start status (Phase 4 J PR-F, PO directive 2026-06-02).
 
 module TrustIndex
   class Engine
