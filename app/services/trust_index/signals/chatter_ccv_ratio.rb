@@ -50,6 +50,17 @@
 # often an ingest gap than a bot-only audience. Distinguishes "no signal data"
 # (abstain) from "low signal data" (penalize via ratio formula). Engine
 # `confidence>0` filter drops the abstain cleanly.
+#
+# Zero-vs-nil philosophy (Option A per PO directive 2026-06-04 — full decision
+# rationale in PR #278 description / commit message): this signal ABSTAINS on
+# `unique_chatters_60min = 0`. **Sibling signal `auth_ratio` (PR #220 / BUG-251.30)
+# does the OPPOSITE** — fires MAX bot on `chatters_present_total = 0`. Both are
+# locally correct per their data-source reliability: BSW CommunityTab (auth_ratio
+# source) is high-reliability post-Tier-2 fix, so zero there is a strong viewbot
+# signature; CH `mv_stream_minute_target` (this signal's source) has known IRC-
+# capacity / late-subscribe failure modes where zero often means "ingest gap"
+# rather than "no humans". If CH ingest reliability ever improves to BSW-level
+# (or BSW reliability degrades), we re-audit per-source.
 
 module TrustIndex
   module Signals
