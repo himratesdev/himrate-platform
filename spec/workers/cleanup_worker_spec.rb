@@ -440,6 +440,11 @@ RSpec.describe CleanupWorker, type: :worker do
 
     context "auto-disable after 3 consecutive errors" do
       it "disables :cleanup_worker and fires a critical Alertmanager alert, then re-raises an aggregated error" do
+        # PR-B2 CR iter-3: `ALERTMANAGER_URL` is now blank by default (observability
+        # disabled). Stub the constant to simulate the live env state so the assertion
+        # below exercises the Alertmanager push path rather than the new direct-Telegram
+        # fallback.
+        stub_const("AlertmanagerNotifier::ALERTMANAGER_URL", "http://himrate-alertmanager:9093/api/v2/alerts")
         CleanupAuditLog.create!(table_name: "ti_signals", run_at: 2.hours.ago, status: :error, deleted_count: 0)
         CleanupAuditLog.create!(table_name: "ti_signals", run_at: 1.hour.ago, status: :error, deleted_count: 0)
         allow(TiSignal).to receive(:where).and_raise(ActiveRecord::StatementInvalid, "boom")
