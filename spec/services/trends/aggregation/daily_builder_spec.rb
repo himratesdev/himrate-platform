@@ -26,13 +26,19 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
 
     context "with 3 streams + TIH rows на date" do
       before do
+        # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv columns dropped from
+        # streams. DailyBuilder.ccv_aggregates now INNER JOINs post_stream_reports.
+        # Each stream gets an explicit PSR with the values that were previously stored on
+        # the stream itself — same end-state numerics aggregated by the builder.
         3.times do |i|
           stream = create(:stream, channel: channel,
                                    started_at: target_date.beginning_of_day + (i + 1).hours,
                                    ended_at: target_date.beginning_of_day + (i + 2).hours,
-                                   avg_ccv: 100 + (i * 50),
-                                   peak_ccv: 200 + (i * 100),
                                    game_name: i.zero? ? "Just Chatting" : "Valorant")
+          create(:post_stream_report, stream: stream,
+                                      ccv_avg: 100 + (i * 50),
+                                      ccv_peak: 200 + (i * 100),
+                                      generated_at: stream.ended_at)
 
           create(:trust_index_history,
                  channel: channel, stream: stream,
@@ -93,10 +99,12 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
 
     context "idempotent — re-run upserts same row" do
       before do
-        create(:stream, channel: channel,
-                        started_at: target_date.beginning_of_day + 2.hours,
-                        ended_at: target_date.beginning_of_day + 4.hours,
-                        avg_ccv: 100, peak_ccv: 150)
+        s = create(:stream, channel: channel,
+                            started_at: target_date.beginning_of_day + 2.hours,
+                            ended_at: target_date.beginning_of_day + 4.hours)
+        # PR-A1: peak_ccv / avg_ccv now sourced from PSR.
+        create(:post_stream_report, stream: s, ccv_avg: 100, ccv_peak: 150,
+          generated_at: s.ended_at)
       end
 
       it "doesn't create duplicate TDA rows" do
@@ -119,11 +127,12 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
 
     context "excludes streams/TIH из других дат" do
       before do
-        # Stream на target_date
+        # Stream на target_date — PR-A1: ccv stats in PSR.
         stream_today = create(:stream, channel: channel,
                                        started_at: target_date.beginning_of_day + 2.hours,
-                                       ended_at: target_date.beginning_of_day + 4.hours,
-                                       avg_ccv: 100, peak_ccv: 200)
+                                       ended_at: target_date.beginning_of_day + 4.hours)
+        create(:post_stream_report, stream: stream_today, ccv_avg: 100, ccv_peak: 200,
+          generated_at: stream_today.ended_at)
         create(:trust_index_history, channel: channel, stream: stream_today,
                                      trust_index_score: 75, erv_percent: 75, ccv: 100,
                                      confidence: 0.85, classification: "needs_review",
@@ -133,8 +142,9 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         # Stream previous day — shouldn't count
         stream_prev = create(:stream, channel: channel,
                                       started_at: (target_date - 1.day).beginning_of_day + 2.hours,
-                                      ended_at: (target_date - 1.day).beginning_of_day + 4.hours,
-                                      avg_ccv: 9999, peak_ccv: 9999)
+                                      ended_at: (target_date - 1.day).beginning_of_day + 4.hours)
+        create(:post_stream_report, stream: stream_prev, ccv_avg: 9999, ccv_peak: 9999,
+          generated_at: stream_prev.ended_at)
         create(:trust_index_history, channel: channel, stream: stream_prev,
                                      trust_index_score: 99, erv_percent: 99, ccv: 9999,
                                      confidence: 0.85, classification: "trusted",

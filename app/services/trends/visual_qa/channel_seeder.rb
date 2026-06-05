@@ -115,6 +115,14 @@ module Trends
         stats[:tier_changes] = 0
         stats[:rehab_events] = 0
         stats[:follower_snapshots] = FollowerSnapshot.where(channel_id: channel.id).delete_all
+        # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): stream_history_seeder now creates a
+        # PostStreamReport row alongside each stream (since peak_ccv / avg_ccv / duration_ms
+        # columns are dropped from streams and live in PSR). PostStreamReport has FK to
+        # streams.id — bulk DELETE streams violates it. Delete PSRs first; then streams.
+        # `delete_all` (not destroy) is intentional — same bulk-perf contract as siblings.
+        stats[:post_stream_reports] = PostStreamReport
+          .joins(:stream)
+          .where(streams: { channel_id: channel.id }).delete_all
         stats[:streams] = channel.streams.delete_all
         stats[:tracked_channels] = TrackedChannel.where(channel_id: channel.id).delete_all
 

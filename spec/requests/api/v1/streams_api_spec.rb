@@ -10,14 +10,19 @@ RSpec.describe "Streams API", type: :request do
   let(:headers_premium) { auth_headers(user_premium) }
 
   before do
-    # Create completed streams with TI data
+    # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv columns dropped — explicit
+    # PSR carries the stats. Create completed streams + their PSR rows + TIH.
     3.times do |i|
       stream = create(:stream, channel: channel,
         started_at: (i + 1).days.ago,
         ended_at: (i + 1).days.ago + 3.hours,
-        peak_ccv: 5000 - (i * 500),
-        avg_ccv: 4000 - (i * 400),
         game_name: "Just Chatting")
+
+      create(:post_stream_report, stream: stream,
+        ccv_peak: 5000 - (i * 500),
+        ccv_avg: 4000 - (i * 400),
+        duration_ms: 3 * 3_600_000,
+        generated_at: stream.ended_at)
 
       create(:trust_index_history,
         channel: channel, stream: stream,

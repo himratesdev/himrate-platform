@@ -63,13 +63,13 @@ RSpec.describe MlFeatureExtractionWorker do
       # historical-stream factory transient (spec/factories/streams.rb) auto-builds PSR when
       # avg_ccv: is passed, so the 29.times loop below works unchanged.
       stream.update!(ended_at: Time.current)
-      PostStreamReport.find_or_create_by!(stream_id: stream.id) do |psr|
-        psr.ccv_avg = 500
-        psr.ccv_peak = 500
-        psr.duration_ms = ((stream.ended_at - stream.started_at) * 1000).to_i
-        psr.generated_at = stream.ended_at
+      create(:post_stream_report, stream: stream, ccv_avg: 500, ccv_peak: 500,
+        duration_ms: ((stream.ended_at - stream.started_at) * 1000).to_i,
+        generated_at: stream.ended_at)
+      29.times do |i|
+        s = create(:stream, channel: stream.channel, ended_at: (i + 1).hours.ago)
+        create(:post_stream_report, stream: s, ccv_avg: 500, generated_at: s.ended_at)
       end
-      29.times { |i| create(:stream, channel: stream.channel, ended_at: (i + 1).hours.ago, avg_ccv: 500) }
 
       # PR3: stub ChatQueries with sufficient aggregates so ChatSignals reports
       # no insufficient reasons either. NLP feature still nil with its deferred-EPIC reason.
