@@ -26,7 +26,12 @@ RSpec.describe StreamOfflineWorker do
   end
 
   # TC-006: Finalize Stream
-  it "finalizes Stream with peak_ccv, avg_ccv, duration_ms" do
+  #
+  # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns dropped
+  # from streams. StreamOfflineWorker now only writes ended_at + interrupted_at. The CCV
+  # aggregates are derived via Stream#current_*; before PostStreamWorker creates PSR they
+  # fall back to live CcvSnapshot aggregates (same numerics as the old column writes).
+  it "finalizes Stream — derived peak/avg/duration computable post-offline" do
     stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
     create(:ccv_snapshot, stream: stream, timestamp: 1.hour.ago, ccv_count: 100)
     create(:ccv_snapshot, stream: stream, timestamp: 30.minutes.ago, ccv_count: 200)
@@ -36,9 +41,9 @@ RSpec.describe StreamOfflineWorker do
 
     stream.reload
     expect(stream.ended_at).to be_present
-    expect(stream.peak_ccv).to eq(200)
-    expect(stream.avg_ccv).to eq(150)
-    expect(stream.duration_ms).to be > 0
+    expect(stream.current_peak_ccv).to eq(200)
+    expect(stream.current_avg_ccv).to eq(150)
+    expect(stream.current_duration_ms).to be > 0
   end
 
   # TC-007: No active stream → warning

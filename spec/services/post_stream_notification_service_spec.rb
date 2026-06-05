@@ -4,10 +4,16 @@ require "rails_helper"
 
 RSpec.describe PostStreamNotificationService do
   let(:channel) { create(:channel) }
-  let(:stream) { create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago, duration_ms: 7_200_000) }
+  # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): duration_ms column dropped from streams —
+  # canonical home is post_stream_reports.duration_ms (PSR row provides duration to
+  # PostStreamNotificationService via Stream#current_duration_ms).
+  let(:stream) { create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago) }
 
   describe ".broadcast_stream_ended" do
-    let(:report) { create(:post_stream_report, stream: stream, trust_index_final: 72.0, erv_percent_final: 72.0) }
+    let(:report) do
+      create(:post_stream_report, stream: stream,
+        trust_index_final: 72.0, erv_percent_final: 72.0, duration_ms: 7_200_000)
+    end
 
     it "broadcasts stream_ended via TrustChannel" do
       expect(TrustChannel).to receive(:broadcast_to).with(channel, hash_including(

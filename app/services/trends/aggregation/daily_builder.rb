@@ -5,7 +5,9 @@
 # Per-channel UPSERT into trends_daily_aggregates на date:
 #   - TI aggregates (avg/std/min/max) ← TrustIndexHistory WHERE calculated_at::date = target
 #   - ERV aggregates (avg/min/max %) ← TrustIndexHistory.erv_percent
-#   - CCV (avg/peak) ← Stream.avg_ccv / Stream.peak_ccv aggregated по streams on date
+#   - CCV (avg/peak) ← PostStreamReport.ccv_avg / ccv_peak (joined on streams ended_at present)
+#     PR-A1: было `Stream.avg_ccv / Stream.peak_ccv`, эти колонки удалены — единый источник
+#     истины для ENDED streams = post_stream_reports.
 #   - streams_count ← Stream WHERE DATE(started_at) = target
 #   - classification_at_end ← latest TIH.classification на date
 #   - categories (jsonb) ← {game_name → count} по streams on date
@@ -102,11 +104,18 @@ module Trends
         }
       end
 
+      # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv columns dropped from
+      # streams. CCV stats для ENDED streams живут в post_stream_reports.
+      # Daily aggregates считаются за прошлые дни → все streams ended → каждый имеет PSR.
+      # Streams без PSR (rare race condition) исключаются автоматически inner JOIN.
       def ccv_aggregates(streams)
-        stats = streams.where.not(avg_ccv: nil).pick(
-          Arel.sql("AVG(avg_ccv)"),
-          Arel.sql("MAX(peak_ccv)")
-        )
+        stats = streams
+          .joins("INNER JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
+          .where.not(post_stream_reports: { ccv_avg: nil })
+          .pick(
+            Arel.sql("AVG(post_stream_reports.ccv_avg)"),
+            Arel.sql("MAX(post_stream_reports.ccv_peak)")
+          )
         return { ccv_avg: nil, ccv_peak: nil } if stats.nil?
 
         {

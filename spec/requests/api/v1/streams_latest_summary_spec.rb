@@ -2,6 +2,12 @@
 
 require "rails_helper"
 
+# PR-A1 (EPIC SCALE ARCHITECTURE Step 2): streams.peak_ccv / avg_ccv / duration_ms columns
+# dropped — canonical home is post_stream_reports. Specs migrated from passing those attrs
+# to Stream factory/create! → explicit `create(:post_stream_report, stream:, ccv_peak:,
+# ccv_avg:, duration_ms:)` AFTER stream creation. For the "preliminary" (no-PSR) cases,
+# Stream#current_peak_ccv falls back to CcvSnapshot.maximum — those specs seed snapshots.
+
 RSpec.describe "Streams Latest Summary API", type: :request do
   let(:channel) { create(:channel) }
   let(:user_free) { create(:user, tier: "free") }
@@ -12,8 +18,8 @@ RSpec.describe "Streams Latest Summary API", type: :request do
   describe "GET /api/v1/channels/:id/streams/latest/summary" do
     # FR-003 / US-013: Guest → 401
     it "returns 401 для guest (no auth)" do
-      create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: 1.hour.ago,
-        duration_ms: 18_000_000, peak_ccv: 5000)
+      stream = create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: 1.hour.ago)
+      create(:post_stream_report, stream: stream, ccv_peak: 5000, duration_ms: 18_000_000)
 
       get "/api/v1/channels/#{channel.id}/streams/latest/summary"
 
@@ -22,8 +28,8 @@ RSpec.describe "Streams Latest Summary API", type: :request do
 
     # FR-002 / US-001 alt: Free + expired window → 403 SUBSCRIPTION_REQUIRED
     it "returns 403 для Free вне 18h window" do
-      create(:stream, channel: channel, started_at: 25.hours.ago, ended_at: 20.hours.ago,
-        duration_ms: 18_000_000, peak_ccv: 5000)
+      stream = create(:stream, channel: channel, started_at: 25.hours.ago, ended_at: 20.hours.ago)
+      create(:post_stream_report, stream: stream, ccv_peak: 5000, duration_ms: 18_000_000, generated_at: 20.hours.ago)
 
       get "/api/v1/channels/#{channel.id}/streams/latest/summary", headers: headers_free
 
@@ -34,7 +40,7 @@ RSpec.describe "Streams Latest Summary API", type: :request do
     # FR-001 / US-001: Free в 18h окне → 200 с full data
     it "returns 200 full data для Free в 18h post-stream window" do
       stream = create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: 1.hour.ago,
-        duration_ms: 18_000_000, peak_ccv: 5000, avg_ccv: 3500, game_name: "Just Chatting")
+        game_name: "Just Chatting")
       create(:post_stream_report, stream: stream, ccv_peak: 5234, ccv_avg: 3650,
         erv_percent_final: 85.5, erv_final: 4200, duration_ms: 18_000_000)
 
@@ -64,8 +70,8 @@ RSpec.describe "Streams Latest Summary API", type: :request do
       create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
       create(:subscription, user: user_premium, tier: "premium", is_active: true)
       stream = create(:stream, channel: channel, started_at: 100.hours.ago, ended_at: 95.hours.ago,
-        duration_ms: 18_000_000, peak_ccv: 5000, game_name: "Gaming")
-      create(:post_stream_report, stream: stream, ccv_peak: 5000, generated_at: 90.hours.ago)
+        game_name: "Gaming")
+      create(:post_stream_report, stream: stream, ccv_peak: 5000, duration_ms: 18_000_000, generated_at: 90.hours.ago)
 
       get "/api/v1/channels/#{channel.id}/streams/latest/summary", headers: headers_premium
 
@@ -75,9 +81,8 @@ RSpec.describe "Streams Latest Summary API", type: :request do
 
     # FR-007: duration_text per Accept-Language
     it "formats duration_text per Accept-Language RU" do
-      stream = create(:stream, channel: channel, started_at: 7.hours.ago, ended_at: 1.hour.ago,
-        duration_ms: 22_320_000, peak_ccv: 5000)
-      create(:post_stream_report, stream: stream)
+      stream = create(:stream, channel: channel, started_at: 7.hours.ago, ended_at: 1.hour.ago)
+      create(:post_stream_report, stream: stream, ccv_peak: 5000, duration_ms: 22_320_000)
 
       get "/api/v1/channels/#{channel.id}/streams/latest/summary",
         headers: headers_free.merge("Accept-Language" => "ru")
@@ -86,9 +91,8 @@ RSpec.describe "Streams Latest Summary API", type: :request do
     end
 
     it "formats duration_text per Accept-Language EN" do
-      stream = create(:stream, channel: channel, started_at: 7.hours.ago, ended_at: 1.hour.ago,
-        duration_ms: 22_320_000, peak_ccv: 5000)
-      create(:post_stream_report, stream: stream)
+      stream = create(:stream, channel: channel, started_at: 7.hours.ago, ended_at: 1.hour.ago)
+      create(:post_stream_report, stream: stream, ccv_peak: 5000, duration_ms: 22_320_000)
 
       get "/api/v1/channels/#{channel.id}/streams/latest/summary",
         headers: headers_free.merge("Accept-Language" => "en")
@@ -97,14 +101,18 @@ RSpec.describe "Streams Latest Summary API", type: :request do
     end
 
     # FR-006 / EC-5: meta.preliminary = true когда post_stream_reports nil
+    # PR-A1: without PSR Stream#current_peak_ccv falls back to CcvSnapshot.max — seed
+    # snapshots so preliminary numbers are realistic.
     it "returns preliminary state когда PostStreamReport не существует" do
-      create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: 1.hour.ago,
-        duration_ms: 18_000_000, peak_ccv: 5000, avg_ccv: 3500)
+      stream = create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: 1.hour.ago)
+      create(:ccv_snapshot, stream: stream, timestamp: 5.hours.ago, ccv_count: 5000)
+      create(:ccv_snapshot, stream: stream, timestamp: 4.hours.ago, ccv_count: 3500)
+      create(:ccv_snapshot, stream: stream, timestamp: 3.hours.ago, ccv_count: 3000)
 
       get "/api/v1/channels/#{channel.id}/streams/latest/summary", headers: headers_free
 
       data = response.parsed_body["data"]
-      expect(data["peak_viewers"]).to eq(5000)
+      expect(data["peak_viewers"]).to eq(5000)  # CcvSnapshot.max fallback
       expect(data["erv_percent_final"]).to be_nil
       expect(data["erv_count_final"]).to be_nil
       expect(response.parsed_body["meta"]["preliminary"]).to be(true)
@@ -114,8 +122,8 @@ RSpec.describe "Streams Latest Summary API", type: :request do
     context "Flipper kill-switch :stream_summary_endpoint (W-3)" do
       it "returns 503 FEATURE_DISABLED когда flag disabled" do
         Flipper.disable(:stream_summary_endpoint)
-        create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: 1.hour.ago,
-          duration_ms: 18_000_000, peak_ccv: 5000)
+        stream = create(:stream, channel: channel, started_at: 6.hours.ago, ended_at: 1.hour.ago)
+        create(:post_stream_report, stream: stream, ccv_peak: 5000, duration_ms: 18_000_000)
 
         get "/api/v1/channels/#{channel.id}/streams/latest/summary", headers: headers_free
 

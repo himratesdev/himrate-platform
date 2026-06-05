@@ -146,8 +146,11 @@ module Api
 
         trust = Trust::ShowService.new(channel: channel, view: :full, user: current_user).call
 
+        # CR-iter1 MF-1 (PR-A1): preload :post_stream_report for format_stream rendering
+        # (Stream#current_* derive methods hit PSR) — avoids N+1 over recent 5 streams.
+        # `stream_stats` does its own JOIN via Arel; this scope feeds the row-level rendering.
         completed_streams = channel.streams.where.not(ended_at: nil)
-        recent = completed_streams.order(ended_at: :desc).limit(5)
+        recent = completed_streams.includes(:post_stream_report).order(ended_at: :desc).limit(5)
 
         # S2 fix: prefetch TI records for all recent streams in one query (no N+1)
         recent_ti = prefetch_ti_for_streams(recent, channel.id)
@@ -206,13 +209,22 @@ module Api
       end
 
       # W1 fix: single aggregate query instead of 3 separate (count + avg + max)
+      # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns
+      # dropped from streams. For ENDED streams source of truth is post_stream_reports.
+      # CR-iter2 N-2: INNER JOIN (not LEFT) + ccv_avg NOT NULL filter — matches the
+      # symmetric pattern used by Trends::Aggregation::DailyBuilder#ccv_aggregates so
+      # totals reported here equal the daily aggregate sums (mid-race streams without PSR
+      # are correctly excluded from "completed" stats — they show up once PostStreamWorker
+      # finishes).
       def stream_stats(completed_streams, channel)
         agg = completed_streams
+          .joins("INNER JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
+          .where.not(post_stream_reports: { ccv_avg: nil })
           .pick(
-            Arel.sql("COUNT(*)"),
-            Arel.sql("AVG(avg_ccv)"),
-            Arel.sql("MAX(peak_ccv)"),
-            Arel.sql("AVG(duration_ms)")
+            Arel.sql("COUNT(streams.id)"),
+            Arel.sql("AVG(post_stream_reports.ccv_avg)"),
+            Arel.sql("MAX(post_stream_reports.ccv_peak)"),
+            Arel.sql("AVG(post_stream_reports.duration_ms)")
           )
 
         total = agg[0].to_i
@@ -232,12 +244,20 @@ module Api
           %(</a>)
       end
 
+      # CR iter-3 N-1 (PR-A1): align denominator with `stream_stats` total — both report
+      # over the same "completed ended streams with PSR" set so the API response is internally
+      # consistent (no silent divergence between `total_streams` count and the implied
+      # denominator of `streams_per_week`).
       def streams_per_week(channel)
         first_stream = channel.streams.order(:started_at).first
         return nil unless first_stream
 
         weeks = [ (Time.current - first_stream.started_at) / 1.week, 1 ].max
-        total = channel.streams.where.not(ended_at: nil).count
+        total = channel.streams
+                       .where.not(ended_at: nil)
+                       .joins("INNER JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
+                       .where.not(post_stream_reports: { ccv_avg: nil })
+                       .count
         (total.to_f / weeks).round(1)
       end
 
@@ -260,11 +280,13 @@ module Api
       end
 
       def format_stream(stream, ti = nil)
+        # PR-A1: derive from CcvSnapshot (live) / PostStreamReport (ended).
+        duration_ms = stream.current_duration_ms
         {
           date: stream.started_at.iso8601,
-          duration_hours: stream.duration_ms ? (stream.duration_ms / 3_600_000.0).round(1) : nil,
-          peak_ccv: stream.peak_ccv,
-          avg_ccv: stream.avg_ccv,
+          duration_hours: duration_ms ? (duration_ms / 3_600_000.0).round(1) : nil,
+          peak_ccv: stream.current_peak_ccv,
+          avg_ccv: stream.current_avg_ccv,
           ti_score: ti&.trust_index_score&.to_f&.round(1),
           erv_percent: ti&.erv_percent&.to_f&.round(1)
         }

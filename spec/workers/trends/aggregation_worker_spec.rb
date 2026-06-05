@@ -24,10 +24,12 @@ RSpec.describe Trends::AggregationWorker, type: :worker do
     end
 
     it "is idempotent — two sequential runs produce single TDA row" do
-      create(:stream, channel: channel,
-                      started_at: date.beginning_of_day + 2.hours,
-                      ended_at: date.beginning_of_day + 4.hours,
-                      avg_ccv: 100, peak_ccv: 150)
+      # PR-A1: peak_ccv / avg_ccv moved to post_stream_reports.
+      s = create(:stream, channel: channel,
+                          started_at: date.beginning_of_day + 2.hours,
+                          ended_at: date.beginning_of_day + 4.hours)
+      create(:post_stream_report, stream: s, ccv_avg: 100, ccv_peak: 150,
+        generated_at: s.ended_at)
 
       expect {
         2.times { described_class.new.perform(channel.id, date.to_s) }

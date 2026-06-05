@@ -63,10 +63,19 @@ class ChannelBlueprint < Blueprinter::Base
     end
 
     association :recent_streams, blueprint: StreamBlueprint, view: :basic do |channel, _options|
+      # CR-iter1 MF-1 (PR-A1): StreamBlueprint :basic now derives peak_ccv / avg_ccv /
+      # duration_ms via Stream#current_* which reads `post_stream_report`. Preload PSR so
+      # rendering 5 streams ≠ 5 extra SELECTs. (Loaded? branch presumes caller eager-loaded
+      # `channel.streams: :post_stream_report` already; otherwise hits same N+1 — Bullet
+      # raises in development.)
       if channel.streams.loaded?
         channel.streams.select(&:ended_at).sort_by(&:started_at).reverse.first(5)
       else
-        channel.streams.where.not(ended_at: nil).order(started_at: :desc).limit(5)
+        channel.streams
+               .where.not(ended_at: nil)
+               .includes(:post_stream_report)
+               .order(started_at: :desc)
+               .limit(5)
       end
     end
 

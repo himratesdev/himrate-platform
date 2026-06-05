@@ -16,7 +16,12 @@ class StreamerReputationRefreshWorker
     channel = Channel.find_by(id: channel_id)
     return unless channel
 
-    completed = channel.streams.where.not(ended_at: nil).order(ended_at: :desc)
+    # CR iter-3 SF-1 (PR-A1 EPIC SCALE ARCHITECTURE): preload :post_stream_report so the
+    # downstream `s.current_avg_ccv` derive (compute_growth_pattern line 57) reads the
+    # already-loaded association instead of firing one SELECT per stream. Without the
+    # preload, this worker would issue up to 30 PSR SELECTs per stream-end run — same N+1
+    # pattern that iter-1 fixed in StreamsController/ChannelsController/ChannelBlueprint.
+    completed = channel.streams.where.not(ended_at: nil).includes(:post_stream_report).order(ended_at: :desc)
     stream_count = completed.count
     return if stream_count < MIN_STREAMS
 
@@ -46,10 +51,17 @@ class StreamerReputationRefreshWorker
   private
 
   # FR-002: Pearson(CCV_trend, follower_trend). Score = 100 × max(0, r).
+  #
+  # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): stream.avg_ccv column dropped — derive via
+  # Stream#current_avg_ccv which reads PSR.ccv_avg для ENDED streams. recent_streams is
+  # filtered to ended streams upstream (FollowerSnapshot etc rely on ended timing). Any
+  # stream без PSR (mid-PostStreamWorker race) returns nil → excluded by `compact`.
   def compute_growth_pattern(channel, recent_streams)
     return nil if recent_streams.size < MIN_STREAMS
 
-    ccv_trend = recent_streams.reverse.map { |s| s.avg_ccv.to_f }
+    ccv_trend = recent_streams.reverse.map { |s| s.current_avg_ccv&.to_f }.compact
+    return nil if ccv_trend.size < MIN_STREAMS
+
     follower_trend = load_follower_trend(channel, recent_streams)
     return nil if follower_trend.nil? || follower_trend.size != ccv_trend.size
 

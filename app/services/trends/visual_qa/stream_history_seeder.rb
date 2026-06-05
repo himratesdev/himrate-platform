@@ -26,14 +26,21 @@ module Trends
           # Idempotent via (channel_id, started_at). Re-run returns existing stream.
           stream = Stream.find_or_create_by!(channel_id: @channel.id, started_at: started_at) do |s|
             s.ended_at = ended_at
-            s.duration_ms = (ended_at - started_at).to_i * 1000
-            s.peak_ccv = peak_ccv_for(offset)
-            s.avg_ccv = avg_ccv_for(offset)
             s.title = "VQA Stream #{offset + 1}"
             s.game_name = GAME_CYCLE[offset % GAME_CYCLE.size]
             s.language = "en"
             s.is_mature = false
             s.merge_status = "separate"
+          end
+
+          # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns
+          # dropped from streams — seed values into PostStreamReport (source of truth for
+          # ENDED stream stats).
+          PostStreamReport.find_or_create_by!(stream_id: stream.id) do |psr|
+            psr.ccv_peak = peak_ccv_for(offset)
+            psr.ccv_avg = avg_ccv_for(offset)
+            psr.duration_ms = (ended_at - started_at).to_i * 1000
+            psr.generated_at = ended_at
           end
           streams << stream
         end

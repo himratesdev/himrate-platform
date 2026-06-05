@@ -43,4 +43,44 @@ class Stream < ApplicationRecord
 
   scope :active, -> { where(ended_at: nil) }
   scope :for_channel, ->(channel_id) { where(channel_id: channel_id) }
+
+  # PR-A1 (EPIC SCALE ARCHITECTURE): single source of truth for CCV / duration stats.
+  # Previously these were denormalized columns on `streams` updated ONCE at stream-end
+  # by StreamOfflineWorker — broken for live streams (always 0 / nil until end).
+  #
+  # Now derived per source-of-truth:
+  #   - PostStreamReport (ENDED streams, populated by PostStreamWorker) — preferred when present
+  #   - CcvSnapshot live aggregate (LIVE streams + ENDED streams before PostStreamWorker
+  #     completes async PSR creation) — fallback path
+  #
+  # The PSR-first pattern keeps reads stable for closed streams (frozen at PSR-create time)
+  # and lets live and just-ended streams read realtime stats from ccv_snapshots without
+  # waiting for the async pipeline.
+  def current_peak_ccv
+    if ended_at.present?
+      psr_peak = post_stream_report&.ccv_peak
+      return psr_peak.to_i if psr_peak
+    end
+    ccv_snapshots.maximum(:ccv_count).to_i
+  end
+
+  def current_avg_ccv
+    if ended_at.present?
+      psr_avg = post_stream_report&.ccv_avg
+      return psr_avg if psr_avg
+    end
+    avg = ccv_snapshots.average(:ccv_count)
+    avg&.round
+  end
+
+  def current_duration_ms
+    if ended_at.present?
+      psr_duration = post_stream_report&.duration_ms
+      return psr_duration if psr_duration
+
+      ((ended_at - started_at) * 1000).to_i
+    else
+      ((Time.current - started_at) * 1000).to_i
+    end
+  end
 end

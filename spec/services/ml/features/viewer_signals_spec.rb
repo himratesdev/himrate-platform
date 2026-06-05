@@ -4,7 +4,10 @@ require "rails_helper"
 
 RSpec.describe Ml::Features::ViewerSignals do
   let(:channel) { create(:channel) }
-  let(:stream) { create(:stream, channel: channel, avg_ccv: 500, peak_ccv: 800) }
+  # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv columns dropped from streams.
+  # Stats для ENDED streams живут в PostStreamReport — Stream factory больше не принимает
+  # эти атрибуты. Specs создают PSR явно когда им нужны ENDED-stream stats.
+  let(:stream) { create(:stream, channel: channel) }
   let(:viewer) { described_class.new(stream) }
 
   describe "BOT_TIERS" do
@@ -74,11 +77,19 @@ RSpec.describe Ml::Features::ViewerSignals do
   end
 
   describe "#ccv_coefficient_of_variation (longitudinal, last 30 channel streams)" do
+    # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): avg_ccv column dropped from streams. The
+    # ViewerSignals service now joins post_stream_reports for the historical avg series.
+    # Tests build the PSR row explicitly via `create(:post_stream_report, stream:, ccv_avg:)`
+    # after the Stream factory call (factory itself accepts only surviving columns).
     it "computes std/mean of avg_ccv across recent completed streams" do
-      # Need ≥3 historical streams with avg_ccv. Stream provided already counts.
-      stream.update!(ended_at: 1.hour.ago, avg_ccv: 100)
-      create(:stream, channel: channel, ended_at: 2.hours.ago, avg_ccv: 200)
-      create(:stream, channel: channel, ended_at: 3.hours.ago, avg_ccv: 300)
+      # PR-A1: ViewerSignals.ccv_coefficient_of_variation JOINs post_stream_reports.ccv_avg.
+      # Seed PSR rows for the 3 streams (current + 2 historical) to exercise the new path.
+      stream.update!(ended_at: 1.hour.ago)
+      create(:post_stream_report, stream: stream, ccv_avg: 100, generated_at: stream.ended_at)
+      s2 = create(:stream, channel: channel, ended_at: 2.hours.ago)
+      create(:post_stream_report, stream: s2, ccv_avg: 200, generated_at: s2.ended_at)
+      s3 = create(:stream, channel: channel, ended_at: 3.hours.ago)
+      create(:post_stream_report, stream: s3, ccv_avg: 300, generated_at: s3.ended_at)
 
       result = viewer.call
       # mean = 200, variance = ((100-200)² + (200-200)² + (300-200)²) / 3 = 6666.67
@@ -87,7 +98,8 @@ RSpec.describe Ml::Features::ViewerSignals do
     end
 
     it "returns nil with <3 historical streams" do
-      stream.update!(ended_at: 1.hour.ago, avg_ccv: 500)
+      stream.update!(ended_at: 1.hour.ago)
+      create(:post_stream_report, stream: stream, ccv_avg: 500, generated_at: stream.ended_at)
 
       result = viewer.call
       expect(result[:ccv_coefficient_of_variation]).to be_nil

@@ -13,8 +13,12 @@ RSpec.describe "Trust API", type: :request do
 
   before do
     # Create stream + TI history for channel
+    # PR-A1: peak_ccv / avg_ccv dropped from streams — explicit PSR carries the stats.
     stream = create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago,
-      peak_ccv: 5000, avg_ccv: 4000, game_name: "Just Chatting")
+      game_name: "Just Chatting")
+    create(:post_stream_report, stream: stream, ccv_peak: 5000, ccv_avg: 4000,
+      duration_ms: ((stream.ended_at - stream.started_at) * 1000).to_i,
+      generated_at: stream.ended_at)
     create(:trust_index_history,
       channel: channel,
       stream: stream,

@@ -11,9 +11,18 @@ require "rails_helper"
 
 RSpec.describe Streams::ReportService do
   let(:channel) { create(:channel) }
+  # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns
+  # dropped from streams. Stats home is post_stream_reports.
   let(:stream) do
-    create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago,
-                    peak_ccv: 5000, avg_ccv: 4000, duration_ms: 7_200_000, game_name: "Just Chatting")
+    s = create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago,
+                        game_name: "Just Chatting")
+    # NB: this lookup branch tests build_assembled (no PSR) — PSR explicitly NOT created
+    # here so #call routes to the assembled-from-TIH path. Live stats derive from
+    # CcvSnapshot fallback via Stream#current_*.
+    create(:ccv_snapshot, stream: s, timestamp: 2.5.hours.ago, ccv_count: 5000)
+    create(:ccv_snapshot, stream: s, timestamp: 2.hours.ago, ccv_count: 3000)
+    create(:ccv_snapshot, stream: s, timestamp: 1.5.hours.ago, ccv_count: 4000)
+    s
   end
 
   describe "#call (assembled, no PostStreamReport)" do

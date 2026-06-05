@@ -46,7 +46,7 @@ class StreamOfflineWorker
       return
     end
 
-    finalize_stream(stream, source: source)
+    stats = finalize_stream(stream, source: source)
 
     # TASK-024: Tell IrcMonitor to leave this channel's chat
     publish_irc_part(broadcaster_login)
@@ -57,9 +57,13 @@ class StreamOfflineWorker
     # TASK-033 FR-001: Trigger post-stream pipeline (report, notifications, HS, Rating)
     PostStreamWorker.perform_async(stream.id)
 
+    # CR iter-3 N-2 (PR-A1): use the stats Hash we already computed inside finalize_stream
+    # instead of re-deriving via Stream#current_* — `current_peak_ccv` / `current_avg_ccv` /
+    # `current_duration_ms` would fall back to ccv_snapshots aggregates (PSR doesn't exist
+    # yet — PostStreamWorker runs out-of-band) and add ~4 extra queries per stream-end.
     Rails.logger.info(
-      "StreamOfflineWorker: finalized Stream #{stream.id} — peak:#{stream.peak_ccv} " \
-      "avg:#{stream.avg_ccv} duration:#{stream.duration_ms}ms source:#{source} " \
+      "StreamOfflineWorker: finalized Stream #{stream.id} — peak:#{stats[:peak]} " \
+      "avg:#{stats[:avg]} duration:#{stats[:duration]}ms source:#{source} " \
       "interrupted:#{stream.interrupted_at.present?}"
     )
   end
@@ -68,28 +72,36 @@ class StreamOfflineWorker
 
   # TASK-085 FR-020 (ADR-085 D-8a): set interrupted_at если last_ccv_snapshot stale beyond threshold
   # (heuristic detection ungraceful end). Log includes source field for forensic debugging.
+  #
+  # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns dropped
+  # from streams table. Stats derived via Stream#current_peak_ccv / current_avg_ccv /
+  # current_duration_ms reading from CcvSnapshot (live) or PostStreamReport (ended). The
+  # downstream PostStreamWorker reads from ccv_snapshots directly to populate PSR — same
+  # data, single source of truth.
+  #
+  # Returns a Hash with `:peak / :avg / :duration` for the caller's log line — avoids
+  # re-querying ccv_snapshots via Stream#current_* (CR iter-3 N-2).
   def finalize_stream(stream, source:)
-    peak = stream.ccv_snapshots.maximum(:ccv_count) || 0
-    avg = stream.ccv_snapshots.average(:ccv_count)&.round || 0
+    peak = stream.ccv_snapshots.maximum(:ccv_count).to_i
+    avg = stream.ccv_snapshots.average(:ccv_count)&.round
     duration = ((Time.current - stream.started_at) * 1000).to_i
     interrupted_at = compute_interrupted_at(stream)
 
     stream.update!(
       ended_at: Time.current,
-      peak_ccv: peak,
-      avg_ccv: avg,
-      duration_ms: duration,
       interrupted_at: interrupted_at
     )
 
-    return unless interrupted_at
+    if interrupted_at
+      last_ccv = stream.ccv_snapshots.order(timestamp: :desc).first
+      lag_seconds = last_ccv ? (Time.current - last_ccv.timestamp).to_i : nil
+      Rails.logger.info(
+        "StreamOfflineWorker: stream #{stream.id} marked interrupted_at=#{interrupted_at.iso8601} " \
+        "source=#{source} last_ccv_lag=#{lag_seconds}s"
+      )
+    end
 
-    last_ccv = stream.ccv_snapshots.order(timestamp: :desc).first
-    lag_seconds = last_ccv ? (Time.current - last_ccv.timestamp).to_i : nil
-    Rails.logger.info(
-      "StreamOfflineWorker: stream #{stream.id} marked interrupted_at=#{interrupted_at.iso8601} " \
-      "source=#{source} last_ccv_lag=#{lag_seconds}s"
-    )
+    { peak: peak, avg: avg, duration: duration }
   end
 
   def compute_interrupted_at(stream)
