@@ -355,166 +355,34 @@ accessories:
     options:
       memory: 2g
       ulimit: nofile=262144:262144
-  # === BUG-010 Observability Stack ===
-  prometheus:
-    image: prom/prometheus:v3.0.1
-    host: 194.135.85.159
-    port: "127.0.0.1:9090:9090"
-    cmd: --storage.tsdb.retention.time=90d --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles
-    # Deploy iter2 fix: Kamal `directories:` accepts только volumes/directory mounts.
-    # Single config files должны быть в `files:` block (a dir bind mounts EMPTY).
-    files:
-      - prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
-      # TASK-086 FR-030: cleanup-worker safety-net alerting rules (rule_files glob
-      # /etc/prometheus/rules/*.yml in prometheus.yml). Mount each rule file
-      # individually — Kamal `files:` does not glob, `directories:` would mount empty.
-      - prometheus/rules/cleanup_health.yml:/etc/prometheus/rules/cleanup_health.yml
-    directories:
-      - himrate_prometheus:/prometheus
-    options:
-      memory: 1g  # CR S-3: ADR DEC-24 estimate
-      # Container UID 0 — namespace-isolated, internal-only 127.0.0.1 binding
-      # mitigates exposure. Init-container pre-chown pattern для UID matching
-      # tracked в TASK-081.
-      user: "0:0"
-  prometheus-pushgateway:
-    # Push gateway для workflow batch metrics (ephemeral GitHub Actions runners).
-    # ADR DEC-12: workflow steps push здесь, Prometheus scrapes для storage.
-    image: prom/pushgateway:v1.10.0
-    host: 194.135.85.159
-    port: "127.0.0.1:9091:9091"
-    options:
-      memory: 128m  # CR S-3
-  loki:
-    # ADR DEC-15: filesystem boltdb-shipper backend pre-launch (S3 deferred к TASK-080).
-    image: grafana/loki:3.4.1
-    host: 194.135.85.159
-    port: "127.0.0.1:3100:3100"
-    cmd: -config.file=/etc/loki/loki-config.yml
-    files:
-      - loki/loki-config.yml:/etc/loki/loki-config.yml
-    directories:
-      - himrate_loki:/loki
-    options:
-      memory: 512m  # CR S-3
-      # Container UID 0 — namespace-isolated, internal-only binding. Loki
-      # default UID 10001 can't mkdir в named volume. UID matching tracked
-      # в TASK-081 (init-container pre-chown pattern).
-      user: "0:0"
-  promtail:
-    # Ships Docker container logs к Loki via file-based discovery (no Docker socket).
-    # Reads /var/lib/docker/containers/*/*-json.log глоб pattern, extracts container_id
-    # from path. Eliminates need для /var/run/docker.sock mount (Kamal's mkdir -p
-    # fails on existing socket file).
-    # ADR DEC-19: log redaction patterns в config (Bearer/password/PAT/Telegram tokens).
-    image: grafana/promtail:3.4.1
-    host: 194.135.85.159
-    cmd: -config.file=/etc/promtail/promtail-config.yml
-    files:
-      - promtail/promtail-config.yml:/etc/promtail/promtail-config.yml
-    directories:
-      # Read-only access к Docker container log files. Directory mount works
-      # с Kamal mkdir -p (idempotent on existing dir).
-      - /var/lib/docker/containers:/var/lib/docker/containers:ro
-    options:
-      memory: 256m  # CR S-3
-  alertmanager:
-    # ADR FR-066/067: routing tree config — workflow + worker push к /api/v2/alerts here.
-    # Replaces direct Telegram POST. Falls back к direct Telegram если Alertmanager down (FR-073).
-    #
-    # CR M-1/M-2 fix: Alertmanager YAML config doesn't expand env vars natively.
-    # cmd uses sh+sed (busybox в alertmanager image base) to substitute __PLACEHOLDER__
-    # markers с runtime env values, then exec alertmanager. Generated config to /tmp.
-    # Pattern: build-for-years, no Docker secrets dependency, no init container.
-    image: prom/alertmanager:v0.27.0
-    host: 194.135.85.159
-    port: "127.0.0.1:9093:9093"
-    # Deploy iter1 fix: Kamal accessory cmd accepts string only (not array).
-    # Script file mounted к /usr/local/bin/entrypoint.sh handles substitution +
-    # alertmanager exec. Alpine sh runs script, env vars from `env: secret:` block.
-    # cmd removed — using options.entrypoint override instead. Reason: Kamal cmd
-    # translates к Docker CMD, which gets passed как arguments к Docker ENTRYPOINT
-    # (/bin/alertmanager). Result: alertmanager treats script path как flag, errors.
-    # Override ENTRYPOINT itself через options.entrypoint, then container runs script.
-    env:
-      secret:
-        - TELEGRAM_OPS_BOT_TOKEN
-        - TELEGRAM_CRITICAL_CHAT_ID
-        - TELEGRAM_OPS_CHAT_ID
-        - TELEGRAM_INFO_CHAT_ID
-    files:
-      - alertmanager/alertmanager.yml.tmpl:/etc/alertmanager/alertmanager.yml.tmpl
-      - alertmanager/entrypoint.sh:/usr/local/bin/entrypoint.sh
-    directories:
-      - himrate_alertmanager:/alertmanager
-    options:
-      memory: 256m  # CR S-3
-      entrypoint: /usr/local/bin/entrypoint.sh
-      # Container UID 0 — namespace-isolated, internal-only binding. UID matching
-      # tracked в TASK-081 (init-container pre-chown pattern).
-      user: "0:0"
-  grafana:
-    # ADR FR-034..037, FR-075..082: SSO Google OIDC + basic auth fallback + provisioning.
-    # Web UI на grafana.himrate.com через kamal proxy SSL.
-    # 7 dashboards provisioned from grafana/dashboards/*.json (Drift Trend, Operations
-    # Frequency, MTTR, Accessory Health Overview, Logs Explorer, Cost Attribution, Cleanup Health).
-    image: grafana/grafana-oss:11.4.0
-    host: 194.135.85.159
-    # PG W-1 fix: bind 127.0.0.1:3000 (internal-only). Eliminates risk window
-    # between deploy и CF proxy setup. Pre-public-access via SSH tunnel.
-    port: "127.0.0.1:3000:3000"
-    env:
-      secret:
-        # Hotfix #7 (DV finding #5): Kamal `clear:` env block НЕ expand `$VAR`.
-        # Pass secrets как-is через `secret:` block, entrypoint.sh maps к GF_* names.
-        - GRAFANA_ADMIN_USER
-        - GRAFANA_ADMIN_PASSWORD
-        - GRAFANA_OIDC_CLIENT_ID
-        - GRAFANA_OIDC_CLIENT_SECRET
-      clear:
-        GF_SERVER_ROOT_URL: https://grafana.himrate.com
-        GF_SERVER_DOMAIN: grafana.himrate.com
-        # Google OIDC SSO settings (non-secret values)
-        GF_AUTH_GENERIC_OAUTH_ENABLED: "true"
-        GF_AUTH_GENERIC_OAUTH_NAME: Google
-        GF_AUTH_GENERIC_OAUTH_SCOPES: openid profile email
-        GF_AUTH_GENERIC_OAUTH_AUTH_URL: https://accounts.google.com/o/oauth2/v2/auth
-        GF_AUTH_GENERIC_OAUTH_TOKEN_URL: https://oauth2.googleapis.com/token
-        GF_AUTH_GENERIC_OAUTH_API_URL: https://openidconnect.googleapis.com/v1/userinfo
-        GF_AUTH_GENERIC_OAUTH_AUTO_LOGIN: "false"
-        GF_AUTH_GENERIC_OAUTH_ALLOWED_DOMAINS: himrate.com
-        GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "'Admin'"
-        # CR N-3: Auto-create users as Admin acceptable pre-launch.
-        GF_USERS_AUTO_ASSIGN_ORG_ROLE: Admin
-        # CR S-2: Auth brute force protection (ADR DEC-8).
-        GF_AUTH_BASIC_ENABLED: "true"
-        GF_AUTH_BRUTE_FORCE_LOGIN_PROTECTION_ENABLED: "true"
-        GF_AUTH_BRUTE_FORCE_LOGIN_PROTECTION_MAX_ATTEMPTS: "5"
-    files:
-      # Hotfix #7 (DV finding #7): Kamal `directories: ./grafana/provisioning` mount
-      # creates EMPTY dir (does NOT copy local content). Mount each provisioning file
-      # individually via `files:` block. Same для dashboard JSONs.
-      - grafana/entrypoint.sh:/usr/local/bin/grafana-entrypoint.sh
-      - grafana/provisioning/datasources/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
-      - grafana/provisioning/dashboards/dashboards.yml:/etc/grafana/provisioning/dashboards/dashboards.yml
-      - grafana/dashboards/drift_trend.json:/var/lib/grafana/dashboards/drift_trend.json
-      - grafana/dashboards/operations_frequency.json:/var/lib/grafana/dashboards/operations_frequency.json
-      - grafana/dashboards/mttr.json:/var/lib/grafana/dashboards/mttr.json
-      - grafana/dashboards/accessory_health_overview.json:/var/lib/grafana/dashboards/accessory_health_overview.json
-      - grafana/dashboards/logs_explorer.json:/var/lib/grafana/dashboards/logs_explorer.json
-      - grafana/dashboards/cost_attribution.json:/var/lib/grafana/dashboards/cost_attribution.json
-      # TASK-086 FR-040: cleanup-worker health dashboard (deleted-per-table, run
-      # duration, table row counts, consecutive errors, last-run age, audit-insert failures).
-      - grafana/dashboards/cleanup_health.json:/var/lib/grafana/dashboards/cleanup_health.json
-    directories:
-      - himrate_grafana:/var/lib/grafana
-    options:
-      memory: 512m  # CR S-3: ADR DEC-24 estimate
-      # Container UID 0 — namespace-isolated, internal-only 127.0.0.1 binding.
-      # UID matching tracked в TASK-081 (init-container pre-chown pattern).
-      user: "0:0"
-      # Hotfix #7 (DV finding #5): entrypoint script maps GRAFANA_* secrets к GF_* env names.
-      entrypoint: /usr/local/bin/grafana-entrypoint.sh
+  # === Observability Stack DISABLED — PR-B2 (EPIC SCALE ARCHITECTURE Step 6) ===
+  #
+  # Disabled 2026-06-06 to reduce VPS compute box pressure (load avg 20-30 on 3 vCPU,
+  # CPU 0% idle baseline). 6 observability containers were eating ~480 MiB RAM + 6
+  # parallel disk writers competing with Sidekiq + ClickHouse + PG for I/O bandwidth.
+  #
+  # End-state per `_tasks/EPIC-SCALE-ARCHITECTURE/CONTEXT.md` §2: observability MUST
+  # NEVER live on the compute box. Migration target (PO decision deferred to PR-B2.1
+  # follow-up):
+  #   Option A (Recommended): Grafana Cloud hosted (free tier <10k samples + paid beyond)
+  #   Option B: Dedicated obs-VPS (small Hetzner CX21 ~€5/mo, Prometheus/Grafana/Loki self-host)
+  #
+  # Sentry already covers error tracking (hosted). Logs are temporarily reachable via
+  # `docker logs <container>` on staging until observability tier provisioned.
+  #
+  # Previous accessories (full config history in `git log -p config/deploy.yml`):
+  #   - prometheus (v3.0.1, 1 GiB cap, tsdb 90d retention)
+  #   - prometheus-pushgateway (v1.10.0, 128 MiB cap)
+  #   - loki (v3.4.1, 512 MiB cap, boltdb-shipper backend)
+  #   - promtail (v3.4.1, 256 MiB cap, log shipper to Loki)
+  #   - alertmanager (v0.27.0, default cap, Telegram routing)
+  #   - grafana (latest, 512 MiB cap, dashboards + alerting UI)
+  #
+  # Post-deploy of PR-B2: containers must be manually stopped+removed on staging VPS
+  # (Kamal does not auto-clean accessory containers when accessory block removed).
+  # DV step runs: `kamal accessory remove <name> -d staging` for each, OR manual
+  # `docker rm -f himrate-{prometheus,prometheus-pushgateway,loki,promtail,alertmanager,grafana}`.
+  #
 
   # TASK-110 v1.2 (CR M-2/M-3 fix 2026-05-20): whisper.cpp HTTP server для clip transcripts.
   # Replaces OpenAI Whisper API per PO cost=$0 Day-0 directive (ADR-110 v1.1 SA-2 swap A→B).
