@@ -210,11 +210,16 @@ module Api
 
       # W1 fix: single aggregate query instead of 3 separate (count + avg + max)
       # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns
-      # dropped from streams. For ENDED streams (the only ones counted here — completed_streams
-      # filters by ended_at NOT NULL) source of truth is post_stream_reports.
+      # dropped from streams. For ENDED streams source of truth is post_stream_reports.
+      # CR-iter2 N-2: INNER JOIN (not LEFT) + ccv_avg NOT NULL filter — matches the
+      # symmetric pattern used by Trends::Aggregation::DailyBuilder#ccv_aggregates so
+      # totals reported here equal the daily aggregate sums (mid-race streams without PSR
+      # are correctly excluded from "completed" stats — they show up once PostStreamWorker
+      # finishes).
       def stream_stats(completed_streams, channel)
         agg = completed_streams
-          .joins("LEFT JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
+          .joins("INNER JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
+          .where.not(post_stream_reports: { ccv_avg: nil })
           .pick(
             Arel.sql("COUNT(streams.id)"),
             Arel.sql("AVG(post_stream_reports.ccv_avg)"),

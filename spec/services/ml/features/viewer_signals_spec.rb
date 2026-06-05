@@ -79,8 +79,8 @@ RSpec.describe Ml::Features::ViewerSignals do
   describe "#ccv_coefficient_of_variation (longitudinal, last 30 channel streams)" do
     # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): avg_ccv column dropped from streams. The
     # ViewerSignals service now joins post_stream_reports for the historical avg series.
-    # Tests build the PSR row explicitly (the Stream factory's transient peak_ccv/avg_ccv
-    # auto-creates PSR — and `stream.update!` works for ended_at which IS still a column).
+    # Tests build the PSR row explicitly via `create(:post_stream_report, stream:, ccv_avg:)`
+    # after the Stream factory call (factory itself accepts only surviving columns).
     it "computes std/mean of avg_ccv across recent completed streams" do
       # PR-A1: ViewerSignals.ccv_coefficient_of_variation JOINs post_stream_reports.ccv_avg.
       # Seed PSR rows for the 3 streams (current + 2 historical) to exercise the new path.

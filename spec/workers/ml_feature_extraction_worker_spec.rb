@@ -59,9 +59,8 @@ RSpec.describe MlFeatureExtractionWorker do
       3.times { |i| create(:chatters_snapshot, stream: stream, unique_chatters_count: 50, timestamp: (5 - i).minutes.ago) }
       # CR-iter1 MF-3 (PR-A1, EPIC SCALE ARCHITECTURE Step 2): Stream.avg_ccv column dropped.
       # avg_ccv now sourced from post_stream_reports.ccv_avg via INNER JOIN in ViewerSignals.
-      # `stream.update!` no longer accepts avg_ccv → create PSR explicitly for current stream;
-      # historical-stream factory transient (spec/factories/streams.rb) auto-builds PSR when
-      # avg_ccv: is passed, so the 29.times loop below works unchanged.
+      # `stream.update!` no longer accepts avg_ccv → create PSR explicitly for current stream
+      # AND for each of the 29 historical streams (Stream factory accepts only surviving cols).
       stream.update!(ended_at: Time.current)
       create(:post_stream_report, stream: stream, ccv_avg: 500, ccv_peak: 500,
         duration_ms: ((stream.ended_at - stream.started_at) * 1000).to_i,

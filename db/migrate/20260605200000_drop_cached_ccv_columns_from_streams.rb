@@ -16,8 +16,9 @@
 # this PR) read from those sources, so callers always get a correct value
 # without write-amplification on every CCV snapshot insert.
 #
-# Reversible: `down` recreates the columns empty. If a production rollback is required
-# AND historical data must be restored into the columns, run a manual backfill via the
+# Reversible: `down` recreates the columns with their defaults (`peak_ccv: 0`,
+# `avg_ccv: NULL`, `duration_ms: NULL`). If a production rollback is required AND
+# historical data must be restored into the columns, run a manual backfill via the
 # Rails console:
 #
 #   Stream.find_each do |s|
