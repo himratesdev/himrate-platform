@@ -4,8 +4,9 @@
 # Maps DB columns → business-friendly API field aliases (peak_viewers, duration_text, etc.).
 # Internal DB keeps actual column names (ccv_peak, duration_ms, erv_final, game_name).
 #
-# Source: post_stream_reports table (joined через streams.includes(:post_stream_report)).
-# Fallback: streams.peak_ccv / avg_ccv если post_stream_report nil (preliminary state EC-5).
+# Source: post_stream_reports table for ENDED streams, CcvSnapshot aggregates for LIVE
+# streams (PR-A1 EPIC SCALE ARCHITECTURE Step 2 — streams.peak_ccv / avg_ccv / duration_ms
+# columns dropped, derived via Stream#current_peak_ccv / current_avg_ccv / current_duration_ms).
 
 class StreamSummaryBlueprint < Blueprinter::Base
   identifier :id, name: :session_id
@@ -27,11 +28,11 @@ class StreamSummaryBlueprint < Blueprinter::Base
   end
 
   field :peak_viewers do |stream|
-    stream.post_stream_report&.ccv_peak || stream.peak_ccv
+    stream.current_peak_ccv
   end
 
   field :avg_ccv do |stream|
-    stream.post_stream_report&.ccv_avg || stream.avg_ccv
+    stream.current_avg_ccv
   end
 
   field :erv_percent_final do |stream|
@@ -51,7 +52,9 @@ class StreamSummaryBlueprint < Blueprinter::Base
   end
 
   def self.duration_seconds_for(stream)
-    return stream.duration_ms / 1000 if stream.duration_ms
+    duration_ms = stream.current_duration_ms
+    return duration_ms / 1000 if duration_ms
+
     return nil unless stream.started_at && stream.ended_at
 
     (stream.ended_at - stream.started_at).to_i

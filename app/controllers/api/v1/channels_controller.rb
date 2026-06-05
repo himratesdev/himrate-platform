@@ -206,13 +206,17 @@ module Api
       end
 
       # W1 fix: single aggregate query instead of 3 separate (count + avg + max)
+      # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns
+      # dropped from streams. For ENDED streams (the only ones counted here — completed_streams
+      # filters by ended_at NOT NULL) source of truth is post_stream_reports.
       def stream_stats(completed_streams, channel)
         agg = completed_streams
+          .joins("LEFT JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
           .pick(
-            Arel.sql("COUNT(*)"),
-            Arel.sql("AVG(avg_ccv)"),
-            Arel.sql("MAX(peak_ccv)"),
-            Arel.sql("AVG(duration_ms)")
+            Arel.sql("COUNT(streams.id)"),
+            Arel.sql("AVG(post_stream_reports.ccv_avg)"),
+            Arel.sql("MAX(post_stream_reports.ccv_peak)"),
+            Arel.sql("AVG(post_stream_reports.duration_ms)")
           )
 
         total = agg[0].to_i
@@ -260,11 +264,13 @@ module Api
       end
 
       def format_stream(stream, ti = nil)
+        # PR-A1: derive from CcvSnapshot (live) / PostStreamReport (ended).
+        duration_ms = stream.current_duration_ms
         {
           date: stream.started_at.iso8601,
-          duration_hours: stream.duration_ms ? (stream.duration_ms / 3_600_000.0).round(1) : nil,
-          peak_ccv: stream.peak_ccv,
-          avg_ccv: stream.avg_ccv,
+          duration_hours: duration_ms ? (duration_ms / 3_600_000.0).round(1) : nil,
+          peak_ccv: stream.current_peak_ccv,
+          avg_ccv: stream.current_avg_ccv,
           ti_score: ti&.trust_index_score&.to_f&.round(1),
           erv_percent: ti&.erv_percent&.to_f&.round(1)
         }

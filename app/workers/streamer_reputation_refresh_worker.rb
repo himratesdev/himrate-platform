@@ -46,10 +46,17 @@ class StreamerReputationRefreshWorker
   private
 
   # FR-002: Pearson(CCV_trend, follower_trend). Score = 100 × max(0, r).
+  #
+  # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): stream.avg_ccv column dropped — derive via
+  # Stream#current_avg_ccv which reads PSR.ccv_avg для ENDED streams. recent_streams is
+  # filtered to ended streams upstream (FollowerSnapshot etc rely on ended timing). Any
+  # stream без PSR (mid-PostStreamWorker race) returns nil → excluded by `compact`.
   def compute_growth_pattern(channel, recent_streams)
     return nil if recent_streams.size < MIN_STREAMS
 
-    ccv_trend = recent_streams.reverse.map { |s| s.avg_ccv.to_f }
+    ccv_trend = recent_streams.reverse.map { |s| s.current_avg_ccv&.to_f }.compact
+    return nil if ccv_trend.size < MIN_STREAMS
+
     follower_trend = load_follower_trend(channel, recent_streams)
     return nil if follower_trend.nil? || follower_trend.size != ccv_trend.size
 

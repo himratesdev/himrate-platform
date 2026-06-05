@@ -74,9 +74,14 @@ RSpec.describe Ml::Features::ViewerSignals do
   end
 
   describe "#ccv_coefficient_of_variation (longitudinal, last 30 channel streams)" do
+    # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): avg_ccv column dropped from streams. The
+    # ViewerSignals service now joins post_stream_reports for the historical avg series.
+    # Tests build the PSR row explicitly (the Stream factory's transient peak_ccv/avg_ccv
+    # auto-creates PSR — and `stream.update!` works for ended_at which IS still a column).
     it "computes std/mean of avg_ccv across recent completed streams" do
-      # Need ≥3 historical streams with avg_ccv. Stream provided already counts.
-      stream.update!(ended_at: 1.hour.ago, avg_ccv: 100)
+      # Need ≥3 historical streams with avg via PSR. Stream provided already counts.
+      stream.update!(ended_at: 1.hour.ago)
+      PostStreamReport.find_or_create_by!(stream_id: stream.id) { |p| p.ccv_avg = 100; p.generated_at = stream.ended_at }
       create(:stream, channel: channel, ended_at: 2.hours.ago, avg_ccv: 200)
       create(:stream, channel: channel, ended_at: 3.hours.ago, avg_ccv: 300)
 
@@ -87,7 +92,8 @@ RSpec.describe Ml::Features::ViewerSignals do
     end
 
     it "returns nil with <3 historical streams" do
-      stream.update!(ended_at: 1.hour.ago, avg_ccv: 500)
+      stream.update!(ended_at: 1.hour.ago)
+      PostStreamReport.find_or_create_by!(stream_id: stream.id) { |p| p.ccv_avg = 500; p.generated_at = stream.ended_at }
 
       result = viewer.call
       expect(result[:ccv_coefficient_of_variation]).to be_nil

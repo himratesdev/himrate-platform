@@ -32,7 +32,7 @@ RSpec.describe Streams::LatestSummaryService do
       expect(result[:data][:session_id]).to eq(stream.id)
       expect(result[:data][:duration_seconds]).to eq(18_000)
       expect(result[:data][:duration_text]).to be_present
-      expect(result[:data][:peak_viewers]).to eq(5234)  # PSR overrides streams.peak_ccv
+      expect(result[:data][:peak_viewers]).to eq(5234)  # PR-A1: PSR.ccv_peak is canonical source
       expect(result[:data][:avg_ccv]).to eq(3650)
       expect(result[:data][:erv_percent_final]).to be_within(0.1).of(85.5)
       expect(result[:data][:erv_count_final]).to eq(4200)

@@ -11,10 +11,11 @@
 #
 # CR-iter1 MF-1: closure goes through StreamOfflineWorker (same payload shape used by
 # MonitoredLiveDetectorWorker line 119-122 "live_detector" source) so finalize_stream
-# populates peak_ccv / avg_ccv / duration_ms, interrupted_at evaluation runs, and
-# BotScoringWorker + PostStreamWorker are enqueued. StreamOfflineWorker's idempotency guards
-# (stream_offline_worker.rb:33-37) make concurrent close paths (EventSub / live_detector /
-# stale_sweep) safe to overlap.
+# sets ended_at / interrupted_at, then BotScoringWorker + PostStreamWorker are enqueued
+# (PostStreamWorker populates the canonical post_stream_reports row with ccv_peak / ccv_avg /
+# duration_ms — PR-A1, EPIC SCALE ARCHITECTURE Step 2 — Stream cached columns removed).
+# StreamOfflineWorker's idempotency guards (stream_offline_worker.rb:33-37) make concurrent
+# close paths (EventSub / live_detector / stale_sweep) safe to overlap.
 
 class StaleStreamSweepWorker
   include Sidekiq::Job

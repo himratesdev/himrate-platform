@@ -43,7 +43,10 @@ module Trends
             tih.classification = classification
             tih.cold_start_status = "full"
             tih.erv_percent = erv.round(2)
-            tih.ccv = stream.avg_ccv
+            # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): stream.avg_ccv column dropped — derive
+            # via Stream#current_avg_ccv (reads PSR.ccv_avg для ended streams; the sibling
+            # StreamHistorySeeder creates the PSR row in the same seeding flow).
+            tih.ccv = stream.current_avg_ccv
             tih.signal_breakdown = build_signal_breakdown(idx, total)
             tih.calculated_at = stream.ended_at
           end

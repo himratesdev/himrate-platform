@@ -19,7 +19,9 @@ class PostStreamNotificationService
       merged_parts_count: stream.merged_parts_count,
       ti_score: report&.trust_index_final&.to_f,
       erv_percent: report&.erv_percent_final&.to_f,
-      duration_ms: stream.duration_ms,
+      # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): stream.duration_ms column dropped —
+      # derive via Stream#current_duration_ms (PSR.duration_ms для ended streams).
+      duration_ms: stream.current_duration_ms,
       timestamp: Time.current.iso8601
     }
 

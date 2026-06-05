@@ -23,7 +23,7 @@ RSpec.describe "Streams API", type: :request do
         channel: channel, stream: stream,
         trust_index_score: 75.0 - (i * 5),
         erv_percent: 75.0 - (i * 5),
-        ccv: stream.peak_ccv,
+        ccv: stream.current_peak_ccv, # PR-A1: derived (PSR.ccv_peak)
         classification: "needs_review",
         cold_start_status: "full",
         calculated_at: stream.ended_at)

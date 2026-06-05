@@ -172,13 +172,23 @@ class PostStreamWorker
                   )
     end
 
+    # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns dropped
+    # from streams. Source of truth for these stats moves into PSR itself, computed from
+    # CcvSnapshot at PSR-create time (was previously written into streams by
+    # StreamOfflineWorker then re-read here — same data, redundant column).
+    peak = stream.ccv_snapshots.maximum(:ccv_count).to_i
+    avg = stream.ccv_snapshots.average(:ccv_count)&.round
+    duration = if stream.ended_at
+      ((stream.ended_at - stream.started_at) * 1000).to_i
+    end
+
     attrs = {
       trust_index_final: ti_history&.trust_index_score,
       erv_percent_final: ti_history&.erv_percent,
       erv_final: erv_data&.dig(:erv_count),
-      ccv_peak: stream.peak_ccv,
-      ccv_avg: stream.avg_ccv,
-      duration_ms: stream.duration_ms,
+      ccv_peak: peak,
+      ccv_avg: avg,
+      duration_ms: duration,
       signals_summary: signals_summary,
       anomalies: anomalies_data,
       generated_at: Time.current

@@ -5,8 +5,9 @@
 # Data sources:
 # - CcvSnapshot (per-minute ccv polling per stream — TASK-025)
 # - ChattersSnapshot (per-minute auth chatter count per stream — TASK-025)
-# - Stream.avg_ccv / Stream.peak_ccv (pre-computed during stream lifecycle)
-# - For longitudinal "30-stream CV" — channel.streams (last 30 completed)
+# - PostStreamReport.ccv_avg / ccv_peak (PR-A1: replaced Stream.avg_ccv / peak_ccv columns
+#   which are now dropped — single source of truth for ENDED stream stats lives in PSR)
+# - For longitudinal "30-stream CV" — channel.streams JOIN post_stream_reports (last 30 completed)
 #
 # Per-feature cold-start: returns nil if source data insufficient. LightGBM trees handle
 # NULL natively via missing-value splits.
@@ -90,12 +91,18 @@ module Ml
         # Last 30 completed streams of the channel — extractor runs from PostStreamWorker
         # *after* the current stream's ended_at is set, so the current stream is naturally
         # included in this scope. No separate "current vs prior" branch needed.
+        #
+        # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): pluck moved from streams.avg_ccv (column
+        # dropped) to post_stream_reports.ccv_avg via INNER JOIN. Streams without PSR (e.g.
+        # mid-PostStreamWorker race) excluded automatically — they wouldn't have valid avg
+        # anyway.
         recent = @stream.channel
                         .streams
+                        .joins("INNER JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
                         .where.not(ended_at: nil)
                         .order(ended_at: :desc)
                         .limit(LONGITUDINAL_STREAMS_WINDOW)
-                        .pluck(:avg_ccv)
+                        .pluck("post_stream_reports.ccv_avg")
                         .compact
                         .map(&:to_f)
 
