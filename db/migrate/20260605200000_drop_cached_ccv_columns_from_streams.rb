@@ -34,18 +34,14 @@
 
 class DropCachedCcvColumnsFromStreams < ActiveRecord::Migration[8.0]
   def up
-    safety_assured do
-      remove_column :streams, :peak_ccv
-      remove_column :streams, :avg_ccv
-      remove_column :streams, :duration_ms
-    end
+    remove_column :streams, :peak_ccv
+    remove_column :streams, :avg_ccv
+    remove_column :streams, :duration_ms
   end
 
   def down
-    safety_assured do
-      add_column :streams, :peak_ccv, :integer, default: 0, null: false
-      add_column :streams, :avg_ccv, :integer
-      add_column :streams, :duration_ms, :bigint
-    end
+    add_column :streams, :peak_ccv, :integer, default: 0, null: false
+    add_column :streams, :avg_ccv, :integer
+    add_column :streams, :duration_ms, :bigint
   end
 end
