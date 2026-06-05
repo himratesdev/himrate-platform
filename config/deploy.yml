@@ -105,7 +105,7 @@ servers:
   # 27× slower than designed 18k j/hr. 4.5% BSW coverage in TIH = unacceptable.
   #
   # Workers on :bot_scoring queue = BotScoringWorker (sole) + LiveBotScoringWorker
-  # (enqueuer scheduler, runs from default :job role). Job profile: ~1-3 sec each
+  # (cron-scheduled enqueuer, also runs from this role on :bot_scoring). Job profile: ~1-3 sec each
   # (CH chat read + per-user feature extraction + classification). c=3 dedicated
   # threads × 1 j/2sec = 1.5 j/s = 5400 j/hr drain capacity. Enqueue rate per
   # PR #282 comment = LiveBotScoringWorker */30min × 300 streams = 600 j/hr.
@@ -297,11 +297,12 @@ accessories:
     #   2.7 GiB buff/cache steady-state post-Step-1-and-2 cleanup; conservative
     #   1 GiB leaves headroom for container/sidekiq cache + future growth).
     # - work_mem=16MB: per-query operation budget. Current realistic peak ≈
-    #   21 Sidekiq threads (job=5 + whisper=1 + stream=3 + signal_compute=5 +
-    #   signals=5 + monitoring=2) + ~10 web (Puma WEB_CONCURRENCY=2 × ~5 threads) +
-    #   headroom = ~50 active connections × 16 MB ≈ 800 MiB peak. NOTE: PG
-    #   `max_connections` stays at default 100 — theoretical max if fully saturated
-    #   = 1.6 GiB (e.g. ad-hoc rails console + full Sidekiq + irc). Acceptable.
+    #   26 Sidekiq threads (job=5 + whisper=1 + stream=3 + signal_compute=5 +
+    #   signals=5 + monitoring=4 + bot_scoring=3) + ~10 web (Puma WEB_CONCURRENCY=2
+    #   × ~5 threads) + headroom = ~55 active connections × 16 MB ≈ 880 MiB peak.
+    #   NOTE: PG `max_connections` stays at default 100 — theoretical max if fully
+    #   saturated = 1.6 GiB (e.g. ad-hoc rails console + full Sidekiq + irc).
+    #   Acceptable.
     # - maintenance_work_mem=64MB: VACUUM/CREATE INDEX budget; small DB so 64 MiB
     #   sufficient (avoids reserve for autovacuum spikes).
     #
