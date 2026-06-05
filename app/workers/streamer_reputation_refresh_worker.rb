@@ -16,7 +16,12 @@ class StreamerReputationRefreshWorker
     channel = Channel.find_by(id: channel_id)
     return unless channel
 
-    completed = channel.streams.where.not(ended_at: nil).order(ended_at: :desc)
+    # CR iter-3 SF-1 (PR-A1 EPIC SCALE ARCHITECTURE): preload :post_stream_report so the
+    # downstream `s.current_avg_ccv` derive (compute_growth_pattern line 57) reads the
+    # already-loaded association instead of firing one SELECT per stream. Without the
+    # preload, this worker would issue up to 30 PSR SELECTs per stream-end run — same N+1
+    # pattern that iter-1 fixed in StreamsController/ChannelsController/ChannelBlueprint.
+    completed = channel.streams.where.not(ended_at: nil).includes(:post_stream_report).order(ended_at: :desc)
     stream_count = completed.count
     return if stream_count < MIN_STREAMS
 

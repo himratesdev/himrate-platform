@@ -244,12 +244,20 @@ module Api
           %(</a>)
       end
 
+      # CR iter-3 N-1 (PR-A1): align denominator with `stream_stats` total — both report
+      # over the same "completed ended streams with PSR" set so the API response is internally
+      # consistent (no silent divergence between `total_streams` count and the implied
+      # denominator of `streams_per_week`).
       def streams_per_week(channel)
         first_stream = channel.streams.order(:started_at).first
         return nil unless first_stream
 
         weeks = [ (Time.current - first_stream.started_at) / 1.week, 1 ].max
-        total = channel.streams.where.not(ended_at: nil).count
+        total = channel.streams
+                       .where.not(ended_at: nil)
+                       .joins("INNER JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
+                       .where.not(post_stream_reports: { ccv_avg: nil })
+                       .count
         (total.to_f / weeks).round(1)
       end
 
