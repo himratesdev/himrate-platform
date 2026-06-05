@@ -34,15 +34,26 @@
 # event — preserving the option without baking a one-shot helper into the codebase.
 
 class DropCachedCcvColumnsFromStreams < ActiveRecord::Migration[8.0]
+  # PG iter-1 WARNING-1: collapse three sequential `remove_column` calls into one
+  # `ALTER TABLE ... DROP COLUMN ..., DROP COLUMN ..., DROP COLUMN ...` so PG acquires
+  # ACCESS EXCLUSIVE on `streams` exactly once. Three separate ALTERs would queue any
+  # concurrent reader/writer behind 3 lock cycles; single ALTER drops to one cycle.
+  # `streams` is a hot row-source — minimising lock surface matters at scale.
   def up
-    remove_column :streams, :peak_ccv
-    remove_column :streams, :avg_ccv
-    remove_column :streams, :duration_ms
+    execute <<~SQL
+      ALTER TABLE streams
+        DROP COLUMN peak_ccv,
+        DROP COLUMN avg_ccv,
+        DROP COLUMN duration_ms
+    SQL
   end
 
   def down
-    add_column :streams, :peak_ccv, :integer, default: 0, null: false
-    add_column :streams, :avg_ccv, :integer
-    add_column :streams, :duration_ms, :bigint
+    execute <<~SQL
+      ALTER TABLE streams
+        ADD COLUMN peak_ccv integer NOT NULL DEFAULT 0,
+        ADD COLUMN avg_ccv integer,
+        ADD COLUMN duration_ms bigint
+    SQL
   end
 end
