@@ -15,9 +15,13 @@ module Api
       def index
         authorize @channel, :view_streams?
 
+        # CR-iter1 MF-1 (PR-A1): preload :post_stream_report so Stream#current_peak_ccv /
+        # current_avg_ccv / current_duration_ms (called per-row from stream_summary) hit the
+        # already-loaded association rather than firing one SELECT per stream. Without this,
+        # rendering 50 streams = 50 PSR SELECTs — N+1 regression vs the pre-PR-A1 column read.
         streams = @channel.streams
                           .where.not(ended_at: nil)
-                          .includes(:trust_index_histories)
+                          .includes(:trust_index_histories, :post_stream_report)
                           .order(started_at: :desc)
 
         page = [ (params[:page] || 1).to_i, 1 ].max

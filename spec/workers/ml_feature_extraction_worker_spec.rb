@@ -57,7 +57,18 @@ RSpec.describe MlFeatureExtractionWorker do
       # → ViewerSignals returns 4 numeric features.
       3.times { |i| create(:ccv_snapshot, stream: stream, ccv_count: 500, timestamp: (5 - i).minutes.ago) }
       3.times { |i| create(:chatters_snapshot, stream: stream, unique_chatters_count: 50, timestamp: (5 - i).minutes.ago) }
-      stream.update!(ended_at: Time.current, avg_ccv: 500)
+      # CR-iter1 MF-3 (PR-A1, EPIC SCALE ARCHITECTURE Step 2): Stream.avg_ccv column dropped.
+      # avg_ccv now sourced from post_stream_reports.ccv_avg via INNER JOIN in ViewerSignals.
+      # `stream.update!` no longer accepts avg_ccv → create PSR explicitly for current stream;
+      # historical-stream factory transient (spec/factories/streams.rb) auto-builds PSR when
+      # avg_ccv: is passed, so the 29.times loop below works unchanged.
+      stream.update!(ended_at: Time.current)
+      PostStreamReport.find_or_create_by!(stream_id: stream.id) do |psr|
+        psr.ccv_avg = 500
+        psr.ccv_peak = 500
+        psr.duration_ms = ((stream.ended_at - stream.started_at) * 1000).to_i
+        psr.generated_at = stream.ended_at
+      end
       29.times { |i| create(:stream, channel: stream.channel, ended_at: (i + 1).hours.ago, avg_ccv: 500) }
 
       # PR3: stub ChatQueries with sufficient aggregates so ChatSignals reports

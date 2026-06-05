@@ -4,9 +4,18 @@ require "rails_helper"
 
 RSpec.describe PostStreamWorker do
   let(:channel) { create(:channel) }
-  let(:stream) { create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago, peak_ccv: 5000, avg_ccv: 4000, duration_ms: 7_200_000) }
+  let(:stream) { create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago) }
 
+  # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv columns dropped — PostStreamWorker
+  # now derives ccv_peak / ccv_avg from CcvSnapshot aggregates при PSR creation. Tests provide
+  # snapshot data via factory rather than relying on the (now non-existent) Stream cache columns.
+  # mean(5000, 3000) = 4000 → ccv_avg=4000, max=5000 → ccv_peak=5000 (preserves the
+  # pre-PR-A1 numerics, just sourced from the right table).
   before do
+    create(:ccv_snapshot, stream: stream, timestamp: 2.5.hours.ago, ccv_count: 3000)
+    create(:ccv_snapshot, stream: stream, timestamp: 2.hours.ago, ccv_count: 5000)
+    create(:ccv_snapshot, stream: stream, timestamp: 1.5.hours.ago, ccv_count: 4000)
+    # mean = (3000 + 5000 + 4000) / 3 = 4000, max = 5000 → numerics match the prior cache values.
     create(:trust_index_history,
       channel: channel,
       stream: stream,

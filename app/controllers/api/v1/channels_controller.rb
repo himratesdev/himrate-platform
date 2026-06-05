@@ -146,8 +146,11 @@ module Api
 
         trust = Trust::ShowService.new(channel: channel, view: :full, user: current_user).call
 
+        # CR-iter1 MF-1 (PR-A1): preload :post_stream_report for format_stream rendering
+        # (Stream#current_* derive methods hit PSR) — avoids N+1 over recent 5 streams.
+        # `stream_stats` does its own JOIN via Arel; this scope feeds the row-level rendering.
         completed_streams = channel.streams.where.not(ended_at: nil)
-        recent = completed_streams.order(ended_at: :desc).limit(5)
+        recent = completed_streams.includes(:post_stream_report).order(ended_at: :desc).limit(5)
 
         # S2 fix: prefetch TI records for all recent streams in one query (no N+1)
         recent_ti = prefetch_ti_for_streams(recent, channel.id)

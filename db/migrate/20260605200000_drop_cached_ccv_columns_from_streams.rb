@@ -16,9 +16,21 @@
 # this PR) read from those sources, so callers always get a correct value
 # without write-amplification on every CCV snapshot insert.
 #
-# Reversible: `down` recreates the columns empty. A separate rake task
-# `streams:backfill_legacy_ccv_columns` is provided to restore data from
-# CcvSnapshot / PSR if a rollback is needed in production.
+# Reversible: `down` recreates the columns empty. If a production rollback is required
+# AND historical data must be restored into the columns, run a manual backfill via the
+# Rails console:
+#
+#   Stream.find_each do |s|
+#     psr = s.post_stream_report
+#     s.update_columns(
+#       peak_ccv: psr&.ccv_peak || s.ccv_snapshots.maximum(:ccv_count) || 0,
+#       avg_ccv:  psr&.ccv_avg  || s.ccv_snapshots.average(:ccv_count)&.round,
+#       duration_ms: psr&.duration_ms || (s.ended_at && ((s.ended_at - s.started_at) * 1000).to_i)
+#     )
+#   end
+#
+# Not packaged as a rake task because rollback is expected to be a manual operational
+# event — preserving the option without baking a one-shot helper into the codebase.
 
 class DropCachedCcvColumnsFromStreams < ActiveRecord::Migration[8.0]
   def up
