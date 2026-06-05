@@ -69,32 +69,57 @@ servers:
   # signal_compute queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat и
   # fallback (default job role подхватит если signal_compute_worker role упадёт).
   #
-  # 2026-06-04 Phase 7 S (BUG-A2-BSW-CH-EMPTY-NIX, this PR): добавлен `:bot_scoring`
-  # queue к этой роли. Root-cause investigation на NIX live (47k ccv, 7,941 chatters
-  # available, PerUserBotScore=0): BSW jobs накапливаются в `:bot_scoring` queue
-  # (19,829 jobs, NIX имеет 46 enqueued) — НЕ silent-fail, а **queue starvation**.
-  # Default `:job` role c=5 × weight 6/48 = ~0.625 effective thread на :bot_scoring →
-  # ~150-300 jobs/hour drain vs ~600/hour enqueue rate (LiveBotScoringWorker */30 ×
-  # 300 streams). Net growth +300-450/hour → 3 TI signals (ChatBehavior, KnownBotMatch,
-  # AccountProfileScoring) abstain'ят для всех live streams (bot_scores.empty? guard).
+  # 2026-06-04 Phase 7 S (BUG-A2-BSW-CH-EMPTY-NIX, PR #282): добавлен `:bot_scoring`
+  # queue к этой роли с strict precedence (`-q signal_compute -q bot_scoring`).
+  # Post-deploy measurement: drain rate ONLY 660 j/hr vs theoretical 18-36k j/hr.
+  # Root cause = SignalComputeWorker constantly busy с c=5 threads (each SCW ~3sec,
+  # enqueue rate keeps signal_compute queue at 10-50 = threads never idle → bot_scoring
+  # never gets a slot per strict precedence). Backlog 23k→15k за 12h, BSW signals
+  # (chat_behavior/known_bot_match/account_profile_scoring) coverage in TIH last 30min
+  # = 4.5% (target 100% of live streams).
   #
-  # Strict precedence: `-q signal_compute -q bot_scoring` означает signal_compute
-  # processed first, bot_scoring только когда signal_compute idle. Текущий
-  # :signal_compute queue размер ~45 jobs (near-empty) → effectively this container
-  # становится :bot_scoring-dominant с c=5 strict threads. Expected drain:
-  # ~5 threads × 1 job/30-60sec = ~5-10 j/sec = 300-600 j/min = 18k-36k j/hour.
-  # Backlog 19,829 → drained в ~30-60 min. New steady-state: 600 j/hour enqueue
-  # ÷ 5 threads × 30-60s/job = sustainable.
-  #
-  # Mirror PR #257 (signal_compute) / PR #270 (signals_worker) / PR #274
-  # (monitoring_worker) pattern. НЕ добавляем 9-й Kamal role (VPS 2vCPU/7.8GB
-  # уже saturated — adding more concurrent containers usurps Puma boot capacity).
-  # `:bot_scoring` queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat
-  # и fallback (default job role подхватит если signal_compute_worker role упадёт).
+  # 2026-06-05 Phase 7 T (this PR): split bot_scoring to ITS OWN dedicated role
+  # (bot_scoring_worker, see below) for ACTUAL strict-precedence drain. Removed
+  # `-q bot_scoring` here → signal_compute_worker back to processing ONLY :signal_compute
+  # (its original responsibility per PR #257). New 9th Kamal role accepted — VPS reboot
+  # capacity refreshed, +250 MiB container cost worth the BSW unblocking. Mirror existing
+  # signals_worker (PR #270) / monitoring_worker (PR #274) split pattern.
   signal_compute_worker:
     hosts:
       - 194.135.85.159
-    cmd: bundle exec sidekiq -q signal_compute -q bot_scoring -c 5
+    cmd: bundle exec sidekiq -q signal_compute -c 5
+    proxy: false
+    options:
+      health-cmd: "ruby -e 'puts :ok'"
+      health-interval: 10s
+  # 2026-06-05 Phase 7 T: dedicated Sidekiq role для :bot_scoring queue.
+  # Promotion из piggyback на signal_compute_worker (PR #282) → own process.
+  # Same pattern as signals_worker (PR #270) / monitoring_worker (PR #274) /
+  # signal_compute_worker (PR #257) / stream_worker (BUG-251.40-F).
+  #
+  # Why split: PR #282 attempted to share signal_compute_worker via strict
+  # precedence `-q signal_compute -q bot_scoring`. Post-deploy measurement on
+  # 2026-06-05 confirmed signal_compute_worker threads (c=5) constantly fed by
+  # SignalComputeWorker jobs (~3sec each, queue size stays 10-50) → bot_scoring
+  # never gets thread time per strict precedence rules. Net drain ~660 j/hr —
+  # 27× slower than designed 18k j/hr. 4.5% BSW coverage in TIH = unacceptable.
+  #
+  # Workers on :bot_scoring queue = BotScoringWorker (sole) + LiveBotScoringWorker
+  # (enqueuer scheduler, runs from default :job role). Job profile: ~1-3 sec each
+  # (CH chat read + per-user feature extraction + classification). c=3 dedicated
+  # threads × 1 j/2sec = 1.5 j/s = 5400 j/hr drain capacity. Enqueue rate per
+  # PR #282 comment = LiveBotScoringWorker */30min × 300 streams = 600 j/hr.
+  # 5400 capacity ÷ 600 enqueue = 9× headroom, plus quick drain of 15k backlog
+  # in ~3h. Strict-precedence dedicated process never starved by SCW.
+  #
+  # c=3 sizing rationale: BSW jobs read CH chat_messages (1-3MB per query, ~200ms),
+  # then per-user PG inserts (up to 100 users/stream batch). 3 concurrent = max ~9MB
+  # CH read + ~300 PG inserts/sec peak — within accessory capacity. Higher c=5/7
+  # risks PG connection pool exhaustion.
+  bot_scoring_worker:
+    hosts:
+      - 194.135.85.159
+    cmd: bundle exec sidekiq -q bot_scoring -c 3
     proxy: false
     options:
       health-cmd: "ruby -e 'puts :ok'"
@@ -164,10 +189,20 @@ servers:
   #
   # Role naming: matches queue (`monitoring_worker` ↔ `-q monitoring`) per the symmetry
   # established by `stream_worker` ↔ `-q stream_lifecycle`, `signals_worker` ↔ `-q signals`.
+  #
+  # 2026-06-05 Phase 7 T (this PR): bump c=2 → c=4. Post-2026-06-04 reboot measurement:
+  # :monitoring queue grew 43k → 89k in ~14h (net +3.3k/hr). c=2 drain (theoretical
+  # 12k/hr per design comment above) insufficient at observed enqueue 4-5/min × ~14sec
+  # avg job = ~5760 j/day saturated by c=2 capacity (~17k/day) only when BCCSweep
+  # jobs run ≤8s each. Real measurement shows mix of BCCSweep + 19 other workers
+  # (StreamMonitor, MonitoredLiveDetector, CleanupWorker, etc.) bring average up.
+  # c=4 doubles capacity (~34k/day) → covers steady-state + drains backlog ~2.5 days.
+  # Twitch GQL HTTP fan-out (20 threads × c=4 = 80 max concurrent outbound) still
+  # under observed ~800 req/min soft cap.
   monitoring_worker:
     hosts:
       - 194.135.85.159
-    cmd: bundle exec sidekiq -q monitoring -c 2
+    cmd: bundle exec sidekiq -q monitoring -c 4
     proxy: false
     options:
       health-cmd: "ruby -e 'puts :ok'"
