@@ -5,7 +5,13 @@ require "rails_helper"
 RSpec.describe PrometheusMetrics do
   let(:base) { "http://himrate-prometheus-pushgateway:9091" }
 
+  # PR-B2 CR iter-2 (Major): `PUSHGATEWAY_URL` / `ENABLED` constants are frozen at boot.
+  # The PR-B2 default state is `ENABLED=false` (env var blank → observability disabled).
+  # For live-path specs below we have to stub the constants to simulate the env vars
+  # being set; the new "ENABLED=false" describe block exercises the disabled path.
   before do
+    stub_const("PrometheusMetrics::PUSHGATEWAY_URL", base)
+    stub_const("PrometheusMetrics::ENABLED", true)
     stub_request(:post, %r{#{base}/metrics/.*}).to_return(status: 200)
     stub_request(:delete, %r{#{base}/metrics/.*}).to_return(status: 202)
   end
@@ -112,6 +118,37 @@ RSpec.describe PrometheusMetrics do
       expect {
         described_class.observe_drift_active(destination: "staging", accessory: "redis", value: 1)
       }.not_to raise_error
+    end
+  end
+
+  # PR-B2 CR iter-2: observability stack disabled — PROMETHEUS_PUSHGATEWAY_URL blank.
+  # Every push / delete must short-circuit returning :disabled with NO HTTP I/O so that
+  # the loaded compute box doesn't burn Net::OpenTimeout retries against a removed accessory.
+  describe "when disabled (PROMETHEUS_PUSHGATEWAY_URL blank — PR-B2 default state)" do
+    before do
+      stub_const("PrometheusMetrics::PUSHGATEWAY_URL", "")
+      stub_const("PrometheusMetrics::ENABLED", false)
+    end
+
+    it ".observe_ops returns :disabled and fires no HTTP request" do
+      result = described_class.observe_ops(
+        destination: "production", accessory: "redis",
+        action: "reboot", result: "success", duration_seconds: 12.5
+      )
+      expect(result).to eq(:disabled)
+      expect(WebMock).not_to have_requested(:post, %r{pushgateway})
+    end
+
+    it ".observe_drift_active returns :disabled and fires no HTTP request" do
+      result = described_class.observe_drift_active(destination: "production", accessory: "redis", value: 1)
+      expect(result).to eq(:disabled)
+      expect(WebMock).not_to have_requested(:post, %r{pushgateway})
+    end
+
+    it ".delete_grouping returns :disabled and fires no HTTP request" do
+      result = described_class.delete_grouping(job: "accessory_drift", grouping: { destination: "staging", accessory: "redis" })
+      expect(result).to eq(:disabled)
+      expect(WebMock).not_to have_requested(:delete, %r{pushgateway})
     end
   end
 end

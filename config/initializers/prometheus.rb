@@ -16,11 +16,10 @@ require "net/http"
 require "uri"
 
 module PrometheusMetrics
-  # CR iter-1 Minor (PR-B2): observability stack disabled in this PR, so the default URL
-  # points at a removed accessory. Treat blank env value (or the default placeholder being
-  # explicitly unset via `PROMETHEUS_PUSHGATEWAY_URL=` empty) as "no pushgateway" — skip
-  # the doomed network I/O entirely. Once observability is re-provisioned (PR-B2.1 Grafana
-  # Cloud OR dedicated obs-VPS), set PROMETHEUS_PUSHGATEWAY_URL to the new endpoint.
+  # CR iter-1 Minor (PR-B2): observability stack disabled in this PR.
+  # Blank / unset `PROMETHEUS_PUSHGATEWAY_URL` ⇒ pushes return :disabled without network
+  # I/O. Set the env var to point at the new endpoint to re-enable (PR-B2.1 follow-up
+  # provisions Grafana Cloud OR a dedicated obs-VPS).
   PUSHGATEWAY_URL = ENV["PROMETHEUS_PUSHGATEWAY_URL"].to_s
   TIMEOUT_SECONDS = 3
   ENABLED = !PUSHGATEWAY_URL.empty?
