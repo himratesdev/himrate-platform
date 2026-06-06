@@ -172,6 +172,7 @@ jobs:
           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
           FLIPPER_UI_PASSWORD: ${{ secrets.FLIPPER_UI_PASSWORD }}
           FLIPPER_UI_USER: ${{ secrets.FLIPPER_UI_USER }}
+          PO_DEBUG_PASSWORD: ${{ secrets.PO_DEBUG_PASSWORD }}
           ALLOWED_EXTENSION_ID: ${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
           # BUG-010 PR1: Observability stack accessories secrets
@@ -238,6 +239,7 @@ jobs:
           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
           FLIPPER_UI_PASSWORD=${{ secrets.FLIPPER_UI_PASSWORD }}
           FLIPPER_UI_USER=${{ secrets.FLIPPER_UI_USER }}
+          PO_DEBUG_PASSWORD=${{ secrets.PO_DEBUG_PASSWORD }}
           ALLOWED_EXTENSION_ID=${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET=${{ secrets.TWITCH_WEBHOOK_SECRET }}
           EVENTSUB_WEBHOOK_URL=https://staging.himrate.com
@@ -342,6 +344,7 @@ jobs:
           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: ${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
           FLIPPER_UI_PASSWORD: ${{ secrets.FLIPPER_UI_PASSWORD }}
           FLIPPER_UI_USER: ${{ secrets.FLIPPER_UI_USER }}
+          PO_DEBUG_PASSWORD: ${{ secrets.PO_DEBUG_PASSWORD }}
           ALLOWED_EXTENSION_ID: ${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET: ${{ secrets.TWITCH_WEBHOOK_SECRET }}
           # BUG-010 PR1: Observability stack accessories secrets
@@ -428,6 +431,7 @@ jobs:
           ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT=${{ secrets.ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT }}
           FLIPPER_UI_PASSWORD=${{ secrets.FLIPPER_UI_PASSWORD }}
           FLIPPER_UI_USER=${{ secrets.FLIPPER_UI_USER }}
+          PO_DEBUG_PASSWORD=${{ secrets.PO_DEBUG_PASSWORD }}
           ALLOWED_EXTENSION_ID=${{ secrets.ALLOWED_EXTENSION_ID }}
           TWITCH_WEBHOOK_SECRET=${{ secrets.TWITCH_WEBHOOK_SECRET }}
           EVENTSUB_WEBHOOK_URL=https://api.himrate.com
