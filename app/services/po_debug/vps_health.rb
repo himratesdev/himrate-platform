@@ -11,8 +11,8 @@ module PoDebug
   # its own /proc via the same mount — no shared scrape target.
   #
   # All reads wrapped in a per-section rescue. Missing /host/proc (e.g.
-  # local dev without the mount) → returns { error:, stale: true } and
-  # Aggregator's per-block isolation keeps siblings rendering.
+  # local dev without the mount) → returns per-section `{ error: ... }`
+  # payloads; siblings continue to render.
   class VpsHealth
     HOST_PROC = "/host/proc"
     HOST_SYS  = "/host/sys"
@@ -89,22 +89,32 @@ module PoDebug
     #   reads, reads_merged, sectors_read, ms_reading,
     #   writes, writes_merged, sectors_written, ms_writing,
     #   io_in_progress, io_ticks_ms, time_in_queue_ms
-    # %util via two 100 ms snapshots: util = (io_ticks_delta / 100ms) * 100.
+    # %util + IOPS via two ~100 ms snapshots — wall-clock measured because
+    # sleep(0.1) is a floor not a fixed window: on the loaded VPS that
+    # motivates this dashboard (load 20+, swap-thrash) the wake can drift
+    # to 150-300 ms, which would over-report %util by the same factor if we
+    # hardcoded the denominator. Process.clock_gettime keeps math honest.
     def disk_metrics
+      t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond)
       first = read_disk_stat
       sleep 0.1
       second = read_disk_stat
+      t1 = Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond)
       return { error: "disk stat unavailable" } unless first && second
 
+      elapsed_ms = (t1 - t0).to_f
+      return { error: "disk stat elapsed window collapsed" } if elapsed_ms <= 0
+
       delta_ms = second[:io_ticks_ms] - first[:io_ticks_ms]
-      util_pct = (delta_ms / 100.0 * 100).round(1)
+      util_pct = (delta_ms / elapsed_ms * 100).round(1)
       util_pct = 100.0 if util_pct > 100
 
+      elapsed_sec = elapsed_ms / 1000.0
       {
         util_pct: util_pct,
         queue_depth: second[:io_in_progress],
-        read_iops: ((second[:reads] - first[:reads]) / 0.1).round(0),
-        write_iops: ((second[:writes] - first[:writes]) / 0.1).round(0)
+        read_iops: ((second[:reads] - first[:reads]) / elapsed_sec).round(0),
+        write_iops: ((second[:writes] - first[:writes]) / elapsed_sec).round(0)
       }
     rescue StandardError => e
       { error: "disk read failed: #{e.class}: #{e.message}" }
