@@ -215,9 +215,21 @@ env:
     # TASK-251.14: ClickHouse default-user password — app side. (The same secret also passwords the
     # `clickhouse` accessory's default user; here it lets the app authenticate to it.)
     - CLICKHOUSE_PASSWORD
+    # PO Debug Dashboard Hot-Lite (PR #287). Single-PO HTTP Basic Auth credential
+    # for /dashboard/po-debug + /dashboard/po-debug.json. Optional: when GH secret
+    # PO_DEBUG_PASSWORD is empty Kamal passes empty value → controller returns 503
+    # ("PO_DEBUG_PASSWORD not configured") — safe by default. Flag :po_debug_dashboard
+    # also gates access, so until PO sets both this secret AND flips the flag the
+    # surface is fully dormant.
+    - PO_DEBUG_PASSWORD
   clear:
     RAILS_LOG_TO_STDOUT: true
     RAILS_SERVE_STATIC_FILES: true
+    # PO Debug Dashboard — non-sensitive defaults. User is "po" (paired with
+    # PO_DEBUG_PASSWORD via secure_compare); channel login is the public Twitch
+    # handle Block 1 of the dashboard queries.
+    PO_DEBUG_USER: po
+    PO_TWITCH_LOGIN: himych
     WEB_CONCURRENCY: 2
     # TASK-251.14: ClickHouse connection (app side). Reached over the Kamal Docker network by the
     # accessory's full container name. Port defaults to 8123 in Clickhouse::Client; database is
