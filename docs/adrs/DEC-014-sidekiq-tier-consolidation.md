@@ -79,17 +79,20 @@ roles** matching EPIC SCALE ARCHITECTURE §2 Topology Target:
 - **Workers covered:** SignalComputeWorker, BotScoringWorker, LiveBotScoringWorker, StreamOnlineWorker,
   StreamOfflineWorker, Trends::AnomalyAttributionWorker, Trends::AggregationWorker, RaidWorker,
   ChannelUpdateWorker
-- **Concurrency rationale (CR M1 fix):** c=10 Sidekiq threads require **per-process ActiveRecord pool ≥ 10**.
-  Two layers of pool sizing here:
+- **Concurrency rationale (CR M1 + Nit-B fixes):** c=10 Sidekiq job threads require
+  **per-process ActiveRecord pool ≥ 10 + headroom for internal Sidekiq threads** (heartbeat,
+  scheduler, Rails async executor). Two layers of pool sizing here:
   1. **Per-process AR pool** (`config/database.yml` `pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>`)
-     — driven by `RAILS_MAX_THREADS` env, set to **10** for compute_tier1 in `deploy.yml` `env: clear:`.
-     Without this fix, the prior `max_connections:` key in database.yml was silently ignored (not a
-     recognized AR key) → effective pool defaulted to 5 → c=10 would block threads 6–10 on connection
-     checkout (`ActiveRecord::ConnectionTimeoutError` after 5s). PR-B1a fixes both the AR key
-     (`max_connections:` → `pool:`) and adds per-role `RAILS_MAX_THREADS` overrides.
+     — driven by `RAILS_MAX_THREADS` env, set to **12** for compute_tier1 in `deploy.yml` `env: clear:`
+     (c=10 job threads + 2 headroom per CR iter-2 Nit-B). Without this fix, the prior
+     `max_connections:` key in database.yml was silently ignored (not a recognized AR key) →
+     effective pool defaulted to 5 → c=10 would block threads 6–10 on connection checkout
+     (`ActiveRecord::ConnectionTimeoutError` after 5s). PR-B1a fixes both the AR key
+     (`max_connections:` → `pool:`) and adds per-role `RAILS_MAX_THREADS` overrides with
+     internal-thread headroom for tier1.
   2. **PostgreSQL server `max_connections`** (server-level, default 100) — verified sufficient:
-     tier1(10) + tier2(5) + tier3(5) + web(3) + whisper(1) = 24 max client slots, with ample
-     headroom for live console / ad-hoc psql.
+     tier1(12) + tier2(5) + tier3(5) + web(3) + whisper(1) = 26 max client slots, with ample
+     headroom for live console / ad-hoc psql / accessory health probes.
 
 ### Tier 2 — Async-important
 

@@ -18,10 +18,11 @@ servers:
   web:
     hosts:
       - 194.135.85.159
-    # CR M1 fix 2026-06-06: explicit RAILS_MAX_THREADS=3 = Puma default threads_count
-    # (config/puma.rb line 30). Drives Puma threads AND AR pool size. Without this,
-    # PR-B1a's database.yml `pool: RAILS_MAX_THREADS` would inherit top-level env (set
-    # for Sidekiq) — wrong for web role. Per-role override pins web to 3 threads.
+    # CR M1 fix 2026-06-06: explicit RAILS_MAX_THREADS=3 pins web AR pool to Puma's
+    # threads_count default (config/puma.rb line 30 reads same env). Without this
+    # override, web would fall back to `database.yml` default `{ 5 }` → 2 idle AR
+    # connections per Puma worker. Setting 3 keeps AR pool == Puma threads (no waste,
+    # no starvation). Iter-2 CR Nit-A wording fix.
     env:
       clear:
         RAILS_MAX_THREADS: 3
@@ -62,12 +63,14 @@ servers:
   # Weighted-fetch within tier (equal weight 10 = round-robin fairness across 4 queues).
   # c=10 threads handle realtime bursts (signal_compute ~3sec/job × 10 threads = 200 j/min).
   #
-  # CR M1 fix: AR per-process pool sized via RAILS_MAX_THREADS=10 (matches c=10) — read by
-  # config/database.yml line 21 `pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>`.
-  # Without this override the default 5 would block Sidekiq threads 6-10 on connection
-  # checkout. Verified vs PG server max_connections=100 default: tier1(10) + tier2(5) +
-  # tier3(5) + web(3) + whisper(1) = 24 client slots max — well under server cap with
-  # headroom for live console / ad-hoc psql.
+  # CR M1 fix: AR per-process pool sized via RAILS_MAX_THREADS=12 (Sidekiq c=10 + 2
+  # headroom for internal threads — heartbeat, scheduler, Rails async executor — per CR
+  # iter-2 Nit-B). Read by config/database.yml `pool: <%= ENV.fetch("RAILS_MAX_THREADS")
+  # { 5 } %>`. Without this override the default 5 would block Sidekiq threads 6-10 on
+  # connection checkout (ActiveRecord::ConnectionTimeoutError after 5s).
+  # Verified vs PG server max_connections=100 default: tier1(12) + tier2(5) + tier3(5) +
+  # web(3) + whisper(1) = 26 client slots max — well under server cap with ample headroom
+  # for live console / ad-hoc psql / accessory health probes.
   compute_tier1:
     hosts:
       - 194.135.85.159
@@ -75,7 +78,7 @@ servers:
     proxy: false
     env:
       clear:
-        RAILS_MAX_THREADS: 10
+        RAILS_MAX_THREADS: 12
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
