@@ -1,4 +1,4 @@
-# ADR DEC-014 — Sidekiq Tier-Based Consolidation (8 → 3 weighted roles)
+# ADR DEC-014 — Sidekiq Tier-Based Consolidation (6 consolidatable Sidekiq roles → 3 tier-weighted)
 
 **Status:** Accepted 2026-06-06 (PO directive)
 **Cross-ref:**
@@ -17,7 +17,7 @@
 
 ## Context
 
-VPS Time4VPS (3 vCPU / 8 GiB / 80 GiB) ran 8 distinct Sidekiq Kamal app roles by 2026-06-05:
+VPS Time4VPS (3 vCPU / 8 GiB / 80 GiB) ran 9 total Kamal app roles by 2026-06-05 (web + irc + 7 Sidekiq-loaded roles below; 6 of which are consolidatable, whisper_worker preserved as GPU-isolated):
 
 | Role | Queue scope | Concurrency | Added by |
 | --- | --- | --- | --- |
@@ -79,23 +79,41 @@ roles** matching EPIC SCALE ARCHITECTURE §2 Topology Target:
 - **Workers covered:** SignalComputeWorker, BotScoringWorker, LiveBotScoringWorker, StreamOnlineWorker,
   StreamOfflineWorker, Trends::AnomalyAttributionWorker, Trends::AggregationWorker, RaidWorker,
   ChannelUpdateWorker
-- **Concurrency rationale:** c=10 threads = 10 PG connections. Signal compute (~3sec/job) at full
-  utilization yields ~200 jobs/min steady-state. PG connection pool max=100 (default), this tier
-  consumes 10% — within budget when summed with tier2 (5) + tier3 (5) + web (~10) + irc (1) + adhoc.
+- **Concurrency rationale (CR M1 fix):** c=10 Sidekiq threads require **per-process ActiveRecord pool ≥ 10**.
+  Two layers of pool sizing here:
+  1. **Per-process AR pool** (`config/database.yml` `pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>`)
+     — driven by `RAILS_MAX_THREADS` env, set to **10** for compute_tier1 in `deploy.yml` `env: clear:`.
+     Without this fix, the prior `max_connections:` key in database.yml was silently ignored (not a
+     recognized AR key) → effective pool defaulted to 5 → c=10 would block threads 6–10 on connection
+     checkout (`ActiveRecord::ConnectionTimeoutError` after 5s). PR-B1a fixes both the AR key
+     (`max_connections:` → `pool:`) and adds per-role `RAILS_MAX_THREADS` overrides.
+  2. **PostgreSQL server `max_connections`** (server-level, default 100) — verified sufficient:
+     tier1(10) + tier2(5) + tier3(5) + web(3) + whisper(1) = 24 max client slots, with ample
+     headroom for live console / ad-hoc psql.
 
 ### Tier 2 — Async-important
 
-`compute_tier2` — `bundle exec sidekiq -q post_stream,5 -q chat,5 -q pva_critical,5 -q pva_helix,5 -q pva_gql_anon,5 -q monitoring,5 -q default,5 -c 5`
+`compute_tier2` — `bundle exec sidekiq -q post_stream,5 -q chat,5 -q pva_critical,5 -q pva_helix,5 -q pva_gql_anon,5 -q monitoring,10 -q default,5 -c 5`
 
-- **Queues (equal weight 5):** post_stream, chat, pva_critical, pva_helix, pva_gql_anon, monitoring, default
+- **Queues:** post_stream (5), chat (5), pva_critical (5), pva_helix (5), pva_gql_anon (5),
+  **monitoring (10 — bumped per CR S2 fix)**, default (5).
 - **Workers covered:** PostStreamWorker, MlFeatureExtractionWorker, StreamerReputationRefreshWorker,
   Trends::LatestTihRefreshWorker, Twitch::BigChannelChatterSweepWorker, StreamMonitorWorker,
   MonitoredLiveDetectorWorker, ChannelMetadataRefreshWorker, ChannelDiscoveryWorker,
   ChannelPruneWorker, ChatterProfileRefreshWorker, FollowerSnapshotWorker, BotListRefreshWorker,
   StaleStreamSweepWorker, SidekiqHealthMonitorWorker, CrossChannelDigestRefreshWorker, 5×
-  PersonalAnalytics::* workers, all chat ingest workers, default-queue catch-all
-- **Concurrency rationale:** c=5 threads. `monitoring` queue includes BSW which is high-volume
-  (~4/min × 14sec = ~5760 jobs/day) — c=5 gives ~28k jobs/day capacity (~5× headroom).
+  PersonalAnalytics::* workers, all chat ingest workers, default-queue catch-all.
+- **Concurrency rationale (CR M1 fix):** c=5 Sidekiq threads, `RAILS_MAX_THREADS=5` in deploy.yml
+  per-role env → AR pool = 5 (matches concurrency).
+- **Honest monitoring drain capacity (CR S2 fix):** with weight 10 (vs 5 for other tier2 queues),
+  monitoring gets `10 / (10 + 5×6) = 25%` of fetch slots × c=5 = **~1.25 effective thread**.
+  BSW BigChannelChatterSweep avg job ~14sec → 1.25 × (1/14) = 0.089 j/s = **~7700 jobs/day capacity**.
+  Observed enqueue rate (2026-06-03 baseline) was ~5760/day → ~33% headroom. **This is LESS than the
+  prior dedicated `monitoring_worker -c 4` (theoretical ~34k/day) — a real reduction in monitoring
+  drain capacity is the cost of consolidation.** Backlog will accumulate if (a) BSW jobs spike past
+  8s avg or (b) PVA queues drain faster than expected (taking fetch slots from monitoring within
+  weighted tier2). Mitigation plan: monitor `:monitoring` queue size 24h post-deploy; if backlog
+  grows sustained → bump tier2 `c=5 → c=7` (will require RAILS_MAX_THREADS=7 update).
 - **`default` placement in tier 2:** Catch-all for jobs without explicit `queue:` attribute. Safer
   to land in async-important tier (faster pickup) vs batch tier — unknown criticality defaults
   to faster, reduces latency risk for unspecified worker classes.
@@ -107,9 +125,9 @@ roles** matching EPIC SCALE ARCHITECTURE §2 Topology Target:
 - **Queues (equal weight 2 — formality, only 3 queues):** notifications, accessory_ops, long_running
 - **Workers covered:** EmailWorker, TelegramWorker, AccessoryDriftDetectorWorker,
   CostAttributionAggregationWorker, MlOps::TrainingWorker (long_running)
-- **Concurrency rationale:** c=5 threads sufficient for low-volume periodic schedulers +
-  occasional MlOps training run (long_running queue jobs cap via job-level timeout, not
-  concurrency).
+- **Concurrency rationale (CR M1 fix):** c=5 threads, `RAILS_MAX_THREADS=5` → AR pool = 5.
+  Sufficient for low-volume periodic schedulers + occasional MlOps training run (long_running
+  queue jobs cap via job-level timeout, not concurrency).
 
 ### Preserved roles
 
@@ -173,16 +191,31 @@ RAM cost (3 boots ≈ 1050-1350 MiB save ~300-600 MiB). **Selected:**
 
 - **Initial deploy risk:** Full Kamal role config change cannot be rolling — all 6 old role
   containers must be removed and 3 new tier role containers started. Brief Sidekiq processing
-  pause expected (~30-90s container boot). Mitigated by Kamal accessory-config-change flag
-  + DV verify step.
+  pause expected (~30-90s container boot). Mitigated by DV verify step.
+- **Loss of cross-role fallback redundancy (CR S1 fix):** Pre-PR-B1a architecture had an
+  implicit N+1 safety net — the `job` catch-all role consumed every queue at low weight,
+  meaning a crashed dedicated role (`signal_compute_worker`, `bot_scoring_worker`, etc.) still
+  saw its queue drain (slowly) via `job`. The historical sidekiq.yml per-queue comments
+  explicitly relied on this. After this PR there is **no `job` catch-all**: each queue has a
+  **single role consumer**, so if `compute_tier1` crashes, signal_compute + bot_scoring +
+  stream_lifecycle + signals queues all stall until the container restarts. Same for tier2/3.
+  - **Why accept:** Multi-host scale-out (Kamal `hosts: [box1, box2]` per EPIC §3 Phase 1)
+    restores N+1 naturally — second box brings second compute_tier1 process per role. Until
+    Phase 1 launch (single-box staging), manual `kamal app restart -r compute_tierN -d staging`
+    is the recovery path. Acceptable tradeoff given that the band-aid `job` fallback drained
+    at <0.1 thread/queue under saturation anyway (per sidekiq.yml historical comments — "would
+    take 300+ days to drain at fractional fetch share").
+- **Monitoring drain capacity regression (CR S2 fix):** See Tier 2 rationale above. Honest
+  capacity ~7700/day vs prior dedicated ~34k/day theoretical. Acceptable per current enqueue
+  rate ~5760/day. Re-tune via `c=5→7` if backlog grows >24h sustained.
 - **Concurrency tuning may need adjustment:** c=10/5/5 picked from current measurements
-  (~33 Sidekiq threads total vs previous ~25); if PG connection pool saturates → tune down.
+  (~20 Sidekiq threads total vs previous ~25 across 6 dedicated). RAILS_MAX_THREADS env per
+  role properly sizes AR pool (CR M1 fix). PG server max_connections=100 has headroom for
+  24 client slots used. If PG pool saturates → tune individual tier RAILS_MAX_THREADS down.
   Monitoring window 24h post-deploy required.
-- **Tier 2 includes 7 queues weighted-fetched across 5 threads:** Effective fetch slice per
-  queue ~14% × 5 threads = ~0.7 effective thread/queue. For BSW (`monitoring`, ~14sec/job)
-  this is sufficient (5760 jobs/day capacity vs ~5760/day enqueue rate at saturation). For
-  PVA queues which are bursty (cron-driven) may queue temporarily — acceptable per Tier 2
-  async-important definition (job latency ~minutes OK).
+- **Stale sidekiq.yml comments fixed (CR N2):** Per-queue historical comments about "default
+  job role fallback" updated to reflect new tier mapping; old reference to N+1 redundancy
+  marked as removed.
 
 ### Risks + mitigations
 
@@ -214,8 +247,23 @@ PR-B1a diff:
 - `ai-dev-team/PARALLEL_BOARD.md` — T1 row update for autopilot tracking
 
 Post-merge:
-- Kamal accessory roles NOT modified (only servers: section). No `kamal accessory reboot`
-  needed; standard `kamal deploy` rolls server roles.
+- Kamal accessory roles NOT modified (only `servers:` section). No `kamal accessory reboot`
+  needed; standard `kamal deploy -d staging` rolls the new server roles.
+- **CR S3 fix — explicit stop of removed roles required:** `kamal deploy` deploys roles
+  **present** in `config/deploy.yml`; it does NOT stop or remove containers for roles
+  deleted from config. The 6 old role containers (job / stream_worker /
+  signal_compute_worker / bot_scoring_worker / signals_worker / monitoring_worker) will
+  keep running as orphans unless explicitly stopped, both wasting the RAM this PR aims
+  to free AND double-consuming queues (race conditions). After deploy succeeds, run:
+  ```
+  for role in job stream_worker signal_compute_worker bot_scoring_worker signals_worker monitoring_worker; do
+    kamal app stop -r "$role" -d staging || true
+    kamal app remove -r "$role" -d staging || true
+  done
+  ```
+  These commands are documented in the deploy runbook step (DV verifies orphan removal).
+  Verification: `docker ps --format '{{.Names}}' | grep himrate-` should show ONLY web,
+  compute_tier1, compute_tier2, compute_tier3, whisper_worker, irc + accessories.
 - STRICT live verify mandatory per [[feedback-live-verify-mandatory-violations-2026-06-03]].
 
 ## Subsequent PRs in lane

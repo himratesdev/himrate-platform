@@ -17,7 +17,15 @@ default: &default
   encoding: unicode
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
-  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  #
+  # 2026-06-06 PR-B1a (CR M1 fix): was `max_connections:` — that key is NOT recognized
+  # by ActiveRecord (AR reads `pool:`). Effective pre-fix per-process pool = silently
+  # 5 (Rails default), causing thread-pool starvation under any Sidekiq role with c>5.
+  # Compute_tier1 c=10 would block threads 6-10 on connection checkout (5s wait → raise
+  # ActiveRecord::ConnectionTimeoutError). Now uses the real AR key `pool:` with
+  # RAILS_MAX_THREADS env (set per-role in deploy.yml: compute_tier1=10, tier2/3=5,
+  # web=3 via Puma threads_count, whisper_worker=1).
+  pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
 
 development:

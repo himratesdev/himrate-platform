@@ -18,6 +18,13 @@ servers:
   web:
     hosts:
       - 194.135.85.159
+    # CR M1 fix 2026-06-06: explicit RAILS_MAX_THREADS=3 = Puma default threads_count
+    # (config/puma.rb line 30). Drives Puma threads AND AR pool size. Without this,
+    # PR-B1a's database.yml `pool: RAILS_MAX_THREADS` would inherit top-level env (set
+    # for Sidekiq) — wrong for web role. Per-role override pins web to 3 threads.
+    env:
+      clear:
+        RAILS_MAX_THREADS: 3
 
   # 2026-06-06 PR-B1a — Sidekiq Tier-Based Consolidation (ADR DEC-014).
   # Replaces 6 dedicated Sidekiq Kamal roles (job, stream_worker, signal_compute_worker,
@@ -54,13 +61,21 @@ servers:
   # === TIER 1: REALTIME-CRITICAL (live TI / bot scoring / stream lifecycle / anomaly) ===
   # Weighted-fetch within tier (equal weight 10 = round-robin fairness across 4 queues).
   # c=10 threads handle realtime bursts (signal_compute ~3sec/job × 10 threads = 200 j/min).
-  # Concurrency budget bound by PG connection pool (max 100 default; ~55 active across all
-  # tiers + web + irc + ad-hoc, headroom for live console).
+  #
+  # CR M1 fix: AR per-process pool sized via RAILS_MAX_THREADS=10 (matches c=10) — read by
+  # config/database.yml line 21 `pool: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>`.
+  # Without this override the default 5 would block Sidekiq threads 6-10 on connection
+  # checkout. Verified vs PG server max_connections=100 default: tier1(10) + tier2(5) +
+  # tier3(5) + web(3) + whisper(1) = 24 client slots max — well under server cap with
+  # headroom for live console / ad-hoc psql.
   compute_tier1:
     hosts:
       - 194.135.85.159
     cmd: bundle exec sidekiq -q signal_compute,10 -q bot_scoring,10 -q stream_lifecycle,10 -q signals,10 -c 10
     proxy: false
+    env:
+      clear:
+        RAILS_MAX_THREADS: 10
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
@@ -68,14 +83,27 @@ servers:
   # === TIER 2: ASYNC-IMPORTANT (post-stream report / chat ingest / PVA / monitoring sweep) ===
   # Includes `default` queue (catch-all for jobs without explicit queue:) — safer to land
   # in async-important tier vs batch tier (unknown criticality defaults to faster).
-  # `monitoring` (BSW BigChannelChatterSweep) is async-important per EPIC §2 (not batch) —
-  # it directly drives community-tab parallel coverage for live tier1 streams.
-  # c=5 threads. PVA queues (pva_critical, pva_helix, pva_gql_anon) added.
+  # `monitoring` (BSW BigChannelChatterSweep) is async-important per EPIC §2 (not batch).
+  #
+  # CR S2 fix: `monitoring` given weight=10 (2× vs other tier2 queues at 5) reflecting
+  # its high-volume profile (BSW ~4 j/min × 14s = ~5760/day vs other tier2 queues which
+  # are cron-bursty low-volume). Effective monitoring share = 10/(10+5×6) = 25% fetch
+  # slots × c=5 = ~1.25 thread × 14s/job ≈ 0.09 j/s = ~7700/day capacity. **Honest:** this
+  # is LESS than the prior dedicated monitoring_worker c=4 (which achieved ~34k/day
+  # theoretical), but covers steady-state enqueue 5760/day with ~33% headroom. Backlog
+  # will accumulate if BSW jobs spike past 8s avg or PVA queues drain faster than
+  # expected. Tradeoff for consolidation — accept + monitor post-deploy + tune c=5→c=7
+  # if monitoring backlog grows >24h.
+  #
+  # CR M1 fix: RAILS_MAX_THREADS=5 (matches c=5) for AR pool sizing.
   compute_tier2:
     hosts:
       - 194.135.85.159
-    cmd: bundle exec sidekiq -q post_stream,5 -q chat,5 -q pva_critical,5 -q pva_helix,5 -q pva_gql_anon,5 -q monitoring,5 -q default,5 -c 5
+    cmd: bundle exec sidekiq -q post_stream,5 -q chat,5 -q pva_critical,5 -q pva_helix,5 -q pva_gql_anon,5 -q monitoring,10 -q default,5 -c 5
     proxy: false
+    env:
+      clear:
+        RAILS_MAX_THREADS: 5
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
@@ -85,11 +113,16 @@ servers:
   # email digests / cleanup sweeps / ML retraining). c=5 threads — adequate for low-volume
   # periodic schedulers + the occasional MlOps training run (long_running queue caps via
   # job-level timeout, not concurrency).
+  #
+  # CR M1 fix: RAILS_MAX_THREADS=5 (matches c=5) for AR pool sizing.
   compute_tier3:
     hosts:
       - 194.135.85.159
     cmd: bundle exec sidekiq -q notifications,2 -q accessory_ops,2 -q long_running,2 -c 5
     proxy: false
+    env:
+      clear:
+        RAILS_MAX_THREADS: 5
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
@@ -105,6 +138,10 @@ servers:
       - 194.135.85.159
     cmd: bundle exec sidekiq -q whisper_transcripts -c 1
     proxy: false
+    env:
+      clear:
+        # CR M1 fix: RAILS_MAX_THREADS=1 matches Sidekiq c=1 — minimal AR pool footprint.
+        RAILS_MAX_THREADS: 1
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
