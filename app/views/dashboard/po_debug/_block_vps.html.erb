@@ -2,9 +2,8 @@
   <span class="badge error">error</span> <span class="small"><%= data[:error] %></span>
 <% else %>
   <%
-    # CR N-4: cpu_count now read from Prometheus (VpsHealth#call publishes it
-    # under data.load.cpu_count). Falls back to 3 if Prometheus returns nil
-    # (matches current Time4VPS host but no longer hardcoded everywhere).
+    # cpu_count read from /host/proc/cpuinfo (kernel-native; replaces hardcoded 3).
+    # Falls back to 3 if the mount is missing (current Time4VPS host).
     cpu_count = data.dig(:load, :cpu_count) || 3
     load1 = data.dig(:load, :one_min)
     load_class = if load1.nil? then ""
@@ -27,12 +26,12 @@
                 else "green"
                 end
 
-    iowait = data.dig(:disk, :iowait_pct)
-    iowait_class = if iowait.nil? then ""
-                  elsif iowait > 50 then "red"
-                  elsif iowait > 20 then "yellow"
-                  else "green"
-                  end
+    util = data.dig(:disk, :util_pct)
+    disk_class = if util.nil? then ""
+                elsif util > 80 then "red"
+                elsif util > 50 then "yellow"
+                else "green"
+                end
   %>
   <div class="grid">
     <div>
@@ -42,8 +41,11 @@
           <span class="<%= load_class %>"><%= load1 || "—" %></span> /
           <%= data.dig(:load, :five_min) || "—" %> /
           <%= data.dig(:load, :fifteen_min) || "—" %>
-          <span class="small">(<%= cpu_count %> cores → <%= cpu_count * 2 %>=⚠️, <%= cpu_count * 3 %>=🔴)</span>
+          <span class="small">(<%= cpu_count %> cores → <%= cpu_count * 2 %>=⚠️ <%= cpu_count * 3 %>=🔴)</span>
         </dd>
+        <% if data.dig(:load, :error) %>
+          <dt>Load error</dt><dd class="red small"><%= data.dig(:load, :error) %></dd>
+        <% end %>
         <dt>Memory</dt>
         <dd class="num"><%= data.dig(:memory, :used_mib) || "—" %> / <%= data.dig(:memory, :total_mib) || "—" %> MiB <span class="<%= mem_class %>">(<%= mem_pct || "—" %>%)</span></dd>
         <dt>Available</dt>
@@ -55,13 +57,15 @@
     <div>
       <dl class="kv">
         <dt>Disk %util (sda)</dt>
-        <dd class="num <%= iowait_class %>"><%= data.dig(:disk, :util_pct) || "—" %>%</dd>
-        <dt>CPU iowait</dt>
-        <dd class="num <%= iowait_class %>"><%= iowait || "—" %>%</dd>
+        <dd class="num <%= disk_class %>"><%= util || "—" %>%</dd>
+        <dt>Queue depth</dt>
+        <dd class="num"><%= data.dig(:disk, :queue_depth) || "—" %></dd>
+        <dt>Read / Write IOPS</dt>
+        <dd class="num"><%= data.dig(:disk, :read_iops) || "—" %> / <%= data.dig(:disk, :write_iops) || "—" %></dd>
         <dt>Uptime</dt>
         <dd class="num"><%= data[:uptime_hours] || "—" %>h</dd>
         <dt>Source</dt>
-        <dd class="small"><%= data[:source] %> @ <code><%= data[:prometheus_url] %></code></dd>
+        <dd class="small"><%= data[:source] %> @ <code><%= data[:host_proc_path] %></code></dd>
       </dl>
     </div>
   </div>

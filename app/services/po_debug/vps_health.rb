@@ -1,136 +1,157 @@
 # frozen_string_literal: true
 
-require "net/http"
-require "json"
-require "concurrent"
-
 module PoDebug
-  # Block 5 — VPS host metrics via existing Prometheus accessory.
+  # Block 5 — VPS host metrics via /host/proc + /host/sys read-only mounts.
   #
-  # Queries himrate-prometheus:9090 /api/v1/query for each metric in parallel
-  # via a Concurrent::FixedThreadPool. Bounded ≤3s per query AND ≤3s total
-  # via Concurrent::Promises.zip + timeout — sequential fallback would block
-  # the Puma worker for up to N×3s if Prometheus is reachable-but-slow.
+  # Replaces the Prometheus accessory dependency (accessory was disabled in
+  # PR-B2 #285 to free ~480 MiB RAM + 6 disk-writers competing with Sidekiq +
+  # ClickHouse + PG). Reading /proc directly is faster (single fs op), removes
+  # one runtime dependency, and aligns with EPIC SCALE ARCHITECTURE §2 (obs
+  # MUST NEVER live on compute box). Multi-host topology: each replica reads
+  # its own /proc via the same mount — no shared scrape target.
   #
-  # CPU count read from a Prometheus query (count of node_cpu_seconds_total
-  # series with mode=idle) so a future VPS upgrade only needs the scrape
-  # target updated, not application code.
+  # All reads wrapped in a per-section rescue. Missing /host/proc (e.g.
+  # local dev without the mount) → returns per-section `{ error: ... }`
+  # payloads; siblings continue to render.
   class VpsHealth
-    HTTP_TIMEOUT = 3 # seconds per Prometheus query
-    PARALLEL_WORKERS = 4
-    OVERALL_TIMEOUT = 5 # seconds budget for the whole block
-
-    METRICS = {
-      load_1m: 'node_load1{instance=~".*:9100"}',
-      load_5m: 'node_load5{instance=~".*:9100"}',
-      load_15m: 'node_load15{instance=~".*:9100"}',
-      mem_total_bytes: 'node_memory_MemTotal_bytes{instance=~".*:9100"}',
-      mem_available_bytes: 'node_memory_MemAvailable_bytes{instance=~".*:9100"}',
-      swap_total_bytes: 'node_memory_SwapTotal_bytes{instance=~".*:9100"}',
-      swap_free_bytes: 'node_memory_SwapFree_bytes{instance=~".*:9100"}',
-      disk_util_pct: 'rate(node_disk_io_time_seconds_total{device="sda"}[1m]) * 100',
-      cpu_iowait_pct: 'avg by (instance) (rate(node_cpu_seconds_total{mode="iowait"}[1m])) * 100',
-      uptime_sec: "node_time_seconds - node_boot_time_seconds",
-      cpu_count: 'count(count by (cpu) (node_cpu_seconds_total{mode="idle"}))'
-    }.freeze
+    HOST_PROC = "/host/proc"
+    HOST_SYS  = "/host/sys"
 
     def self.call
       new.call
     end
 
     def call
-      values = parallel_query(METRICS)
-
-      mem_total_mib = bytes_to_mib(values[:mem_total_bytes])
-      mem_avail_mib = bytes_to_mib(values[:mem_available_bytes])
-      swap_total_mib = bytes_to_mib(values[:swap_total_bytes])
-      swap_free_mib = bytes_to_mib(values[:swap_free_bytes])
-      cpu_count = values[:cpu_count]&.to_i
-
       {
-        load: {
-          one_min: values[:load_1m],
-          five_min: values[:load_5m],
-          fifteen_min: values[:load_15m],
-          cpu_count: cpu_count
-        },
-        memory: {
-          total_mib: mem_total_mib,
-          available_mib: mem_avail_mib,
-          used_mib: mem_total_mib && mem_avail_mib ? (mem_total_mib - mem_avail_mib).round(0) : nil,
-          used_pct: mem_total_mib && mem_avail_mib && mem_total_mib.positive? ?
-                      (((mem_total_mib - mem_avail_mib) / mem_total_mib.to_f) * 100).round(1) : nil
-        },
-        swap: {
-          total_mib: swap_total_mib,
-          free_mib: swap_free_mib,
-          used_mib: swap_total_mib && swap_free_mib ? (swap_total_mib - swap_free_mib).round(0) : nil,
-          used_pct: swap_total_mib && swap_free_mib && swap_total_mib.positive? ?
-                      (((swap_total_mib - swap_free_mib) / swap_total_mib.to_f) * 100).round(1) : nil
-        },
-        disk: {
-          util_pct: values[:disk_util_pct]&.round(1),
-          iowait_pct: values[:cpu_iowait_pct]&.round(1)
-        },
-        uptime_hours: values[:uptime_sec] ? (values[:uptime_sec] / 3600.0).round(1) : nil,
-        source: "prometheus",
-        prometheus_url: prometheus_host
+        load: load_metrics,
+        memory: memory_metrics,
+        swap: swap_metrics,
+        disk: disk_metrics,
+        uptime_hours: uptime_hours,
+        source: "host_proc",
+        host_proc_path: HOST_PROC
       }
     end
 
     private
 
-    # CR S-1: read ENV per request so a Kamal env update lands without app
-    # restart. Trivial overhead (single Hash lookup) vs class-load capture.
-    def prometheus_host
-      ENV.fetch("PROMETHEUS_URL", "http://himrate-prometheus:9090")
-    end
-
-    def parallel_query(metrics)
-      pool = Concurrent::FixedThreadPool.new(PARALLEL_WORKERS)
-      futures = metrics.map do |key, promql|
-        future = Concurrent::Promises.future_on(pool) { [ key, query(promql) ] }
-        [ key, future ]
-      end
-      Concurrent::Promises.zip(*futures.map(&:last)).value!(OVERALL_TIMEOUT)
-      futures.to_h.transform_values { |f| f.fulfilled? ? f.value.last : nil }
-    rescue Concurrent::TimeoutError
-      Rails.logger.tagged("po_debug").warn("vps prom queries exceeded #{OVERALL_TIMEOUT}s — returning partial")
-      futures.to_h.transform_values { |f| f.fulfilled? ? f.value.last : nil }
-    ensure
-      pool&.shutdown
-    end
-
-    def query(promql)
-      uri = URI("#{prometheus_host}/api/v1/query")
-      uri.query = URI.encode_www_form(query: promql)
-
-      http = Net::HTTP.new(uri.host, uri.port)
-      http.open_timeout = HTTP_TIMEOUT
-      http.read_timeout = HTTP_TIMEOUT
-
-      res = http.get(uri.request_uri)
-      return nil unless res.is_a?(Net::HTTPSuccess)
-
-      body = JSON.parse(res.body)
-      return nil unless body["status"] == "success"
-
-      result = body.dig("data", "result")
-      return nil unless result.is_a?(Array) && result.any?
-
-      value_pair = result.first["value"]
-      return nil unless value_pair.is_a?(Array) && value_pair.size == 2
-
-      Float(value_pair[1])
+    # /host/proc/loadavg format: "21.55 21.97 22.15 4/1234 5678".
+    # CPU count from /host/proc/cpuinfo (count of "processor" lines).
+    def load_metrics
+      raw = read("#{HOST_PROC}/loadavg")
+      fields = raw.split
+      {
+        one_min: fields[0]&.to_f,
+        five_min: fields[1]&.to_f,
+        fifteen_min: fields[2]&.to_f,
+        cpu_count: cpu_count
+      }
     rescue StandardError => e
-      Rails.logger.tagged("po_debug").debug("vps prom query failed (#{promql}): #{e.class}")
+      { error: "loadavg read failed: #{e.class}: #{e.message}" }
+    end
+
+    def cpu_count
+      File.foreach("#{HOST_PROC}/cpuinfo").count { |line| line.start_with?("processor") }
+    rescue StandardError
       nil
     end
 
-    def bytes_to_mib(value)
-      return nil unless value
+    # /host/proc/meminfo format: "MemTotal:       8133456 kB" — kB units.
+    def memory_metrics
+      meminfo = parse_meminfo
+      total = kb_to_mib(meminfo["MemTotal"])
+      available = kb_to_mib(meminfo["MemAvailable"])
 
-      (value / 1024.0 / 1024.0).round(0)
+      used = total && available ? (total - available).round(0) : nil
+      used_pct = total && available && total.positive? ?
+                   (((total - available) / total.to_f) * 100).round(1) : nil
+
+      { total_mib: total, available_mib: available, used_mib: used, used_pct: used_pct }
+    rescue StandardError => e
+      { error: "memory read failed: #{e.class}: #{e.message}" }
+    end
+
+    def swap_metrics
+      meminfo = parse_meminfo
+      total = kb_to_mib(meminfo["SwapTotal"])
+      free = kb_to_mib(meminfo["SwapFree"])
+
+      used = total && free ? (total - free).round(0) : nil
+      used_pct = total && free && total.positive? ?
+                   (((total - free) / total.to_f) * 100).round(1) : nil
+
+      { total_mib: total, free_mib: free, used_mib: used, used_pct: used_pct }
+    rescue StandardError => e
+      { error: "swap read failed: #{e.class}: #{e.message}" }
+    end
+
+    # /host/sys/block/sda/stat — 11 fields per Linux kernel docs:
+    #   reads, reads_merged, sectors_read, ms_reading,
+    #   writes, writes_merged, sectors_written, ms_writing,
+    #   io_in_progress, io_ticks_ms, time_in_queue_ms
+    # %util + IOPS via two ~100 ms snapshots — wall-clock measured because
+    # sleep(0.1) is a floor not a fixed window: on the loaded VPS that
+    # motivates this dashboard (load 20+, swap-thrash) the wake can drift
+    # to 150-300 ms, which would over-report %util by the same factor if we
+    # hardcoded the denominator. Process.clock_gettime keeps math honest.
+    def disk_metrics
+      t0 = Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond)
+      first = read_disk_stat
+      sleep 0.1
+      second = read_disk_stat
+      t1 = Process.clock_gettime(Process::CLOCK_MONOTONIC, :millisecond)
+      return { error: "disk stat unavailable" } unless first && second
+
+      elapsed_ms = (t1 - t0).to_f
+      return { error: "disk stat elapsed window collapsed" } if elapsed_ms <= 0
+
+      delta_ms = second[:io_ticks_ms] - first[:io_ticks_ms]
+      util_pct = (delta_ms / elapsed_ms * 100).round(1)
+      util_pct = 100.0 if util_pct > 100
+
+      elapsed_sec = elapsed_ms / 1000.0
+      {
+        util_pct: util_pct,
+        queue_depth: second[:io_in_progress],
+        read_iops: ((second[:reads] - first[:reads]) / elapsed_sec).round(0),
+        write_iops: ((second[:writes] - first[:writes]) / elapsed_sec).round(0)
+      }
+    rescue StandardError => e
+      { error: "disk read failed: #{e.class}: #{e.message}" }
+    end
+
+    def read_disk_stat
+      raw = read("#{HOST_SYS}/block/sda/stat")
+      f = raw.split.map(&:to_i)
+      { reads: f[0], writes: f[4], io_in_progress: f[8], io_ticks_ms: f[9] }
+    rescue StandardError
+      nil
+    end
+
+    # /host/proc/uptime: "uptime_seconds idle_seconds".
+    def uptime_hours
+      raw = read("#{HOST_PROC}/uptime")
+      seconds = raw.split.first.to_f
+      (seconds / 3600.0).round(1)
+    rescue StandardError
+      nil
+    end
+
+    def parse_meminfo
+      @meminfo ||= File.foreach("#{HOST_PROC}/meminfo").each_with_object({}) do |line, h|
+        key, value = line.split(":", 2)
+        h[key] = value.to_s.strip.split.first.to_i
+      end
+    end
+
+    def read(path)
+      File.read(path).strip
+    end
+
+    def kb_to_mib(kb)
+      return nil unless kb && kb.positive?
+
+      (kb / 1024.0).round(0)
     end
   end
 end

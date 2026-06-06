@@ -21,11 +21,11 @@ module Dashboard
     before_action :require_basic_auth!, only: :show
 
     def show
-      # CR S-4: `force` param removed. It bypassed Rails.cache TTL on every
-      # press, defeating the throttle and re-triggering Prometheus + Sidekiq
-      # API calls under PO's repeated refresh. If a genuine fresh snapshot
-      # is needed, `Rails.cache.delete("po_debug:snapshot:v1")` from a console
-      # is the supported path.
+      # `force` param intentionally absent — it would bypass Rails.cache TTL
+      # on every press, defeating the throttle and re-triggering /host/proc +
+      # Sidekiq API + DB reads under PO's repeated refresh. If a genuine fresh
+      # snapshot is needed, `Rails.cache.delete("po_debug:snapshot:v1")` from
+      # a console is the supported path.
       @snapshot = PoDebug::Aggregator.call
 
       respond_to do |format|

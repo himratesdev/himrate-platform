@@ -377,6 +377,18 @@ accessories:
 
 volumes:
   - "himrate_storage:/rails/storage"
+  # PO Debug Dashboard Block 5 — host /proc + /sys read-only mounts.
+  # Replaces the Prometheus accessory dependency (disabled in PR-B2 #285).
+  # Reads node-equivalent metrics natively without an external exporter:
+  #   /host/proc/loadavg     → load 1m/5m/15m
+  #   /host/proc/meminfo     → RAM total / available / swap
+  #   /host/proc/uptime      → uptime seconds
+  #   /host/sys/block/sda/stat → disk I/O counters (queue depth + IOPS)
+  # Read-only mount: zero risk to host, container cannot write back.
+  # Multi-host alignment: each replica reads its own /proc — no shared
+  # scrape target, scales horizontally via Kamal multi-host.
+  - "/proc:/host/proc:ro"
+  - "/sys:/host/sys:ro"
 
 builder:
   arch: amd64
