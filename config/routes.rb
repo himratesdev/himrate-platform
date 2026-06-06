@@ -22,6 +22,14 @@ Rails.application.routes.draw do
   end
   mount flipper_app, at: "/admin/flipper"
 
+  # PO Debug Dashboard — internal real-time observability for PO + T1 lane.
+  # HTTP Basic Auth + Flipper :po_debug_dashboard flag. v0.1 Hot-Lite (3 blocks),
+  # v1.0 fills 4 stubs + adds ActionCable broadcast.
+  namespace :dashboard do
+    get "po-debug", to: "po_debug#show", as: :po_debug, defaults: { format: :html }
+    get "po-debug.json", to: "po_debug#show", defaults: { format: :json }
+  end
+
   # Auth + API endpoints
   namespace :api do
     namespace :v1 do

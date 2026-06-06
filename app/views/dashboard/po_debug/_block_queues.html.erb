@@ -1,0 +1,45 @@
+<% if data[:error] %>
+  <span class="badge error">error</span> <span class="small"><%= data[:error] %></span>
+<% else %>
+  <%
+    global = data[:global] || {}
+    throughput = global[:throughput_jps]
+    throughput_class = if throughput.nil? then ""
+                      elsif throughput < 1 then "red"
+                      elsif throughput < 10 then "yellow"
+                      else "green"
+                      end
+  %>
+  <dl class="kv">
+    <dt>Throughput</dt><dd class="num <%= throughput_class %>"><%= throughput || "—" %> j/s <span class="small">(rolling 5s baseline)</span></dd>
+    <dt>Processed total</dt><dd class="num"><%= number_with_delimiter(global[:processed_total] || 0) %></dd>
+    <dt>Failed total</dt><dd class="num <%= "yellow" if (global[:failed_total] || 0).positive? %>"><%= number_with_delimiter(global[:failed_total] || 0) %></dd>
+    <dt>Enqueued</dt><dd class="num"><%= number_with_delimiter(global[:enqueued] || 0) %></dd>
+    <dt>Scheduled</dt><dd class="num"><%= number_with_delimiter(global[:scheduled] || 0) %></dd>
+    <dt>Retry</dt><dd class="num"><%= number_with_delimiter(global[:retry_size] || 0) %></dd>
+    <dt>Dead</dt><dd class="num <%= "red" if (global[:dead_size] || 0).positive? %>"><%= number_with_delimiter(global[:dead_size] || 0) %></dd>
+    <dt>Processes / busy</dt><dd class="num"><%= global[:processes] %> / <%= global[:workers_busy] %></dd>
+  </dl>
+  <table style="margin-top: 8px;">
+    <tr><th>Queue</th><th class="num">Depth</th><th class="num">Latency</th><th class="num">Oldest age</th></tr>
+    <% (data[:queues] || []).each do |q| %>
+      <%
+        depth_class = if q[:depth] > 50000 then "red"
+                     elsif q[:depth] > 5000 then "yellow"
+                     elsif q[:depth].positive? then "green"
+                     else ""
+                     end
+        oldest_class = if (q[:oldest_job_age_sec] || 0) > 600 then "red"
+                      elsif (q[:oldest_job_age_sec] || 0) > 60 then "yellow"
+                      else ""
+                      end
+      %>
+      <tr>
+        <td><code><%= q[:name] %></code></td>
+        <td class="num <%= depth_class %>"><%= number_with_delimiter(q[:depth]) %></td>
+        <td class="num"><%= q[:latency_sec] %>s</td>
+        <td class="num <%= oldest_class %>"><%= q[:oldest_job_age_sec] || "—" %>s</td>
+      </tr>
+    <% end %>
+  </table>
+<% end %>
