@@ -1,64 +1,48 @@
 # TASK-015: Sidekiq queue configuration
-# Queues ordered by priority (higher weight = higher priority)
-# bot_scoring: per-stream bot-scoring (BotScoringWorker, LiveBotScoringWorker) — must bypass
-#              :signals backlog so PerUserBotScore stays fresh on live streams. Without a
-#              dedicated queue, bot-scoring jobs sit behind 700k+ SignalComputeWorker rebuilds
-#              and the chat_behavior / known_bot_match / account_profile_scoring signals
-#              abstain on 97% of channels (Phase 5 root cause, 2026-05-31).
-#              CR-229 W1: weight 6 is Sidekiq weighted-random (~6/36 ≈ 17% of fetch slots),
-#              NOT strict precedence over :signals. That's fine because :bot_scoring job
-#              volume is tiny (≤300 jobs/30-min cron tick) vs the SignalComputeWorker backlog —
-#              the new queue drains within seconds even at fractional fetch share. Strict
-#              precedence would require running `sidekiq -q bot_scoring -q signals -q ...` in
-#              order-mode (separate Kamal role), out of scope here.
-#              CR-229 W2: SIDEKIQ_CONCURRENCY stays 5 threads in the `job` role. New queue
-#              steals ~17% of fetches from :signals — intentional trade for bot-scoring
-#              freshness. Burning down the :signals backlog slows by ~17%; bot-scoring becomes
-#              real-time. If the trade becomes unacceptable, dedicated Kamal role (mirroring
-#              whisper_worker) is the next escalation.
-# signal_compute: SignalComputeWorker — Phase 5 follow-up (2026-05-31). The :bot_scoring
-#                 dedicated queue (PR #229) fixed BotScoringWorker freshness but left
-#                 SignalComputeWorker.perform_async (the highest-volume :signals enqueuer —
-#                 every live stream every minute via StreamMonitorWorker, plus post-stream
-#                 force=true from BotScoringWorker) still piling onto :signals BEHIND its own
-#                 1M+ historical backlog. Result: new live-stream Trust Index recomputes
-#                 themselves are queue-tail starved. Same fix pattern as bot_scoring —
-#                 dedicated queue so NEW jobs bypass historical backlog. Weight 6 matches
-#                 :bot_scoring priority class ("live freshness").
-# stream_lifecycle: StreamOnlineWorker + StreamOfflineWorker — BUG-251.40-E (2026-06-01).
-#                   Post EPIC BUG-251.40 cleanup (348k pre-A2 OnlineWorker jobs purged), the
-#                   remaining :signals queue (~967k) is dominated by 564k legacy
-#                   SignalComputeWorker jobs from pre-PR #233 (now stale; new SCW enqueues
-#                   go to :signal_compute). FIFO-from-tail Sidekiq pop semantics → NEW
-#                   StreamOnlineWorker enqueues from `MonitoredLiveDetectorWorker` land at
-#                   queue HEAD but won't process for ~30-44h while tail drains. Result:
-#                   Stream creation effectively paused (Stream.where(ended_at: nil).count = 4
-#                   after cleanup, no growth despite MLD detecting 333 live channels). Same
-#                   fix pattern as :bot_scoring + :signal_compute — dedicated queue so NEW
-#                   lifecycle jobs bypass historical backlog. Weight 6 = real-time priority
-#                   class. The remaining :signals queue (~867k legacy non-lifecycle jobs)
-#                   drains naturally without affecting new stream detection.
-#                   BUG-251.40-F (2026-06-01): weight=6 alone was insufficient — drain rate
-#                   ~0.625 effective thread / ~6 j/s peak << ~21 j/s enqueue rate from MLD
-#                   (60s cron × ~333 live channels). Queue accumulated 165k in 16h post-#240
-#                   deploy, head-of-line blocking → 0 Stream creates last 6h. Solved by
-#                   dedicated `stream_worker` Kamal role (deploy.yml, mirroring whisper_worker
-#                   pattern) — strict precedence, c=3 sustained ~12 j/s. Queue stays here
-#                   as fallback: if stream_worker role drops, default `job` role picks up via
-#                   weighted-random until role restored.
-# signals: legacy queue with the historical backlog (SignalComputeWorker pre-PR #233 stale,
-#          Trends::AnomalyAttributionWorker low-volume, BotScoringWorker stragglers). Drains
-#          naturally as backlog burns down without new inflow — all high-volume primary
-#          enqueuers (SignalCompute, BotScoring, StreamOnline/Offline) now route to dedicated
-#          queues. Remaining workers on :signals (RaidWorker, ChannelUpdateWorker,
-#          Trends::AnomalyAttribution, Trends::Aggregation) are low-volume.
-# default: general tasks
-# notifications: email, Telegram, push
-# monitoring: periodic checks, cleanup
+#
+# 2026-06-06 PR-B1a (ADR DEC-014): queue → role mapping consolidated from 6 dedicated
+# Sidekiq Kamal roles to 3 tier-weighted roles in deploy.yml. The :queues definitions
+# below are PRESERVED for any code paths that introspect queue weight (e.g. monitoring
+# dashboards) but the per-queue runtime behavior is now determined by which tier role
+# in config/deploy.yml consumes it (via explicit `-q queue,weight` CLI flag), NOT by
+# this file's ordering.
+#
+# Tier mapping (see config/deploy.yml servers.compute_tier1/2/3):
+#   Tier 1 c=10 (realtime-critical, all weight 10): signal_compute, bot_scoring, stream_lifecycle, signals
+#   Tier 2 c=5  (async-important, all weight 5 except monitoring=10):
+#     post_stream, chat, pva_critical, pva_helix, pva_gql_anon, monitoring, default
+#   Tier 3 c=5  (batch/deferred, all weight 2): notifications, accessory_ops, long_running
+#   whisper_transcripts: separate whisper_worker role (NOT in this :queues list).
+#
+# CR S1 acknowledgment: the prior architecture's N+1 safety net (`job` catch-all consuming
+# every queue at low weight as fallback when a dedicated role crashed) is REMOVED by this
+# consolidation. Each queue now has a single role consumer. Mitigation: multi-host scale-out
+# (Kamal `hosts: [box1, box2]` per EPIC §3) restores N+1 once Phase 1 launch hits a 2nd box.
+# Until then: manual `kamal app restart -r compute_tierN -d staging` if a tier crashes.
+# This is an accepted tradeoff for consolidation under VPS load-saturation reality.
+#
+# Per-queue historical notes (each was added during a separate starvation incident):
+# bot_scoring: per-stream bot-scoring (BotScoringWorker, LiveBotScoringWorker) — added
+#              PR #229 (2026-05-31) to bypass :signals backlog so PerUserBotScore stays
+#              fresh on live streams (chat_behavior / known_bot_match / account_profile_scoring
+#              signals were abstaining on 97% of channels).
+# signal_compute: SignalComputeWorker — added Phase 5 follow-up (2026-05-31, PR #257) for
+#                 same reason as bot_scoring split. Highest-volume :signals enqueuer.
+# stream_lifecycle: StreamOnlineWorker + StreamOfflineWorker — added BUG-251.40-E (2026-06-01,
+#                   PR #233/#240) when 0 Stream creates last 6h on staging because legacy
+#                   :signals backlog blocked new lifecycle jobs.
+# signals: legacy queue with historical backlog (SignalComputeWorker pre-PR #233 stale,
+#          Trends::AnomalyAttributionWorker low-volume, BotScoringWorker stragglers).
+#          Drains naturally as backlog burns down without new inflow.
+# default: catch-all for workers that don't specify `queue:`. Tier 2 placement = safer
+#          default for unknown criticality.
+# notifications: email, Telegram, push (low-volume periodic).
+# monitoring: BSW BigChannelChatterSweep + 19 other periodic schedulers. High-volume in
+#             tier 2; weight bumped to 10 in compute_tier2 cmd for proportional fetch share.
 # accessory_ops: BUG-010 PR2 — AccessoryDriftDetectorWorker, AutoRemediation triggers,
-#                CostAttribution aggregation (priority 2)
-# long_running: BUG-010 PR2 — MlOps trainer (>=10min runs), isolated to prevent worker
-#               starvation в default/signals queues (priority 1, low concurrency budget)
+#                CostAttribution aggregation.
+# long_running: BUG-010 PR2 — MlOps trainer (>=10min runs), tier 3 isolation prevents
+#               worker starvation of realtime/async-important tiers.
 
 :concurrency: <%= ENV.fetch("SIDEKIQ_CONCURRENCY", 5) %>
 

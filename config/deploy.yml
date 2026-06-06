@@ -18,195 +18,150 @@ servers:
   web:
     hosts:
       - 194.135.85.159
-  job:
+    # CR M1 fix 2026-06-06: explicit RAILS_MAX_THREADS=3 pins web AR pool to Puma's
+    # threads_count default (config/puma.rb line 30 reads same env). Without this
+    # override, web would fall back to `database.yml` default `{ 5 }` → 2 idle AR
+    # connections per Puma worker. Setting 3 keeps AR pool == Puma threads (no waste,
+    # no starvation). Iter-2 CR Nit-A wording fix.
+    env:
+      clear:
+        RAILS_MAX_THREADS: 3
+
+  # 2026-06-06 PR-B1a — Sidekiq Tier-Based Consolidation (ADR DEC-014).
+  # Replaces 6 dedicated Sidekiq Kamal roles (job, stream_worker, signal_compute_worker,
+  # bot_scoring_worker, signals_worker, monitoring_worker) with 3 tier-weighted roles
+  # matching EPIC SCALE ARCHITECTURE §2 Topology Target (compute_tier1/2/3).
+  #
+  # Why 3-tier (not single, not 2-split):
+  # - Single general_worker c=8 = band-aid. Tier 3 batch (cleanup/trends_agg/billing)
+  #   would block Tier 1 realtime under Phase 1 scale (1k channels).
+  # - 2-tier split (general+compute) = compromise. Tier 3 batch should be isolated from
+  #   Tier 2 async-important; on Phase 2 (5k channels) would require ещё split = доработка-
+  #   доработки per [[feedback-build-for-scale-no-iterative-band-aids]].
+  # - 3-tier = scale-correct. Multi-host ready через Kamal multi-host (replicas scale via
+  #   `hosts: [host1, host2, ...]`). One Sidekiq weighted-fetch master per tier, horizontal
+  #   scale-out без code change per EPIC §2 §5.
+  #
+  # Pre-consolidation baseline (2026-06-06 03:13Z, docker stats on a886193):
+  #   job 526 MiB + signal_compute_worker 259 MiB + bot_scoring_worker 380 MiB +
+  #   monitoring_worker 257 MiB + signals_worker 144 MiB + stream_worker 71 MiB
+  #   = 1637 MiB / 1.6 GiB on 6 Rails boot duplicates.
+  # Expected post-consolidation: 3 tier roles × ~350-450 MiB = ~1050-1350 MiB.
+  # Freed: ~300-600 MiB (3 boot duplicates removed). Honest measurement-based estimate;
+  # T1-SPAWN-PROMPT cited "-2.5 GiB" was based on pre-Phase-7-R-Step-1/2/3 baseline before
+  # legacy queue purges already freed 1.9 GiB.
+  #
+  # Whisper_worker stays separate role — GPU-bound by nature (--cpus 1.5 isolation),
+  # dedicated CPU budget protected from tier consolidation. IRC stays separate — stateful
+  # connection-pinned process. Web stays separate — Puma not Sidekiq.
+  #
+  # Workers on whisper_transcripts queue: ClipTranscriptWorker (sole). whisper_transcripts
+  # is NOT in config/sidekiq.yml :queues — only whisper_worker picks it up via explicit
+  # `-q whisper_transcripts` flag.
+
+  # === TIER 1: REALTIME-CRITICAL (live TI / bot scoring / stream lifecycle / anomaly) ===
+  # Weighted-fetch within tier (equal weight 10 = round-robin fairness across 4 queues).
+  # c=10 threads handle realtime bursts (signal_compute ~3sec/job × 10 threads = 200 j/min).
+  #
+  # CR M1 fix: AR per-process pool sized via RAILS_MAX_THREADS=12 (Sidekiq c=10 + 2
+  # headroom for internal threads — heartbeat, scheduler, Rails async executor — per CR
+  # iter-2 Nit-B). Read by config/database.yml `pool: <%= ENV.fetch("RAILS_MAX_THREADS")
+  # { 5 } %>`. Without this override the default 5 would block Sidekiq threads 6-10 on
+  # connection checkout (ActiveRecord::ConnectionTimeoutError after 5s).
+  # Verified vs PG server max_connections=100 default: tier1(12) + tier2(5) + tier3(5) +
+  # web(3) + whisper(1) = 26 client slots max — well under server cap with ample headroom
+  # for live console / ad-hoc psql / accessory health probes.
+  compute_tier1:
     hosts:
       - 194.135.85.159
-    cmd: bundle exec sidekiq -C config/sidekiq.yml
+    cmd: bundle exec sidekiq -q signal_compute,10 -q bot_scoring,10 -q stream_lifecycle,10 -q signals,10 -c 10
     proxy: false
+    env:
+      clear:
+        RAILS_MAX_THREADS: 12
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
+
+  # === TIER 2: ASYNC-IMPORTANT (post-stream report / chat ingest / PVA / monitoring sweep) ===
+  # Includes `default` queue (catch-all for jobs without explicit queue:) — safer to land
+  # in async-important tier vs batch tier (unknown criticality defaults to faster).
+  # `monitoring` (BSW BigChannelChatterSweep) is async-important per EPIC §2 (not batch).
+  #
+  # CR S2 fix: `monitoring` given weight=10 (2× vs other tier2 queues at 5) reflecting
+  # its high-volume profile (BSW ~4 j/min × 14s = ~5760/day vs other tier2 queues which
+  # are cron-bursty low-volume). Effective monitoring share = 10/(10+5×6) = 25% fetch
+  # slots × c=5 = ~1.25 thread × 14s/job ≈ 0.09 j/s = ~7700/day capacity. **Honest:** this
+  # is LESS than the prior dedicated monitoring_worker c=4 (which achieved ~34k/day
+  # theoretical), but covers steady-state enqueue 5760/day with ~33% headroom. Backlog
+  # will accumulate if BSW jobs spike past 8s avg or PVA queues drain faster than
+  # expected. Tradeoff for consolidation — accept + monitor post-deploy + tune c=5→c=7
+  # if monitoring backlog grows >24h.
+  #
+  # CR M1 fix: RAILS_MAX_THREADS=5 (matches c=5) for AR pool sizing.
+  compute_tier2:
+    hosts:
+      - 194.135.85.159
+    cmd: bundle exec sidekiq -q post_stream,5 -q chat,5 -q pva_critical,5 -q pva_helix,5 -q pva_gql_anon,5 -q monitoring,10 -q default,5 -c 5
+    proxy: false
+    env:
+      clear:
+        RAILS_MAX_THREADS: 5
+    options:
+      health-cmd: "ruby -e 'puts :ok'"
+      health-interval: 10s
+
+  # === TIER 3: BATCH / DEFERRED (notifications / accessory ops / ML training / cleanup) ===
+  # Lowest priority. Sustained backlog acceptable here (job latency ~minutes-hours OK for
+  # email digests / cleanup sweeps / ML retraining). c=5 threads — adequate for low-volume
+  # periodic schedulers + the occasional MlOps training run (long_running queue caps via
+  # job-level timeout, not concurrency).
+  #
+  # CR M1 fix: RAILS_MAX_THREADS=5 (matches c=5) for AR pool sizing.
+  compute_tier3:
+    hosts:
+      - 194.135.85.159
+    cmd: bundle exec sidekiq -q notifications,2 -q accessory_ops,2 -q long_running,2 -c 5
+    proxy: false
+    env:
+      clear:
+        RAILS_MAX_THREADS: 5
+    options:
+      health-cmd: "ruby -e 'puts :ok'"
+      health-interval: 10s
+
   # TASK-110 v1.2 (CR S-7): dedicated Sidekiq role для whisper_transcripts queue concurrency=1.
   # CPU isolation — один transcript job в момент, prevents starvation web/job на Time4VPS 3 cores.
   # whisper_transcripts queue НЕ в config/sidekiq.yml :queues (default `job` role его не подхватывает);
   # обрабатывается ТОЛЬКО этим role через explicit -q flag.
+  # 2026-06-06 PR-B1a: NOT consolidated into compute_tiers — GPU-bound by nature, --cpus 1.5
+  # isolation preserved.
   whisper_worker:
     hosts:
       - 194.135.85.159
     cmd: bundle exec sidekiq -q whisper_transcripts -c 1
     proxy: false
+    env:
+      clear:
+        # CR M1 fix: RAILS_MAX_THREADS=1 matches Sidekiq c=1 — minimal AR pool footprint.
+        RAILS_MAX_THREADS: 1
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
-  # BUG-251.40-F: dedicated Sidekiq role для :stream_lifecycle queue.
-  # PR #240 dedicated queue + weight=6 в default `job` role оказалось insufficient:
-  # 5 threads × ~12.5% weighted slot = ~0.625 effective thread (~6 j/s peak) vs
-  # ~21 j/s enqueue rate (MLD каждые 60s × ~333 live channels). Net +3 j/s → 165k
-  # backlog за 16h, head-of-line blocking → 0 Stream creations last 6h on staging.
-  # Strict precedence (separate process, -q stream_lifecycle only) с c=3 даёт ~12 j/s
-  # sustained drain. Mirror whisper_worker pattern. stream_lifecycle queue ОСТАЁТСЯ в
-  # config/sidekiq.yml :queues для backward-compat и fallback (default job role подхватит
-  # если stream_worker role упадёт — соответствует existing pattern для bot_scoring/signal_compute).
-  stream_worker:
-    hosts:
-      - 194.135.85.159
-    cmd: bundle exec sidekiq -q stream_lifecycle -c 3
-    proxy: false
-    options:
-      health-cmd: "ruby -e 'puts :ok'"
-      health-interval: 10s
-  # 2026-06-02: dedicated Sidekiq role для :signal_compute queue.
-  # Same bottleneck pattern as stream_worker (BUG-251.40-F) — PR #229 created dedicated
-  # :signal_compute queue + weight=6 in default `job` role, но c=5 total threads ×
-  # ~12.5% weighted slot (6/48 sum of all queue weights в sidekiq.yml :queues) =
-  # ~0.625 effective thread (~2.5k jobs/hr drain at typical SCW latency). Observed enqueue rate ~25-90k jobs/hr (428 live streams × StreamMonitor
-  # каждую минуту = 25.7k/hr floor; plus BotScoringWorker force-enqueue post-stream =
-  # spikes to 90k/hr). Net growth +5.5k..+92k jobs/hr → :signal_compute backlog grew
-  # 619k → 804k in 2h (2026-06-02 audit). Two-day trend: 670k (2026-05-31) → 992k
-  # :signals + 804k :signal_compute = 1.13M growth.
-  # Strict precedence (separate process, -q signal_compute only) с c=5 даёт ~12-25 j/s
-  # sustained drain (latency-dependent). Mirror stream_worker / whisper_worker pattern.
-  # signal_compute queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat и
-  # fallback (default job role подхватит если signal_compute_worker role упадёт).
-  #
-  # 2026-06-04 Phase 7 S (BUG-A2-BSW-CH-EMPTY-NIX, PR #282): добавлен `:bot_scoring`
-  # queue к этой роли с strict precedence (`-q signal_compute -q bot_scoring`).
-  # Post-deploy measurement: drain rate ONLY 660 j/hr vs theoretical 18-36k j/hr.
-  # Root cause = SignalComputeWorker constantly busy с c=5 threads (each SCW ~3sec,
-  # enqueue rate keeps signal_compute queue at 10-50 = threads never idle → bot_scoring
-  # never gets a slot per strict precedence). Backlog 23k→15k за 12h, BSW signals
-  # (chat_behavior/known_bot_match/account_profile_scoring) coverage in TIH last 30min
-  # = 4.5% (target 100% of live streams).
-  #
-  # 2026-06-05 Phase 7 T (this PR): split bot_scoring to ITS OWN dedicated role
-  # (bot_scoring_worker, see below) for ACTUAL strict-precedence drain. Removed
-  # `-q bot_scoring` here → signal_compute_worker back to processing ONLY :signal_compute
-  # (its original responsibility per PR #257). New 9th Kamal role accepted — VPS reboot
-  # capacity refreshed, +250 MiB container cost worth the BSW unblocking. Mirror existing
-  # signals_worker (PR #270) / monitoring_worker (PR #274) split pattern.
-  signal_compute_worker:
-    hosts:
-      - 194.135.85.159
-    cmd: bundle exec sidekiq -q signal_compute -c 5
-    proxy: false
-    options:
-      health-cmd: "ruby -e 'puts :ok'"
-      health-interval: 10s
-  # 2026-06-05 Phase 7 T: dedicated Sidekiq role для :bot_scoring queue.
-  # Promotion из piggyback на signal_compute_worker (PR #282) → own process.
-  # Same pattern as signals_worker (PR #270) / monitoring_worker (PR #274) /
-  # signal_compute_worker (PR #257) / stream_worker (BUG-251.40-F).
-  #
-  # Why split: PR #282 attempted to share signal_compute_worker via strict
-  # precedence `-q signal_compute -q bot_scoring`. Post-deploy measurement on
-  # 2026-06-05 confirmed signal_compute_worker threads (c=5) constantly fed by
-  # SignalComputeWorker jobs (~3sec each, queue size stays 10-50) → bot_scoring
-  # never gets thread time per strict precedence rules. Net drain ~660 j/hr —
-  # 27× slower than designed 18k j/hr. 4.5% BSW coverage in TIH = unacceptable.
-  #
-  # Workers on :bot_scoring queue = BotScoringWorker (sole) + LiveBotScoringWorker
-  # (cron-scheduled enqueuer, also runs from this role on :bot_scoring). Job profile: ~1-3 sec each
-  # (CH chat read + per-user feature extraction + classification). c=3 dedicated
-  # threads × 1 j/2sec = 1.5 j/s = 5400 j/hr drain capacity. Enqueue rate per
-  # PR #282 comment = LiveBotScoringWorker */30min × 300 streams = 600 j/hr.
-  # 5400 capacity ÷ 600 enqueue = 9× headroom, plus quick drain of 15k backlog
-  # in ~3h. Strict-precedence dedicated process never starved by SCW.
-  #
-  # c=3 sizing rationale: BSW jobs read CH chat_messages (1-3MB per query, ~200ms),
-  # then per-user PG inserts (up to 100 users/stream batch). 3 concurrent = max ~9MB
-  # CH read + ~300 PG inserts/sec peak — within accessory capacity. Higher c=5/7
-  # risks PG connection pool exhaustion.
-  bot_scoring_worker:
-    hosts:
-      - 194.135.85.159
-    cmd: bundle exec sidekiq -q bot_scoring -c 3
-    proxy: false
-    options:
-      health-cmd: "ruby -e 'puts :ok'"
-      health-interval: 10s
-  # 2026-06-03 Phase 7 O: dedicated Sidekiq role для :signals queue.
-  # Same starvation pattern as signal_compute_worker (PR #257) / stream_worker (BUG-251.40-F):
-  # `:signals` weight=5 in default `job` role with 5 threads × shared weighted fetch
-  # → effective fetch slice ~5/48 ≈ 0.5 thread → 8 jobs/hour processed
-  # (measured 2026-06-03: 4 Trends::AnomalyAttributionWorker completions over 30min
-  # vs 1,023,832-job backlog actively fed at ~1k/hr by SignalComputeWorker anomaly_ids).
-  # Backlog ETA at current drain rate: 300+ days. Same fix shape as PR #257: strict
-  # precedence role processes ONLY :signals queue with c=5 dedicated threads.
-  # :signals queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat и fallback
-  # (default job role подхватит если signals_worker role упадёт). Workers on :signals
-  # are Trends::AnomalyAttributionWorker (88.8% of 1k sampled 2026-06-03) +
-  # Trends::AggregationWorker (11.2%) + zero-volume RaidWorker + ChannelUpdateWorker
-  # — strict-precedence consumer of the SAME queue is the entire migration; no
-  # per-worker code changes required.
-  #
-  # Role naming: matches queue (`signals_worker` ↔ `-q signals`) rather than dominant
-  # worker class, mirroring `stream_worker` ↔ `-q stream_lifecycle`. CR-iter1 N-1
-  # 2026-06-03 — "trends_attribution_worker" would have implied single-worker focus
-  # while in reality the dedicated process consumes the entire :signals queue (4
-  # worker classes).
-  signals_worker:
-    hosts:
-      - 194.135.85.159
-    cmd: bundle exec sidekiq -q signals -c 5
-    proxy: false
-    options:
-      health-cmd: "ruby -e 'puts :ok'"
-      health-interval: 10s
-  # 2026-06-03 Phase 7 O follow-up: dedicated Sidekiq role для :monitoring queue.
-  # Same starvation pattern as signals_worker (PR #270) / signal_compute_worker (PR #257) /
-  # stream_worker (BUG-251.40-F):
-  # `:monitoring` weight=1 in default `job` role (lowest tier in sidekiq.yml :queues —
-  # `bot_scoring`/`signal_compute`/`stream_lifecycle` w=6, `signals` w=5, `chat` w=4,
-  # `pva_*`/`post_stream`/`default` w=3, `notifications`/`accessory_ops` w=2,
-  # `monitoring`/`long_running` w=1; weight sum = 6+6+6+5+4+3+3+3+3+3+2+2+1+1 = 48).
-  # Weighted-fetch share = 1 / 48 ≈ 2.08% of fetch slots × 5 threads ≈ ~0.10 effective
-  # thread per :monitoring job.
-  # Live-trigger workload after PR #269 (Twitch::BigChannelChatterSweepWorker, ~14s/job
-  # for 20-parallel CommunityTab probe + Set-dedupe + persistence chain): drain ≈ 0.11
-  # thread × 1 job / 14s = ~0.008 jobs/sec = ~700 jobs/day on `job` role.
-  # Enqueue rate measured 2026-06-03: ≈ 4 jobs/min (95 jobs auto-enqueued within ~3 min
-  # of `:big_channel_chatter_sweep` flag flip; sustained ~4/min steady-state by
-  # StreamMonitorWorker tier1 gate + SETNX 5-min throttle per channel) = ~5760/day.
-  # Result: queue grew from 43k (pre-compact 2026-06-03 14:47Z) → 58k (16:53Z) in ~2h on
-  # `job` role, latency ~55k seconds (15h-old jobs ≡ stream they targeted has long ended).
-  # Same fix shape as PR #270: strict-precedence role processes ONLY :monitoring queue
-  # with c=2 dedicated threads (lower than signals_worker c=5 — each BigChannelChatterSweep
-  # job is heavy 14s wall clock with 20-thread GQL fan-out, so c=2 = max 40 concurrent
-  # outbound HTTP @ peak; stays under the ~800 req/min Twitch GQL Helix soft cap observed
-  # elsewhere). Expected drain: ~2 threads × 1 job / 14s = ~0.14 j/s = ~12k/hr → 58k backlog
-  # drains in ~5h. :monitoring queue ОСТАЁТСЯ в config/sidekiq.yml :queues для backward-compat
-  # и fallback (default job role подхватит если monitoring_worker role упадёт). 20 worker
-  # classes enqueue onto :monitoring (full list: app/workers grep for `queue: :monitoring` /
-  # `sidekiq_options queue: :monitoring`); high-volume dominant = Twitch::BigChannelChatterSweepWorker
-  # (~4/min steady-state post-PR #269 flag flip); low-volume periodic scheduler tail =
-  # StreamMonitorWorker, MonitoredLiveDetectorWorker, CleanupWorker, RaidDetectionWorker,
-  # ChannelMetadataRefreshWorker, ChatterProfileRefreshWorker, FollowerSnapshotWorker,
-  # BotListRefreshWorker, StaleStreamSweepWorker, SidekiqHealthMonitorWorker, ChannelDiscoveryWorker,
-  # ChannelPruneWorker, CrossChannelDigestRefreshWorker, Trends::NightlyAggregationWorker, +
-  # 5 PersonalAnalytics::* scheduler workers. Strict-precedence consumer of the SAME queue is
-  # the entire migration; no per-worker code changes required. c=2 sizing dominated by
-  # BigChannelChatterSweep cost profile — other 19 classes are scheduler/periodic and trivial.
-  #
-  # Role naming: matches queue (`monitoring_worker` ↔ `-q monitoring`) per the symmetry
-  # established by `stream_worker` ↔ `-q stream_lifecycle`, `signals_worker` ↔ `-q signals`.
-  #
-  # 2026-06-05 Phase 7 T (this PR): bump c=2 → c=4. Post-2026-06-04 reboot measurement:
-  # :monitoring queue grew 43k → 89k in ~14h (net +3.3k/hr). c=2 drain (theoretical
-  # 12k/hr per design comment above) insufficient at observed enqueue 4-5/min × ~14sec
-  # avg job = ~5760 j/day saturated by c=2 capacity (~17k/day) only when BCCSweep
-  # jobs run ≤8s each. Real measurement shows mix of BCCSweep + 19 other workers
-  # (StreamMonitor, MonitoredLiveDetector, CleanupWorker, etc.) bring average up.
-  # c=4 doubles capacity (~34k/day) → covers steady-state + drains backlog ~2.5 days.
-  # Twitch GQL HTTP fan-out (20 threads × c=4 = 80 max concurrent outbound) still
-  # under observed ~800 req/min soft cap.
-  monitoring_worker:
-    hosts:
-      - 194.135.85.159
-    cmd: bundle exec sidekiq -q monitoring -c 4
-    proxy: false
-    options:
-      health-cmd: "ruby -e 'puts :ok'"
-      health-interval: 10s
+
+  # ⚠️ HISTORICAL: 6 dedicated Sidekiq Kamal roles removed 2026-06-06 PR-B1a (ADR DEC-014):
+  #   - job (default catch-all, c=5)
+  #   - stream_worker (-q stream_lifecycle -c 3, added BUG-251.40-F 2026-06-01)
+  #   - signal_compute_worker (-q signal_compute -c 5, added PR #257 2026-06-02)
+  #   - bot_scoring_worker (-q bot_scoring -c 3, added PR #283 2026-06-05 Phase 7 T)
+  #   - signals_worker (-q signals -c 5, added PR #270 2026-06-03 Phase 7 O)
+  #   - monitoring_worker (-q monitoring -c 4, added PR #274 2026-06-03 Phase 7 O follow-up)
+  # Replaced by compute_tier1/2/3 roles defined above (EPIC SCALE ARCHITECTURE §2 Topology Target).
+  # All 14 queues from config/sidekiq.yml :queues remain consumed (now via tier-weighted-fetch
+  # instead of strict-precedence per-role). Whisper_worker preserved as separate GPU-isolated role.
+  # Rationale + full historical context: docs/adrs/DEC-014-sidekiq-tier-consolidation.md.
+  # === END HISTORICAL block; original Phase 7 O/S/T per-role comments removed (preserved in
+  #     git history for blame archaeology). Definitions consolidated above. ===
   irc:
     hosts:
       - 194.135.85.159
