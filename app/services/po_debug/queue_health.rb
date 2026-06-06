@@ -5,11 +5,15 @@ require "sidekiq/api"
 module PoDebug
   # Block 4 — Sidekiq queue depths + throughput.
   #
-  # Throughput = jobs/sec rolling 60s window, tracked in Redis ZSETs by
-  # Sidekiq::Stats processed counter delta. Cached snapshot from previous call
-  # is stored in Redis for delta computation across Aggregator runs (CACHE_TTL=5s).
+  # Queue list = `Sidekiq::Queue.all` at runtime (canonical: surfaces every queue
+  # currently registered in Redis, in sync with `config/sidekiq.yml :queues`
+  # without manual mirroring). A hardcoded whitelist would silently hide new
+  # queues (e.g. chat / pva_critical / pva_helix / post_stream) — defeating the
+  # dashboard's purpose during T1's consolidation work.
+  #
+  # Throughput = jobs/sec rolling window via Sidekiq::Stats.processed delta,
+  # baseline persisted in Redis between Aggregator runs (CACHE_TTL=5s).
   class QueueHealth
-    QUEUES = %w[signals signal_compute monitoring bot_scoring stream_lifecycle job whisper].freeze
     THROUGHPUT_KEY = "po_debug:queue_health:throughput_baseline"
 
     def self.call
@@ -46,17 +50,18 @@ module PoDebug
     private
 
     def queue_rows
-      QUEUES.map do |name|
-        q = Sidekiq::Queue.new(name)
+      # Sort by depth descending so the PO sees worst queues at the top —
+      # operational priority during incident triage.
+      Sidekiq::Queue.all.map do |q|
         oldest = q.first&.enqueued_at
         oldest_age = oldest ? (Time.current.to_f - oldest.to_f).round(1) : nil
         {
-          name: name,
+          name: q.name,
           depth: q.size,
           latency_sec: q.latency.round(2),
           oldest_job_age_sec: oldest_age
         }
-      end
+      end.sort_by { |r| -r[:depth] }
     end
 
     def previous_baseline

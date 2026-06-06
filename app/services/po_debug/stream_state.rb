@@ -33,6 +33,10 @@ module PoDebug
     end
 
     def live_payload(channel, stream)
+      # CR M-2: dropped per-request `ccv_snapshots.count` — was SELECT COUNT(*)
+      # on a fast-growing table every 5s. peak/avg already convey the info
+      # without an extra COUNT. Latest snapshot picked via order+limit(1) =
+      # uses the existing (stream_id, timestamp) index — O(log n).
       latest_snapshot = stream.ccv_snapshots.order(timestamp: :desc).first
       latest_ts = latest_snapshot&.timestamp
       {
@@ -51,8 +55,7 @@ module PoDebug
           peak_ccv: stream.current_peak_ccv,
           avg_ccv: stream.current_avg_ccv,
           latest_viewer_count: latest_snapshot&.ccv_count,
-          latest_snapshot_at: latest_ts&.iso8601,
-          ccv_snapshot_count: stream.ccv_snapshots.count
+          latest_snapshot_at: latest_ts&.iso8601
         }
       }
     end

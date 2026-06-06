@@ -19,7 +19,7 @@ RSpec.describe PoDebug::Aggregator do
     end
 
     it "returns all 7 block keys + meta" do
-      snapshot = described_class.call(force: true)
+      snapshot = described_class.call
 
       expect(snapshot).to include(
         :generated_at, :version,
@@ -31,24 +31,24 @@ RSpec.describe PoDebug::Aggregator do
     it "isolates collector failures — one error does not break sibling blocks" do
       allow(PoDebug::StreamState).to receive(:call).and_raise("boom")
 
-      snapshot = described_class.call(force: true)
+      snapshot = described_class.call
 
       expect(snapshot[:stream]).to include(error: a_string_matching(/boom/), stale: true)
       expect(snapshot[:queues]).to eq(stub_queues: true)
       expect(snapshot[:vps]).to eq(stub_vps: true)
     end
 
-    it "caches the snapshot for CACHE_TTL between calls (no force)" do
-      first = described_class.call(force: true)
+    it "caches the snapshot for CACHE_TTL between calls" do
+      first = described_class.call
       second = described_class.call
       expect(second[:generated_at]).to eq(first[:generated_at])
     end
 
-    it "force: true bypasses cache and regenerates" do
-      first = described_class.call(force: true)
-      # Allow a millisecond to pass so iso8601 differs
+    it "regenerates after Rails.cache.delete" do
+      first = described_class.call
+      Rails.cache.delete("po_debug:snapshot:v1")
       sleep 1.1
-      second = described_class.call(force: true)
+      second = described_class.call
       expect(second[:generated_at]).not_to eq(first[:generated_at])
     end
   end

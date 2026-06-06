@@ -2,19 +2,23 @@
 
 require "net/http"
 require "json"
+require "concurrent"
 
 module PoDebug
   # Block 5 — VPS host metrics via existing Prometheus accessory.
   #
-  # Calls himrate-prometheus:9090 /api/v1/query for each metric. If Prometheus
-  # accessory unavailable (after T1 PR-B1c disables observability) → returns
-  # { error: ..., stale: true } and v1.0 swaps source.
+  # Queries himrate-prometheus:9090 /api/v1/query for each metric in parallel
+  # via a Concurrent::FixedThreadPool. Bounded ≤3s per query AND ≤3s total
+  # via Concurrent::Promises.zip + timeout — sequential fallback would block
+  # the Puma worker for up to N×3s if Prometheus is reachable-but-slow.
   #
-  # Pure HTTP, no extra gems. Timeout 3s per query, 4 queries → ≤12s worst case;
-  # cached 5s upstream by Aggregator.
+  # CPU count read from a Prometheus query (count of node_cpu_seconds_total
+  # series with mode=idle) so a future VPS upgrade only needs the scrape
+  # target updated, not application code.
   class VpsHealth
-    PROM_HOST = ENV.fetch("PROMETHEUS_URL", "http://himrate-prometheus:9090")
-    HTTP_TIMEOUT = 3 # seconds
+    HTTP_TIMEOUT = 3 # seconds per Prometheus query
+    PARALLEL_WORKERS = 4
+    OVERALL_TIMEOUT = 5 # seconds budget for the whole block
 
     METRICS = {
       load_1m: 'node_load1{instance=~".*:9100"}',
@@ -26,7 +30,8 @@ module PoDebug
       swap_free_bytes: 'node_memory_SwapFree_bytes{instance=~".*:9100"}',
       disk_util_pct: 'rate(node_disk_io_time_seconds_total{device="sda"}[1m]) * 100',
       cpu_iowait_pct: 'avg by (instance) (rate(node_cpu_seconds_total{mode="iowait"}[1m])) * 100',
-      uptime_sec: "node_time_seconds - node_boot_time_seconds"
+      uptime_sec: "node_time_seconds - node_boot_time_seconds",
+      cpu_count: 'count(count by (cpu) (node_cpu_seconds_total{mode="idle"}))'
     }.freeze
 
     def self.call
@@ -34,18 +39,20 @@ module PoDebug
     end
 
     def call
-      values = METRICS.transform_values { |q| query(q) }
+      values = parallel_query(METRICS)
 
       mem_total_mib = bytes_to_mib(values[:mem_total_bytes])
       mem_avail_mib = bytes_to_mib(values[:mem_available_bytes])
       swap_total_mib = bytes_to_mib(values[:swap_total_bytes])
       swap_free_mib = bytes_to_mib(values[:swap_free_bytes])
+      cpu_count = values[:cpu_count]&.to_i
 
       {
         load: {
           one_min: values[:load_1m],
           five_min: values[:load_5m],
-          fifteen_min: values[:load_15m]
+          fifteen_min: values[:load_15m],
+          cpu_count: cpu_count
         },
         memory: {
           total_mib: mem_total_mib,
@@ -67,14 +74,35 @@ module PoDebug
         },
         uptime_hours: values[:uptime_sec] ? (values[:uptime_sec] / 3600.0).round(1) : nil,
         source: "prometheus",
-        prometheus_url: PROM_HOST
+        prometheus_url: prometheus_host
       }
     end
 
     private
 
+    # CR S-1: read ENV per request so a Kamal env update lands without app
+    # restart. Trivial overhead (single Hash lookup) vs class-load capture.
+    def prometheus_host
+      ENV.fetch("PROMETHEUS_URL", "http://himrate-prometheus:9090")
+    end
+
+    def parallel_query(metrics)
+      pool = Concurrent::FixedThreadPool.new(PARALLEL_WORKERS)
+      futures = metrics.map do |key, promql|
+        future = Concurrent::Promises.future_on(pool) { [ key, query(promql) ] }
+        [ key, future ]
+      end
+      Concurrent::Promises.zip(*futures.map(&:last)).value!(OVERALL_TIMEOUT)
+      futures.to_h.transform_values { |f| f.fulfilled? ? f.value.last : nil }
+    rescue Concurrent::TimeoutError
+      Rails.logger.tagged("po_debug").warn("vps prom queries exceeded #{OVERALL_TIMEOUT}s — returning partial")
+      futures.to_h.transform_values { |f| f.fulfilled? ? f.value.last : nil }
+    ensure
+      pool&.shutdown
+    end
+
     def query(promql)
-      uri = URI("#{PROM_HOST}/api/v1/query")
+      uri = URI("#{prometheus_host}/api/v1/query")
       uri.query = URI.encode_www_form(query: promql)
 
       http = Net::HTTP.new(uri.host, uri.port)
@@ -90,7 +118,6 @@ module PoDebug
       result = body.dig("data", "result")
       return nil unless result.is_a?(Array) && result.any?
 
-      # Take the first instance value; multi-instance scrape would aggregate upstream.
       value_pair = result.first["value"]
       return nil unless value_pair.is_a?(Array) && value_pair.size == 2
 

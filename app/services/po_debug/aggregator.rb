@@ -8,16 +8,19 @@ module PoDebug
   #
   # Cached for CACHE_TTL (5s) in Rails.cache, keyed globally (single PO client).
   class Aggregator
+    # CR N-2: BLOCKS is the *data collection* order — sibling render order in
+    # show.html.erb intentionally differs (1, 4, 5 first since they hold live
+    # data, then 2/3/6/7 stubs). Keep both lists in sync semantically: every
+    # symbol here must have a corresponding partial; every partial must accept
+    # one of these symbols as its data root.
     BLOCKS = %i[stream pipeline viewers queues vps writes_log errors].freeze
 
-    def self.call(force: false)
-      new.call(force: force)
+    def self.call
+      new.call
     end
 
-    def call(force: false)
-      key = "po_debug:snapshot:v1"
-      Rails.cache.delete(key) if force
-      Rails.cache.fetch(key, expires_in: PoDebug::CACHE_TTL) do
+    def call
+      Rails.cache.fetch("po_debug:snapshot:v1", expires_in: PoDebug::CACHE_TTL) do
         build_snapshot
       end
     end

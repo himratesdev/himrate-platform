@@ -2,7 +2,10 @@
   <span class="badge error">error</span> <span class="small"><%= data[:error] %></span>
 <% else %>
   <%
-    cpu_count = 3 # Time4VPS host
+    # CR N-4: cpu_count now read from Prometheus (VpsHealth#call publishes it
+    # under data.load.cpu_count). Falls back to 3 if Prometheus returns nil
+    # (matches current Time4VPS host but no longer hardcoded everywhere).
+    cpu_count = data.dig(:load, :cpu_count) || 3
     load1 = data.dig(:load, :one_min)
     load_class = if load1.nil? then ""
                 elsif load1 > cpu_count * 3 then "red"

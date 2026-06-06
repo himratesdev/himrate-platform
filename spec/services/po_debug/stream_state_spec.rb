@@ -43,6 +43,13 @@ RSpec.describe PoDebug::StreamState do
         expect(result.dig(:stream, :id)).to eq(stream.id)
         expect(result.dig(:stream, :duration_min)).to be_within(0.5).of(10.0)
       end
+
+      it "does not issue a per-request COUNT(*) on ccv_snapshots (CR M-2)" do
+        result = described_class.call
+        # Payload contract: no ccv_snapshot_count key (was dropped to avoid
+        # SELECT COUNT(*) on a fast-growing table at scale).
+        expect(result[:stream]).not_to include(:ccv_snapshot_count)
+      end
     end
   end
 end

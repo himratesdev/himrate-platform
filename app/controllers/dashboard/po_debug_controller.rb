@@ -21,7 +21,12 @@ module Dashboard
     before_action :require_basic_auth!, only: :show
 
     def show
-      @snapshot = PoDebug::Aggregator.call(force: force_refresh?)
+      # CR S-4: `force` param removed. It bypassed Rails.cache TTL on every
+      # press, defeating the throttle and re-triggering Prometheus + Sidekiq
+      # API calls under PO's repeated refresh. If a genuine fresh snapshot
+      # is needed, `Rails.cache.delete("po_debug:snapshot:v1")` from a console
+      # is the supported path.
+      @snapshot = PoDebug::Aggregator.call
 
       respond_to do |format|
         format.html
@@ -30,10 +35,6 @@ module Dashboard
     end
 
     private
-
-    def force_refresh?
-      params[:force] == "1"
-    end
 
     def ensure_flag_enabled
       return if Flipper.enabled?(PoDebug::FLIPPER_FLAG)
