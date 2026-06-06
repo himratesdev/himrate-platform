@@ -33,7 +33,8 @@ module PoDebug
     end
 
     def live_payload(channel, stream)
-      latest_snapshot = stream.ccv_snapshots.order(captured_at: :desc).first
+      latest_snapshot = stream.ccv_snapshots.order(timestamp: :desc).first
+      latest_ts = latest_snapshot&.timestamp
       {
         state: "live",
         channel: {
@@ -50,7 +51,7 @@ module PoDebug
           peak_ccv: stream.current_peak_ccv,
           avg_ccv: stream.current_avg_ccv,
           latest_viewer_count: latest_snapshot&.ccv_count,
-          latest_snapshot_at: latest_snapshot&.captured_at&.iso8601,
+          latest_snapshot_at: latest_ts&.iso8601,
           ccv_snapshot_count: stream.ccv_snapshots.count
         }
       }
