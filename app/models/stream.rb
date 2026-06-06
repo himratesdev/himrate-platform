@@ -1,6 +1,19 @@
 # frozen_string_literal: true
 
 class Stream < ApplicationRecord
+  # PR-B2 (EPIC SCALE ARCHITECTURE Step 6 — rolling deploy safety):
+  # PR-A1 dropped reads/writes of peak_ccv / avg_ccv / duration_ms across all app code.
+  # The companion migration (drop columns) was DELETED from main in this PR-B2 to defer
+  # the destructive schema change until a future PR-A1.2 — after this branch's
+  # `ignored_columns` guard is rolled out to ALL container roles via a normal rolling
+  # deploy. This prevents the rolling-deploy race where old (c874474) containers would
+  # try to `Stream.update!(peak_ccv: …)` against a migrated schema and crash.
+  #
+  # After ALL containers have this `ignored_columns` line, the migration (re-added in
+  # PR-A1.2) can drop the columns safely — every AR connection in the cluster already
+  # excludes them from SELECTs / UPDATEs / INSERTs.
+  self.ignored_columns += %w[peak_ccv avg_ccv duration_ms]
+
   belongs_to :channel
 
   has_many :signals, class_name: "TiSignal", foreign_key: "stream_id", dependent: :destroy

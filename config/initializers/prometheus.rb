@@ -16,8 +16,13 @@ require "net/http"
 require "uri"
 
 module PrometheusMetrics
-  PUSHGATEWAY_URL = ENV.fetch("PROMETHEUS_PUSHGATEWAY_URL", "http://himrate-prometheus-pushgateway:9091")
+  # CR iter-1 Minor (PR-B2): observability stack disabled in this PR.
+  # Blank / unset `PROMETHEUS_PUSHGATEWAY_URL` ⇒ pushes return :disabled without network
+  # I/O. Set the env var to point at the new endpoint to re-enable (PR-B2.1 follow-up
+  # provisions Grafana Cloud OR a dedicated obs-VPS).
+  PUSHGATEWAY_URL = ENV["PROMETHEUS_PUSHGATEWAY_URL"].to_s
   TIMEOUT_SECONDS = 3
+  ENABLED = !PUSHGATEWAY_URL.empty?
 
   class << self
     # Last action duration + result per (destination, accessory, action). Gauge — overrides на каждый push.
@@ -131,6 +136,8 @@ module PrometheusMetrics
     # Cleanup stale grouping keys. Called периодически из CleanupWorker (FR-103) — удаляет
     # grouping keys где ни одной activity за last 7 days.
     def delete_grouping(job:, grouping:)
+      return :disabled unless ENABLED
+
       uri = URI.join(PUSHGATEWAY_URL, "/metrics/" + path_for(job, grouping))
       request = Net::HTTP::Delete.new(uri)
       Net::HTTP.start(uri.hostname, uri.port,
@@ -168,6 +175,8 @@ module PrometheusMetrics
     end
 
     def push(job, grouping:, body:)
+      return :disabled unless ENABLED
+
       uri = URI.join(PUSHGATEWAY_URL, "/metrics/" + path_for(job, grouping))
       request = Net::HTTP::Post.new(uri, "Content-Type" => "text/plain; version=0.0.4")
       request.body = body

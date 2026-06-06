@@ -9,11 +9,18 @@
 require "net/http"
 
 class AlertmanagerNotifier
-  ALERTMANAGER_URL = "http://himrate-alertmanager:9093/api/v2/alerts"
+  # CR iter-1 Minor (PR-B2): Alertmanager accessory removed; treat blank env URL as
+  # "skip Alertmanager, route straight to Telegram". Saves the 2+4+8s retry-sleep
+  # waste per alert until observability tier (PR-B2.1) is re-provisioned. Override
+  # `ALERTMANAGER_URL` env var to re-enable Alertmanager routing.
+  ALERTMANAGER_URL = ENV.fetch("ALERTMANAGER_URL", "").to_s
   PUSH_TIMEOUT_SECONDS = 5
   RETRY_DELAYS = [ 2, 4, 8 ].freeze
 
   def self.push(labels:, annotations:)
+    # PR-B2: Alertmanager disabled — route directly to Telegram fallback.
+    return fallback_telegram(labels: labels, annotations: annotations) if ALERTMANAGER_URL.empty?
+
     payload = [ { labels: labels.transform_keys(&:to_s), annotations: annotations.transform_keys(&:to_s) } ]
     json = JSON.generate(payload)
 

@@ -4,7 +4,13 @@ require "rails_helper"
 
 RSpec.describe Cleanup::AutoDisableService do
   describe ".check_and_disable! (FR-042)" do
-    before { stub_request(:post, "http://himrate-alertmanager:9093/api/v2/alerts").to_return(status: 200) }
+    # PR-B2 CR iter-3: `ALERTMANAGER_URL` is now blank by default (observability
+    # disabled). Stub the constant to simulate the live env state so the existing
+    # assertions exercise the Alertmanager push path rather than direct-Telegram.
+    before do
+      stub_const("AlertmanagerNotifier::ALERTMANAGER_URL", "http://himrate-alertmanager:9093/api/v2/alerts")
+      stub_request(:post, "http://himrate-alertmanager:9093/api/v2/alerts").to_return(status: 200)
+    end
 
     def audit(table, status, run_at:)
       CleanupAuditLog.create!(table_name: table, run_at: run_at, status: status, deleted_count: 0)
