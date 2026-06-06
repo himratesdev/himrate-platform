@@ -65,9 +65,9 @@ servers:
   #
   # CR M1 fix: AR per-process pool sized via RAILS_MAX_THREADS=12 (Sidekiq c=10 + 2
   # headroom for internal threads — heartbeat, scheduler, Rails async executor — per CR
-  # iter-2 Nit-B). Read by config/database.yml `pool: <%= ENV.fetch("RAILS_MAX_THREADS")
-  # { 5 } %>`. Without this override the default 5 would block Sidekiq threads 6-10 on
-  # connection checkout (ActiveRecord::ConnectionTimeoutError after 5s).
+  # iter-2 Nit-B). Read by config/database.yml pool key (ENV.fetch RAILS_MAX_THREADS
+  # with default 5). Without this override the default 5 would block Sidekiq threads
+  # 6-10 on connection checkout (ActiveRecord::ConnectionTimeoutError after 5s).
   # Verified vs PG server max_connections=100 default: tier1(12) + tier2(5) + tier3(5) +
   # web(3) + whisper(1) = 26 client slots max — well under server cap with ample headroom
   # for live console / ad-hoc psql / accessory health probes.
