@@ -5,14 +5,19 @@
 service: himrate
 image: himratesdev/himrate-platform
 
-# BUG-251.17 (30→120) + deploy-fix (120→240): kamal's default deploy_timeout (30s) is too tight for
-# this app's boot on the single 3-core/8GB VPS. Under live combat load (load avg ~9-11) + ClickHouse
-# accessory (#194/#196), a new web container's eager-load can't bind Puma:3000 even within 120s →
-# kamal-proxy health check fails → deploy aborts (observed: PR #195 deploy + re-run BOTH failed at 120s,
-# "target failed to become healthy within 2m0s"). 240s gives boot headroom under sustained contention.
-# Paired with CI kamal setup→deploy (lighter deploy window — see ci.yml). Deploy-time wait only (no
-# runtime effect); underlying VPS capacity = separate hardware track (ClickHouse EPIC TASK-251.14).
-deploy_timeout: 240
+# BUG-251.17 (30→120) + deploy-fix (120→240) + #289 deploy thrash (240→600):
+# kamal's default deploy_timeout (30s) is too tight for this app's boot on the
+# single 3-core/8GB VPS. Under live combat load (load avg ~9-11) + ClickHouse
+# accessory (#194/#196), a new web container's eager-load can't bind Puma:3000
+# even within 120s → kamal-proxy health check fails → deploy aborts.
+# 2026-06-06 #289+#290 combined deploy (PR-B1a tier consolidation + /proc mount +
+# env plumbing) caused load spike to 59 on 3-core box during db:prepare +
+# Flipper-seeding + eager-load; web container 814b6363 boot took >240s and got
+# SIGTERM (Exited 143). Workers all stayed on aecbae5; deploy abandoned.
+# 600s buys boot headroom for the post-PR-B1a baseline (≈ load 20-25) while
+# Phase 7 R / hardware track is the longer-term fix. Deploy-time wait only;
+# no runtime effect on serving containers.
+deploy_timeout: 600
 
 servers:
   web:
