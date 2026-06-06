@@ -1,0 +1,36 @@
+<% if data[:error] %>
+  <span class="badge error">error</span> <span class="small"><%= data[:error] %></span>
+
+<% elsif data[:state] == "no_channel" %>
+  <span class="badge offline">no_channel</span>
+  <div class="small">PO channel <code><%= data[:po_login] %></code> not found in Channels table. Set <code>ENV PO_TWITCH_LOGIN</code> or seed channel.</div>
+
+<% elsif data[:state] == "live" %>
+  <span class="badge live">live</span>
+  <dl class="kv">
+    <dt>Channel</dt><dd><strong><%= data.dig(:channel, :display_name) %></strong> (<%= data.dig(:channel, :login) %>) — <%= data.dig(:channel, :broadcaster_type) || "regular" %></dd>
+    <dt>Twitch ID</dt><dd class="num"><%= data.dig(:channel, :twitch_id) %></dd>
+    <dt>Followers</dt><dd class="num"><%= number_with_delimiter(data.dig(:channel, :followers_total) || 0) %></dd>
+    <dt>Stream ID</dt><dd class="small"><%= data.dig(:stream, :id) %></dd>
+    <dt>Started</dt><dd><%= data.dig(:stream, :started_at) %> <span class="small">(<%= data.dig(:stream, :duration_min) %> min ago)</span></dd>
+    <dt>Peak CCV</dt><dd class="num green"><%= data.dig(:stream, :peak_ccv) %></dd>
+    <dt>Avg CCV</dt><dd class="num"><%= data.dig(:stream, :avg_ccv) %></dd>
+    <dt>Latest viewer count</dt><dd class="num"><%= data.dig(:stream, :latest_viewer_count) || "—" %></dd>
+    <dt>Latest snapshot</dt><dd class="small"><%= data.dig(:stream, :latest_snapshot_at) || "(none yet)" %></dd>
+    <dt>CcvSnapshot count</dt><dd class="num"><%= data.dig(:stream, :ccv_snapshot_count) %></dd>
+  </dl>
+
+<% else # offline %>
+  <span class="badge offline">offline</span>
+  <% if data[:last_stream] %>
+    <dl class="kv">
+      <dt>Channel</dt><dd><strong><%= data.dig(:channel, :display_name) %></strong> (<%= data.dig(:channel, :login) %>)</dd>
+      <dt>Last stream</dt><dd class="small"><%= data.dig(:last_stream, :id) %></dd>
+      <dt>Ended</dt><dd><%= data.dig(:last_stream, :ended_at) %> <span class="small">(<%= data.dig(:last_stream, :minutes_since_end) %> min ago)</span></dd>
+      <dt>Duration</dt><dd><%= data.dig(:last_stream, :started_at) %> → <%= data.dig(:last_stream, :ended_at) %></dd>
+      <dt>Peak CCV</dt><dd class="num"><%= data.dig(:last_stream, :peak_ccv) %></dd>
+    </dl>
+  <% else %>
+    <div class="small">No streams yet for <code><%= data.dig(:channel, :login) %></code></div>
+  <% end %>
+<% end %>

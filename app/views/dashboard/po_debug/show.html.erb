@@ -1,0 +1,84 @@
+<% content_for :title, "PO Debug — HimRate" %>
+
+<%# Polling fallback: page-level meta refresh every 5s. v1.0 will swap to ActionCable Turbo Streams. %>
+<% content_for :head do %>
+  <meta http-equiv="refresh" content="5">
+<% end %>
+
+<style>
+  body { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 13px; line-height: 1.4; background: #0d1117; color: #c9d1d9; margin: 0; padding: 16px; }
+  h1 { font-size: 18px; margin: 0 0 4px 0; color: #58a6ff; }
+  h2 { font-size: 14px; margin: 0 0 8px 0; color: #79c0ff; border-bottom: 1px solid #30363d; padding-bottom: 4px; }
+  .meta { color: #8b949e; font-size: 11px; margin-bottom: 16px; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .block { background: #161b22; border: 1px solid #30363d; border-radius: 6px; padding: 12px; }
+  .block.stub { opacity: 0.55; }
+  .block.error { border-color: #f85149; }
+  .block.full-width { grid-column: 1 / -1; }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 3px 6px; border-bottom: 1px solid #21262d; }
+  th { color: #8b949e; font-weight: normal; font-size: 11px; text-transform: uppercase; }
+  .kv { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; }
+  .kv dt { color: #8b949e; }
+  .kv dd { margin: 0; color: #c9d1d9; }
+  .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .badge.live { background: #238636; color: #fff; }
+  .badge.offline { background: #6e7681; color: #fff; }
+  .badge.stale { background: #d29922; color: #000; }
+  .badge.error { background: #f85149; color: #fff; }
+  .num { font-variant-numeric: tabular-nums; }
+  .green { color: #56d364; }
+  .yellow { color: #d29922; }
+  .red { color: #f85149; }
+  .small { color: #8b949e; font-size: 11px; }
+</style>
+
+<h1>HimRate — PO Debug Dashboard <span class="small">v<%= @snapshot[:version] %></span></h1>
+<div class="meta">
+  Generated: <%= @snapshot[:generated_at] %> · refresh every 5s ·
+  channel: <strong><%= ENV.fetch("PO_TWITCH_LOGIN", "himych") %></strong>
+</div>
+
+<div class="grid">
+  <%# Block 1 — Stream State %>
+  <div class="block <%= 'error' if @snapshot[:stream][:error] %>">
+    <h2>1. Stream State</h2>
+    <%= render partial: "block_stream", locals: { data: @snapshot[:stream] } %>
+  </div>
+
+  <%# Block 4 — Queue Health %>
+  <div class="block <%= 'error' if @snapshot[:queues][:error] %>">
+    <h2>4. Sidekiq Queues</h2>
+    <%= render partial: "block_queues", locals: { data: @snapshot[:queues] } %>
+  </div>
+
+  <%# Block 5 — VPS Health %>
+  <div class="block full-width <%= 'error' if @snapshot[:vps][:error] %>">
+    <h2>5. VPS Health</h2>
+    <%= render partial: "block_vps", locals: { data: @snapshot[:vps] } %>
+  </div>
+
+  <%# Block 2 — Pipeline Activity (stub) %>
+  <div class="block stub">
+    <h2>2. Pipeline Activity <span class="small">(v1.0)</span></h2>
+    <%= render partial: "block_stub", locals: { data: @snapshot[:pipeline] } %>
+  </div>
+
+  <%# Block 3 — Per-Viewer Breakdown (stub) %>
+  <div class="block stub">
+    <h2>3. Per-Viewer Breakdown <span class="small">(v1.0)</span></h2>
+    <%= render partial: "block_stub", locals: { data: @snapshot[:viewers] } %>
+  </div>
+
+  <%# Block 6 — Writes Log (stub) %>
+  <div class="block stub">
+    <h2>6. Live Writes Log <span class="small">(v1.0)</span></h2>
+    <%= render partial: "block_stub", locals: { data: @snapshot[:writes_log] } %>
+  </div>
+
+  <%# Block 7 — Errors (stub) %>
+  <div class="block stub">
+    <h2>7. Errors <span class="small">(v1.0)</span></h2>
+    <%= render partial: "block_stub", locals: { data: @snapshot[:errors] } %>
+  </div>
+</div>

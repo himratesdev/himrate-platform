@@ -1,0 +1,6 @@
+<div class="small">
+  <%= data[:message] %>
+  <% if data[:planned_sources] %>
+    <br>Planned sources: <%= data[:planned_sources].join(", ") %>
+  <% end %>
+</div>

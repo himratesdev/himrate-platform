@@ -1,0 +1,68 @@
+<% if data[:error] %>
+  <span class="badge error">error</span> <span class="small"><%= data[:error] %></span>
+<% else %>
+  <%
+    # CR N-4: cpu_count now read from Prometheus (VpsHealth#call publishes it
+    # under data.load.cpu_count). Falls back to 3 if Prometheus returns nil
+    # (matches current Time4VPS host but no longer hardcoded everywhere).
+    cpu_count = data.dig(:load, :cpu_count) || 3
+    load1 = data.dig(:load, :one_min)
+    load_class = if load1.nil? then ""
+                elsif load1 > cpu_count * 3 then "red"
+                elsif load1 > cpu_count * 2 then "yellow"
+                else "green"
+                end
+
+    mem_pct = data.dig(:memory, :used_pct)
+    mem_class = if mem_pct.nil? then ""
+               elsif mem_pct > 85 then "red"
+               elsif mem_pct > 70 then "yellow"
+               else "green"
+               end
+
+    swap_pct = data.dig(:swap, :used_pct)
+    swap_class = if swap_pct.nil? then ""
+                elsif swap_pct > 50 then "red"
+                elsif swap_pct > 20 then "yellow"
+                else "green"
+                end
+
+    iowait = data.dig(:disk, :iowait_pct)
+    iowait_class = if iowait.nil? then ""
+                  elsif iowait > 50 then "red"
+                  elsif iowait > 20 then "yellow"
+                  else "green"
+                  end
+  %>
+  <div class="grid">
+    <div>
+      <dl class="kv">
+        <dt>Load 1m / 5m / 15m</dt>
+        <dd class="num">
+          <span class="<%= load_class %>"><%= load1 || "—" %></span> /
+          <%= data.dig(:load, :five_min) || "—" %> /
+          <%= data.dig(:load, :fifteen_min) || "—" %>
+          <span class="small">(<%= cpu_count %> cores → <%= cpu_count * 2 %>=⚠️, <%= cpu_count * 3 %>=🔴)</span>
+        </dd>
+        <dt>Memory</dt>
+        <dd class="num"><%= data.dig(:memory, :used_mib) || "—" %> / <%= data.dig(:memory, :total_mib) || "—" %> MiB <span class="<%= mem_class %>">(<%= mem_pct || "—" %>%)</span></dd>
+        <dt>Available</dt>
+        <dd class="num"><%= data.dig(:memory, :available_mib) || "—" %> MiB</dd>
+        <dt>Swap</dt>
+        <dd class="num"><%= data.dig(:swap, :used_mib) || "—" %> / <%= data.dig(:swap, :total_mib) || "—" %> MiB <span class="<%= swap_class %>">(<%= swap_pct || "—" %>%)</span></dd>
+      </dl>
+    </div>
+    <div>
+      <dl class="kv">
+        <dt>Disk %util (sda)</dt>
+        <dd class="num <%= iowait_class %>"><%= data.dig(:disk, :util_pct) || "—" %>%</dd>
+        <dt>CPU iowait</dt>
+        <dd class="num <%= iowait_class %>"><%= iowait || "—" %>%</dd>
+        <dt>Uptime</dt>
+        <dd class="num"><%= data[:uptime_hours] || "—" %>h</dd>
+        <dt>Source</dt>
+        <dd class="small"><%= data[:source] %> @ <code><%= data[:prometheus_url] %></code></dd>
+      </dl>
+    </div>
+  </div>
+<% end %>
