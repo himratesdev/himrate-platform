@@ -59,9 +59,9 @@ gem "connection_pool", "~> 2.5"
 # absent DSN = silent no-op (initializer doesn't raise). PVA enrollment chain
 # already calls `Sentry.capture_exception(e) if defined?(Sentry)` defensively —
 # installing the gem activates those callsites + future SCW stage breadcrumbs.
-gem "sentry-ruby", "~> 5.21"
-gem "sentry-rails", "~> 5.21"
-gem "sentry-sidekiq", "~> 5.21"
+gem "sentry-ruby", "~> 6.6"
+gem "sentry-rails", "~> 6.6"
+gem "sentry-sidekiq", "~> 6.6"
 
 # RSpec for testing
 group :development, :test do
