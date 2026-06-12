@@ -1,5 +1,5 @@
 # HimRate — Kamal Deployment Configuration
-# Staging + Production on single VPS (194.135.85.159)
+# Staging on HOSTKEY vm.v3-heavy (82.21.7.48, Netherlands DC, 8 vCPU / 32 GB / 240 NVMe)
 # Destinations: config/deploy.staging.yml, config/deploy.production.yml
 
 service: himrate
@@ -22,7 +22,7 @@ deploy_timeout: 600
 servers:
   web:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     # CR M1 fix 2026-06-06: explicit RAILS_MAX_THREADS=3 pins web AR pool to Puma's
     # threads_count default (config/puma.rb line 30 reads same env). Without this
     # override, web would fall back to `database.yml` default `{ 5 }` → 2 idle AR
@@ -78,7 +78,7 @@ servers:
   # for live console / ad-hoc psql / accessory health probes.
   compute_tier1:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bundle exec sidekiq -q signal_compute,10 -q bot_scoring,10 -q stream_lifecycle,10 -q signals,10 -c 10
     proxy: false
     env:
@@ -106,7 +106,7 @@ servers:
   # CR M1 fix: RAILS_MAX_THREADS=5 (matches c=5) for AR pool sizing.
   compute_tier2:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bundle exec sidekiq -q post_stream,5 -q chat,5 -q pva_critical,5 -q pva_helix,5 -q pva_gql_anon,5 -q monitoring,10 -q default,5 -c 5
     proxy: false
     env:
@@ -125,7 +125,7 @@ servers:
   # CR M1 fix: RAILS_MAX_THREADS=5 (matches c=5) for AR pool sizing.
   compute_tier3:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bundle exec sidekiq -q notifications,2 -q accessory_ops,2 -q long_running,2 -c 5
     proxy: false
     env:
@@ -143,7 +143,7 @@ servers:
   # isolation preserved.
   whisper_worker:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bundle exec sidekiq -q whisper_transcripts -c 1
     proxy: false
     env:
@@ -169,7 +169,7 @@ servers:
   #     git history for blame archaeology). Definitions consolidated above. ===
   irc:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bin/irc_monitor
     proxy: false
     options:
@@ -251,7 +251,7 @@ accessories:
     # при Dockerfile changes (см. Dockerfile комментарий + workflow IMAGE_TAG).
     # После build в ghcr → manual `kamal accessory reboot db -d <dest>` (volume сохраняется).
     image: ghcr.io/himratesdev/himrate-postgres:16-partman-v2
-    host: 194.135.85.159
+    host: 82.21.7.48
     port: "127.0.0.1:5432:5432"
     # Phase 7 R Step 4 — PostgreSQL memory tune for shared 3 vCPU / 8 GiB VPS.
     # Default postgres `shared_buffers` = 25% of host RAM ≈ 2 GiB on 8 GiB box.
@@ -294,7 +294,7 @@ accessories:
       - himrate_pgdata:/var/lib/postgresql/data
   redis:
     image: redis/redis-stack-server:7.4.0-v2
-    host: 194.135.85.159
+    host: 82.21.7.48
     port: "127.0.0.1:6379:6379"
     env:
       clear:
@@ -310,7 +310,7 @@ accessories:
   #    `kamal accessory boot clickhouse -d staging` (post-merge; PG accessory-config flag).
   clickhouse:
     image: clickhouse/clickhouse-server:24.8.14.39 # patch-pinned (LTS 24.8) — deterministic boot/rollback, repo convention
-    host: 194.135.85.159
+    host: 82.21.7.48
     port: "127.0.0.1:8123:8123"
     env:
       clear:
@@ -373,7 +373,7 @@ accessories:
   # Port 8080 bound internal-only 127.0.0.1 (Rails reaches via Kamal Docker network DNS).
   whisper:
     image: ghcr.io/himratesdev/himrate-whisper:small-v3
-    host: 194.135.85.159
+    host: 82.21.7.48
     port: "127.0.0.1:9000:8080"
     options:
       cpus: "1.5"
