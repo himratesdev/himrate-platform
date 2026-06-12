@@ -1,0 +1,81 @@
+name: hostkey-probe
+
+# Ad-hoc system snapshot of HOSTKEY VPS via CI runner (escapes my Claude env SSH rate-limit).
+# Trigger via `gh workflow run hostkey-probe.yml` — runs PG counts + Sidekiq queue health + VPS load.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: VPS load + memory + disk
+        run: |
+          echo "=== VPS health ==="
+          ssh hostkey "uptime; free -m | head -3; df -h / | tail -1"
+          echo ""
+
+      - name: Container roster
+        run: |
+          echo "=== Containers (target: 11 healthy) ==="
+          ssh hostkey 'docker ps --format "table {{.Names}}\t{{.Status}}" 2>&1' | head -20
+
+      - name: PG counts
+        run: |
+          echo "=== DB row counts ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -c "
+            SELECT '\''channels'\'' AS t, count(*) AS n FROM channels
+            UNION ALL SELECT '\''streams_total'\'', count(*) FROM streams
+            UNION ALL SELECT '\''streams_live'\'', count(*) FROM streams WHERE ended_at IS NULL
+            UNION ALL SELECT '\''ccv_snapshots'\'', count(*) FROM ccv_snapshots
+            UNION ALL SELECT '\''chatters_snapshots'\'', count(*) FROM chatters_snapshots
+            UNION ALL SELECT '\''bot_scores'\'', count(*) FROM per_user_bot_scores
+            UNION ALL SELECT '\''psr'\'', count(*) FROM post_stream_reports
+            UNION ALL SELECT '\''sfv'\'', count(*) FROM stream_feature_vectors
+            ORDER BY t;
+          "'
+
+      - name: TIH count via Rails (correct table name)
+        run: |
+          echo "=== TIH (TrustIndexHistory) ==="
+          SHA=$(ssh hostkey 'docker ps --filter "name=himrate-web-staging" --format "{{.Names}}" | head -1 | sed "s/.*-//"')
+          ssh hostkey "docker exec himrate-web-staging-\$(docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1 | awk -F- '{print \$NF}') bin/rails runner '
+            puts \"TIH rows: #{TrustIndexHistory.count}\"
+            puts \"TIH last hour: #{TrustIndexHistory.where(\"calculated_at > ?\", 1.hour.ago).count}\"
+            puts \"Most populated channels:\"
+            Channel.joins(:trust_index_histories).group(:login).order(\"count(trust_index_histories.id) DESC\").limit(10).count.each do |login, n|
+              puts \"  #{login.ljust(25)} #{n}\"
+            end
+            puts
+            puts \"Live streams now:\"
+            Stream.where(ended_at: nil).joins(:channel).order(:started_at).limit(10).pluck(:login, :started_at).each do |login, started|
+              dur = ((Time.current - started)/60).round
+              puts \"  #{login.ljust(25)} live #{dur}m\"
+            end
+          ' 2>&1 | grep -v 'Flipper audit\\|Sidekiq 7\\|connecting to Redis\\|stackprof'"
+
+      - name: Sidekiq queues
+        run: |
+          echo "=== Sidekiq queue depths ==="
+          ssh hostkey "docker exec himrate-web-staging-\$(docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1 | awk -F- '{print \$NF}') bin/rails runner '
+            require \"sidekiq/api\"
+            Sidekiq::Queue.all.sort_by(&:name).each { |q| puts \"  :#{q.name.ljust(25)} #{q.size} jobs (latency #{q.latency.round(1)}s)\" }
+            puts \"  --- retry: #{Sidekiq::RetrySet.new.size} | dead: #{Sidekiq::DeadSet.new.size} | scheduled: #{Sidekiq::ScheduledSet.new.size}\"
+          ' 2>&1 | grep -v 'Flipper audit\\|Sidekiq 7\\|connecting to Redis\\|stackprof'"
