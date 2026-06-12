@@ -7,7 +7,7 @@
 Grafana bound 127.0.0.1:3000 (internal-only) для security. Access via SSH tunnel:
 
 ```bash
-ssh -L 3000:127.0.0.1:3000 root@194.135.85.159
+ssh -L 3000:127.0.0.1:3000 root@82.21.7.48
 # В отдельном terminal:
 open http://localhost:3000
 ```
