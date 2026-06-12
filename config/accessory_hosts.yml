@@ -7,6 +7,6 @@
 # Fail-fast on YAML parse errors (ADR DEC-6).
 
 staging:
-  - 194.135.85.159
+  - 82.21.7.48
 production:
-  - 194.135.85.159
+  - 82.21.7.48
