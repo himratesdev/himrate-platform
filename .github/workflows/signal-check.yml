@@ -47,10 +47,11 @@ jobs:
           end
 
           puts "## Channel: #{c.login}"
-          puts "  twitch_id: #{c.platform_channel_id}"
-          puts "  broadcaster_type: #{c.broadcaster_type || 'none'}"
-          puts "  display_name: #{c.display_name}"
-          puts "  description: #{c.description.to_s[0..80]}"
+          puts "  twitch_id: #{c.twitch_id rescue 'n/a'}"
+          puts "  broadcaster_type: #{c.broadcaster_type rescue 'n/a'}"
+          puts "  display_name: #{c.display_name rescue 'n/a'}"
+          puts "  follower_count: #{c.follower_count rescue 'n/a'}"
+          puts "  monitored_at: #{c.respond_to?(:monitored_at) ? c.monitored_at : 'n/a'}"
           puts
 
           s = Stream.where(channel_id: c.id).order(started_at: :desc).first
