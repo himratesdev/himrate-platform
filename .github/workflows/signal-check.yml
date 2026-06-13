@@ -38,6 +38,8 @@ jobs:
           login = "${LOGIN}"
           RUBY_EOF
           cat >> /tmp/deep-dive.rb <<'RUBY_EOF'
+          # Force stdout flushing — otherwise buffered output lost on uncaught error
+          $stdout.sync = true
           # Resolve channel
           c = Channel.find_by(login: login)
           unless c
@@ -166,15 +168,19 @@ jobs:
           end
           puts
 
-          puts "## StreamerReputation (3 components, BUG #1)"
-          rep = StreamerReputation.where(channel_id: c.id).order(created_at: :desc).first
-          if rep
-            puts "  @ #{rep.created_at.iso8601}"
-            puts "  growth_score: #{rep.growth_score rescue 'n/a'}"
-            puts "  follower_quality_score: #{rep.follower_quality_score rescue 'n/a'}"
-            puts "  engagement_consistency_score: #{rep.engagement_consistency_score rescue 'n/a'}"
-          else
-            puts "  no row (BUG #1 — StreamerReputationRefreshWorker STUB)"
+          begin
+            puts "## StreamerReputation (3 components, BUG #1)"
+            rep = StreamerReputation.where(channel_id: c.id).first
+            if rep
+              puts "  found row id=#{rep.id}"
+              %w[growth_score follower_quality_score engagement_consistency_score updated_at calculated_at].each do |attr|
+                puts "  #{attr}: #{rep.public_send(attr) rescue 'n/a (no column)'}" if rep.respond_to?(attr)
+              end
+            else
+              puts "  no row (BUG #1 — StreamerReputationRefreshWorker STUB)"
+            end
+          rescue => e
+            puts "## StreamerReputation — ERROR: #{e.class}: #{e.message[0..200]}"
           end
           puts
 
@@ -198,7 +204,7 @@ jobs:
         run: |
           echo "Deep dive: ${{ inputs.login }}"
           echo "============================================================"
-          # Copy to VPS, then into container, then rails runner
+          # Copy to VPS, then into container, then rails runner — write to file then cat
           scp /tmp/deep-dive.rb hostkey:/tmp/deep-dive.rb
           CONTAINER=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
-          ssh hostkey "docker cp /tmp/deep-dive.rb ${CONTAINER}:/tmp/deep-dive.rb && docker exec ${CONTAINER} bin/rails runner /tmp/deep-dive.rb 2>&1 | grep -v 'Flipper audit\\|Sidekiq 7\\|connecting to Redis\\|stackprof'"
+          ssh hostkey "docker cp /tmp/deep-dive.rb ${CONTAINER}:/tmp/deep-dive.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/deep-dive.rb > /tmp/output.txt 2>&1; cat /tmp/output.txt' 2>&1 | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof|Please add the'"
