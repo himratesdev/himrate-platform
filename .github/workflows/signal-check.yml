@@ -63,22 +63,31 @@ jobs:
           puts "  state: #{is_live ? "LIVE #{((Time.current - s.started_at)/60).round}m" : "ended #{s.ended_at.iso8601}"}"
           puts
 
-          ccv = CcvSnapshot.where(channel_id: c.id, stream_id: s.id).order(:created_at)
-          puts "## CcvSnapshot (live polling)"
-          puts "  count: #{ccv.count}"
-          puts "  peak: #{ccv.maximum(:ccv_count)}"
-          puts "  mean: #{ccv.average(:ccv_count)&.to_f&.round(1)}"
-          puts "  latest: #{ccv.last&.ccv_count}"
+          # All section blocks wrapped in begin/rescue so single failure does NOT kill rest
+          begin
+            ccv = CcvSnapshot.where(stream_id: s.id).order(:created_at)
+            puts "## CcvSnapshot (live polling, FK=stream_id)"
+            puts "  count: #{ccv.count}"
+            puts "  peak: #{ccv.maximum(:ccv_count) rescue 'n/a'}"
+            puts "  mean: #{ccv.average(:ccv_count)&.to_f&.round(1) rescue 'n/a'}"
+            puts "  latest: #{ccv.last&.ccv_count rescue 'n/a'}"
+          rescue => e
+            puts "## CcvSnapshot — ERROR: #{e.class}: #{e.message[0..200]}"
+          end
           puts
 
-          chat = ChattersSnapshot.where(channel_id: c.id, stream_id: s.id).order(:created_at)
-          puts "## ChattersSnapshot"
-          puts "  count: #{chat.count}"
-          puts "  peak: #{chat.maximum(:chatter_count)}"
-          puts "  latest: #{chat.last&.chatter_count}"
+          begin
+            chat = ChattersSnapshot.where(stream_id: s.id).order(:created_at)
+            puts "## ChattersSnapshot (FK=stream_id)"
+            puts "  count: #{chat.count}"
+            puts "  peak: #{chat.maximum(:chatter_count) rescue 'n/a'}"
+            puts "  latest: #{chat.last&.chatter_count rescue 'n/a'}"
+          rescue => e
+            puts "## ChattersSnapshot — ERROR: #{e.class}: #{e.message[0..200]}"
+          end
           puts
 
-          tih = TrustIndexHistory.where(channel_id: c.id, stream_id: s.id).order(:calculated_at)
+          tih = TrustIndexHistory.where(channel_id: c.id, stream_id: s.id).order(:calculated_at) rescue TrustIndexHistory.where(channel_id: c.id).order(:calculated_at)
           puts "## TrustIndexHistory"
           puts "  rows: #{tih.count}"
           if tih.last
@@ -113,16 +122,21 @@ jobs:
           end
           puts
 
-          puts "## PerUserBotScore (bot detection)"
-          scores = PerUserBotScore.where(channel_id: c.id)
-          puts "  total (lifetime): #{scores.count}"
-          if scores.any?
-            by_class = scores.group(:classification).count
-            %w[human low_suspicion suspicious probable_bot confirmed_bot].each do |cls|
-              cnt = by_class[cls] || 0
-              pct = (cnt * 100.0 / scores.count).round(1)
-              puts "    #{cls.ljust(20)} #{cnt.to_s.rjust(6)}  (#{pct}%)"
+          begin
+            puts "## PerUserBotScore (bot detection)"
+            scores = PerUserBotScore.where(channel_id: c.id) rescue PerUserBotScore.joins(:stream).where(streams: { channel_id: c.id })
+            cnt_total = scores.count
+            puts "  total (lifetime): #{cnt_total}"
+            if cnt_total.positive?
+              by_class = scores.group(:classification).count
+              %w[human low_suspicion suspicious probable_bot confirmed_bot].each do |cls|
+                cnt = by_class[cls] || 0
+                pct = (cnt * 100.0 / cnt_total).round(1)
+                puts "    #{cls.ljust(20)} #{cnt.to_s.rjust(6)}  (#{pct}%)"
+              end
             end
+          rescue => e
+            puts "## PerUserBotScore — ERROR: #{e.class}: #{e.message[0..200]}"
           end
           puts
 
