@@ -64,7 +64,8 @@ jobs:
           puts "## Latest stream #{s.id}"
           puts "  started_at: #{s.started_at.iso8601}"
           puts "  state: #{is_live ? "🟢 LIVE #{((Time.current - s.started_at)/60).round}m" : "⚫ ended #{s.ended_at.iso8601}"}"
-          puts "  category_id: #{s.category_id || 'n/a'}"
+          puts "  category: #{s.category_id rescue (s.twitch_category_id rescue 'n/a')}"
+          puts "  attributes: #{s.attribute_names.select { |n| n.include?(\"category\") || n.include?(\"viewer\") || n.include?(\"ccv\") || n.include?(\"duration\") }.first(8).inspect}"
           puts
 
           puts "## CcvSnapshot (Tier 1/2 polling)"
