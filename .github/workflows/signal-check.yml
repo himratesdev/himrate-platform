@@ -38,173 +38,252 @@ jobs:
           login = "${LOGIN}"
           RUBY_EOF
           cat >> /tmp/deep-dive.rb <<'RUBY_EOF'
-          # Force stdout flushing — otherwise buffered output lost on uncaught error
           $stdout.sync = true
-          # Resolve channel
+
+          # Helper — safe iterate with each section in begin/rescue
+          def section(title)
+            puts "\n## #{title}"
+            yield
+          rescue => e
+            puts "  ERROR: #{e.class}: #{e.message[0..200]}"
+          end
+
           c = Channel.find_by(login: login)
           unless c
             puts "Channel not found: #{login}"
             exit
           end
 
-          puts "## Channel: #{c.login}"
-          %i[twitch_id broadcaster_type display_name].each do |a|
-            puts "  #{a}: #{c.public_send(a) rescue 'n/a'}"
+          # === SCHEMA introspection (so we know real columns) ===
+          section("Schema introspection") do
+            tables = %w[channels streams ccv_snapshots chatters_snapshots trust_index_history
+                        per_user_bot_scores post_stream_reports stream_feature_vectors
+                        streamer_reputations follower_snapshots]
+            tables.each do |t|
+              cols = ActiveRecord::Base.connection.columns(t).map(&:name).join(", ")
+              puts "  #{t}: #{cols}"
+            rescue => e
+              puts "  #{t}: ERROR #{e.message[0..80]}"
+            end
           end
-          puts
 
+          # === CHANNEL meta ===
+          section("Channel: #{c.login}") do
+            puts "  twitch_id: #{c.twitch_id}"
+            puts "  broadcaster_type: #{c.broadcaster_type}"
+            puts "  display_name: #{c.display_name}"
+            %w[follower_count language created_at].each do |attr|
+              puts "  #{attr}: #{c.public_send(attr) rescue 'n/a'}" if c.respond_to?(attr)
+            end
+          end
+
+          # === LATEST STREAM ===
           s = Stream.where(channel_id: c.id).order(started_at: :desc).first
           unless s
-            puts "No streams for #{login}"
+            puts "No streams"
             exit
           end
 
-          is_live = s.ended_at.nil?
-          puts "## Latest stream #{s.id}"
-          puts "  started_at: #{s.started_at.iso8601}"
-          puts "  state: #{is_live ? "LIVE #{((Time.current - s.started_at)/60).round}m" : "ended #{s.ended_at.iso8601}"}"
-          puts
-
-          # All section blocks wrapped in begin/rescue so single failure does NOT kill rest
-          begin
-            ccv = CcvSnapshot.where(stream_id: s.id).order(:created_at)
-            puts "## CcvSnapshot (live polling, FK=stream_id)"
-            puts "  count: #{ccv.count}"
-            puts "  peak: #{ccv.maximum(:ccv_count) rescue 'n/a'}"
-            puts "  mean: #{ccv.average(:ccv_count)&.to_f&.round(1) rescue 'n/a'}"
-            puts "  latest: #{ccv.last&.ccv_count rescue 'n/a'}"
-          rescue => e
-            puts "## CcvSnapshot — ERROR: #{e.class}: #{e.message[0..200]}"
+          section("Latest stream #{s.id}") do
+            puts "  started_at: #{s.started_at.iso8601}"
+            is_live = s.ended_at.nil?
+            puts "  state: #{is_live ? "LIVE #{((Time.current - s.started_at)/60).round}m" : "ended #{s.ended_at.iso8601}"}"
+            %w[category_name twitch_category_id category_id source].each do |attr|
+              val = s.public_send(attr) rescue nil
+              puts "  #{attr}: #{val || 'n/a'}" if s.respond_to?(attr)
+            end
           end
-          puts
 
-          begin
-            chat = ChattersSnapshot.where(stream_id: s.id).order(:created_at)
-            puts "## ChattersSnapshot (FK=stream_id)"
-            puts "  count: #{chat.count}"
-            puts "  peak: #{chat.maximum(:chatter_count) rescue 'n/a'}"
-            puts "  latest: #{chat.last&.chatter_count rescue 'n/a'}"
-          rescue => e
-            puts "## ChattersSnapshot — ERROR: #{e.class}: #{e.message[0..200]}"
+          # === CCV polling — what's the actual viewer count? ===
+          section("CcvSnapshot — RAW VIEWER COUNT over time") do
+            ccv = CcvSnapshot.where(stream_id: s.id).order(:created_at).limit(1000)
+            puts "  total snapshots: #{ccv.count}"
+            if ccv.any?
+              vals = ccv.map { |x| x.respond_to?(:ccv_count) ? x.ccv_count : (x.respond_to?(:viewer_count) ? x.viewer_count : nil) }.compact
+              puts "  peak CCV: #{vals.max}"
+              puts "  min CCV: #{vals.min}"
+              puts "  mean CCV: #{(vals.sum.to_f / vals.size).round(1)}"
+              puts "  median CCV: #{vals.sort[vals.size/2]}"
+              puts "  latest CCV: #{vals.last}"
+              puts "  current CCV (latest): #{vals.last}"
+              puts "  range: #{vals.min}..#{vals.max} (delta=#{vals.max - vals.min})"
+            end
           end
-          puts
 
-          tih = TrustIndexHistory.where(channel_id: c.id, stream_id: s.id).order(:calculated_at) rescue TrustIndexHistory.where(channel_id: c.id).order(:calculated_at)
-          puts "## TrustIndexHistory"
-          puts "  rows: #{tih.count}"
-          if tih.last
+          # === CHATTERS over time ===
+          section("ChattersSnapshot — RAW CHATTER COUNT over time") do
+            cs = ChattersSnapshot.where(stream_id: s.id).order(:created_at).limit(1000)
+            puts "  total snapshots: #{cs.count}"
+            last = cs.last
+            if last
+              puts "  Latest snapshot:"
+              # Print all columns
+              last.attributes.each do |k, v|
+                next if k == "id" || k.end_with?("_id") || k.start_with?("created_") || k.start_with?("updated_")
+                str = case v
+                      when Array then "[#{v.size} entries: #{v.first(3).inspect}...]"
+                      when Hash then "Hash with #{v.keys.size} keys: #{v.keys.first(5).inspect}"
+                      else v.to_s[0..120]
+                      end
+                puts "    #{k}: #{str}"
+              end
+            end
+          end
+
+          # === TIH — Trust Index pipeline output ===
+          section("TrustIndexHistory — TI pipeline") do
+            tih = TrustIndexHistory.where(stream_id: s.id).order(:calculated_at)
+            puts "  total TIH rows for this stream: #{tih.count}"
             last = tih.last
-            puts "  Latest @ #{last.calculated_at.iso8601}"
-            puts "    TI: #{last.trust_index_score}"
-            puts "    ERV count: #{last.erv_count rescue 'n/a'}"
-            puts "    Cold-start tier: #{last.cold_start_tier rescue 'n/a'}"
-            puts
-            puts "  11 signals breakdown:"
-            sigs = %w[auth_ratio chatter_ccv_ratio ccv_step_function ccv_tier_clustering chat_behavior channel_protection_score cross_channel_presence known_bot_match raid_attribution ccv_chat_correlation account_profile_scoring]
-            sb = last.signal_breakdown
-            if sb.is_a?(Hash)
-              sigs.each_with_index do |sig, i|
-                val = sb[sig]
-                status = if val.nil?
-                  "NIL"
-                elsif val == "abstain"
-                  "ABSTAIN"
-                elsif val.is_a?(Numeric)
-                  "OK #{val.round(4)}"
-                elsif val.is_a?(Hash)
-                  "OK Hash: #{val.inspect[0..70]}"
-                else
-                  "OK #{val.to_s[0..50]}"
+            if last
+              puts "  Latest @ #{last.calculated_at.iso8601}"
+              %w[trust_index_score erv_count erv_percentage cold_start_tier].each do |attr|
+                val = last.public_send(attr) rescue 'n/a'
+                puts "  #{attr}: #{val}" if last.respond_to?(attr)
+              end
+              puts
+              puts "  ==== 11 SIGNALS BREAKDOWN (FULL DETAIL) ===="
+              sb = last.signal_breakdown
+              if sb.is_a?(Hash)
+                signals_order = %w[auth_ratio chatter_ccv_ratio ccv_step_function ccv_tier_clustering
+                                    chat_behavior channel_protection_score cross_channel_presence
+                                    known_bot_match raid_attribution ccv_chat_correlation account_profile_scoring]
+                signals_order.each_with_index do |sig, i|
+                  data = sb[sig]
+                  puts "  Signal ##{i+1}: #{sig}"
+                  if data.is_a?(Hash)
+                    data.each { |k, v| puts "      #{k}: #{v.inspect}" }
+                  elsif data.nil?
+                    puts "      <nil>"
+                  else
+                    puts "      #{data.inspect}"
+                  end
+                  puts
                 end
-                puts "    ##{(i+1).to_s.rjust(2)} #{sig.ljust(28)} #{status}"
+                # Print any extra keys not in signal_order
+                extra = sb.keys - signals_order
+                if extra.any?
+                  puts "  Additional breakdown keys: #{extra.inspect}"
+                  extra.each { |k| puts "      #{k}: #{sb[k].inspect[0..200]}" }
+                end
+              else
+                puts "  signal_breakdown not Hash: #{sb.class} = #{sb.inspect[0..200]}"
+              end
+            end
+          end
+
+          # === Bot detection — find correct FK ===
+          section("PerUserBotScore — bot detection per stream") do
+            cols = ActiveRecord::Base.connection.columns("per_user_bot_scores").map(&:name)
+            puts "  available columns: #{cols.inspect}"
+            scope = if cols.include?("stream_id")
+              PerUserBotScore.where(stream_id: s.id)
+            elsif cols.include?("channel_id")
+              PerUserBotScore.where(channel_id: c.id)
+            else
+              nil
+            end
+            if scope
+              total = scope.count
+              puts "  total scored for this stream: #{total}"
+              if total.positive?
+                by_class = scope.group(:classification).count
+                %w[human low_suspicion suspicious probable_bot confirmed_bot].each do |cls|
+                  cnt = by_class[cls] || 0
+                  pct = (cnt * 100.0 / total).round(1)
+                  puts "    #{cls.ljust(20)} #{cnt.to_s.rjust(6)}  (#{pct}%)"
+                end
+                # Sample one
+                sample = scope.first
+                if sample
+                  puts "  Sample bot score (#{sample.respond_to?(:username) ? sample.username : 'n/a'}):"
+                  sample.attributes.each do |k, v|
+                    next if k.end_with?("_id") && k != "twitch_user_id"
+                    puts "    #{k}: #{v.to_s[0..100]}"
+                  end
+                end
+              end
+            end
+          end
+
+          # === Post-stream ===
+          section("PostStreamReport") do
+            psr = PostStreamReport.where(stream_id: s.id).first
+            if psr
+              puts "  generated @ #{psr.created_at rescue (psr.calculated_at rescue 'n/a')}"
+              psr.attributes.each { |k, v| puts "    #{k}: #{v.inspect[0..120]}" unless k.end_with?("_id") }
+            else
+              puts "  not yet (live or pending)"
+            end
+          end
+
+          # === ML features ===
+          section("StreamFeatureVector — 25 ML features") do
+            sfv = StreamFeatureVector.where(stream_id: s.id).first
+            if sfv
+              puts "  generated"
+              features = %w[chatter_to_ccv_ratio peak_to_average_ccv_ratio ccv_coefficient_of_variation ccv_tier_stickiness
+                            message_entropy unique_message_ratio single_message_chatter_ratio emote_only_ratio
+                            avg_inter_message_interval_sec timing_regularity_score nlp_contextual_relevance_score
+                            avg_account_age_days account_creation_date_clustering_gini profile_completeness_ratio engagement_participation_ratio
+                            follower_growth_cv_90d growth_engagement_correlation follow_unfollow_churn_rate attributed_spike_ratio
+                            trust_index_30d_std chat_rate_30d_cv viewer_retention_avg_sec
+                            account_age_days_capped total_streams_capped total_hours_capped]
+              features.each_with_index do |f, i|
+                val = sfv.respond_to?(f) ? sfv.public_send(f) : nil
+                marker = val.nil? ? "NIL" : "OK"
+                puts "    ##{(i+1).to_s.rjust(2)} #{f.ljust(40)} #{marker} #{val.is_a?(Float) ? val.round(4) : val}"
               end
             else
-              puts "    signal_breakdown not Hash: #{sb.class} = #{sb.inspect[0..120]}"
+              puts "  not yet (stream still live)"
             end
           end
-          puts
 
-          begin
-            puts "## PerUserBotScore (bot detection)"
-            scores = PerUserBotScore.where(channel_id: c.id) rescue PerUserBotScore.joins(:stream).where(streams: { channel_id: c.id })
-            cnt_total = scores.count
-            puts "  total (lifetime): #{cnt_total}"
-            if cnt_total.positive?
-              by_class = scores.group(:classification).count
-              %w[human low_suspicion suspicious probable_bot confirmed_bot].each do |cls|
-                cnt = by_class[cls] || 0
-                pct = (cnt * 100.0 / cnt_total).round(1)
-                puts "    #{cls.ljust(20)} #{cnt.to_s.rjust(6)}  (#{pct}%)"
-              end
-            end
-          rescue => e
-            puts "## PerUserBotScore — ERROR: #{e.class}: #{e.message[0..200]}"
-          end
-          puts
-
-          puts "## PostStreamReport"
-          psr = PostStreamReport.where(stream_id: s.id).first
-          if psr
-            puts "  GENERATED @ #{psr.created_at.iso8601}"
-            puts "  final_trust_index: #{psr.final_trust_index rescue 'n/a'}"
-            puts "  peak_ccv: #{psr.peak_ccv rescue 'n/a'}"
-          else
-            puts "  not yet (stream live OR PostStreamWorker pending)"
-          end
-          puts
-
-          puts "## StreamFeatureVector (25 ML features)"
-          sfv = StreamFeatureVector.where(stream_id: s.id).first
-          if sfv
-            puts "  GENERATED @ #{sfv.created_at.iso8601}"
-            features = %w[chatter_to_ccv_ratio peak_to_average_ccv_ratio ccv_coefficient_of_variation ccv_tier_stickiness message_entropy unique_message_ratio single_message_chatter_ratio emote_only_ratio avg_inter_message_interval_sec timing_regularity_score nlp_contextual_relevance_score avg_account_age_days account_creation_date_clustering_gini profile_completeness_ratio engagement_participation_ratio follower_growth_cv_90d growth_engagement_correlation follow_unfollow_churn_rate attributed_spike_ratio trust_index_30d_std chat_rate_30d_cv viewer_retention_avg_sec account_age_days_capped total_streams_capped total_hours_capped]
-            features.each_with_index do |f, i|
-              val = sfv.respond_to?(f) ? sfv.public_send(f) : nil
-              status = val.nil? ? "NIL" : "OK #{val.is_a?(Float) ? val.round(4) : val}"
-              puts "    ##{(i+1).to_s.rjust(2)} #{f.ljust(40)} #{status}"
-            end
-          else
-            puts "  not yet (stream still live)"
-          end
-          puts
-
-          begin
-            puts "## StreamerReputation (3 components, BUG #1)"
-            rep = StreamerReputation.where(channel_id: c.id).first
-            if rep
-              puts "  found row id=#{rep.id}"
-              %w[growth_score follower_quality_score engagement_consistency_score updated_at calculated_at].each do |attr|
-                puts "  #{attr}: #{rep.public_send(attr) rescue 'n/a (no column)'}" if rep.respond_to?(attr)
-              end
+          # === StreamerReputation — known broken (BUG #1) ===
+          section("StreamerReputation (3 components — BUG #1)") do
+            cols = ActiveRecord::Base.connection.columns("streamer_reputations").map(&:name)
+            puts "  available columns: #{cols.inspect}"
+            scope = StreamerReputation.where(channel_id: c.id)
+            puts "  rows for this channel: #{scope.count}"
+            row = scope.first
+            if row
+              puts "  Latest row:"
+              row.attributes.each { |k, v| puts "    #{k}: #{v.inspect[0..100]}" }
             else
-              puts "  no row (BUG #1 — StreamerReputationRefreshWorker STUB)"
+              puts "  no row (BUG #1 — RefreshWorker STUB)"
             end
-          rescue => e
-            puts "## StreamerReputation — ERROR: #{e.class}: #{e.message[0..200]}"
           end
-          puts
 
-          puts "## FollowerSnapshot (cron */15)"
-          fs = FollowerSnapshot.where(channel_id: c.id).order(created_at: :desc).first
-          if fs
-            puts "  latest: #{fs.follower_count} @ #{fs.created_at.iso8601}"
-          else
-            puts "  no snapshot yet"
+          # === FollowerSnapshot — adapt to real columns ===
+          section("FollowerSnapshot") do
+            cols = ActiveRecord::Base.connection.columns("follower_snapshots").map(&:name)
+            puts "  available columns: #{cols.inspect}"
+            ts_col = %w[created_at synced_at calculated_at snapshotted_at recorded_at observed_at].find { |c| cols.include?(c) }
+            scope = FollowerSnapshot.where(channel_id: c.id)
+            puts "  rows: #{scope.count}"
+            row = ts_col ? scope.order(ts_col => :desc).first : scope.first
+            if row
+              row.attributes.each { |k, v| puts "    #{k}: #{v.inspect[0..100]}" }
+            else
+              puts "  no snapshot"
+            end
           end
-          puts
 
-          puts "## Stream.current_peak_ccv (PR-A1 derive)"
-          puts "  current_peak_ccv: #{s.current_peak_ccv rescue 'n/a'}"
-          puts "  current_avg_ccv: #{s.current_avg_ccv rescue 'n/a'}"
-          puts "  current_duration_ms: #{s.current_duration_ms rescue 'n/a'}"
+          # === Stream peak/avg derive (PR-A1) ===
+          section("Stream derive methods (PR-A1)") do
+            puts "  current_peak_ccv: #{s.current_peak_ccv rescue 'method missing'}"
+            puts "  current_avg_ccv: #{s.current_avg_ccv rescue 'method missing'}"
+            puts "  current_duration_ms: #{s.current_duration_ms rescue 'method missing'}"
+          end
+
+          puts "\n===== DEEP DIVE COMPLETE for #{login} ====="
           RUBY_EOF
-          echo "=== Script built ($(wc -l < /tmp/deep-dive.rb) lines) ==="
+          echo "Script built ($(wc -l < /tmp/deep-dive.rb) lines)"
 
       - name: Run deep-dive on HOSTKEY
         run: |
           echo "Deep dive: ${{ inputs.login }}"
           echo "============================================================"
-          # Copy to VPS, then into container, then rails runner — write to file then cat
           scp /tmp/deep-dive.rb hostkey:/tmp/deep-dive.rb
           CONTAINER=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           ssh hostkey "docker cp /tmp/deep-dive.rb ${CONTAINER}:/tmp/deep-dive.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/deep-dive.rb > /tmp/output.txt 2>&1; cat /tmp/output.txt' 2>&1 | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof|Please add the'"
