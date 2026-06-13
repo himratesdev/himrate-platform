@@ -1,0 +1,138 @@
+name: sync-signal-weights
+
+# Sync signal_configurations table from Time4VPS (Phase 4 J calibrated weights)
+# to HOSTKEY (currently has default base weights).
+#
+# Read-only on Time4VPS. Write on HOSTKEY (upsert by id+signal_key combo).
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (read both, diff, no write)'
+        required: true
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+        default: 'true'
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          Host time4vps
+            HostName 194.135.85.159
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Dump signal_configurations from Time4VPS (source-of-truth)
+        run: |
+          ssh time4vps "docker exec himrate-db psql -U himrate -d himrate_staging -tAc \"
+            SELECT row_to_json(t) FROM (
+              SELECT * FROM signal_configurations ORDER BY signal_key, category
+            ) t
+          \"" > /tmp/time4vps_signals.json
+          echo "Lines dumped: $(wc -l < /tmp/time4vps_signals.json)"
+          echo ""
+          echo "=== First 3 rows ==="
+          head -3 /tmp/time4vps_signals.json
+
+      - name: Compare with HOSTKEY current
+        run: |
+          ssh hostkey "docker exec himrate-db psql -U himrate -d himrate_staging -tAc \"
+            SELECT row_to_json(t) FROM (
+              SELECT * FROM signal_configurations ORDER BY signal_key, category
+            ) t
+          \"" > /tmp/hostkey_signals.json
+          echo "HOSTKEY lines: $(wc -l < /tmp/hostkey_signals.json)"
+          echo ""
+          echo "=== DIFF (changed/missing rows) ==="
+          # Compare
+          if diff -q /tmp/time4vps_signals.json /tmp/hostkey_signals.json > /dev/null; then
+            echo "✅ IDENTICAL — no sync needed"
+          else
+            echo "⚠️ DIFFERENT — need sync"
+            echo ""
+            echo "=== Time4VPS signal weight summary ==="
+            python3 -c "
+          import json
+          with open('/tmp/time4vps_signals.json') as f:
+              t4 = [json.loads(l) for l in f if l.strip()]
+          with open('/tmp/hostkey_signals.json') as f:
+              hk = [json.loads(l) for l in f if l.strip()]
+          print(f'Time4VPS rows: {len(t4)}')
+          print(f'HOSTKEY rows:  {len(hk)}')
+          print()
+          # Index by key+category
+          t4_idx = {(r.get('signal_key'), r.get('category', 'default')): r for r in t4}
+          hk_idx = {(r.get('signal_key'), r.get('category', 'default')): r for r in hk}
+          print('=== Per-signal weight diff ===')
+          for (k, cat), t4r in sorted(t4_idx.items()):
+              hk_w = hk_idx.get((k, cat), {}).get('weight', 'MISSING')
+              t4_w = t4r.get('weight', 'n/a')
+              if str(t4_w) != str(hk_w):
+                  print(f'  {k:30} cat={cat:10} t4={t4_w} → hk={hk_w}')
+            "
+          fi
+
+      - name: Apply Time4VPS weights to HOSTKEY (skip if dry_run)
+        if: inputs.dry_run == 'false'
+        run: |
+          echo "Applying weights to HOSTKEY..."
+          # Build Ruby script that upserts each row
+          cat > /tmp/sync_signals.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require 'json'
+          rows = File.readlines('/tmp/time4vps_signals.json').map { |l| JSON.parse(l) rescue nil }.compact
+          puts "Rows to upsert: #{rows.size}"
+          applied = 0
+          rows.each do |r|
+            cols = SignalConfiguration.column_names
+            attrs = r.select { |k, _| cols.include?(k) && k != 'id' }
+            key = { signal_key: r['signal_key'] }
+            key[:category] = r['category'] if cols.include?('category') && r['category']
+            existing = SignalConfiguration.find_by(key)
+            if existing
+              existing.update!(attrs.except('signal_key', 'category', 'created_at'))
+              applied += 1
+            else
+              SignalConfiguration.create!(attrs)
+              applied += 1
+            end
+          rescue => e
+            puts "FAIL #{r['signal_key']}: #{e.class}: #{e.message}"
+          end
+          puts "Successfully applied: #{applied}/#{rows.size}"
+          puts "HOSTKEY signal_configurations after sync: #{SignalConfiguration.count}"
+          RUBY_EOF
+
+          # Copy data + script to HOSTKEY then exec
+          scp /tmp/time4vps_signals.json hostkey:/tmp/time4vps_signals.json
+          scp /tmp/sync_signals.rb hostkey:/tmp/sync_signals.rb
+          CONTAINER=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker cp /tmp/time4vps_signals.json ${CONTAINER}:/tmp/time4vps_signals.json && docker cp /tmp/sync_signals.rb ${CONTAINER}:/tmp/sync_signals.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/sync_signals.rb 2>&1' | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof'"
+
+      - name: Final verify HOSTKEY weights match
+        if: inputs.dry_run == 'false'
+        run: |
+          ssh hostkey "docker exec himrate-db psql -U himrate -d himrate_staging -c \"
+            SELECT signal_key, weight FROM signal_configurations ORDER BY signal_key
+          \""
