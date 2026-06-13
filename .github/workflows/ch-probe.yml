@@ -1,0 +1,58 @@
+name: ch-probe
+
+# Probe ClickHouse chat_messages for stray228 (verify chat → CH pipeline)
+
+on:
+  workflow_dispatch:
+    inputs:
+      login:
+        description: 'Twitch login'
+        required: true
+        default: 'stray228'
+        type: string
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Probe ClickHouse
+        run: |
+          LOGIN="${{ inputs.login }}"
+          echo "=== ClickHouse total rows ==="
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query 'SELECT count() FROM himrate_staging.chat_messages'"
+          echo ""
+          echo "=== Last 1 hour rows ==="
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query 'SELECT count() FROM himrate_staging.chat_messages WHERE timestamp > now() - INTERVAL 1 HOUR'"
+          echo ""
+          echo "=== Distinct channels last hour ==="
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query 'SELECT count(DISTINCT channel_id) FROM himrate_staging.chat_messages WHERE timestamp > now() - INTERVAL 1 HOUR'"
+          echo ""
+          echo "=== Sample channel ID for ${LOGIN} ==="
+          CHANNEL_ID=$(ssh hostkey "docker exec himrate-db psql -U himrate -d himrate_staging -tAc \"SELECT id FROM channels WHERE login='${LOGIN}'\"" | tr -d ' \n')
+          echo "channel_id: ${CHANNEL_ID}"
+          echo ""
+          echo "=== Messages for ${LOGIN} (last hour) ==="
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT count() FROM himrate_staging.chat_messages WHERE channel_id='${CHANNEL_ID}' AND timestamp > now() - INTERVAL 1 HOUR\""
+          echo ""
+          echo "=== Latest 5 messages for ${LOGIN} ==="
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT timestamp, username, substr(text, 1, 50) FROM himrate_staging.chat_messages WHERE channel_id='${CHANNEL_ID}' ORDER BY timestamp DESC LIMIT 5\""
+          echo ""
+          echo "=== Sidekiq queue :chat depth ==="
+          CONTAINER=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker exec ${CONTAINER} bin/rails runner 'require \"sidekiq/api\"; puts \":chat queue = #{Sidekiq::Queue.new(:chat).size} jobs\"' 2>&1 | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof'"
