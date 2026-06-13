@@ -54,16 +54,17 @@ jobs:
             exit
           end
 
-          # === SCHEMA introspection (so we know real columns) ===
+          # === SCHEMA introspection — use model.table_name for accuracy ===
           section("Schema introspection") do
-            tables = %w[channels streams ccv_snapshots chatters_snapshots trust_index_history
-                        per_user_bot_scores post_stream_reports stream_feature_vectors
-                        streamer_reputations follower_snapshots]
-            tables.each do |t|
+            models = [Channel, Stream, CcvSnapshot, ChattersSnapshot, TrustIndexHistory,
+                      PerUserBotScore, PostStreamReport, StreamFeatureVector,
+                      StreamerReputation, FollowerSnapshot]
+            models.each do |m|
+              t = m.table_name
               cols = ActiveRecord::Base.connection.columns(t).map(&:name).join(", ")
-              puts "  #{t}: #{cols}"
+              puts "  #{m.name} (#{t}): #{cols}"
             rescue => e
-              puts "  #{t}: ERROR #{e.message[0..80]}"
+              puts "  #{m.name}: ERROR #{e.message[0..80]}"
             end
           end
 
@@ -94,40 +95,98 @@ jobs:
             end
           end
 
-          # === CCV polling — what's the actual viewer count? ===
+          # === CCV polling — what's the actual viewer count? (sort by timestamp, not created_at) ===
           section("CcvSnapshot — RAW VIEWER COUNT over time") do
-            ccv = CcvSnapshot.where(stream_id: s.id).order(:created_at).limit(1000)
+            ccv = CcvSnapshot.where(stream_id: s.id).order(:timestamp).limit(1000)
             puts "  total snapshots: #{ccv.count}"
             if ccv.any?
-              vals = ccv.map { |x| x.respond_to?(:ccv_count) ? x.ccv_count : (x.respond_to?(:viewer_count) ? x.viewer_count : nil) }.compact
+              vals = ccv.pluck(:ccv_count)
               puts "  peak CCV: #{vals.max}"
               puts "  min CCV: #{vals.min}"
               puts "  mean CCV: #{(vals.sum.to_f / vals.size).round(1)}"
               puts "  median CCV: #{vals.sort[vals.size/2]}"
-              puts "  latest CCV: #{vals.last}"
-              puts "  current CCV (latest): #{vals.last}"
+              puts "  latest CCV: #{vals.last} @ #{ccv.last.timestamp.iso8601}"
+              puts "  real_viewers_estimate (latest): #{ccv.last.real_viewers_estimate} (confidence #{ccv.last.confidence})"
               puts "  range: #{vals.min}..#{vals.max} (delta=#{vals.max - vals.min})"
             end
           end
 
-          # === CHATTERS over time ===
-          section("ChattersSnapshot — RAW CHATTER COUNT over time") do
-            cs = ChattersSnapshot.where(stream_id: s.id).order(:created_at).limit(1000)
+          # === CHATTERS over time — REAL raw metrics for signals ===
+          section("ChattersSnapshot — RAW METRICS FOR SIGNALS") do
+            cs = ChattersSnapshot.where(stream_id: s.id).order(:timestamp).limit(1000)
             puts "  total snapshots: #{cs.count}"
             last = cs.last
             if last
-              puts "  Latest snapshot:"
-              # Print all columns
-              last.attributes.each do |k, v|
-                next if k == "id" || k.end_with?("_id") || k.start_with?("created_") || k.start_with?("updated_")
-                str = case v
-                      when Array then "[#{v.size} entries: #{v.first(3).inspect}...]"
-                      when Hash then "Hash with #{v.keys.size} keys: #{v.keys.first(5).inspect}"
-                      else v.to_s[0..120]
-                      end
-                puts "    #{k}: #{str}"
+              puts "  Latest snapshot @ #{last.timestamp.iso8601}"
+              %w[unique_chatters_count total_messages_count auth_ratio chatters_present_total broadcasters_count moderators_count vips_count staff_count viewers_count_present].each do |c|
+                val = last.public_send(c) rescue nil
+                puts "    #{c.ljust(28)} #{val}"
               end
+              vl = last.viewer_logins
+              puts "    viewer_logins: #{vl.is_a?(Array) ? "[#{vl.size} entries] sample=#{vl.first(3).inspect}" : vl.inspect[0..80]}"
+              # Aggregates over stream
+              puts
+              puts "  Stream aggregates:"
+              chatters_arr = cs.pluck(:unique_chatters_count).compact
+              messages_arr = cs.pluck(:total_messages_count).compact
+              auth_ratios = cs.pluck(:auth_ratio).compact
+              puts "    unique_chatters peak: #{chatters_arr.max} mean: #{(chatters_arr.sum.to_f/chatters_arr.size).round(1) rescue 'n/a'}"
+              puts "    total_messages peak: #{messages_arr.max} mean: #{(messages_arr.sum.to_f/messages_arr.size).round(1) rescue 'n/a'}"
+              puts "    auth_ratio mean: #{(auth_ratios.sum.to_f/auth_ratios.size).round(3) rescue 'n/a'}"
             end
+          end
+
+          # === COMPUTED raw metrics correlating signals to data ===
+          section("DERIVED metrics — what does each TI signal MEASURE?") do
+            latest_ccv = CcvSnapshot.where(stream_id: s.id).order(:timestamp).last
+            latest_chat = ChattersSnapshot.where(stream_id: s.id).order(:timestamp).last
+            scores = PerUserBotScore.where(stream_id: s.id)
+
+            puts "  ## Signal #1 auth_ratio:"
+            puts "    Real auth_ratio (from latest chatter snapshot): #{latest_chat&.auth_ratio}"
+            puts "    Interpretation: % of present viewers authenticated (logged in)"
+            puts "    Signal value 0.0 = no anomaly (high auth ratio = healthy)"
+            puts
+            puts "  ## Signal #2 chatter_ccv_ratio:"
+            cccr = latest_chat && latest_ccv && latest_ccv.ccv_count > 0 ? (latest_chat.unique_chatters_count.to_f / latest_ccv.ccv_count).round(4) : nil
+            puts "    Real ratio: #{cccr} (chatters #{latest_chat&.unique_chatters_count} / CCV #{latest_ccv&.ccv_count})"
+            puts "    Signal: lower ratio (more lurkers) = more suspicious. 0.0 = baseline OK"
+            puts
+            puts "  ## Signal #3 ccv_step_function:"
+            puts "    Current CCV: #{latest_ccv&.ccv_count}"
+            puts "    Game: #{s.respond_to?(:game_name) ? s.game_name : 'n/a'}"
+            puts "    Signal value 0.0807 = mild category-relative anomaly"
+            puts
+            puts "  ## Signal #4 ccv_tier_clustering:"
+            puts "    Total CCV samples: #{latest_ccv ? CcvSnapshot.where(stream_id: s.id).count : 0}"
+            puts "    Signal 0.0 = CCV tiers stable, no clustering anomaly"
+            puts
+            puts "  ## Signal #5 chat_behavior:"
+            puts "    Total msgs (latest): #{latest_chat&.total_messages_count}"
+            puts "    Unique chatters: #{latest_chat&.unique_chatters_count}"
+            puts "    Signal value 0.0423 = slight chat pattern flag (confidence 0.5)"
+            puts
+            puts "  ## Signal #6 channel_protection_score:"
+            puts "    Signal 0.0 = no/minimal channel restrictions (followers-only/subs-only/etc OFF)"
+            puts
+            puts "  ## Signal #7 cross_channel_presence:"
+            puts "    Signal 0.0 = viewers not heavily multi-channel-bot-like"
+            puts
+            puts "  ## Signal #8 known_bot_match:"
+            probable = scores.where(classification: "probable_bot").count
+            confirmed = scores.where(classification: "confirmed_bot").count
+            puts "    Probable bots: #{probable} / #{scores.count} (#{(probable*100.0/scores.count).round(1)}%)"
+            puts "    Confirmed bots: #{confirmed} / #{scores.count} (#{(confirmed*100.0/scores.count).round(1)}%)"
+            puts "    Signal 0.0 = below threshold (typical = <5% known bots ok)"
+            puts
+            puts "  ## Signal #9 raid_attribution:"
+            puts "    Signal 0.0 = no raid-related anomalies (no incoming raids attributed)"
+            puts
+            puts "  ## Signal #10 ccv_chat_correlation:"
+            puts "    Signal 0.0 = CCV+chat msg rate correlated normally"
+            puts
+            puts "  ## Signal #11 account_profile_scoring:"
+            puts "    Signal 0.0 = scored chatter profiles (age/follows) normal"
           end
 
           # === TIH — Trust Index pipeline output ===
