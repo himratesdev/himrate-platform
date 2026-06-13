@@ -43,85 +43,90 @@ jobs:
           SSH_CONFIG
           chmod 600 ~/.ssh/config
 
-      - name: Dump signal_configurations from Time4VPS (source-of-truth)
+      - name: Dump signal_configurations from Time4VPS (real schema)
         run: |
           ssh time4vps "docker exec himrate-db psql -U himrate -d himrate_staging -tAc \"
             SELECT row_to_json(t) FROM (
-              SELECT * FROM signal_configurations ORDER BY signal_key, category
+              SELECT id, signal_type, category, param_name, param_value
+              FROM signal_configurations
+              ORDER BY signal_type, category, param_name
             ) t
           \"" > /tmp/time4vps_signals.json
           echo "Lines dumped: $(wc -l < /tmp/time4vps_signals.json)"
           echo ""
-          echo "=== First 3 rows ==="
-          head -3 /tmp/time4vps_signals.json
+          echo "=== First 5 rows ==="
+          head -5 /tmp/time4vps_signals.json
 
       - name: Compare with HOSTKEY current
         run: |
           ssh hostkey "docker exec himrate-db psql -U himrate -d himrate_staging -tAc \"
             SELECT row_to_json(t) FROM (
-              SELECT * FROM signal_configurations ORDER BY signal_key, category
+              SELECT id, signal_type, category, param_name, param_value
+              FROM signal_configurations
+              ORDER BY signal_type, category, param_name
             ) t
           \"" > /tmp/hostkey_signals.json
           echo "HOSTKEY lines: $(wc -l < /tmp/hostkey_signals.json)"
           echo ""
-          echo "=== DIFF (changed/missing rows) ==="
-          # Compare
+          echo "=== DIFF ==="
           if diff -q /tmp/time4vps_signals.json /tmp/hostkey_signals.json > /dev/null; then
-            echo "✅ IDENTICAL — no sync needed"
+            echo "IDENTICAL"
           else
-            echo "⚠️ DIFFERENT — need sync"
+            echo "DIFFERENT — sync needed"
             echo ""
-            echo "=== Time4VPS signal weight summary ==="
-            python3 -c "
+            echo "=== Per-(signal_type, param_name) diff ==="
+            python3 <<'PY'
           import json
           with open('/tmp/time4vps_signals.json') as f:
               t4 = [json.loads(l) for l in f if l.strip()]
           with open('/tmp/hostkey_signals.json') as f:
               hk = [json.loads(l) for l in f if l.strip()]
-          print(f'Time4VPS rows: {len(t4)}')
-          print(f'HOSTKEY rows:  {len(hk)}')
-          print()
-          # Index by key+category
-          t4_idx = {(r.get('signal_key'), r.get('category', 'default')): r for r in t4}
-          hk_idx = {(r.get('signal_key'), r.get('category', 'default')): r for r in hk}
-          print('=== Per-signal weight diff ===')
-          for (k, cat), t4r in sorted(t4_idx.items()):
-              hk_w = hk_idx.get((k, cat), {}).get('weight', 'MISSING')
-              t4_w = t4r.get('weight', 'n/a')
-              if str(t4_w) != str(hk_w):
-                  print(f'  {k:30} cat={cat:10} t4={t4_w} → hk={hk_w}')
-            "
+          print(f"Time4VPS rows: {len(t4)}")
+          print(f"HOSTKEY rows:  {len(hk)}")
+          t4_idx = {(r['signal_type'], r['category'], r['param_name']): r['param_value'] for r in t4}
+          hk_idx = {(r['signal_type'], r['category'], r['param_name']): r['param_value'] for r in hk}
+          all_keys = set(t4_idx) | set(hk_idx)
+          changes = 0
+          for k in sorted(all_keys):
+              t4v = t4_idx.get(k)
+              hkv = hk_idx.get(k)
+              if t4v != hkv:
+                  changes += 1
+                  print(f"  {k[0]:30} cat={k[1]:10} {k[2]:25} t4={t4v}  hk={hkv}")
+          print(f"\nTotal differences: {changes}")
+          PY
           fi
 
       - name: Apply Time4VPS weights to HOSTKEY (skip if dry_run)
         if: inputs.dry_run == 'false'
         run: |
           echo "Applying weights to HOSTKEY..."
-          # Build Ruby script that upserts each row
           cat > /tmp/sync_signals.rb <<'RUBY_EOF'
           $stdout.sync = true
           require 'json'
           rows = File.readlines('/tmp/time4vps_signals.json').map { |l| JSON.parse(l) rescue nil }.compact
           puts "Rows to upsert: #{rows.size}"
           applied = 0
+          created = 0
+          updated = 0
           rows.each do |r|
-            cols = SignalConfiguration.column_names
-            attrs = r.select { |k, _| cols.include?(k) && k != 'id' }
-            key = { signal_key: r['signal_key'] }
-            key[:category] = r['category'] if cols.include?('category') && r['category']
+            key = { signal_type: r['signal_type'], category: r['category'], param_name: r['param_name'] }
             existing = SignalConfiguration.find_by(key)
             if existing
-              existing.update!(attrs.except('signal_key', 'category', 'created_at'))
-              applied += 1
+              if existing.param_value.to_s != r['param_value'].to_s
+                existing.update!(param_value: r['param_value'])
+                updated += 1
+              end
             else
-              SignalConfiguration.create!(attrs)
-              applied += 1
+              SignalConfiguration.create!(key.merge(param_value: r['param_value']))
+              created += 1
             end
+            applied += 1
           rescue => e
-            puts "FAIL #{r['signal_key']}: #{e.class}: #{e.message}"
+            puts "FAIL #{r['signal_type']}/#{r['category']}/#{r['param_name']}: #{e.class}: #{e.message}"
           end
-          puts "Successfully applied: #{applied}/#{rows.size}"
-          puts "HOSTKEY signal_configurations after sync: #{SignalConfiguration.count}"
+          puts "Applied: #{applied}/#{rows.size}  (created=#{created}, updated=#{updated})"
+          puts "HOSTKEY rows now: #{SignalConfiguration.count}"
           RUBY_EOF
 
           # Copy data + script to HOSTKEY then exec
@@ -134,5 +139,8 @@ jobs:
         if: inputs.dry_run == 'false'
         run: |
           ssh hostkey "docker exec himrate-db psql -U himrate -d himrate_staging -c \"
-            SELECT signal_key, weight FROM signal_configurations ORDER BY signal_key
+            SELECT signal_type, category, param_name, param_value
+            FROM signal_configurations
+            WHERE param_name = 'weight'
+            ORDER BY signal_type, category
           \""
