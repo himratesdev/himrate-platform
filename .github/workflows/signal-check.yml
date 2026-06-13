@@ -10,6 +10,14 @@ on:
         description: 'Twitch login (channel to deep-dive)'
         required: true
         type: string
+      target:
+        description: 'Which VPS to probe (read-only Rails probe via SSH)'
+        required: true
+        type: choice
+        options:
+          - hostkey
+          - time4vps
+        default: hostkey
 
 jobs:
   check:
