@@ -1,0 +1,191 @@
+name: signal-check
+
+# Deep-dive per-channel verification — все 11 TI сигналов + 25 ML features + bot detection + lifecycle.
+# Запускается через `gh workflow run signal-check.yml -f login=<twitch_login>`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      login:
+        description: 'Twitch login (channel to deep-dive)'
+        required: true
+        type: string
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Deep-dive ${{ inputs.login }} — all 11 TI signals + ML features
+        run: |
+          LOGIN="${{ inputs.login }}"
+          echo "Deep dive: $LOGIN"
+          echo "============================================================"
+
+          # heredoc into ssh, then into docker exec, then bin/rails runner reads stdin
+          ssh hostkey "docker exec -i \$(docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1) bin/rails runner /dev/stdin" <<RUBY 2>&1 | grep -v 'Flipper audit\|Sidekiq 7\|connecting to Redis\|stackprof'
+          login = "$LOGIN"
+          c = Channel.find_by(login: login)
+          unless c
+            puts "❌ Channel not found: #{login}"
+            exit
+          end
+
+          puts "## Channel: #{c.login}"
+          puts "  twitch_id: #{c.platform_channel_id}"
+          puts "  broadcaster_type: #{c.broadcaster_type || 'none'}"
+          puts "  display_name: #{c.display_name}"
+          puts "  description: #{c.description.to_s[0..80]}"
+          puts
+
+          s = Stream.where(channel_id: c.id).order(started_at: :desc).first
+          unless s
+            puts "❌ No streams"
+            exit
+          end
+
+          is_live = s.ended_at.nil?
+          puts "## Latest stream #{s.id}"
+          puts "  started_at: #{s.started_at.iso8601}"
+          puts "  state: #{is_live ? "🟢 LIVE #{((Time.current - s.started_at)/60).round}m" : "⚫ ended #{s.ended_at.iso8601}"}"
+          puts "  category_id: #{s.category_id || 'n/a'}"
+          puts
+
+          puts "## CcvSnapshot (Tier 1/2 polling)"
+          ccv = CcvSnapshot.where(channel_id: c.id, stream_id: s.id).order(:created_at)
+          puts "  count: #{ccv.count}"
+          puts "  peak: #{ccv.maximum(:ccv_count)}"
+          puts "  mean: #{ccv.average(:ccv_count)&.to_f&.round(1)}"
+          puts "  latest: #{ccv.last&.ccv_count} @ #{ccv.last&.created_at&.iso8601}"
+          puts
+
+          puts "## ChattersSnapshot"
+          chat = ChattersSnapshot.where(channel_id: c.id, stream_id: s.id).order(:created_at)
+          puts "  count: #{chat.count}"
+          puts "  peak chatters: #{chat.maximum(:chatter_count)}"
+          puts "  latest: #{chat.last&.chatter_count} @ #{chat.last&.created_at&.iso8601}"
+          puts
+
+          puts "## TrustIndexHistory"
+          tih = TrustIndexHistory.where(channel_id: c.id, stream_id: s.id).order(:calculated_at)
+          puts "  rows: #{tih.count}"
+          if tih.last
+            last = tih.last
+            puts "  Latest @ #{last.calculated_at.iso8601}"
+            puts "    TI: #{last.trust_index_score}"
+            puts "    ERV count: #{last.erv_count rescue 'n/a'}"
+            puts "    Cold-start tier: #{last.cold_start_tier rescue 'n/a'}"
+            puts
+            puts "  📋 11 signals breakdown:"
+            signals = %w[
+              auth_ratio chatter_ccv_ratio ccv_step_function ccv_tier_clustering
+              chat_behavior channel_protection_score cross_channel_presence
+              known_bot_match raid_attribution ccv_chat_correlation account_profile_scoring
+            ]
+            sb = last.signal_breakdown
+            if sb.is_a?(Hash)
+              signals.each_with_index do |sig, i|
+                val = sb[sig]
+                status = case val
+                         when nil then "❌ nil"
+                         when "abstain" then "⚠️ abstain"
+                         when Numeric then "✅ #{val.round(4)}"
+                         when Hash then "✅ Hash: #{val.inspect.truncate(80)}"
+                         else "✅ #{val.to_s.truncate(60)}"
+                         end
+                puts "    ##{(i+1).to_s.rjust(2)} #{sig.ljust(28)} #{status}"
+              end
+            else
+              puts "    ❌ signal_breakdown not Hash: #{sb.class} = #{sb.inspect.truncate(120)}"
+            end
+          end
+          puts
+
+          puts "## PerUserBotScore (bot detection)"
+          scores = PerUserBotScore.where(channel_id: c.id)
+          puts "  total scored (lifetime): #{scores.count}"
+          if scores.any?
+            by_class = scores.group(:classification).count
+            %w[human low_suspicion suspicious probable_bot confirmed_bot].each do |cls|
+              cnt = by_class[cls] || 0
+              pct = scores.count.positive? ? (cnt * 100.0 / scores.count).round(1) : 0
+              puts "    #{cls.ljust(20)} #{cnt.to_s.rjust(5)}  (#{pct}%)"
+            end
+          end
+          puts
+
+          puts "## PostStreamReport"
+          psr = PostStreamReport.where(stream_id: s.id).first
+          if psr
+            puts "  ✅ generated @ #{psr.created_at.iso8601}"
+            puts "  final_trust_index: #{psr.final_trust_index rescue 'n/a'}"
+            puts "  peak_ccv: #{psr.peak_ccv rescue 'n/a'}"
+          else
+            puts "  ⚫ not yet (stream is live OR PostStreamWorker pending)"
+          end
+          puts
+
+          puts "## StreamFeatureVector (ML 25 features — verify nix BUG #2 fixed)"
+          sfv = StreamFeatureVector.where(stream_id: s.id).first
+          if sfv
+            puts "  ✅ generated @ #{sfv.created_at.iso8601}"
+            features = %w[
+              chatter_to_ccv_ratio peak_to_average_ccv_ratio ccv_coefficient_of_variation ccv_tier_stickiness
+              message_entropy unique_message_ratio single_message_chatter_ratio emote_only_ratio
+              avg_inter_message_interval_sec timing_regularity_score nlp_contextual_relevance_score
+              avg_account_age_days account_creation_date_clustering_gini profile_completeness_ratio engagement_participation_ratio
+              follower_growth_cv_90d growth_engagement_correlation follow_unfollow_churn_rate attributed_spike_ratio
+              trust_index_30d_std chat_rate_30d_cv viewer_retention_avg_sec
+              account_age_days_capped total_streams_capped total_hours_capped
+            ]
+            features.each_with_index do |f, i|
+              val = sfv.respond_to?(f) ? sfv.public_send(f) : nil
+              status = val.nil? ? "❌ nil" : "✅ #{val.is_a?(Float) ? val.round(4) : val}"
+              puts "    ##{(i+1).to_s.rjust(2)} #{f.ljust(40)} #{status}"
+            end
+          else
+            puts "  ⚫ not yet (stream still live)"
+          end
+          puts
+
+          puts "## StreamerReputation (3 components — known BUG #1, PR-A2 pending)"
+          rep = StreamerReputation.where(channel_id: c.id).order(created_at: :desc).first
+          if rep
+            puts "  ✅ @ #{rep.created_at.iso8601}"
+            puts "  growth_score:                #{rep.growth_score rescue 'n/a'}"
+            puts "  follower_quality_score:      #{rep.follower_quality_score rescue 'n/a'}"
+            puts "  engagement_consistency_score: #{rep.engagement_consistency_score rescue 'n/a'}"
+          else
+            puts "  ❌ no row (BUG #1 — StreamerReputationRefreshWorker is STUB; FollowerSnapshotWorker provides data but no aggregation)"
+          end
+          puts
+
+          puts "## FollowerSnapshot (cron */15, gated :follower_snapshot)"
+          fs = FollowerSnapshot.where(channel_id: c.id).order(created_at: :desc).first
+          if fs
+            puts "  ✅ latest: #{fs.follower_count} @ #{fs.created_at.iso8601}"
+          else
+            puts "  ⚫ no snapshot (worker may not have run yet — runs every 15min)"
+          end
+          puts
+
+          puts "## Stream.current_peak_ccv (PR-A1 derive)"
+          puts "  current_peak_ccv: #{s.current_peak_ccv rescue 'n/a'}"
+          puts "  current_avg_ccv:  #{s.current_avg_ccv rescue 'n/a'}"
+          puts "  current_duration_ms: #{s.current_duration_ms rescue 'n/a'}"
+          RUBY
