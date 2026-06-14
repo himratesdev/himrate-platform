@@ -10,7 +10,7 @@ RSpec.describe AccessoryOps::DriftCheckService do
       ).and_return(
         "accessories" => { "redis" => { "image" => "redis:7.4-alpine" } }
       )
-      allow(AccessoryHostsConfig).to receive(:hosts_for).and_return([ "194.135.85.159" ])
+      allow(AccessoryHostsConfig).to receive(:hosts_for).and_return([ "82.21.7.48" ])
     end
 
     it "returns :match когда declared == runtime" do

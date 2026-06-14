@@ -2,7 +2,7 @@
 
 ## Текущая архитектура (MVP → early scale)
 
-**Один VPS** (194.135.85.159, Time4VPS, 3 cores / 8GB RAM / 80GB disk):
+**Один VPS** (82.21.7.48, HOSTKEY vm.v3-heavy, 8 vCPU / 32GB RAM / 240GB NVMe (Netherlands DC)):
 
 - **PostgreSQL 16.4 + pg_partman** — один Kamal accessory `db`, две database внутри:
   - `himrate_production` для prod

@@ -4,7 +4,7 @@ require "rails_helper"
 
 RSpec.describe AccessoryOps::HealthCheckService do
   before do
-    allow(AccessoryHostsConfig).to receive(:hosts_for).and_return([ "194.135.85.159" ])
+    allow(AccessoryHostsConfig).to receive(:hosts_for).and_return([ "82.21.7.48" ])
   end
 
   describe ".call" do

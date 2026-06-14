@@ -118,7 +118,7 @@ Auto-rollback executes on health failure после kamal step success. Manual r
 1. Trigger workflow с previous accessory image tag (revert deploy.yml first)
 2. OR direct SSH к VPS:
    ```bash
-   ssh root@194.135.85.159
+   ssh root@82.21.7.48
    docker stop himrate-<accessory>
    docker run -d --name himrate-<accessory> <previous_image_tag>
    ```

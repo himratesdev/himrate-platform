@@ -1,28 +1,25 @@
 # HimRate — Kamal Deployment Configuration
-# Staging + Production on single VPS (194.135.85.159)
+# Staging on HOSTKEY vm.v3-heavy (82.21.7.48, Netherlands DC, 8 vCPU / 32 GB / 240 NVMe)
 # Destinations: config/deploy.staging.yml, config/deploy.production.yml
 
 service: himrate
 image: himratesdev/himrate-platform
 
-# BUG-251.17 (30→120) + deploy-fix (120→240) + #289 deploy thrash (240→600):
-# kamal's default deploy_timeout (30s) is too tight for this app's boot on the
-# single 3-core/8GB VPS. Under live combat load (load avg ~9-11) + ClickHouse
-# accessory (#194/#196), a new web container's eager-load can't bind Puma:3000
-# even within 120s → kamal-proxy health check fails → deploy aborts.
-# 2026-06-06 #289+#290 combined deploy (PR-B1a tier consolidation + /proc mount +
-# env plumbing) caused load spike to 59 on 3-core box during db:prepare +
-# Flipper-seeding + eager-load; web container 814b6363 boot took >240s and got
-# SIGTERM (Exited 143). Workers all stayed on aecbae5; deploy abandoned.
-# 600s buys boot headroom for the post-PR-B1a baseline (≈ load 20-25) while
-# Phase 7 R / hardware track is the longer-term fix. Deploy-time wait only;
-# no runtime effect on serving containers.
+# deploy_timeout: generous boot headroom. History: 30→120 (BUG-251.17) → 240
+# (deploy-fix) → 600 (#289 thrash) were escalations to survive the Time4VPS
+# 3-core/8GB box, whose eager-load under combat load (avg 20-30) couldn't bind
+# Puma:3000 inside the window → kamal-proxy health-check fail → deploy abort.
+# 2026-06-12 HOSTKEY migration (8 vCPU / 32 GB / NVMe) removed that root cause —
+# containers boot in seconds at load <1. 600s is retained as harmless headroom
+# for cold-cache / multi-host deploys (healthy containers proceed immediately;
+# the timeout only bounds the worst case). Deploy-time wait only; no runtime
+# effect on serving containers.
 deploy_timeout: 600
 
 servers:
   web:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     # CR M1 fix 2026-06-06: explicit RAILS_MAX_THREADS=3 pins web AR pool to Puma's
     # threads_count default (config/puma.rb line 30 reads same env). Without this
     # override, web would fall back to `database.yml` default `{ 5 }` → 2 idle AR
@@ -56,9 +53,9 @@ servers:
   # T1-SPAWN-PROMPT cited "-2.5 GiB" was based on pre-Phase-7-R-Step-1/2/3 baseline before
   # legacy queue purges already freed 1.9 GiB.
   #
-  # Whisper_worker stays separate role — GPU-bound by nature (--cpus 1.5 isolation),
-  # dedicated CPU budget protected from tier consolidation. IRC stays separate — stateful
-  # connection-pinned process. Web stays separate — Puma not Sidekiq.
+  # Whisper_worker stays separate role — GPU-bound by nature (whisper accessory --cpus 4
+  # isolation), dedicated CPU budget protected from tier consolidation. IRC stays separate —
+  # stateful connection-pinned process. Web stays separate — Puma not Sidekiq.
   #
   # Workers on whisper_transcripts queue: ClipTranscriptWorker (sole). whisper_transcripts
   # is NOT in config/sidekiq.yml :queues — only whisper_worker picks it up via explicit
@@ -73,12 +70,12 @@ servers:
   # iter-2 Nit-B). Read by config/database.yml pool key (ENV.fetch RAILS_MAX_THREADS
   # with default 5). Without this override the default 5 would block Sidekiq threads
   # 6-10 on connection checkout (ActiveRecord::ConnectionTimeoutError after 5s).
-  # Verified vs PG server max_connections=100 default: tier1(12) + tier2(5) + tier3(5) +
-  # web(3) + whisper(1) = 26 client slots max — well under server cap with ample headroom
-  # for live console / ad-hoc psql / accessory health probes.
+  # Verified vs PG server max_connections=200 (HOSTKEY right-size): tier1(12) + tier2(5) +
+  # tier3(5) + web(3) + irc(5) + whisper(1) = 31 client slots max — well under server cap with
+  # ample headroom for multi-host scale-out + live console / ad-hoc psql / accessory probes.
   compute_tier1:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bundle exec sidekiq -q signal_compute,10 -q bot_scoring,10 -q stream_lifecycle,10 -q signals,10 -c 10
     proxy: false
     env:
@@ -106,7 +103,7 @@ servers:
   # CR M1 fix: RAILS_MAX_THREADS=5 (matches c=5) for AR pool sizing.
   compute_tier2:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bundle exec sidekiq -q post_stream,5 -q chat,5 -q pva_critical,5 -q pva_helix,5 -q pva_gql_anon,5 -q monitoring,10 -q default,5 -c 5
     proxy: false
     env:
@@ -125,7 +122,7 @@ servers:
   # CR M1 fix: RAILS_MAX_THREADS=5 (matches c=5) for AR pool sizing.
   compute_tier3:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bundle exec sidekiq -q notifications,2 -q accessory_ops,2 -q long_running,2 -c 5
     proxy: false
     env:
@@ -136,14 +133,14 @@ servers:
       health-interval: 10s
 
   # TASK-110 v1.2 (CR S-7): dedicated Sidekiq role для whisper_transcripts queue concurrency=1.
-  # CPU isolation — один transcript job в момент, prevents starvation web/job на Time4VPS 3 cores.
+  # CPU isolation — один transcript job в момент, prevents starvation web/job (HOSTKEY 8 vCPU).
   # whisper_transcripts queue НЕ в config/sidekiq.yml :queues (default `job` role его не подхватывает);
   # обрабатывается ТОЛЬКО этим role через explicit -q flag.
-  # 2026-06-06 PR-B1a: NOT consolidated into compute_tiers — GPU-bound by nature, --cpus 1.5
-  # isolation preserved.
+  # 2026-06-06 PR-B1a: NOT consolidated into compute_tiers — GPU-bound by nature, whisper accessory
+  # --cpus 4 isolation preserved.
   whisper_worker:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bundle exec sidekiq -q whisper_transcripts -c 1
     proxy: false
     env:
@@ -169,7 +166,7 @@ servers:
   #     git history for blame archaeology). Definitions consolidated above. ===
   irc:
     hosts:
-      - 194.135.85.159
+      - 82.21.7.48
     cmd: bin/irc_monitor
     proxy: false
     options:
@@ -251,39 +248,31 @@ accessories:
     # при Dockerfile changes (см. Dockerfile комментарий + workflow IMAGE_TAG).
     # После build в ghcr → manual `kamal accessory reboot db -d <dest>` (volume сохраняется).
     image: ghcr.io/himratesdev/himrate-postgres:16-partman-v2
-    host: 194.135.85.159
+    host: 82.21.7.48
     port: "127.0.0.1:5432:5432"
-    # Phase 7 R Step 4 — PostgreSQL memory tune for shared 3 vCPU / 8 GiB VPS.
-    # Default postgres `shared_buffers` = 25% of host RAM ≈ 2 GiB on 8 GiB box.
-    # OLTP-only workload after CH cutover (PR 1e-A/1e-B, 2026-06-01): chat archive
-    # moved to ClickHouse; PG actively touches ~50-100 MiB of pages (Users, Channels,
-    # Streams, TrustIndexHistory, Sidekiq state, ChattersSnapshot). Other ~1.9 GiB
-    # shared_buffers = wasted on this hardware. Tune to 512 MiB → frees ~900 MiB
-    # for Sidekiq web/job pool + reduces swap pressure (current 100% used).
+    # PostgreSQL memory tune for HOSTKEY (8 vCPU / 32 GiB / NVMe). Co-tenant with the
+    # ClickHouse accessory (6 GiB cap) + 6 Rails roles + whisper on the same box, so PG
+    # is NOT given the naive 25%-of-RAM (~8 GiB) — it takes a deliberate 4 GiB and leans
+    # on the large OS page cache for bulk reads.
+    # - shared_buffers=4GB: 12.5% RAM. OLTP-only working set after CH cutover (chat archive
+    #   lives in ClickHouse); 4 GiB comfortably holds the hot pages (Users, Channels, Streams,
+    #   TrustIndexHistory, Sidekiq state, ChattersSnapshot) + index churn at 1k+ channel scale.
+    # - effective_cache_size=12GB: planner hint ≈ shared_buffers + OS page cache PG can expect
+    #   (32 GiB − CH 6 − PG 4 − Rails ~3 − whisper 2 ≈ ~14 GiB free for cache, shared with CH
+    #   file reads → conservative 12 GiB).
+    # - work_mem=32MB: per-query operation budget. Realistic active connections ≈ 26
+    #   (tier1=12 + tier2=5 + tier3=5 + web=3 + whisper=1); even a pessimistic 60 × 32 MB ≈
+    #   1.9 GiB peak is well within the 32 GiB box.
+    # - maintenance_work_mem=512MB: faster VACUUM / CREATE INDEX on the NVMe box.
+    # - max_connections=200: headroom for multi-host Sidekiq scale-out (EPIC SCALE
+    #   ARCHITECTURE §2); pgbouncer is the real-scale connection-pool answer beyond this.
     #
-    # Parameters chosen per REVISED-PRE-MIGRATION-OPTIMIZATION-PLAN.md Step 3.
-    # - shared_buffers=512MB: 6.4% RAM — within official 15-25% guidance for cache;
-    #   adequate for current working-set; allows OS page cache (effective_cache_size)
-    #   to handle bulk reads.
-    # - effective_cache_size=1GB: planner hint ≈ available OS cache (we observe
-    #   2.7 GiB buff/cache steady-state post-Step-1-and-2 cleanup; conservative
-    #   1 GiB leaves headroom for container/sidekiq cache + future growth).
-    # - work_mem=16MB: per-query operation budget. Current realistic peak ≈
-    #   26 Sidekiq threads (job=5 + whisper=1 + stream=3 + signal_compute=5 +
-    #   signals=5 + monitoring=4 + bot_scoring=3) + ~10 web (Puma WEB_CONCURRENCY=2
-    #   × ~5 threads) + headroom = ~55 active connections × 16 MB ≈ 880 MiB peak.
-    #   NOTE: PG `max_connections` stays at default 100 — theoretical max if fully
-    #   saturated = 1.6 GiB (e.g. ad-hoc rails console + full Sidekiq + irc).
-    #   Acceptable.
-    # - maintenance_work_mem=64MB: VACUUM/CREATE INDEX budget; small DB so 64 MiB
-    #   sufficient (avoids reserve for autovacuum spikes).
-    #
-    # ⚠️ accessory-config-change → requires post-merge `kamal accessory reboot db -d staging`
+    # ⚠️ accessory-config-change → requires `kamal accessory reboot db -d staging`
     # (Kamal deploy does NOT recreate accessories). Brief ~30s PG unavailability during
     # reboot — Sidekiq/web auto-reconnect on next query. When this rolls forward to
     # production, the matching reboot is `kamal accessory reboot db -d production`
     # (separate scheduled change window — runbook in MEASUREMENTS.md).
-    cmd: postgres -c shared_buffers=512MB -c effective_cache_size=1GB -c work_mem=16MB -c maintenance_work_mem=64MB
+    cmd: postgres -c shared_buffers=4GB -c effective_cache_size=12GB -c work_mem=32MB -c maintenance_work_mem=512MB -c max_connections=200
     env:
       secret:
         - POSTGRES_PASSWORD
@@ -294,7 +283,7 @@ accessories:
       - himrate_pgdata:/var/lib/postgresql/data
   redis:
     image: redis/redis-stack-server:7.4.0-v2
-    host: 194.135.85.159
+    host: 82.21.7.48
     port: "127.0.0.1:6379:6379"
     env:
       clear:
@@ -302,15 +291,16 @@ accessories:
     directories:
       - himrate_redis:/data
   # === TASK-251.14: ClickHouse — columnar analytics store (chat + telemetry time-series, dual-DB) ===
-  # Constrained memory — coexists with Postgres on the shared VPS until the measured hardware
-  # migration (ADR DEC-3). config.d/constrained.xml caps CH RAM + sets listen_host; CH is reachable
-  # on the Kamal network as `himrate-clickhouse` (HTTP :8123 / native :9000), host port bound to
+  # HOSTKEY right-size: CH gets an 8 GiB container limit (options.memory) + a 6 GiB internal
+  # max_server_memory_usage cap (config.d/constrained.xml) — co-tenant with PG (4 GiB) on the
+  # 32 GiB box. config.d/constrained.xml also sets listen_host + UTC; CH is reachable on the
+  # Kamal network as `himrate-clickhouse` (HTTP :8123 / native :9000), host port bound to
   # 127.0.0.1 only + default user password-protected → internal-only (same model as db/redis).
-  # ⚠️ Accessories are NOT updated by `kamal deploy` — first boot needs
-  #    `kamal accessory boot clickhouse -d staging` (post-merge; PG accessory-config flag).
+  # ⚠️ Accessories are NOT updated by `kamal deploy` — config change needs
+  #    `kamal accessory reboot clickhouse -d staging` (volume preserved).
   clickhouse:
     image: clickhouse/clickhouse-server:24.8.14.39 # patch-pinned (LTS 24.8) — deterministic boot/rollback, repo convention
-    host: 194.135.85.159
+    host: 82.21.7.48
     port: "127.0.0.1:8123:8123"
     env:
       clear:
@@ -325,12 +315,13 @@ accessories:
     directories:
       - himrate_clickhouse:/var/lib/clickhouse
     options:
-      memory: 2g
+      memory: 8g
       ulimit: nofile=262144:262144
   # === Observability Stack DISABLED — PR-B2 (EPIC SCALE ARCHITECTURE Step 6) ===
   #
-  # Disabled 2026-06-06 to reduce VPS compute box pressure (load avg 20-30 on 3 vCPU,
-  # CPU 0% idle baseline). 6 observability containers were eating ~480 MiB RAM + 6
+  # Disabled 2026-06-06 (Time4VPS era) to relieve compute-box pressure; the decision stands
+  # post-HOSTKEY-migration per EPIC SCALE ARCHITECTURE §2 — observability MUST NEVER live on
+  # the compute box, regardless of headroom. 6 observability containers ate ~480 MiB RAM + 6
   # parallel disk writers competing with Sidekiq + ClickHouse + PG for I/O bandwidth.
   #
   # End-state per `_tasks/EPIC-SCALE-ARCHITECTURE/CONTEXT.md` §2: observability MUST
@@ -368,15 +359,15 @@ accessories:
   # IMPORTANT: post-merge `kamal accessory reboot whisper -d <dest>` ОБЯЗАТЕЛЕН
   # (per CLAUDE.md rule — accessories не пересоздаются при `kamal deploy`).
   #
-  # CPU isolation: --cpus="1.5" cap (50% of Time4VPS 3 cores) + Sidekiq dedicated
+  # CPU isolation: --cpus="4" cap (50% of HOSTKEY 8 vCPU) + Sidekiq dedicated
   # whisper_worker role concurrency=1 (deploy.yml servers) — один inference в момент.
   # Port 8080 bound internal-only 127.0.0.1 (Rails reaches via Kamal Docker network DNS).
   whisper:
     image: ghcr.io/himratesdev/himrate-whisper:small-v3
-    host: 194.135.85.159
+    host: 82.21.7.48
     port: "127.0.0.1:9000:8080"
     options:
-      cpus: "1.5"
+      cpus: "4"
       memory: 2g  # ~500MB resident model + ~500MB per-job peak + headroom
       # N-5 (CR): non-root user 1000 baked в Dockerfile (USER whisper) — не override к 0:0.
 

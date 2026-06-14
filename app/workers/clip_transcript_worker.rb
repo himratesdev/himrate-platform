@@ -5,7 +5,7 @@
 # WAV 16kHz mono → whisper-server HTTP multipart POST → persist segments[].
 #
 # Queue: `whisper_transcripts` — processed by dedicated whisper_worker Sidekiq role concurrency=1
-# (deploy.yml), CPU isolation на Time4VPS 3 cores. Sidekiq retry 3× exponential backoff.
+# (deploy.yml), CPU isolation на HOSTKEY 8 vCPU. Sidekiq retry 3× exponential backoff.
 class ClipTranscriptWorker
   include Sidekiq::Job
   sidekiq_options queue: :whisper_transcripts, retry: 3
