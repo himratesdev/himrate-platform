@@ -3,7 +3,17 @@
 
 proxy:
   ssl: true
-  host: staging.himrate.com
+  # Pre-launch (no separate production deploy yet): the HOSTKEY staging app is the
+  # single live environment, so the public apex + api route here too.
+  # Comma-separated `host:` (NOT a `hosts:` array) is deliberate — it cleanly OVERRIDES
+  # the base config/deploy.yml `host:` scalar on deep-merge; kamal then splits it into
+  # multiple proxy hosts (Kamal::Configuration::Proxy#hosts). A `hosts:` array would
+  # deep-merge ALONGSIDE the inherited base `host:` and trip kamal's mutually-exclusive
+  # "Specify one of 'host' or 'hosts', not both" validator → deploy aborts.
+  # kamal-proxy issues a Let's Encrypt cert per host — each MUST be Cloudflare DNS-only
+  # (grey cloud) → 82.21.7.48 so the ACME HTTP-01 challenge reaches port 80.
+  # www.himrate.com deferred until its DNS is DNS-only (still Cloudflare-proxied as of cutover).
+  host: staging.himrate.com,himrate.com,api.himrate.com
 
 env:
   clear:
