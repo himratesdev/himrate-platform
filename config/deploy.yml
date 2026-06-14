@@ -71,8 +71,8 @@ servers:
   # with default 5). Without this override the default 5 would block Sidekiq threads
   # 6-10 on connection checkout (ActiveRecord::ConnectionTimeoutError after 5s).
   # Verified vs PG server max_connections=200 (HOSTKEY right-size): tier1(12) + tier2(5) +
-  # tier3(5) + web(3) + whisper(1) = 26 client slots max — well under server cap with ample
-  # headroom for multi-host scale-out + live console / ad-hoc psql / accessory health probes.
+  # tier3(5) + web(3) + irc(5) + whisper(1) = 31 client slots max — well under server cap with
+  # ample headroom for multi-host scale-out + live console / ad-hoc psql / accessory probes.
   compute_tier1:
     hosts:
       - 82.21.7.48

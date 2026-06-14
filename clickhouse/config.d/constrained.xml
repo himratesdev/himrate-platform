@@ -21,7 +21,7 @@
 
     <!-- Cap CH RAM under the 8g container limit (config/deploy.yml options.memory), leaving
          headroom for CH's off-heap caches + the PG/Rails co-tenants on the 32 GiB box. -->
-    <max_server_memory_usage>6000000000</max_server_memory_usage>
+    <max_server_memory_usage>6442450944</max_server_memory_usage>
 
     <!-- mark_cache 1 GiB — primary-key marks for fast lookups (CH default 5 GiB is sized for
          dedicated hosts; 1 GiB fits the 6 GiB cap while covering our partition count). -->
