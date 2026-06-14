@@ -1,0 +1,110 @@
+name: hostkey-rightsize
+
+# One-shot ops workflow (HOSTKEY migration #298): apply the 32 GB right-sized
+# accessory config (PostgreSQL / ClickHouse / whisper) to the staging box via
+# `kamal accessory reboot`, then verify the new settings are live on the box.
+#
+# Run this BEFORE the DNS cutover so the cutover lands on an already-right-sized
+# box (zero user impact — DNS still points at Time4VPS while this runs). Idempotent:
+# re-running just re-applies the same config. `kamal deploy` does NOT recreate
+# accessories, so this reboot is the only path that applies the new cmd/memory/cpus.
+#
+# Reads the accessory config from the `ref` input's checkout (default = the
+# migration branch carrying the right-sized deploy.yml + constrained.xml).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref whose config/deploy.yml + clickhouse/config.d/constrained.xml to apply'
+        required: true
+        type: string
+        default: feature/hostkey-migration
+
+jobs:
+  rightsize:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: ruby/setup-ruby@v1
+
+      - run: gem install kamal
+
+      - name: Set up SSH
+        env:
+          SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<'SSH_CONFIG'
+          Host *
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ServerAliveInterval 15
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      # Minimal accessory secret subset (ADR DEC-2 pattern, mirrors accessory-ops.yml).
+      # CLICKHOUSE_PASSWORD is mandatory (BUG-251.18): rebooting clickhouse without it
+      # recreates the default user with an EMPTY password, silently breaking app->CH auth.
+      - name: Validate + write Kamal secrets
+        env:
+          KAMAL_REGISTRY_PASSWORD: ${{ secrets.GITHUB_TOKEN }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for v in POSTGRES_PASSWORD CLICKHOUSE_PASSWORD; do
+            [ -z "${!v:-}" ] && { echo "::error::missing required secret $v"; exit 1; }
+          done
+          cat > .kamal/secrets.staging <<SECRETS
+          KAMAL_REGISTRY_PASSWORD=${KAMAL_REGISTRY_PASSWORD}
+          POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+          CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+          SECRETS
+          echo "✓ accessory secrets written"
+
+      - name: Reboot accessories (apply right-sized config)
+        run: |
+          trap 'rm -f .kamal/secrets.staging' EXIT
+          set -euo pipefail
+          for acc in db clickhouse whisper; do
+            echo "::group::kamal accessory reboot ${acc} -d staging"
+            kamal accessory reboot "${acc}" -d staging
+            echo "::endgroup::"
+          done
+          echo "::notice::rebooted db + clickhouse + whisper"
+
+      - name: Verify applied config on HOSTKEY
+        run: |
+          set -euo pipefail
+          HOST=$(ruby -ryaml -e 'puts YAML.load_file("config/accessory_hosts.yml").fetch("staging").first')
+          echo "::notice::verifying right-sized config on ${HOST}"
+          sleep 20  # let PG accept connections after container recreate
+          ssh "root@${HOST}" 'bash -s' <<'REMOTE'
+          set +e
+          echo "=== PostgreSQL (expect shared_buffers=4GB, effective_cache_size=12GB, work_mem=32MB, maintenance_work_mem=512MB, max_connections=200) ==="
+          DB=$(docker ps --filter name=himrate-db --format "{{.Names}}" | head -1)
+          docker exec "$DB" psql -U himrate -d himrate_staging -tAc "SELECT name || ' = ' || setting || COALESCE(' ' || unit, '') FROM pg_settings WHERE name IN ('shared_buffers','effective_cache_size','work_mem','maintenance_work_mem','max_connections')"
+          echo ""
+          echo "=== ClickHouse (expect max_server_memory_usage=6442450944) ==="
+          CH=$(docker ps --filter name=himrate-clickhouse --format "{{.Names}}" | head -1)
+          docker exec "$CH" clickhouse-client -q "SELECT name || ' = ' || value FROM system.server_settings WHERE name = 'max_server_memory_usage'"
+          docker exec "$CH" clickhouse-client -q "SELECT 'mark_cache_size = ' || value FROM system.server_settings WHERE name = 'mark_cache_size'" 2>/dev/null
+          echo ""
+          echo "=== whisper container limits (expect NanoCpus=4000000000, Memory=2147483648) ==="
+          WH=$(docker ps --filter name=himrate-whisper --format "{{.Names}}" | head -1)
+          docker inspect "$WH" --format 'NanoCpus={{.HostConfig.NanoCpus}} Memory={{.HostConfig.Memory}}'
+          echo ""
+          echo "=== accessory container health ==="
+          docker ps --format "{{.Names}}: {{.Status}}" | grep -E "himrate-(db|clickhouse|whisper|redis)"
+          REMOTE
