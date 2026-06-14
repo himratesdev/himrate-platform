@@ -107,18 +107,28 @@ runs:
     - name: 'Check 4/8: Sidekiq'
       shell: bash
       run: |
-        JOB_CONTAINER=$(ssh root@${{ inputs.host }} \
-          "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=job")
-        if [ -z "$JOB_CONTAINER" ]; then
-          echo "::error::Job container not found"
+        # PR-B1a (ADR DEC-014, 2026-06-06): the single `job` Sidekiq role was replaced by
+        # tier-weighted compute_tier1/2/3 roles. Verify Sidekiq runs in each compute tier.
+        FAIL=0
+        for ROLE in compute_tier1 compute_tier2 compute_tier3; do
+          CONTAINER=$(ssh root@${{ inputs.host }} \
+            "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=$ROLE")
+          if [ -z "$CONTAINER" ]; then
+            echo "::error::$ROLE container not found"
+            FAIL=1
+            continue
+          fi
+          SIDEKIQ=$(ssh root@${{ inputs.host }} "docker top $CONTAINER" | grep -c sidekiq || echo "0")
+          echo "Sidekiq processes in $ROLE: $SIDEKIQ"
+          if [ "$SIDEKIQ" = "0" ]; then
+            echo "::error::Sidekiq not running in $ROLE container"
+            FAIL=1
+          fi
+        done
+        if [ "$FAIL" = "1" ]; then
           exit 1
         fi
-        SIDEKIQ=$(ssh root@${{ inputs.host }} "docker top $JOB_CONTAINER" | grep -c sidekiq || echo "0")
-        echo "Sidekiq processes: $SIDEKIQ"
-        if [ "$SIDEKIQ" = "0" ]; then
-          echo "::error::Sidekiq not running in job container"
-          exit 1
-        fi
+        echo "Sidekiq running in all 3 compute tiers"
 
     - name: 'Check 5/8: Redis'
       shell: bash
