@@ -1,8 +1,9 @@
 <?xml version="1.0"?>
 <!--
-  TASK-251.14: ClickHouse constrained config for the shared 8GB/3-core VPS (ADR DEC-3).
-  CH coexists with Postgres until the measured hardware migration; keep its memory footprint
-  small. CH offloads PG's 11GB chat re-scans, so the net box effect is measured at DSV.
+  TASK-251.14: ClickHouse config for HOSTKEY (8 vCPU / 32 GiB / NVMe). CH coexists with
+  Postgres (4 GiB shared_buffers) on the box; right-sized post-migration to a 6 GiB RAM cap
+  (raised from the 1.2 GiB Time4VPS-era value). CH offloads PG's chat re-scans onto columnar
+  storage, so the net box effect stays favorable.
 
   Networking: listen on the container interface so app containers reach CH over the Kamal
   Docker network by DNS name (himrate-clickhouse). The host port is bound to 127.0.0.1 only
@@ -18,17 +19,18 @@
          guarantees true 0-divergence vs Postgres (DEC-7) regardless of base-image changes. -->
     <timezone>UTC</timezone>
 
-    <!-- Cap CH RAM well under the 2g container limit (config/deploy.yml options.memory) so it
-         can't push the already-tight box into heavier swap. Raised at the hardware migration. -->
-    <max_server_memory_usage>1200000000</max_server_memory_usage>
+    <!-- Cap CH RAM under the 8g container limit (config/deploy.yml options.memory), leaving
+         headroom for CH's off-heap caches + the PG/Rails co-tenants on the 32 GiB box. -->
+    <max_server_memory_usage>6000000000</max_server_memory_usage>
 
-    <!-- Defaults are sized for dedicated hosts (mark_cache 5GB); shrink for the shared box. -->
-    <mark_cache_size>268435456</mark_cache_size>
+    <!-- mark_cache 1 GiB — primary-key marks for fast lookups (CH default 5 GiB is sized for
+         dedicated hosts; 1 GiB fits the 6 GiB cap while covering our partition count). -->
+    <mark_cache_size>1073741824</mark_cache_size>
     <uncompressed_cache_size>0</uncompressed_cache_size>
 
-    <!-- Log to stdout so promtail → Loki captures CH logs (CH defaults to file logging under
-         /var/log/clickhouse-server, which isn't mounted/shipped) — observability parity with the
-         rest of the stack. -->
+    <!-- Log to stdout so `docker logs` captures CH logs (CH defaults to file logging under
+         /var/log/clickhouse-server, which isn't mounted/shipped). Re-attaches to promtail → Loki
+         if/when the observability tier is provisioned (EPIC SCALE ARCHITECTURE §2). -->
     <logger>
         <console>1</console>
         <!-- Drop the inherited file log targets so CH logs ONLY to stdout (→ promtail → Loki),
