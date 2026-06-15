@@ -40,10 +40,12 @@ RSpec.describe ClipTranscriptPolicy do
     end
   end
 
-  context "Premium user (premium_active=true)" do
-    let(:user) { create(:user, tier: "premium", premium_active: true) }
+  # BUG-PREMIUM-ACTIVE regression: Premium = canonical `tier: "premium"` (ApplicationPolicy#premium?),
+  # NOT the dead `users.premium_active` column (never written → always false in production).
+  context "Premium user (tier: premium)" do
+    let(:user) { create(:user, tier: "premium") }
 
-    it "allows create unlimited" do
+    it "allows create even past the Free 10/мес limit (the bug — was wrongly denied)" do
       20.times { create(:clip_transcript_request, user: user) }
       expect(policy.create?).to be true
     end

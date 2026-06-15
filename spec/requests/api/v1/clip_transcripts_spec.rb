@@ -75,5 +75,19 @@ RSpec.describe "Api::V1::ClipTranscripts", type: :request do
       expect(body["remaining"]).to eq(10)
       expect(body["limit"]).to eq(10)
     end
+
+    # BUG-PREMIUM-ACTIVE regression: a real Premium user (tier: "premium",
+    # premium_active column defaults false) must read as premium/unlimited.
+    context "Premium user (tier: premium)" do
+      let(:user) { create(:user, tier: "premium") }
+
+      it "returns tier=premium + remaining=unlimited" do
+        get "/api/v1/clip_transcripts/remaining", headers: headers
+        expect(response).to have_http_status(:ok)
+        body = JSON.parse(response.body)
+        expect(body["tier"]).to eq("premium")
+        expect(body["remaining"]).to eq("unlimited")
+      end
+    end
   end
 end
