@@ -116,16 +116,24 @@ module Api
       end
 
       # TASK-007: POST /api/v1/auth/google
+      # TASK-252 (mirror Twitch BUG-OAUTH-MV3 flow): accepts optional `extension_redirect`
+      # param (Chrome MV3 chromiumapp.org URL via chrome.identity.getRedirectURL()). When
+      # provided, google_callback 302-redirects к этому URL с tokens encoded в query string,
+      # enabling chrome.identity.launchWebAuthFlow к resolve with tokens directly, eliminating
+      # the double-call architectural mismatch (extension can't make a second call because the
+      # state cache was consumed when Google redirected to the backend callback).
       def google
         redirect_uri = validated_redirect_uri(ENV.fetch("GOOGLE_REDIRECT_URI"))
         return unless redirect_uri
+
+        extension_redirect = sanitize_extension_redirect(params[:extension_redirect])
 
         oauth = Auth::GoogleOauth.new
         result = oauth.authorize_url(redirect_uri: redirect_uri)
 
         Rails.cache.write(
           "google_state:#{result[:state]}",
-          { redirect_uri: redirect_uri },
+          { redirect_uri: redirect_uri, extension_redirect: extension_redirect },
           expires_in: 10.minutes
         )
 
@@ -165,11 +173,29 @@ module Api
         access_token = Auth::JwtService.encode_access(user.id)
         refresh_token = Auth::JwtService.encode_refresh(user.id)
 
+        user_payload = build_user_payload(user)
+
+        # TASK-252 (mirror Twitch BUG-OAUTH-MV3 flow): Chrome extension MV3 flow — if init
+        # request supplied extension_redirect (chromiumapp.org URL), 302-redirect там с
+        # tokens encoded в query string. chrome.identity.launchWebAuthFlow resolves with this
+        # URL, extension parses tokens directly — no double-call architectural mismatch.
+        if cached[:extension_redirect].present?
+          token_payload = {
+            access_token: access_token,
+            refresh_token: refresh_token,
+            expires_in: 3600,
+            user: user_payload
+          }
+          encoded = Base64.urlsafe_encode64(token_payload.to_json, padding: false)
+          redirect_to "#{cached[:extension_redirect]}?payload=#{encoded}", allow_other_host: true
+          return
+        end
+
         render json: {
           access_token: access_token,
           refresh_token: refresh_token,
           expires_in: 3600,
-          user: build_user_payload(user)
+          user: user_payload
         }
       rescue ActiveRecord::RecordNotUnique
         Rails.logger.warn("Cross-provider email collision: #{request.path}")

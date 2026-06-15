@@ -200,4 +200,76 @@ RSpec.describe "Google Auth API", type: :request do
       expect(JSON.parse(response.body)["error"]).to eq("INVALID_REDIRECT_URI")
     end
   end
+
+  # TASK-252 (mirror Twitch BUG-OAUTH-MV3 flow): Chrome MV3 extension OAuth callback flow.
+  # POST /api/v1/auth/google accepts extension_redirect (chromiumapp.org URL); when provided,
+  # google_callback 302-redirects к нему с tokens encoded в URL payload.
+  describe "Chrome MV3 extension OAuth flow (extension_redirect)" do
+    let(:ext_redirect) { "https://gnnhhopjghkjdbjafhefmbckakbjkabp.chromiumapp.org/" }
+
+    it "POST /auth/google caches extension_redirect when supplied" do
+      post "/api/v1/auth/google", params: { extension_redirect: ext_redirect }
+      expect(response).to have_http_status(:ok)
+      state = JSON.parse(response.body)["state"]
+      cached = Rails.cache.read("google_state:#{state}")
+      expect(cached[:extension_redirect]).to eq(ext_redirect)
+    end
+
+    it "POST /auth/google rejects malformed extension_redirect (silently — caches nil)" do
+      post "/api/v1/auth/google", params: { extension_redirect: "https://evil.example.com/" }
+      expect(response).to have_http_status(:ok)
+      state = JSON.parse(response.body)["state"]
+      cached = Rails.cache.read("google_state:#{state}")
+      expect(cached[:extension_redirect]).to be_nil
+    end
+
+    it "POST /auth/google rejects wrong-length chromiumapp.org id (silently)" do
+      bad = "https://short.chromiumapp.org/"
+      post "/api/v1/auth/google", params: { extension_redirect: bad }
+      expect(response).to have_http_status(:ok)
+      state = JSON.parse(response.body)["state"]
+      cached = Rails.cache.read("google_state:#{state}")
+      expect(cached[:extension_redirect]).to be_nil
+    end
+
+    it "GET /auth/google/callback redirects к extension_redirect с base64 payload когда cached" do
+      Rails.cache.write(
+        "google_state:ext_state",
+        {
+          redirect_uri: ENV.fetch("GOOGLE_REDIRECT_URI"),
+          extension_redirect: ext_redirect
+        },
+        expires_in: 10.minutes
+      )
+
+      stub_request(:post, "https://oauth2.googleapis.com/token")
+        .to_return(
+          status: 200,
+          body: { access_token: "google_at", refresh_token: "google_rt", expires_in: 3600 }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      stub_request(:get, "https://www.googleapis.com/oauth2/v3/userinfo")
+        .to_return(
+          status: 200,
+          body: { sub: "google_ext", email: "ext@gmail.com", name: "Ext Google User" }.to_json,
+          headers: { "Content-Type" => "application/json" }
+        )
+
+      get "/api/v1/auth/google/callback", params: { code: "test_code", state: "ext_state" }
+
+      expect(response).to have_http_status(:found) # 302
+      location = response.headers["Location"]
+      expect(location).to start_with(ext_redirect)
+      expect(location).to include("payload=")
+
+      payload_param = Rack::Utils.parse_query(URI(location).query)["payload"]
+      decoded = JSON.parse(Base64.urlsafe_decode64(payload_param))
+      expect(decoded["access_token"]).to be_present
+      expect(decoded["refresh_token"]).to be_present
+      expect(decoded["user"]["username"]).to start_with("Ext Google User_")
+      expect(decoded["user"]["role"]).to eq("viewer")
+      expect(decoded["user"]["google_linked"]).to be true
+    end
+  end
 end
