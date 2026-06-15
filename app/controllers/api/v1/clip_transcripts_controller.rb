@@ -87,10 +87,11 @@ module Api
       # GET /api/v1/clip_transcripts/remaining — FR-014
       def remaining
         skip_authorization # public to all registered users (Pundit#remaining_for computed inline)
+        remaining_count = ClipTranscriptPolicy.new(current_user, nil).remaining_for
         render json: {
-          remaining: serialize_remaining(ClipTranscriptPolicy.new(current_user, nil).remaining_for),
+          remaining: serialize_remaining(remaining_count),
           limit: ClipTranscriptPolicy::FREE_MONTHLY_LIMIT,
-          tier: current_user.premium_active? ? "premium" : "free"
+          tier: remaining_count.infinite? ? "premium" : "free"
         }
       end
 
