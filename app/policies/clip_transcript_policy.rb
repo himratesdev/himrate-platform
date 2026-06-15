@@ -28,10 +28,10 @@ class ClipTranscriptPolicy < ApplicationPolicy
     clip_premium?
   end
 
-  def remaining_for(user_arg = user)
+  def remaining_for
     return Float::INFINITY if clip_premium?
 
-    [ FREE_MONTHLY_LIMIT - ClipTranscriptRequest.month_count_for(user_arg), 0 ].max
+    [ FREE_MONTHLY_LIMIT - ClipTranscriptRequest.month_count_for(user), 0 ].max
   end
 
   private
