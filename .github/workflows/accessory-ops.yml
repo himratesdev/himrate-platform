@@ -71,7 +71,7 @@ jobs:
       packages: read
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # PG W-1: free-string inputs (auto_remediation_event_id) routed via env: mapping
       # вместо inline ${{ inputs.* }}. Defense-in-depth против command injection.
