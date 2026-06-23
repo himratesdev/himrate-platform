@@ -11,6 +11,10 @@
 module Reputation
   class BandService
     WINDOW = 30
+    # Eventual consistency (ADR DEC-4): band is computed at stream-end (post_stream_worker) and
+    # cached for CACHE_TTL. A late-detected anomaly is intentionally NOT invalidated mid-window —
+    # it folds into the band on the next stream-end or on TTL expiry. This avoids per-anomaly
+    # recompute churn; band is a window-level descriptor, not a real-time signal.
     CACHE_TTL = 6.hours
 
     # ADR DEC-2: benign (organic_spike/host_raid) + system (compute_failure) anomaly types
@@ -94,7 +98,11 @@ module Reputation
         @channel.streams.where.not(ended_at: nil).order(ended_at: :desc).limit(WINDOW).pluck(:id)
     end
 
-    # severe anomalies per stream across the window.
+    # severe anomalies per stream across the window. Denominator = all completed streams in the
+    # window (window_stream_ids), NOT just streams that have a TIH: anomalies are counted per
+    # session, so a stream missing a TIH snapshot still counts as an observed session. This means
+    # the rate can be slightly diluted vs mean/stddev (computed only over streams with a TIH) —
+    # intentional, "severe events per session" is the meaningful unit.
     def severe_anomaly_rate
       ids = window_stream_ids
       return 0.0 if ids.empty?
