@@ -50,22 +50,36 @@ module Reputation
       @channel = channel
     end
 
-    # => { band:, tier:, provisional: }. band=nil when not derivable (insufficient tier OR
-    # no TI window data) — FR-4: explicit tier instead of a bare nil.
+    # => { band:, tier:, stream_count: }. tier ∈ {insufficient | basic | full} (FD-4 canon, 3 tiers).
+    # band=nil ONLY at insufficient (<3 streams) — explicit tier instead of a bare nil. For `basic`
+    # (3-9 streams) the frontend shows a "Provisional — N streams" tooltip derived from stream_count.
     def call
-      tier = TrustIndex::ColdStartGuard.assess(@channel)[:status]
-      return descriptor(nil, tier) if tier == "insufficient"
+      assessment = TrustIndex::ColdStartGuard.assess(@channel)
+      tier = map_tier(assessment[:status])
+      count = assessment[:stream_count]
+      return descriptor(nil, tier, count) if tier == "insufficient"
 
       scores = window_ti_scores
-      return descriptor(nil, tier) if scores.size < 2
+      return descriptor(nil, tier, count) if scores.size < 2
 
-      descriptor(derive_band(scores), tier)
+      descriptor(derive_band(scores), tier, count)
     end
 
     private
 
-    def descriptor(band, tier)
-      { band: band, tier: tier, provisional: %w[provisional_low provisional].include?(tier) }
+    # FD-4 (Glossary "Cold-start", 3 tiers): project the 5-status TI ColdStartGuard onto the
+    # 3-tier reputation band enum. ColdStartGuard (TI cold-start) intentionally stays 5-status —
+    # only the band descriptor exposes the simplified 3-tier (insufficient / basic / full).
+    def map_tier(cold_start_status)
+      case cold_start_status
+      when "insufficient" then "insufficient"               # <3 streams → band hidden
+      when "provisional_low", "provisional" then "basic"    # 3-9 streams → "Provisional — N streams"
+      else "full"                                           # full (≥10) / deep (≥30)
+      end
+    end
+
+    def descriptor(band, tier, stream_count)
+      { band: band, tier: tier, stream_count: stream_count }
     end
 
     # ADR DEC-1 cascade (worst-first): level (mean_ti) + stability (stddev) + anomalies (rate).

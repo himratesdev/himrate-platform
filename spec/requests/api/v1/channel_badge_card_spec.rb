@@ -81,7 +81,7 @@ RSpec.describe "Channel Badge & Card API" do
         data = response.parsed_body["data"]
         expect(data).to have_key("reputation_band")
         expect(data).to have_key("reputation_tier")
-        expect(data).to have_key("reputation_provisional")
+        expect(data).to have_key("reputation_stream_count")
       end
     end
 

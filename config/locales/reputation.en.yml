@@ -6,9 +6,11 @@ en:
       stable: Stable
       variable: Variable
       unstable: Unstable
+    # FD-4 cold-start: 3 tiers (Glossary "Cold-start"). insufficient <3 (band hidden) /
+    # basic 3-9 (tooltip "Provisional — N streams") / full ≥10.
     tier:
       insufficient: Insufficient data
-      provisional_low: Provisional (low)
-      provisional: Provisional
+      basic: Basic analytics
       full: Full analytics
-      deep: Deep analytics
+    tier_tooltip:
+      basic: "Provisional — %{count} streams"

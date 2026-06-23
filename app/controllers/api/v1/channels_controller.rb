@@ -170,7 +170,7 @@ module Api
             # T1-064 FR-3/FR-7: Reputation Categorical band (replaces removed philosophy-v2 Health Score).
             reputation_band: trust[:reputation_band],
             reputation_tier: trust[:reputation_tier],
-            reputation_provisional: trust[:reputation_provisional],
+            reputation_stream_count: trust[:reputation_stream_count],
             stats: stream_stats(completed_streams, channel),
             recent_streams: recent.map { |s| format_stream(s, recent_ti[s.id]) },
             badge_url: "#{request.base_url}/api/v1/channels/#{channel.id}/badge.svg",

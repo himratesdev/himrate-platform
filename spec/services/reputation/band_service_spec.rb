@@ -25,23 +25,29 @@ RSpec.describe Reputation::BandService do
     described_class.new(channel).call
   end
 
-  describe "#call cold-start gating (FR-4 — never bare nil)" do
-    it "returns band=nil with insufficient tier for <3 completed streams" do
+  describe "#call cold-start gating (FD-4 — 3 tiers, never bare nil)" do
+    it "returns band=nil with insufficient tier + stream_count for <3 completed streams" do
       result = band_for(build_channel([ 90, 90 ]))
-      expect(result).to eq(band: nil, tier: "insufficient", provisional: false)
+      expect(result).to eq(band: nil, tier: "insufficient", stream_count: 2)
     end
 
-    it "flags provisional for 3–6 streams (provisional_low tier)" do
+    it "maps 3–6 streams to the basic tier (was provisional_low) with stream_count for the tooltip" do
       result = band_for(build_channel(Array.new(5, 90)))
-      expect(result[:tier]).to eq("provisional_low")
-      expect(result[:provisional]).to be(true)
+      expect(result[:tier]).to eq("basic")
+      expect(result[:stream_count]).to eq(5)
       expect(result[:band]).not_to be_nil
     end
 
-    it "flags provisional for 7–9 streams (provisional tier)" do
+    it "maps 7–9 streams to the basic tier (was provisional)" do
       result = band_for(build_channel(Array.new(8, 90)))
-      expect(result[:tier]).to eq("provisional")
-      expect(result[:provisional]).to be(true)
+      expect(result[:tier]).to eq("basic")
+      expect(result[:stream_count]).to eq(8)
+    end
+
+    it "maps >=10 streams to the full tier" do
+      result = band_for(build_channel(Array.new(12, 90)))
+      expect(result[:tier]).to eq("full")
+      expect(result[:band]).to eq("impeccable")
     end
   end
 
