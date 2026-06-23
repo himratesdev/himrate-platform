@@ -57,6 +57,11 @@ class PostStreamWorker
       # TASK-037 FR-006: Reputation refresh
       StreamerReputationRefreshWorker.perform_async(stream.channel_id)
 
+      # T1-064 FR-3 (ADR DEC-4): warm the Reputation Categorical band cache. The TI window now
+      # includes this just-finalized stream (run_final_compute above). Non-fatal — read path
+      # (Trust::ShowService) lazily recomputes on a cache miss.
+      refresh_reputation_band(stream.channel)
+
       # EPIC ML-FEATURE-EXTRACTOR PR1: persist per-stream LightGBM-ready feature vector.
       # Async (queue :post_stream) — no downstream worker depends on the row being ready
       # immediately; ML training queries window 24h+ data. Idempotent at worker level.
@@ -152,6 +157,12 @@ class PostStreamWorker
 
   def ti_data_available?(stream)
     TrustIndexHistory.where(stream_id: stream.id).exists?
+  end
+
+  def refresh_reputation_band(channel)
+    Reputation::BandService.refresh(channel)
+  rescue StandardError => e
+    Rails.logger.error("PostStreamWorker: band refresh failed for channel #{channel.id} — #{e.message}")
   end
 
   def generate_report(stream)

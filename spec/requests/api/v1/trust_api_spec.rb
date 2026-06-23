@@ -108,6 +108,12 @@ RSpec.describe "Trust API", type: :request do
       expect(data["ti_score"]).to eq(72.0)
       expect(data).to have_key("signal_breakdown")
       expect(data).to have_key("erv_breakdown")
+      # T1-064 FR-3/FR-7: Reputation Categorical band (additive to streamer_reputation).
+      expect(data).to have_key("reputation_band")
+      expect(data).to have_key("reputation_tier")
+      expect(data).to have_key("reputation_provisional")
+      # T1-064 FR-5: availability-status contract (explicit, not bare nil).
+      expect(data["top_countries_status"]).to eq("not_implemented")
     end
 
     # TC-007: Cold start 0 streams → null metrics
