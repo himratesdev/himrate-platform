@@ -115,11 +115,16 @@ class ChannelPolicy < ApplicationPolicy
   end
 
   # TASK-039 FR-012: Trends Tab historical access (7d/30d/60d/90d).
-  # Premium tracked / Business / Streamer own (через Twitch OAuth data exchange).
+  # T1-063 (v2 / Option A): viewer surface is free — a registered viewer gets Trends on a
+  # LIVE channel or within the 18h post-stream window (mirrors view_report? / serializer_view).
+  # Premium tracked / Business / Streamer own → always. Deep-period role-gate (own-channel /
+  # brand beyond the online window) lands in T1-060; this only removes the live SUBSCRIPTION_REQUIRED.
   def view_trends_historical?
     return false unless registered?
+    return true if premium_access_for?(record) || streamer_on_channel?(record)
+    return true if record.live?
 
-    premium_access_for?(record) || streamer_on_channel?(record)
+    PostStreamWindowService.open?(record)
   end
 
   # TASK-039 FR-013: 365-day trends — Business tier only (включая team members).

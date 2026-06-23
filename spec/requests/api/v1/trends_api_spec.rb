@@ -60,6 +60,33 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
     end
   end
 
+  # T1-063 (v2 / Option A): viewer surface is free on the online slice — a Free user gets
+  # Trends on a LIVE channel / within the 18h window (was 403). 365d stays Business-gated.
+  describe "T1-063 — Free viewer live-free access" do
+    let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/trust_index" }
+
+    it "returns 200 for a Free user on a LIVE channel (was 403)" do
+      create(:stream, channel: channel, started_at: 10.minutes.ago, ended_at: nil)
+
+      get endpoint_path, headers: headers_free
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "returns 403 for a Free user on an offline channel with an expired window" do
+      create(:stream, channel: channel, started_at: 30.hours.ago, ended_at: 20.hours.ago)
+
+      get endpoint_path, headers: headers_free
+      expect(response).to have_http_status(:forbidden)
+    end
+
+    it "still gates 365d to Business for a Free user on a LIVE channel" do
+      create(:stream, channel: channel, started_at: 10.minutes.ago, ended_at: nil)
+
+      get "#{endpoint_path}?period=365d", headers: headers_free
+      expect(response).to have_http_status(:forbidden)
+    end
+  end
+
   describe "GET /api/v1/channels/:id/trends/erv" do
     let(:endpoint_path) { "/api/v1/channels/#{channel.id}/trends/erv?period=30d" }
 
