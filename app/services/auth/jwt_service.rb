@@ -18,12 +18,17 @@ module Auth
     ACCESS_TTL = 1.hour
     REFRESH_TTL = 7.days
 
-    def self.encode_access(user_id)
-      encode(user_id, type: "access", ttl: ACCESS_TTL)
+    # T1-060 FR-5: surface the token is minted for (extension vs dashboard), stamped as the
+    # JWT `aud` claim. Keyword defaults to EXTENSION so every existing call-site keeps
+    # minting extension tokens unchanged; the dashboard surface arrives with the SaaS ЛК (T3).
+    DEFAULT_SURFACE = Auth::AuthContext::EXTENSION
+
+    def self.encode_access(user_id, surface: DEFAULT_SURFACE)
+      encode(user_id, type: "access", ttl: ACCESS_TTL, surface: surface)
     end
 
-    def self.encode_refresh(user_id)
-      encode(user_id, type: "refresh", ttl: REFRESH_TTL)
+    def self.encode_refresh(user_id, surface: DEFAULT_SURFACE)
+      encode(user_id, type: "refresh", ttl: REFRESH_TTL, surface: surface)
     end
 
     def self.decode(token)
@@ -33,10 +38,13 @@ module Auth
       raise Auth::AuthError, e.message
     end
 
-    def self.encode(user_id, type:, ttl:)
+    # `aud` is a read-only surface signal — decode does NOT enforce it (no verify_aud), so an
+    # old token without `aud` is still valid and resolves to EXTENSION downstream (BR-8).
+    def self.encode(user_id, type:, ttl:, surface: DEFAULT_SURFACE)
       payload = {
         sub: user_id,
         type: type,
+        aud: surface,
         exp: ttl.from_now.to_i,
         iat: Time.current.to_i
       }

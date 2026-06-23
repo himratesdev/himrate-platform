@@ -27,6 +27,7 @@ module Api
       end
 
       payload = Auth::JwtService.decode(token)
+      @surface = payload[:aud].presence || Auth::AuthContext::EXTENSION
 
       unless payload[:type] == "access"
         Rails.logger.warn("Auth failed: non-access token from #{request.remote_ip}")
@@ -50,6 +51,7 @@ module Api
       return unless token
 
       payload = Auth::JwtService.decode(token)
+      @surface = payload[:aud].presence || Auth::AuthContext::EXTENSION
       return unless payload[:type] == "access"
 
       @current_user = User.active
@@ -61,6 +63,18 @@ module Api
 
     def current_user
       @current_user
+    end
+
+    # T1-060 FR-5: surface the request arrived on (default extension for missing/legacy aud).
+    def current_surface
+      @surface || Auth::AuthContext::EXTENSION
+    end
+
+    # Pundit context: policies receive (user + surface) so a tier-paywall denial resolves to
+    # SUBSCRIPTION_REQUIRED on the dashboard surface vs an honest-empty data-state on the
+    # extension. ApplicationPolicy#initialize unwraps this; bare-User .new calls still work.
+    def pundit_user
+      Auth::AuthContext.new(current_user, current_surface)
     end
 
     # TASK-032 FR-007: Guest identification via Extension install ID.
