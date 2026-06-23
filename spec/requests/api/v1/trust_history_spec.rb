@@ -55,11 +55,21 @@ RSpec.describe "Trust History API" do
       expect(data["period"]).to eq("7d")
     end
 
-    it "returns 403 for free user requesting 7d" do
+    # T1-060 FR-6: 7d gate now flows through Pundit (view_7d_trust_history?) + resolve_error_code.
+    it "returns 403 EXTENSION_DEEP_LOCKED for a free user requesting 7d on the extension" do
       get "/api/v1/channels/#{channel.id}/trust/history",
           params: { period: "7d" },
           headers: auth_headers(user)
       expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body.dig("error", "code")).to eq("EXTENSION_DEEP_LOCKED")
+    end
+
+    it "returns 403 SUBSCRIPTION_REQUIRED for a free user requesting 7d on the dashboard surface" do
+      get "/api/v1/channels/#{channel.id}/trust/history",
+          params: { period: "7d" },
+          headers: { "Authorization" => "Bearer #{Auth::JwtService.encode_access(user.id, surface: 'dashboard')}" }
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body.dig("error", "code")).to eq("SUBSCRIPTION_REQUIRED")
     end
 
     it "returns 400 for invalid period" do

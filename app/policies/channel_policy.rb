@@ -81,6 +81,15 @@ class ChannelPolicy < ApplicationPolicy
     PostStreamWindowService.open?(record)
   end
 
+  # T1-060 FR-6: 7d trust-history depth requires premium-level access. Replaces the inline
+  # SUBSCRIPTION_REQUIRED render in TrustController#history so the denial flows through Pundit
+  # and resolve_error_code makes it surface-aware (extension honest-empty vs dashboard paywall).
+  def view_7d_trust_history?
+    return false unless registered?
+
+    premium_access_for?(record)
+  end
+
   # TASK-085 FR-001/002/004 (US-001/002/003/013, EC-1): Stream Summary endpoint Pundit gating.
   # - Guest → controller authenticate_user! returns 401 ДО Pundit (BR-004 / US-013)
   # - Premium tracked / Business / Streamer own → always (no time window restriction per BR-002/003)
