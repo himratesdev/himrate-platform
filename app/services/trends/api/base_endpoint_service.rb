@@ -93,15 +93,10 @@ module Trends
 
       # CR S-3: resolve access_level через ChannelPolicy (не hardcoded "premium").
       # "business" | "premium" | "streamer" | "free" — UI использует для корректного CTA.
+      # T1-063 CR S-1: single source of truth = ChannelPolicy#access_level (TrendsController
+      # recomputes the same per-request post-cache, since the Trends cache key is tier-agnostic).
       def resolve_access_level
-        return "anonymous" if @user.nil?
-
-        policy = ChannelPolicy.new(@user, @channel)
-        return "business" if policy.effective_business_access?
-        return "streamer" if policy.owns_channel_access?
-        return "premium" if policy.premium_access?
-
-        "free"
+        ChannelPolicy.new(@user, @channel).access_level
       end
 
       def data_freshness

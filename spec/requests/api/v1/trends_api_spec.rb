@@ -85,6 +85,27 @@ RSpec.describe "Trends API (Phase C1)", type: :request do
       get "#{endpoint_path}?period=365d", headers: headers_free
       expect(response).to have_http_status(:forbidden)
     end
+
+    # T1-063 CR S-1: the Trends cache key is tier-agnostic, so meta.access_level must be
+    # recomputed per-request — a Free viewer must not read a "premium" value warmed by a
+    # paying user (wrong CTA / revenue). Real MemoryStore so the cache path is exercised.
+    it "does not bleed access_level across tiers from the shared cache" do
+      memory_store = ActiveSupport::Cache::MemoryStore.new
+      allow(Rails).to receive(:cache).and_return(memory_store)
+
+      create(:stream, channel: channel, started_at: 10.minutes.ago, ended_at: nil)
+      create(:tracked_channel, user: user_premium, channel: channel, tracking_enabled: true)
+      create(:subscription, user: user_premium, tier: "premium", is_active: true)
+
+      # Premium warms the shared cache entry.
+      get endpoint_path, headers: headers_premium
+      expect(response.parsed_body.dig("meta", "access_level")).to eq("premium")
+
+      # Free viewer on the same live channel hits the cache → must still see "free".
+      get endpoint_path, headers: headers_free
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("meta", "access_level")).to eq("free")
+    end
   end
 
   describe "GET /api/v1/channels/:id/trends/erv" do
