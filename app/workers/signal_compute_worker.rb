@@ -214,7 +214,6 @@ class SignalComputeWorker
       Rails.cache.delete("erv:#{channel_id}:#{view}")
     end
     Rails.cache.delete("erv:#{channel_id}:details")
-    Rails.cache.delete("health_score:#{channel_id}")
   rescue StandardError => e
     Rails.logger.warn("SignalComputeWorker: cache invalidation failed (#{e.message})")
   end

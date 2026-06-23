@@ -66,6 +66,23 @@ RSpec.describe "Channel Badge & Card API" do
         expect(data).to have_key("badge_url")
         expect(data["channel"]["login"]).to eq(channel.login)
       end
+
+      # T1-064 FR-1: orphaned Health Score field removed from the card contract.
+      it "does not expose health_score (removed in philosophy v2)" do
+        get "/api/v1/channels/#{channel.id}/card", headers: auth_headers(user)
+
+        expect(response.parsed_body["data"]).not_to have_key("health_score")
+      end
+
+      # T1-064 FR-3/FR-7: Reputation Categorical band emitted in its place.
+      it "exposes the Reputation Categorical band contract" do
+        get "/api/v1/channels/#{channel.id}/card", headers: auth_headers(user)
+
+        data = response.parsed_body["data"]
+        expect(data).to have_key("reputation_band")
+        expect(data).to have_key("reputation_tier")
+        expect(data).to have_key("reputation_provisional")
+      end
     end
 
     context "when user does not own channel" do

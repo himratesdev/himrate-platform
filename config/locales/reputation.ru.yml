@@ -1,0 +1,15 @@
+# T1-064 §10A: Reputation Categorical band + cold-start tier labels (RU canonical).
+# band derivation = Reputation::BandService. Consumed by extension (T2-020) / SaaS LK.
+ru:
+  reputation:
+    band:
+      impeccable: Безупречная
+      stable: Стабильная
+      variable: Изменчивая
+      unstable: Нестабильная
+    tier:
+      insufficient: Недостаточно данных
+      provisional_low: Предварительно (мало данных)
+      provisional: Предварительно
+      full: Полная аналитика
+      deep: Глубокая аналитика

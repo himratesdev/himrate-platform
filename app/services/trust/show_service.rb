@@ -69,6 +69,9 @@ module Trust
 
     def build_full
       reputation = @channel.streamer_reputation
+      # T1-064 FR-3/FR-7: Reputation Categorical band (TI rolling window + anomaly distribution).
+      # Additive to the flat streamer_reputation component scores (those stay for display).
+      band = Reputation::BandService.cached_for(@channel)
 
       {
         streamer_reputation: reputation ? {
@@ -76,11 +79,17 @@ module Trust
           follower_quality_score: reputation.follower_quality_score&.to_f,
           engagement_consistency_score: reputation.engagement_consistency_score&.to_f
         } : nil,
+        reputation_band: band[:band],
+        reputation_tier: band[:tier],
+        reputation_provisional: band[:provisional],
         erv_breakdown: erv_breakdown,
         bot_raid_victim: bot_raid_victim?,
         ti_protected: bot_raid_victim?,
         # TASK-035 FR-033: top countries from chatters demographic data
-        top_countries: top_countries_data
+        top_countries: top_countries_data,
+        # T1-064 FR-5: explicit availability status instead of an ambiguous bare nil
+        # (the ambiguity is what let the frontend fabricate demo numbers).
+        top_countries_status: top_countries_status
       }
     end
 
@@ -192,6 +201,15 @@ module Trust
     # will query the data. API contract is stable — UI hides module when null.
     def top_countries_data
       nil
+    end
+
+    # T1-064 FR-5: availability contract — {available | empty | not_implemented}.
+    # Audience demographic pipeline (TASK-040) not built → not_implemented (honest, not nil-guess).
+    def top_countries_status
+      data = top_countries_data
+      return "not_implemented" if data.nil?
+
+      data.empty? ? "empty" : "available"
     end
   end
 end

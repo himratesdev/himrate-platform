@@ -1,0 +1,14 @@
+# T1-064 §10A: Reputation Categorical band + cold-start tier labels (EN — Glossary line 115).
+en:
+  reputation:
+    band:
+      impeccable: Impeccable
+      stable: Stable
+      variable: Variable
+      unstable: Unstable
+    tier:
+      insufficient: Insufficient data
+      provisional_low: Provisional (low)
+      provisional: Provisional
+      full: Full analytics
+      deep: Deep analytics
