@@ -80,6 +80,11 @@ RSpec.describe User, type: :model do
       expect(user.has_role?(:viewer)).to be true
     end
 
+    it "#has_role? returns false for an unknown role (no NoMethodError)" do
+      expect(build(:user).has_role?(:admin)).to be false
+      expect(build(:user).has_role?("nonsense")).to be false
+    end
+
     it "does NOT respond to surface/user (AuthContext duck-type cannot misroute it)" do
       user = build(:user)
       expect(user.respond_to?(:surface)).to be false

@@ -7,9 +7,12 @@ RSpec.describe "Trust History API" do
   let(:user) { create(:user) }
 
   describe "GET /api/v1/channels/:id/trust/history" do
-    it "returns 403 for guest (no auth)" do
+    # T1-060: a guest (E1) stays on SUBSCRIPTION_REQUIRED on both surfaces — not the extension
+    # honest-empty code (a guest needs to register/subscribe, not "open dashboard").
+    it "returns 403 SUBSCRIPTION_REQUIRED for guest (no auth)" do
       get "/api/v1/channels/#{channel.id}/trust/history"
       expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body.dig("error", "code")).to eq("SUBSCRIPTION_REQUIRED")
     end
 
     it "returns 30m data for registered user" do

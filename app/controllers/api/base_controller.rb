@@ -127,7 +127,10 @@ module Api
     end
 
     def resolve_error_code(exception)
-      return paywall_code if current_user.nil?
+      # Guests (E1) are out of the extension-no-paywall invariant (SRS §4.7 item-1, AC-4 scopes
+      # to authenticated): a guest needs to register/subscribe, not "open dashboard", so keep the
+      # hard SUBSCRIPTION_REQUIRED on both surfaces — never EXTENSION_DEEP_LOCKED.
+      return "SUBSCRIPTION_REQUIRED" if current_user.nil?
 
       query = exception.query.to_s
       case exception.policy.class.name

@@ -63,8 +63,10 @@ class User < ApplicationRecord
     is_brand
   end
 
+  ROLE_NAMES = %i[viewer streamer brand].freeze
+
   def has_role?(role_name)
-    public_send("#{role_name}?")
+    ROLE_NAMES.include?(role_name.to_s.to_sym) && public_send("#{role_name}?")
   end
 
   def roles
