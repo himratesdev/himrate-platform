@@ -34,7 +34,7 @@ module PersonalAnalytics
 
       def serialize_user(user)
         { id: user.id, twitch_login: user.username, locale: user.locale,
-          role: user.role, is_streamer: user.is_streamer, is_brand: user.is_brand,
+          role: user.role, is_streamer: user.is_streamer, is_brand: user.brand?,
           created_at: user.created_at.iso8601, deleted_at: user.deleted_at&.iso8601 }
       end
 

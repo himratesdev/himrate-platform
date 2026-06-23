@@ -58,23 +58,30 @@ RSpec.describe User, type: :model do
       expect(build(:user, is_streamer: false).streamer?).to be false
     end
 
-    it "#brand? reflects is_brand" do
-      expect(build(:user, is_brand: true).brand?).to be true
-      expect(build(:user, is_brand: false).brand?).to be false
+    it "#brand? derives from business access (tier), never drifts from a stored flag" do
+      expect(build(:user, tier: "business").brand?).to be true
+      expect(build(:user, tier: "free").brand?).to be false
+    end
+
+    it "#brand? is true for an active member of a business-tier team" do
+      member = create(:user, tier: "free")
+      owner = create(:user, tier: "business")
+      create(:team_membership, user: member, team_owner: owner, status: "active")
+      expect(member.brand?).to be true
     end
 
     it "supports multiple roles simultaneously" do
-      user = build(:user, is_streamer: true, is_brand: true)
+      user = build(:user, is_streamer: true, tier: "business")
       expect(user.roles).to contain_exactly(:viewer, :streamer, :brand)
     end
 
     it "#roles lists only the accumulated roles" do
-      expect(build(:user, is_streamer: false, is_brand: false).roles).to eq([ :viewer ])
-      expect(build(:user, is_streamer: true, is_brand: false).roles).to contain_exactly(:viewer, :streamer)
+      expect(build(:user, is_streamer: false, tier: "free").roles).to eq([ :viewer ])
+      expect(build(:user, is_streamer: true, tier: "free").roles).to contain_exactly(:viewer, :streamer)
     end
 
     it "#has_role? delegates to the predicate" do
-      user = build(:user, is_streamer: true, is_brand: false)
+      user = build(:user, is_streamer: true, tier: "free")
       expect(user.has_role?(:streamer)).to be true
       expect(user.has_role?(:brand)).to be false
       expect(user.has_role?(:viewer)).to be true

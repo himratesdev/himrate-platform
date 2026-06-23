@@ -18,7 +18,8 @@ class UserBlueprint < Blueprinter::Base
   end
 
   # T1-060 FR-7: accumulating role flags (kept in parity with AuthController#build_user_payload).
-  # is_viewer is always true for a registered user; is_streamer/is_brand read the new flags.
+  # is_viewer is always true for a registered user; is_streamer reads the stored flag;
+  # is_brand derives from business access (User#brand?) so it never drifts.
   field :is_viewer do |_user, _options|
     true
   end
@@ -28,7 +29,7 @@ class UserBlueprint < Blueprinter::Base
   end
 
   field :is_brand do |user, _options|
-    user.is_brand
+    user.brand?
   end
 
   field :twitch_linked do |user, _options|

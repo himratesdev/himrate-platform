@@ -48,9 +48,13 @@ class User < ApplicationRecord
                              .to_set
   end
 
-  # T1-060 FR-3: accumulating role predicates. viewer = implicit for every registered
-  # user; is_streamer / is_brand accumulate by action and may both be true. Distinct from
-  # the channel-ownership axis (streamer_twitch_ids / owns_channel?), which is orthogonal.
+  # T1-060 FR-3: accumulating role predicates. viewer = implicit for every registered user;
+  # roles may be held simultaneously. Distinct from the channel-ownership axis
+  # (streamer_twitch_ids / owns_channel?), which is orthogonal.
+  #
+  # is_streamer is STORED (captures an external Twitch broadcaster_type signal at OAuth);
+  # brand is DERIVED at read-time from business access (our own internal tier + team data),
+  # so it can never drift from the actual business status the way a stored flag would.
   def viewer?
     true
   end
@@ -59,8 +63,9 @@ class User < ApplicationRecord
     is_streamer
   end
 
+  # Mirrors ApplicationPolicy#effective_business? (business tier OR active business-team).
   def brand?
-    is_brand
+    tier == "business" || business_via_active_team?
   end
 
   ROLE_NAMES = %i[viewer streamer brand].freeze
@@ -70,6 +75,13 @@ class User < ApplicationRecord
   end
 
   def roles
-    [ :viewer, (:streamer if is_streamer), (:brand if is_brand) ].compact
+    [ :viewer, (:streamer if streamer?), (:brand if brand?) ].compact
+  end
+
+  def business_via_active_team?
+    team_memberships.where(status: "active")
+                    .joins("INNER JOIN users AS owners ON owners.id = team_memberships.team_owner_id")
+                    .where(owners: { tier: "business" })
+                    .exists?
   end
 end

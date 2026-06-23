@@ -14,6 +14,7 @@ RSpec.describe ChannelPolicy, type: :policy do
     it { is_expected.to permit_action(:show) }
     it { is_expected.to forbid_action(:create) }
     it { is_expected.to forbid_action(:destroy) }
+    it { is_expected.to forbid_action(:view_7d_trust_history) } # T1-060 FR-6
   end
 
   context "when free user" do
@@ -23,6 +24,7 @@ RSpec.describe ChannelPolicy, type: :policy do
     it { is_expected.to permit_action(:show) }
     it { is_expected.to permit_action(:create) }
     it { is_expected.to forbid_action(:destroy) }
+    it { is_expected.to forbid_action(:view_7d_trust_history) } # T1-060 FR-6: 7d needs premium access
   end
 
   context "when premium user with tracked channel" do
@@ -35,6 +37,7 @@ RSpec.describe ChannelPolicy, type: :policy do
     it { is_expected.to permit_action(:show) }
     it { is_expected.to permit_action(:create) }
     it { is_expected.to permit_action(:destroy) }
+    it { is_expected.to permit_action(:view_7d_trust_history) } # T1-060 FR-6
   end
 
   context "when business user" do
@@ -43,6 +46,7 @@ RSpec.describe ChannelPolicy, type: :policy do
     it { is_expected.to permit_action(:index) }
     it { is_expected.to permit_action(:show) }
     it { is_expected.to permit_action(:create) }
+    it { is_expected.to permit_action(:view_7d_trust_history) } # T1-060 FR-6
   end
 
   context "when streamer on own channel" do
@@ -51,6 +55,7 @@ RSpec.describe ChannelPolicy, type: :policy do
     before { create(:auth_provider, user: user, provider: "twitch", provider_id: channel.twitch_id) }
 
     it { is_expected.to permit_action(:show) }
+    it { is_expected.to permit_action(:view_7d_trust_history) } # T1-060 FR-6: owner via data-exchange
   end
 
   # TASK-A1 (philosophy-v2): FR-012/013 Trends-scoped predicates.

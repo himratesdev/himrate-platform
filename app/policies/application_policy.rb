@@ -72,7 +72,7 @@ class ApplicationPolicy
   end
 
   def brand?
-    registered? && user.is_brand
+    registered? && user.brand?
   end
 
   def owns_channel?(channel)

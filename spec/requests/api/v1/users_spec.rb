@@ -62,8 +62,8 @@ RSpec.describe "Users API", type: :request do
 
     # T1-060 FR-7: accumulating role flags (parity with AuthController#build_user_payload).
     describe "is_viewer / is_streamer / is_brand role flags" do
-      it "exposes all three true for a multi-role user" do
-        multi = create(:user, is_streamer: true, is_brand: true)
+      it "exposes all three true for a multi-role user (is_brand derives from business tier)" do
+        multi = create(:user, is_streamer: true, tier: "business")
         token = Auth::JwtService.encode_access(multi.id)
         get "/api/v1/user/me", headers: { "Authorization" => "Bearer #{token}" }
         data = response.parsed_body["data"]

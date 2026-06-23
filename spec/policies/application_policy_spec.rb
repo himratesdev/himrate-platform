@@ -48,9 +48,9 @@ RSpec.describe ApplicationPolicy do
       expect(described_class.new(build_stubbed(:user, is_streamer: false), record).send(:streamer?)).to be false
     end
 
-    it "#brand? reads is_brand" do
-      expect(described_class.new(build_stubbed(:user, is_brand: true), record).send(:brand?)).to be true
-      expect(described_class.new(build_stubbed(:user, is_brand: false), record).send(:brand?)).to be false
+    it "#brand? derives from business access" do
+      expect(described_class.new(build_stubbed(:user, tier: "business"), record).send(:brand?)).to be true
+      expect(described_class.new(create(:user, tier: "free"), record).send(:brand?)).to be false
     end
   end
 end

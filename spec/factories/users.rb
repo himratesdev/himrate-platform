@@ -6,11 +6,11 @@ FactoryBot.define do
     sequence(:username) { |n| "user#{n}" }
     role { "viewer" }
     tier { "free" }
-    # T1-060 FR-3: flags derive from the legacy scalars by default so existing specs that
-    # `create(:user, role: "streamer")` / `tier: "business"` keep producing streamer/brand
-    # behavior once the predicates read the flags. Override explicitly to test divergence.
+    # T1-060 FR-3: is_streamer derives from the legacy role scalar by default so existing
+    # specs that `create(:user, role: "streamer")` keep producing streamer behavior once the
+    # predicate reads the flag. brand? is NOT stored — it derives from business access, so the
+    # :brand trait just grants the business tier.
     is_streamer { role == "streamer" }
-    is_brand { tier == "business" }
 
     trait :streamer do
       role { "streamer" }
@@ -18,7 +18,7 @@ FactoryBot.define do
     end
 
     trait :brand do
-      is_brand { true }
+      tier { "business" }
     end
   end
 end

@@ -305,7 +305,7 @@ module Api
           tier: user.tier,
           is_viewer: true,
           is_streamer: user.is_streamer,
-          is_brand: user.is_brand,
+          is_brand: user.brand?,
           twitch_linked: twitch_provider.present?,
           twitch_login: twitch_provider.present? ? user.username : nil,
           google_linked: google_provider.present?
