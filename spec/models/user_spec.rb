@@ -46,4 +46,44 @@ RSpec.describe User, type: :model do
       expect(query_count).to eq(0)
     end
   end
+
+  describe "T1-060 FR-3 role predicates" do
+    it "#viewer? is always true for a registered user" do
+      expect(build(:user, role: "viewer").viewer?).to be true
+      expect(build(:user, :streamer).viewer?).to be true
+    end
+
+    it "#streamer? reflects is_streamer, not the legacy role scalar" do
+      expect(build(:user, is_streamer: true).streamer?).to be true
+      expect(build(:user, is_streamer: false).streamer?).to be false
+    end
+
+    it "#brand? reflects is_brand" do
+      expect(build(:user, is_brand: true).brand?).to be true
+      expect(build(:user, is_brand: false).brand?).to be false
+    end
+
+    it "supports multiple roles simultaneously" do
+      user = build(:user, is_streamer: true, is_brand: true)
+      expect(user.roles).to contain_exactly(:viewer, :streamer, :brand)
+    end
+
+    it "#roles lists only the accumulated roles" do
+      expect(build(:user, is_streamer: false, is_brand: false).roles).to eq([ :viewer ])
+      expect(build(:user, is_streamer: true, is_brand: false).roles).to contain_exactly(:viewer, :streamer)
+    end
+
+    it "#has_role? delegates to the predicate" do
+      user = build(:user, is_streamer: true, is_brand: false)
+      expect(user.has_role?(:streamer)).to be true
+      expect(user.has_role?(:brand)).to be false
+      expect(user.has_role?(:viewer)).to be true
+    end
+
+    it "does NOT respond to surface/user (AuthContext duck-type cannot misroute it)" do
+      user = build(:user)
+      expect(user.respond_to?(:surface)).to be false
+      expect(user.respond_to?(:user)).to be false
+    end
+  end
 end

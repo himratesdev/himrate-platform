@@ -47,4 +47,27 @@ class User < ApplicationRecord
                              .pluck(:provider_id)
                              .to_set
   end
+
+  # T1-060 FR-3: accumulating role predicates. viewer = implicit for every registered
+  # user; is_streamer / is_brand accumulate by action and may both be true. Distinct from
+  # the channel-ownership axis (streamer_twitch_ids / owns_channel?), which is orthogonal.
+  def viewer?
+    true
+  end
+
+  def streamer?
+    is_streamer
+  end
+
+  def brand?
+    is_brand
+  end
+
+  def has_role?(role_name)
+    public_send("#{role_name}?")
+  end
+
+  def roles
+    [ :viewer, (:streamer if is_streamer), (:brand if is_brand) ].compact
+  end
 end
