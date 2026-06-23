@@ -115,11 +115,18 @@ class ChannelPolicy < ApplicationPolicy
   end
 
   # TASK-039 FR-012: Trends Tab historical access (7d/30d/60d/90d).
-  # Premium tracked / Business / Streamer own (через Twitch OAuth data exchange).
+  # T1-063 (v2 / Option A): viewer surface is free — a registered viewer gets Trends on a
+  # LIVE channel or within the 18h post-stream window. Same live/window ladder as view_report? /
+  # serializer_view; the extra standalone streamer_on_channel? is RETAINED on purpose (NOT in
+  # view_report?): per FR-011/012 it grants a data-exchange channel owner access to their OWN
+  # channel by twitch_id even when their role isn't "streamer" (owns_channel? requires role).
+  # Deep-period role-gate (own-channel / brand beyond the online window) lands in T1-060.
   def view_trends_historical?
     return false unless registered?
+    return true if premium_access_for?(record) || streamer_on_channel?(record)
+    return true if record.live?
 
-    premium_access_for?(record) || streamer_on_channel?(record)
+    PostStreamWindowService.open?(record)
   end
 
   # TASK-039 FR-013: 365-day trends — Business tier only (включая team members).
@@ -139,5 +146,18 @@ class ChannelPolicy < ApplicationPolicy
 
   def owns_channel_access?
     owns_channel?(record)
+  end
+
+  # T1-063 CR S-1: single source of truth for the user's access-tier string. The Trends cache
+  # key is tier-agnostic, so TrendsController#render_cached recomputes this per-request and
+  # overwrites the cached meta.access_level — preventing cross-tier CTA bleed now that Free
+  # viewers share the Trends cache pool. Mirror of Trends::Api::BaseEndpointService#resolve_access_level.
+  def access_level
+    return "anonymous" if user.nil?
+    return "business" if effective_business_access?
+    return "streamer" if owns_channel_access?
+    return "premium" if premium_access?
+
+    "free"
   end
 end

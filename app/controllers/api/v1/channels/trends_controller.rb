@@ -134,6 +134,13 @@ module Api
             yield
           end
 
+          # T1-063 CR S-1: meta.access_level is user-derived, but the cache key is tier-agnostic
+          # (channel/endpoint/period/granularity only) → the cached payload carries whichever
+          # tier warmed the key. Recompute per-request and overwrite so a Free viewer (now in the
+          # cache pool) can't read a cached "premium" access_level (wrong CTA / revenue). Only the
+          # tier-invariant data series stays shared. Non-mutating merge — never touches the cached object.
+          payload = override_access_level(payload)
+
           duration_ms = ((Process.clock_gettime(Process::CLOCK_MONOTONIC) - start_monotonic) * 1000).round(2)
 
           ActiveSupport::Notifications.instrument(
@@ -148,6 +155,15 @@ module Api
 
           response.set_header("X-Data-Freshness", payload.dig(:meta, :data_freshness).to_s)
           render json: payload
+        end
+
+        # T1-063 CR S-1: per-request access_level overwrite (see render_cached). Non-mutating —
+        # returns a fresh hash so the shared cache entry is never altered.
+        def override_access_level(payload)
+          return payload unless payload.is_a?(Hash) && payload[:meta].is_a?(Hash)
+
+          level = ChannelPolicy.new(current_user, @channel).access_level
+          payload.merge(meta: payload[:meta].merge(access_level: level))
         end
 
         def render_invalid_params(exception)

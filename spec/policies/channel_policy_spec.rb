@@ -62,11 +62,38 @@ RSpec.describe ChannelPolicy, type: :policy do
       it { is_expected.to forbid_action(:view_365d_trends) }
     end
 
-    context "when free user without tracked channel" do
+    context "when free user without tracked channel (offline, no post-stream window)" do
       let(:user) { create(:user, role: "viewer", tier: "free") }
 
+      # Default channel has no streams → not live, no open window → still gated.
       it { is_expected.to forbid_action(:view_trends_historical) }
       it { is_expected.to forbid_action(:view_365d_trends) }
+    end
+
+    # T1-063 (v2 / Option A): viewer surface is free on the online slice.
+    context "when free user on a LIVE channel" do
+      let(:user) { create(:user, role: "viewer", tier: "free") }
+
+      before { create(:stream, channel: channel, started_at: 10.minutes.ago, ended_at: nil) }
+
+      it { is_expected.to permit_action(:view_trends_historical) }
+      it { is_expected.to forbid_action(:view_365d_trends) } # 365d stays Business-only
+    end
+
+    context "when free user on an offline channel within the 18h post-stream window" do
+      let(:user) { create(:user, role: "viewer", tier: "free") }
+
+      before { create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago) }
+
+      it { is_expected.to permit_action(:view_trends_historical) }
+    end
+
+    context "when free user on an offline channel with an expired window (>18h)" do
+      let(:user) { create(:user, role: "viewer", tier: "free") }
+
+      before { create(:stream, channel: channel, started_at: 30.hours.ago, ended_at: 20.hours.ago) }
+
+      it { is_expected.to forbid_action(:view_trends_historical) }
     end
 
     context "when premium with tracked channel" do
