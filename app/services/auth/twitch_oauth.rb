@@ -93,7 +93,8 @@ module Auth
             email: twitch_user[:email],
             username: twitch_user[:login],
             role: determine_role(twitch_user[:broadcaster_type]),
-            tier: "free"
+            tier: "free",
+            is_streamer: streamer?(twitch_user[:broadcaster_type])
           )
 
           AuthProvider.create!(
@@ -108,8 +109,12 @@ module Auth
           )
         end
 
-        if streamer?(twitch_user[:broadcaster_type]) && user.role != "streamer"
-          user.update!(role: "streamer")
+        # T1-060 FR-2: accrue the streamer role ADDITIVELY (keep viewer, never demote). Fires
+        # for existing users on re-auth too. role stays write-through-synced this phase (dropped
+        # in the phase-2 follow-up TASK). EC-3: a broadcaster who loses affiliate/partner is NOT
+        # demoted (no else branch).
+        if streamer?(twitch_user[:broadcaster_type]) && !user.is_streamer
+          user.update!(is_streamer: true, role: "streamer")
         end
 
         user
