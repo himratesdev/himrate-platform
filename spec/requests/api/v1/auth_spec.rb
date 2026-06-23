@@ -151,11 +151,16 @@ RSpec.describe "Auth API", type: :request do
         .to_return(status: 200, body: { data: [ { id: "55555", login: "affiliatestreamer", email: "s@test.tv", broadcaster_type: "affiliate" } ] }.to_json, headers: { "Content-Type" => "application/json" })
     end
 
-    it "sets role to streamer" do
+    it "sets role to streamer and accrues is_streamer while keeping viewer" do
       get "/api/v1/auth/twitch/callback", params: { code: "code", state: "streamer_state" }
 
       body = JSON.parse(response.body)
       expect(body["user"]["role"]).to eq("streamer")
+      expect(body["user"]["is_streamer"]).to be true
+      expect(body["user"]["is_viewer"]).to be true
+      user = User.find_by(username: "affiliatestreamer")
+      expect(user.is_streamer).to be true
+      expect(user.viewer?).to be true
     end
   end
 
@@ -171,11 +176,37 @@ RSpec.describe "Auth API", type: :request do
         .to_return(status: 200, body: { data: [ { id: "66666", login: "justviewer", email: "v@test.tv", broadcaster_type: "" } ] }.to_json, headers: { "Content-Type" => "application/json" })
     end
 
-    it "sets role to viewer" do
+    it "sets role to viewer with is_streamer false" do
       get "/api/v1/auth/twitch/callback", params: { code: "code", state: "viewer_state" }
 
       body = JSON.parse(response.body)
       expect(body["user"]["role"]).to eq("viewer")
+      expect(User.find_by(username: "justviewer").is_streamer).to be false
+    end
+  end
+
+  # T1-060 FR-2 / EC-3: re-auth accrues additively and never demotes an existing streamer.
+  describe "GET /api/v1/auth/twitch/callback (streamer re-auth, no demote)" do
+    let!(:streamer) { User.create!(username: "exstreamer", role: "streamer", tier: "free", is_streamer: true) }
+    let!(:streamer_auth) do
+      AuthProvider.create!(user: streamer, provider: "twitch", provider_id: "88888",
+        access_token: "old", refresh_token: "old", is_broadcaster: true)
+    end
+
+    before do
+      Rails.cache.write("pkce:redemote_state", { code_verifier: "verifier", redirect_uri: ENV.fetch("TWITCH_REDIRECT_URI") })
+
+      stub_request(:post, "https://id.twitch.tv/oauth2/token")
+        .to_return(status: 200, body: { access_token: "new_at", refresh_token: "new_rt", expires_in: 14400 }.to_json, headers: { "Content-Type" => "application/json" })
+
+      stub_request(:get, "https://api.twitch.tv/helix/users")
+        .to_return(status: 200, body: { data: [ { id: "88888", login: "exstreamer", email: "ex@test.tv", broadcaster_type: "" } ] }.to_json, headers: { "Content-Type" => "application/json" })
+    end
+
+    it "keeps is_streamer true when broadcaster_type is no longer affiliate/partner" do
+      get "/api/v1/auth/twitch/callback", params: { code: "code", state: "redemote_state" }
+
+      expect(streamer.reload.is_streamer).to be true
     end
   end
 

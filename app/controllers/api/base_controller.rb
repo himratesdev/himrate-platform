@@ -27,6 +27,7 @@ module Api
       end
 
       payload = Auth::JwtService.decode(token)
+      @surface = payload[:aud].presence || Auth::AuthContext::EXTENSION
 
       unless payload[:type] == "access"
         Rails.logger.warn("Auth failed: non-access token from #{request.remote_ip}")
@@ -50,6 +51,7 @@ module Api
       return unless token
 
       payload = Auth::JwtService.decode(token)
+      @surface = payload[:aud].presence || Auth::AuthContext::EXTENSION
       return unless payload[:type] == "access"
 
       @current_user = User.active
@@ -61,6 +63,18 @@ module Api
 
     def current_user
       @current_user
+    end
+
+    # T1-060 FR-5: surface the request arrived on (default extension for missing/legacy aud).
+    def current_surface
+      @surface || Auth::AuthContext::EXTENSION
+    end
+
+    # Pundit context: policies receive (user + surface) so a tier-paywall denial resolves to
+    # SUBSCRIPTION_REQUIRED on the dashboard surface vs an honest-empty data-state on the
+    # extension. ApplicationPolicy#initialize unwraps this; bare-User .new calls still work.
+    def pundit_user
+      Auth::AuthContext.new(current_user, current_surface)
     end
 
     # TASK-032 FR-007: Guest identification via Extension install ID.
@@ -104,28 +118,40 @@ module Api
       }
     end
 
+    # T1-060 FR-6: surface-aware paywall code. A tier-paywall denial is the hard
+    # SUBSCRIPTION_REQUIRED only on the dashboard (ЛК) surface; on the extension it becomes an
+    # honest-empty data-state the frontend renders WITHOUT a subscribe-wall (access-model v2 —
+    # the extension is 100% free to the viewer). Forging aud=dashboard only adds locks (fail-safe).
+    def paywall_code
+      current_surface == Auth::AuthContext::DASHBOARD ? "SUBSCRIPTION_REQUIRED" : "EXTENSION_DEEP_LOCKED"
+    end
+
     def resolve_error_code(exception)
+      # Guests (E1) are out of the extension-no-paywall invariant (SRS §4.7 item-1, AC-4 scopes
+      # to authenticated): a guest needs to register/subscribe, not "open dashboard", so keep the
+      # hard SUBSCRIPTION_REQUIRED on both surfaces — never EXTENSION_DEEP_LOCKED.
       return "SUBSCRIPTION_REQUIRED" if current_user.nil?
 
-      policy_name = exception.policy.class.name
       query = exception.query.to_s
-
-      case policy_name
-      when "BotChainPolicy"
-        "BOT_CHAIN_UNAVAILABLE"
-      when "StreamPolicy"
-        "POST_STREAM_WINDOW_EXPIRED"
+      case exception.policy.class.name
+      when "BotChainPolicy" then "BOT_CHAIN_UNAVAILABLE"
+      when "StreamPolicy" then "POST_STREAM_WINDOW_EXPIRED"
       when "TrustSnapshotPolicy"
-        query == "drill_down?" ? "POST_STREAM_WINDOW_EXPIRED" : "SUBSCRIPTION_REQUIRED"
-      when "ChannelPolicy"
-        case query
-        when "destroy?" then "CHANNEL_NOT_TRACKED"
-        when "view_report?" then "POST_STREAM_WINDOW_EXPIRED"
-        when "view_365d_trends?" then "TRENDS_BUSINESS_REQUIRED"
-        else "SUBSCRIPTION_REQUIRED"
-        end
-      else
-        "SUBSCRIPTION_REQUIRED"
+        query == "drill_down?" ? "POST_STREAM_WINDOW_EXPIRED" : paywall_code
+      when "ChannelPolicy" then resolve_channel_policy_code(query)
+      else paywall_code
+      end
+    end
+
+    # badge?/card? are ownership denials (non-owner), NOT tier paywalls — they keep a dedicated
+    # 403 code on BOTH surfaces and never collapse to an honest-empty data-state.
+    def resolve_channel_policy_code(query)
+      case query
+      when "destroy?" then "CHANNEL_NOT_TRACKED"
+      when "view_report?" then "POST_STREAM_WINDOW_EXPIRED"
+      when "view_365d_trends?" then "TRENDS_BUSINESS_REQUIRED"
+      when "badge?", "card?" then "CHANNEL_NOT_OWNED"
+      else paywall_code
       end
     end
 
@@ -133,6 +159,11 @@ module Api
       case code
       when "COMPARE_UNAVAILABLE", "BOT_CHAIN_UNAVAILABLE", "TRENDS_BUSINESS_REQUIRED"
         { action: "upgrade", label: I18n.t("pundit.cta.business_upgrade") }
+      when "EXTENSION_DEEP_LOCKED"
+        # Honest-empty on the extension: point to the dashboard, not a subscribe-wall.
+        { action: "open_dashboard", label: I18n.t("pundit.cta.open_dashboard") }
+      when "CHANNEL_NOT_OWNED"
+        { action: "none", label: nil }
       else
         { action: "subscribe", label: I18n.t("pundit.cta.start_tracking") }
       end

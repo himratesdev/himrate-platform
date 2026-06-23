@@ -13,8 +13,11 @@ en:
       grace_expired: "Grace period expired. Please renew your subscription"
       team_membership_revoked: "Removed from team. Access limited to your plan"
       trends_business_required: "365-day trends history requires Business — $99/mo"
+      extension_deep_locked: "Detailed history is available in your dashboard"
+      channel_not_owned: "This view is available to the channel owner only"
     cta:
       start_tracking: "Start Tracking — $9.99/mo"
       view_analytics: "View full analytics"
       business_upgrade: "Business — $99/mo"
       team_access: "Access via Business team"
+      open_dashboard: "Open dashboard"

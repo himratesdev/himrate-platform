@@ -222,8 +222,13 @@ module Api
 
         user = User.find(payload[:sub])
 
-        access_token = Auth::JwtService.encode_access(user.id)
-        new_refresh = Auth::JwtService.encode_refresh(user.id)
+        # T1-060 FR-5: preserve the originating surface across refresh. Defaulting to
+        # extension here (as the OAuth-callback mints do) would silently downgrade a
+        # dashboard token to extension on every refresh, permanently disabling the ЛК
+        # paywall. Carry the old token's aud forward instead.
+        surface = payload[:aud].presence || Auth::JwtService::DEFAULT_SURFACE
+        access_token = Auth::JwtService.encode_access(user.id, surface: surface)
+        new_refresh = Auth::JwtService.encode_refresh(user.id, surface: surface)
 
         render json: { access_token: access_token, refresh_token: new_refresh, expires_in: 3600 }
       rescue Auth::AuthError => e
@@ -298,6 +303,9 @@ module Api
           email: user.email,
           role: user.role,
           tier: user.tier,
+          is_viewer: true,
+          is_streamer: user.is_streamer,
+          is_brand: user.brand?,
           twitch_linked: twitch_provider.present?,
           twitch_login: twitch_provider.present? ? user.username : nil,
           google_linked: google_provider.present?

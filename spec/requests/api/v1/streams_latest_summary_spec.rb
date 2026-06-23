@@ -26,12 +26,26 @@ RSpec.describe "Streams Latest Summary API", type: :request do
       expect(response).to have_http_status(:unauthorized)
     end
 
-    # FR-002 / US-001 alt: Free + expired window → 403 SUBSCRIPTION_REQUIRED
-    it "returns 403 для Free вне 18h window" do
+    # T1-060 FR-6: on the EXTENSION surface a Free viewer outside the 18h window gets an
+    # honest-empty data-state (EXTENSION_DEEP_LOCKED), never the SUBSCRIPTION_REQUIRED
+    # subscribe-wall. Status stays 403 (Option B — body-shaping to 200 lands in T1-061).
+    it "returns EXTENSION_DEEP_LOCKED для Free на extension вне 18h window" do
       stream = create(:stream, channel: channel, started_at: 25.hours.ago, ended_at: 20.hours.ago)
       create(:post_stream_report, stream: stream, ccv_peak: 5000, duration_ms: 18_000_000, generated_at: 20.hours.ago)
 
       get "/api/v1/channels/#{channel.id}/streams/latest/summary", headers: headers_free
+
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body.dig("error", "code")).to eq("EXTENSION_DEEP_LOCKED")
+    end
+
+    # T1-060 FR-6: the DASHBOARD (ЛК) surface keeps the hard SUBSCRIPTION_REQUIRED paywall.
+    it "returns SUBSCRIPTION_REQUIRED для Free на dashboard surface вне 18h window" do
+      stream = create(:stream, channel: channel, started_at: 25.hours.ago, ended_at: 20.hours.ago)
+      create(:post_stream_report, stream: stream, ccv_peak: 5000, duration_ms: 18_000_000, generated_at: 20.hours.ago)
+      dashboard_headers = { "Authorization" => "Bearer #{Auth::JwtService.encode_access(user_free.id, surface: 'dashboard')}" }
+
+      get "/api/v1/channels/#{channel.id}/streams/latest/summary", headers: dashboard_headers
 
       expect(response).to have_http_status(:forbidden)
       expect(response.parsed_body.dig("error", "code")).to eq("SUBSCRIPTION_REQUIRED")

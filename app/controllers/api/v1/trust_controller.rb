@@ -39,11 +39,11 @@ module Api
 
         period = params[:period] || "30m"
 
-        # Free users: 30m only (live). 7d requires Premium.
-        if period == "7d" && !ChannelPolicy.new(current_user, @channel).premium_access?
-          render json: { error: "SUBSCRIPTION_REQUIRED" }, status: :forbidden
-          return
-        end
+        # T1-060 FR-6: 7d history is premium-gated. Routed through Pundit (was an inline hard
+        # 403) so the denial is surface-aware via resolve_error_code — extension viewers get
+        # EXTENSION_DEEP_LOCKED (honest-empty), dashboard gets SUBSCRIPTION_REQUIRED. Upholds
+        # the Pundit-only-paywall rule. Invalid (non-7d) periods skip this and fall to the 400 path.
+        authorize @channel, :view_7d_trust_history? if period == "7d"
 
         payload = Rails.cache.fetch("trust_history:#{@channel.id}:#{period}", expires_in: 30.seconds) do
           Trust::HistoryService.new(channel: @channel, period: period).call

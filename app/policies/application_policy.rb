@@ -1,10 +1,20 @@
 # frozen_string_literal: true
 
 class ApplicationPolicy
-  attr_reader :user, :record
+  attr_reader :user, :record, :surface
 
-  def initialize(user, record)
-    @user = user
+  # T1-060 FR-5/DEC-3: duck-type the Pundit context. `authorize`/pundit_user passes an
+  # Auth::AuthContext(user, surface); the ~8 controllers/services that instantiate a policy
+  # directly with a bare User keep working (they are all extension-surface, the safe
+  # default). User itself responds to neither :user nor :surface, so it can't misroute.
+  def initialize(user_or_context, record)
+    if user_or_context.respond_to?(:user) && user_or_context.respond_to?(:surface)
+      @user = user_or_context.user
+      @surface = user_or_context.surface
+    else
+      @user = user_or_context
+      @surface = Auth::AuthContext::EXTENSION
+    end
     @record = record
   end
 
@@ -50,8 +60,19 @@ class ApplicationPolicy
     registered? && user.tier == "free"
   end
 
+  def dashboard_surface?
+    surface == Auth::AuthContext::DASHBOARD
+  end
+
+  # T1-060 FR-3: role predicates read the accumulating flags, not the legacy role scalar.
+  # Orthogonal to the channel-ownership axis (owns_channel?/streamer_on_channel?), which
+  # stays keyed on streamer_twitch_ids ∩ channel.twitch_id.
   def streamer?
-    registered? && user.role == "streamer"
+    registered? && user.is_streamer
+  end
+
+  def brand?
+    registered? && user.brand?
   end
 
   def owns_channel?(channel)
@@ -87,14 +108,11 @@ class ApplicationPolicy
         .exists?
   end
 
+  # T1-060 CR iter-3: single source of truth for "business via active team" — delegates to
+  # User#business_via_active_team? (also used by User#brand?), so the business-team semantics
+  # can't drift between policy gating and the brand role.
   def business_via_team?
-    return false unless registered?
-
-    TeamMembership
-      .where(user_id: user.id, status: "active")
-      .joins("INNER JOIN users AS owners ON owners.id = team_memberships.team_owner_id")
-      .where(owners: { tier: "business" })
-      .exists?
+    registered? && user.business_via_active_team?
   end
 
   def effective_business?
