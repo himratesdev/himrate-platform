@@ -36,6 +36,23 @@ RSpec.describe "Api::V1::WatchlistChannels", type: :request do
     end
   end
 
+  # T1-060 FR-6 (E8): the Watchlists filters paywall (filter_channels?) is surface-aware.
+  # `user` is a free owner (no active subscription) → denied; the error CODE differs by surface.
+  describe "GET /api/v1/watchlists/:id/channels with filters (E8 paywall)" do
+    it "returns EXTENSION_DEEP_LOCKED for a free owner on the extension surface" do
+      get "/api/v1/watchlists/#{watchlist.id}/channels", params: { erv_min: 50 }, headers: auth_headers
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body.dig("error", "code")).to eq("EXTENSION_DEEP_LOCKED")
+    end
+
+    it "returns SUBSCRIPTION_REQUIRED for a free owner on the dashboard surface" do
+      dashboard = { "Authorization" => "Bearer #{Auth::JwtService.encode_access(user.id, surface: 'dashboard')}" }
+      get "/api/v1/watchlists/#{watchlist.id}/channels", params: { erv_min: 50 }, headers: dashboard
+      expect(response).to have_http_status(:forbidden)
+      expect(response.parsed_body.dig("error", "code")).to eq("SUBSCRIPTION_REQUIRED")
+    end
+  end
+
   describe "POST /api/v1/watchlists/:id/channels" do
     it "adds channel to watchlist" do
       post "/api/v1/watchlists/#{watchlist.id}/channels",

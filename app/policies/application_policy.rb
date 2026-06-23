@@ -108,14 +108,11 @@ class ApplicationPolicy
         .exists?
   end
 
+  # T1-060 CR iter-3: single source of truth for "business via active team" — delegates to
+  # User#business_via_active_team? (also used by User#brand?), so the business-team semantics
+  # can't drift between policy gating and the brand role.
   def business_via_team?
-    return false unless registered?
-
-    TeamMembership
-      .where(user_id: user.id, status: "active")
-      .joins("INNER JOIN users AS owners ON owners.id = team_memberships.team_owner_id")
-      .where(owners: { tier: "business" })
-      .exists?
+    registered? && user.business_via_active_team?
   end
 
   def effective_business?
