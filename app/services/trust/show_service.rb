@@ -81,7 +81,7 @@ module Trust
         } : nil,
         reputation_band: band[:band],
         reputation_tier: band[:tier],
-        reputation_provisional: band[:provisional],
+        reputation_stream_count: band[:stream_count],
         erv_breakdown: erv_breakdown,
         bot_raid_victim: bot_raid_victim?,
         ti_protected: bot_raid_victim?,

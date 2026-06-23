@@ -7,9 +7,11 @@ ru:
       stable: Стабильная
       variable: Изменчивая
       unstable: Нестабильная
+    # FD-4 cold-start: 3 тира (Glossary «Cold-start»). insufficient <3 (band скрыт) /
+    # basic 3-9 (tooltip «Provisional — N streams») / full ≥10.
     tier:
       insufficient: Недостаточно данных
-      provisional_low: Предварительно (мало данных)
-      provisional: Предварительно
+      basic: Базовая аналитика
       full: Полная аналитика
-      deep: Глубокая аналитика
+    tier_tooltip:
+      basic: "Предварительно — %{count} стримов"

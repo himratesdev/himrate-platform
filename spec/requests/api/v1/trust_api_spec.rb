@@ -111,7 +111,7 @@ RSpec.describe "Trust API", type: :request do
       # T1-064 FR-3/FR-7: Reputation Categorical band (additive to streamer_reputation).
       expect(data).to have_key("reputation_band")
       expect(data).to have_key("reputation_tier")
-      expect(data).to have_key("reputation_provisional")
+      expect(data).to have_key("reputation_stream_count")
       # T1-064 FR-5: availability-status contract (explicit, not bare nil).
       expect(data["top_countries_status"]).to eq("not_implemented")
     end
