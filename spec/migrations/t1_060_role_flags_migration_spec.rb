@@ -17,7 +17,7 @@ RSpec.describe "T1-060 role flags migration", type: :model do
         expect(column).to be_present, "expected users.#{col} to exist"
         expect(column.type).to eq(:boolean)
         expect(column.null).to be false
-        expect(column.default).to eq("false")
+        expect(column.default).to eq(false) # PG boolean default is cast to a real boolean
       end
     end
 
