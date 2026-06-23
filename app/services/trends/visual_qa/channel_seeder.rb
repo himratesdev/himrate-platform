@@ -82,6 +82,7 @@ module Trends
         user = User.find_or_create_by!(email: STREAMER_USER_EMAIL_TEMPLATE % digest) do |u|
           u.username = "vqa_streamer_#{digest}"
           u.role = "streamer"
+          u.is_streamer = true # T1-060 FR-3: seeded streamer must satisfy the flag-based predicate
           u.tier = "free"
         end
 

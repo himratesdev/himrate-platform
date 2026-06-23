@@ -156,6 +156,8 @@ RSpec.describe "Auth API", type: :request do
 
       body = JSON.parse(response.body)
       expect(body["user"]["role"]).to eq("streamer")
+      expect(body["user"]["is_streamer"]).to be true
+      expect(body["user"]["is_viewer"]).to be true
       user = User.find_by(username: "affiliatestreamer")
       expect(user.is_streamer).to be true
       expect(user.viewer?).to be true

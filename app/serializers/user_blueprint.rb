@@ -17,8 +17,18 @@ class UserBlueprint < Blueprinter::Base
     user.tracked_channels.size
   end
 
+  # T1-060 FR-7: accumulating role flags (kept in parity with AuthController#build_user_payload).
+  # is_viewer is always true for a registered user; is_streamer/is_brand read the new flags.
+  field :is_viewer do |_user, _options|
+    true
+  end
+
   field :is_streamer do |user, _options|
-    user.role == "streamer"
+    user.is_streamer
+  end
+
+  field :is_brand do |user, _options|
+    user.is_brand
   end
 
   field :twitch_linked do |user, _options|

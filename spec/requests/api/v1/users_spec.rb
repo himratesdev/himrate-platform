@@ -59,6 +59,27 @@ RSpec.describe "Users API", type: :request do
         expect(data["google_linked"]).to eq(false)
       end
     end
+
+    # T1-060 FR-7: accumulating role flags (parity with AuthController#build_user_payload).
+    describe "is_viewer / is_streamer / is_brand role flags" do
+      it "exposes all three true for a multi-role user" do
+        multi = create(:user, is_streamer: true, is_brand: true)
+        token = Auth::JwtService.encode_access(multi.id)
+        get "/api/v1/user/me", headers: { "Authorization" => "Bearer #{token}" }
+        data = response.parsed_body["data"]
+        expect(data["is_viewer"]).to be true
+        expect(data["is_streamer"]).to be true
+        expect(data["is_brand"]).to be true
+      end
+
+      it "is_viewer true, is_streamer/is_brand false for a plain viewer" do
+        get "/api/v1/user/me", headers: headers
+        data = response.parsed_body["data"]
+        expect(data["is_viewer"]).to be true
+        expect(data["is_streamer"]).to be false
+        expect(data["is_brand"]).to be false
+      end
+    end
   end
 
   describe "PATCH /api/v1/user/me" do

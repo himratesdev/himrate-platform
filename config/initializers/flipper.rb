@@ -57,7 +57,8 @@ Flipper.register(:business_users) do |actor|
 end
 
 Flipper.register(:streamers) do |actor|
-  actor.respond_to?(:role) && actor.role == "streamer"
+  # T1-060 FR-3: read the accumulating flag instead of the legacy role scalar (dropped in phase-2).
+  actor.respond_to?(:is_streamer) && actor.is_streamer
 end
 
 # Single source of truth for all feature flags.
