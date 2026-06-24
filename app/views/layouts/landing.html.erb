@@ -1,23 +1,26 @@
 <!DOCTYPE html>
-<html lang="<%= I18n.locale %>">
+<html lang="ru">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title><%= content_for(:title) || t("lp.meta.title_default") %></title>
-    <meta name="description" content="<%= content_for(:meta_description) || t('lp.meta.description_default') %>">
-
-    <%# Open Graph / Twitter (basic; full SEO suite in Phase 3) %>
+    <title><%= content_for(:title) || "HimRate" %></title>
+    <meta name="description" content="<%= content_for(:description) %>">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="HimRate">
-    <meta property="og:title" content="<%= content_for(:title) || t('lp.meta.title_default') %>">
-    <meta property="og:description" content="<%= content_for(:meta_description) || t('lp.meta.description_default') %>">
-    <meta property="og:locale" content="<%= I18n.locale == :ru ? 'ru_RU' : 'en_US' %>">
+    <meta property="og:title" content="<%= content_for(:title) || "HimRate" %>">
+    <meta property="og:description" content="<%= content_for(:description) %>">
+    <meta property="og:locale" content="ru_RU">
     <meta name="twitter:card" content="summary_large_image">
 
-    <%= yield :head %>
-
-    <%# Pencil export reset (Tailwind preflight is disabled — see tailwind.config.js) %>
-    <style>*,::before,::after{box-sizing:border-box}body{margin:0}</style>
+    <%# Export reset + FOUC guard. The export's static decorative dot field
+        ([data-pencil-name="Dot BG"]) is stripped from the markup at render time, so
+        the animated <canvas> (hr-shared.js) is the only background. Paint the dark
+        bg up front so there is no flash before the canvas initialises. %>
+    <style>
+      *, ::before, ::after { box-sizing: border-box; }
+      body { margin: 0; }
+      html, body { background: #07070C; }
+    </style>
 
     <%= stylesheet_link_tag "landing_fonts" %>
     <%= stylesheet_link_tag "tailwind" %>
@@ -25,9 +28,10 @@
   <body>
     <%= yield %>
 
-    <%# Background-effect config travels in a [data-hr-config] attribute on the
-        page root (CSP-safe); hr-shared.js reads it. %>
-    <%= javascript_include_tag "landing/hr-shared", defer: true %>
-    <%= yield :page_scripts %>
+    <%# The export's vanilla JS, served as CSP-safe external assets in the export's
+        order: per-page config/scripts → i18n dictionary → shared visual layer. %>
+    <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
+    <%= javascript_include_tag "landing/hr-i18n" %>
+    <%= javascript_include_tag "landing/hr-shared" %>
   </body>
 </html>

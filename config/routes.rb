@@ -158,8 +158,11 @@ Rails.application.routes.draw do
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
   # --- Public marketing landing (TASK-060) ---
-  # Phase 0 = foundation only (root smoke). Per-page routes (streamers/brands/
-  # viewers/methodology + legal) are added together with each page's view in the
-  # literal-port phases, so no route ever points at a missing template.
+  # Public, unauthenticated HTML pages (Pencil-export port). API (api/v1/*) is
+  # unaffected. Legal pages + responsive merge land in later phases.
   root "pages#index"
+  get "streamers",   to: "pages#streamers"
+  get "brands",      to: "pages#brands"
+  get "viewers",     to: "pages#viewers"
+  get "methodology", to: "pages#methodology"
 end
