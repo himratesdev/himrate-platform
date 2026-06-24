@@ -5,8 +5,10 @@ require "flipper/adapters/redis"
 require "flipper/adapters/active_record"
 require "flipper/adapters/memoizable"
 
-# Fail fast: FLIPPER_UI_PASSWORD required in production
-if Rails.env.production? && ENV["FLIPPER_UI_PASSWORD"].blank?
+# Fail fast: FLIPPER_UI_PASSWORD required in production.
+# Skipped during the Docker asset precompile (SECRET_KEY_BASE_DUMMY set, runtime
+# secrets absent) — the guard runs on the real runtime boot instead.
+if Rails.env.production? && ENV["SECRET_KEY_BASE_DUMMY"].blank? && ENV["FLIPPER_UI_PASSWORD"].blank?
   raise "FLIPPER_UI_PASSWORD must be set in production"
 end
 
@@ -170,21 +172,26 @@ end
 #   (b) Pause-override key `flipper:pause_override:<flag>` — multi-hour tactical pause. Survives
 #       all boots (web/sidekiq/runner/rake/deploy) until explicit DEL. Correct for backfills,
 #       batch migrations, planned maintenance. See `bin/rails flipper:pause:*`.
-FlipperDefaults::ALL_FLAGS.each do |flag|
-  Flipper.add(flag)
-  # Single Redis GET per flag — nil = no pause (auto-enable), any string = paused (disable + log).
-  pause_reason = FlipperDefaults.pause_override_reason(flag, redis_instance)
-  if pause_reason
-    Flipper.disable(flag)
-    Rails.logger.info("Flipper: pause-override active for #{flag} (reason: #{pause_reason.inspect}) — skipping auto-enable")
-  else
-    Flipper.enable(flag)
+# Skip the boot-time flag sync during the Docker asset precompile: the build has
+# no Redis/DB accessories, and Flipper.add/enable would hit the database. The
+# sync is idempotent and runs on every real runtime boot (accessories present).
+unless ENV["SECRET_KEY_BASE_DUMMY"]
+  FlipperDefaults::ALL_FLAGS.each do |flag|
+    Flipper.add(flag)
+    # Single Redis GET per flag — nil = no pause (auto-enable), any string = paused (disable + log).
+    pause_reason = FlipperDefaults.pause_override_reason(flag, redis_instance)
+    if pause_reason
+      Flipper.disable(flag)
+      Rails.logger.info("Flipper: pause-override active for #{flag} (reason: #{pause_reason.inspect}) — skipping auto-enable")
+    else
+      Flipper.enable(flag)
+    end
   end
-end
 
-# Hook flags: только add — НЕ enable. Оставляем OFF until feature ships.
-# Идемпотентно: повторный boot не меняет текущее state (Flipper.add = no-op если уже
-# существует, существующий enabled/disabled state preserved).
-FlipperDefaults::HOOK_FLAGS.each_key do |flag|
-  Flipper.add(flag)
+  # Hook flags: только add — НЕ enable. Оставляем OFF until feature ships.
+  # Идемпотентно: повторный boot не меняет текущее state (Flipper.add = no-op если уже
+  # существует, существующий enabled/disabled state preserved).
+  FlipperDefaults::HOOK_FLAGS.each_key do |flag|
+    Flipper.add(flag)
+  end
 end
