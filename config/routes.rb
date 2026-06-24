@@ -56,6 +56,8 @@ Rails.application.routes.draw do
           # TASK-035 FR-017: Sparkline history
           get "history", on: :member, to: "trust#history"
         end
+        # T1-065: Reputation history / trajectory (free trust-summary, card layer 3)
+        get "reputation/history", to: "reputation#history"
         # TASK-035 FR-035: Badge embed (SVG route MUST be before badge to avoid format matching)
         get "badge.svg", to: "badges#show", defaults: { format: :svg }
         get "badge", to: "channels#badge"

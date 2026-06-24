@@ -15,6 +15,7 @@ RSpec.describe ChannelPolicy, type: :policy do
     it { is_expected.to forbid_action(:create) }
     it { is_expected.to forbid_action(:destroy) }
     it { is_expected.to forbid_action(:view_7d_trust_history) } # T1-060 FR-6
+    it { is_expected.to permit_action(:show_reputation_history) } # T1-065: free trust-summary
   end
 
   context "when free user" do
@@ -25,6 +26,7 @@ RSpec.describe ChannelPolicy, type: :policy do
     it { is_expected.to permit_action(:create) }
     it { is_expected.to forbid_action(:destroy) }
     it { is_expected.to forbid_action(:view_7d_trust_history) } # T1-060 FR-6: 7d needs premium access
+    it { is_expected.to permit_action(:show_reputation_history) } # T1-065: free trust-summary
   end
 
   context "when premium user with tracked channel" do
@@ -38,6 +40,7 @@ RSpec.describe ChannelPolicy, type: :policy do
     it { is_expected.to permit_action(:create) }
     it { is_expected.to permit_action(:destroy) }
     it { is_expected.to permit_action(:view_7d_trust_history) } # T1-060 FR-6
+    it { is_expected.to permit_action(:show_reputation_history) } # T1-065: free trust-summary
   end
 
   context "when business user" do
@@ -47,6 +50,7 @@ RSpec.describe ChannelPolicy, type: :policy do
     it { is_expected.to permit_action(:show) }
     it { is_expected.to permit_action(:create) }
     it { is_expected.to permit_action(:view_7d_trust_history) } # T1-060 FR-6
+    it { is_expected.to permit_action(:show_reputation_history) } # T1-065: free trust-summary
   end
 
   context "when streamer on own channel" do

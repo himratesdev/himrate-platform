@@ -46,6 +46,13 @@ class ChannelPolicy < ApplicationPolicy
     true
   end
 
+  # T1-065 (DEC-6): Reputation history/trajectory — FREE trust-summary, always allows (mirror
+  # show_trust?). Access-model v2 (PO 2026-06-21): the card incl. reputation is 100% free to the
+  # viewer. Always-true → no denial path → no paywall code; surface-agnostic (extension + dashboard).
+  def show_reputation_history?
+    true
+  end
+
   # TASK-035 FR-017: Trust history — Guest denied, Free 30m live only, Premium all
   def show_trust_history?
     registered?
