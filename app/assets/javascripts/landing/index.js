@@ -1,13 +1,16 @@
-/* HimRate landing — index page scripts (TASK-060). Externalized verbatim from
-   the Pencil export index.html inline <script> blocks (CSP-safe; no inline scripts). */
+/* HimRate landing — index page (TASK-060). The export's index.html was
+   self-contained (its own canvas bg + nav + dataviz, no hr-shared.js); kept
+   verbatim, with .html nav/CTA targets repointed to real Rails routes. The
+   layout therefore does NOT load hr-shared.js on index (would double the
+   canvas/nav). CSP-safe: externalised, no inline <script>. */
 
 (function(){
-  var CUR = (location.pathname.split('/').pop()||'').toLowerCase();
+  var CUR = location.pathname;
   var NAV = {
-    'СТРИМЕРАМ':'streamers.html','БРЕНДАМ':'brands.html','ЗРИТЕЛЯМ':'viewers.html',
-    'МЕТОДОЛОГИЯ':'methodology.html','ЦЕНЫ':'06-ceny.html',
-    'Стримерам':'streamers.html','Брендам':'brands.html','Зрителям':'viewers.html',
-    'Цены':'06-ceny.html','Методология':'methodology.html','Главная':'index.html'
+    'СТРИМЕРАМ':'/streamers','БРЕНДАМ':'/brands','ЗРИТЕЛЯМ':'/viewers',
+    'МЕТОДОЛОГИЯ':'/methodology','ЦЕНЫ':'/methodology',
+    'Стримерам':'/streamers','Брендам':'/brands','Зрителям':'/viewers',
+    'Цены':'/methodology','Методология':'/methodology','Главная':'/'
   };
   function go(href){
     if(!href) return;
@@ -30,7 +33,7 @@
   // 2) Logo wordmark -> home
   document.querySelectorAll('[data-pencil-name="Wordmark"]').forEach(function(el){
     el.setAttribute('data-hr-link','');
-    el.addEventListener('click', function(){ go('index.html'); });
+    el.addEventListener('click', function(){ go('/'); });
   });
 
   // 3) Buttons = real CTAs only: purple bg, OR rounded element whose text starts with an action verb.
@@ -48,11 +51,11 @@
     el.addEventListener('click', function(e){
       var s = txt.toLowerCase();
       var dest = null;
-      if(s.indexOf('подключить')>-1) dest='06-ceny.html';
-      else if(s.indexOf('я бренд')>-1) dest='brands.html';
-      else if(s.indexOf('я зритель')>-1) dest='viewers.html';
-      else if(s.indexOf('как мы измеряем')>-1 || s.indexOf('методолог')>-1 || s.indexOf('как это работает')>-1) dest='methodology.html';
-      else if(s.indexOf('все тарифы')>-1 || s.indexOf('тариф')>-1) dest='06-ceny.html';
+      if(s.indexOf('подключить')>-1) dest='/methodology';
+      else if(s.indexOf('я бренд')>-1) dest='/brands';
+      else if(s.indexOf('я зритель')>-1) dest='/viewers';
+      else if(s.indexOf('как мы измеряем')>-1 || s.indexOf('методолог')>-1 || s.indexOf('как это работает')>-1) dest='/methodology';
+      else if(s.indexOf('все тарифы')>-1 || s.indexOf('тариф')>-1) dest='/methodology';
       if(dest){ e.stopPropagation(); go(dest); }
     });
   });
@@ -60,7 +63,7 @@
   // 4) "Войти" -> pricing
   document.querySelectorAll('[data-pencil-name="Войти"]').forEach(function(el){
     el.setAttribute('data-hr-link','');
-    el.addEventListener('click', function(){ go('06-ceny.html'); });
+    el.addEventListener('click', function(){ go('/methodology'); });
   });
 })();
 
@@ -245,9 +248,9 @@
       function dim(on){ if(primary) primary.style.opacity=on?'.28':'1'; }
       // hero «Я бренд / Я зритель» → hover square + nav, and hide the left square while hovered
       $all('div').forEach(function(e){ if(e.children.length||e.__w) return; var tx=(e.textContent||'').trim(); var dest=null;
-        if(/^Я бренд/.test(tx)) dest='brands.html';
-        else if(/^Я зритель/.test(tx)) dest='viewers.html';
-        else if(/^Я стример/.test(tx)) dest='streamers.html';
+        if(/^Я бренд/.test(tx)) dest='/brands';
+        else if(/^Я зритель/.test(tx)) dest='/viewers';
+        else if(/^Я стример/.test(tx)) dest='/streamers';
         if(!dest) return;
         e.__w=1; e.setAttribute('data-hr-cta','');
         e.addEventListener('mouseenter', function(){ dim(true); }); e.addEventListener('mouseleave', function(){ dim(false); });
@@ -256,9 +259,9 @@
       // audience-card CTAs → square outline on hover + nav; keep filled button ghosted (already a square)
       var ac=$('[data-pencil-name="Audience Cards"]'); if(ac){
         $all('div', ac).forEach(function(e){ if(e.children.length) return; var tx=(e.textContent||'').trim(); var dest=null;
-          if(/Подключить свой канал/.test(tx)) dest='06-ceny.html';
-          else if(/Как мы измеряем/.test(tx)) dest='methodology.html';
-          else if(/Установить расширение/.test(tx)) dest='viewers.html';
+          if(/Подключить свой канал/.test(tx)) dest='/methodology';
+          else if(/Как мы измеряем/.test(tx)) dest='/methodology';
+          else if(/Установить расширение/.test(tx)) dest='/viewers';
           if(!dest) return;
           var btn=e, par=e.parentElement;
           // strip the generic square button-ring from ancestors so the CTA shows ONE oval ring

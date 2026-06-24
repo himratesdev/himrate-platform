@@ -28,10 +28,12 @@
   <body>
     <%= yield %>
 
-    <%# The export's vanilla JS, served as CSP-safe external assets in the export's
-        order: per-page config/scripts → i18n dictionary → shared visual layer. %>
+    <%# The export's vanilla JS, served as CSP-safe external assets. index.html was
+        self-contained in the export (its own canvas bg + nav live in index.js), so
+        it does NOT also load hr-shared.js — that would double the canvas/nav. The
+        other pages share hr-shared.js. hr-i18n.js (client RU/EN) loads on all. %>
     <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
     <%= javascript_include_tag "landing/hr-i18n" %>
-    <%= javascript_include_tag "landing/hr-shared" %>
+    <% unless @page == "index" %><%= javascript_include_tag "landing/hr-shared" %><% end %>
   </body>
 </html>

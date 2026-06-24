@@ -27,9 +27,20 @@ RSpec.describe "Public landing", type: :request do
 
       expect(response.body).to match(%r{/assets/tailwind[-\w]*\.css})
       expect(response.body).to match(%r{landing_fonts[-\w]*\.css})
-      expect(response.body).to match(%r{landing/hr-shared[-\w]*\.js})
       expect(response.body).to match(%r{landing/hr-i18n[-\w]*\.js})
-      expect(response.body).to match(%r{landing/index[-\w]*\.js}) # per-page bundle
+      expect(response.body).to match(%r{landing/index[-\w]*\.js}) # self-contained index bundle
+    end
+
+    it "does not double the canvas/nav: index is self-contained (no hr-shared.js)" do
+      get "/" # index.js carries its own canvas + nav
+
+      expect(response.body).not_to match(%r{landing/hr-shared[-\w]*\.js})
+    end
+
+    it "loads the shared visual layer on the non-index pages" do
+      get "/streamers"
+
+      expect(response.body).to match(%r{landing/hr-shared[-\w]*\.js})
     end
 
     it "guards the FOUC: strips the static dot field + paints the dark bg up front" do
