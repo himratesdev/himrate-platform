@@ -8,8 +8,11 @@
 # without restart. Supports comma-separated ALLOWED_EXTENSION_ID for
 # multiple Extension IDs (dev + production).
 
-# Fail fast: ALLOWED_EXTENSION_ID required in production
-if Rails.env.production? && ENV["ALLOWED_EXTENSION_ID"].blank?
+# Fail fast: ALLOWED_EXTENSION_ID required in production.
+# Skipped during the Docker asset precompile, which boots the app with
+# SECRET_KEY_BASE_DUMMY and without runtime secrets — the guard runs on the
+# real runtime boot instead (where the secret is present).
+if Rails.env.production? && ENV["SECRET_KEY_BASE_DUMMY"].blank? && ENV["ALLOWED_EXTENSION_ID"].blank?
   raise "ALLOWED_EXTENSION_ID must be set in production"
 end
 
