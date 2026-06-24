@@ -175,7 +175,7 @@ end
 # Skip the boot-time flag sync during the Docker asset precompile: the build has
 # no Redis/DB accessories, and Flipper.add/enable would hit the database. The
 # sync is idempotent and runs on every real runtime boot (accessories present).
-unless ENV["SECRET_KEY_BASE_DUMMY"]
+unless ENV["SECRET_KEY_BASE_DUMMY"].present?
   FlipperDefaults::ALL_FLAGS.each do |flag|
     Flipper.add(flag)
     # Single Redis GET per flag — nil = no pause (auto-enable), any string = paused (disable + log).
