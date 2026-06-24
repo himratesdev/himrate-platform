@@ -2,17 +2,32 @@
 <html lang="<%= I18n.locale %>">
   <head>
     <meta charset="utf-8">
-    <title><%= content_for(:title) || "HimRate" %></title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title><%= content_for(:title) || t("lp.meta.title_default") %></title>
+    <meta name="description" content="<%= content_for(:meta_description) || t('lp.meta.description_default') %>">
+
+    <%# Open Graph / Twitter (basic; full SEO suite in Phase 3) %>
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="HimRate">
+    <meta property="og:title" content="<%= content_for(:title) || t('lp.meta.title_default') %>">
+    <meta property="og:description" content="<%= content_for(:meta_description) || t('lp.meta.description_default') %>">
+    <meta property="og:locale" content="<%= I18n.locale == :ru ? 'ru_RU' : 'en_US' %>">
+    <meta name="twitter:card" content="summary_large_image">
+
     <%= yield :head %>
 
     <%# Pencil export reset (Tailwind preflight is disabled — see tailwind.config.js) %>
     <style>*,::before,::after{box-sizing:border-box}body{margin:0}</style>
 
-    <%# Self-host fonts + GTM + SEO meta wired in later phases (3) %>
+    <%= stylesheet_link_tag "landing_fonts" %>
     <%= stylesheet_link_tag "tailwind" %>
   </head>
   <body>
     <%= yield %>
+
+    <%# Background-effect config travels in a [data-hr-config] attribute on the
+        page root (CSP-safe); hr-shared.js reads it. %>
+    <%= javascript_include_tag "landing/hr-shared", defer: true %>
+    <%= yield :page_scripts %>
   </body>
 </html>

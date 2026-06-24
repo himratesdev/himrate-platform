@@ -1,12 +1,15 @@
-<% content_for :title, "HimRate — реальная аудитория Twitch" %>
-<%# Phase 0 smoke: real arbitrary classes from the Pencil export header — verifies
-    Tailwind v3 JIT compiles arbitrary colors-with-alpha, spacing, bracket-props,
-    quoted font-family and size/line-height. Replaced by the literal port in Phase 1. %>
-<div class="box-border w-full h-fit shrink-0 flex flex-row gap-0 p-[20px_56px] justify-between items-center bg-[#09090FD9] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF14]">
-  <div class="text-[12.5px]/[normal] text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] [white-space:nowrap]">СТРИМЕРАМ</div>
-  <div class="text-[#22D3EE] text-[20px] font-bold">HimRate</div>
+<%# Home (TASK-060 Phase 1). Literal port of the Pencil export index.html.
+    Root "Главная" is the export's fixed 1440px artboard (responsive merge = Phase 6);
+    centered under the full-viewport animated canvas background (hr-shared.js).
+    Slots are rendered in order and localized server-side via hr_localize. %>
+<%# Per-page background-effect config travels in a CSP-safe data attribute
+    (script_src 'self' forbids inline <script>); hr-shared.js reads it. %>
+<div class="w-full flex justify-center">
+  <div
+    data-pencil-name="Главная"
+    data-hr-config="<%= { root: '[data-pencil-name=\"Главная\"]', accent: ['34,211,238', '99,102,241'] }.to_json %>"
+    class="box-border w-[1440px] h-fit flex flex-col gap-0 justify-start items-start bg-[#07070C] overflow-hidden"
+  >
+    <%= hr_localize(render "slot_a_header_hero") %>
+  </div>
 </div>
-<main class="p-[56px] bg-[#07070C] min-h-[60vh]">
-  <h1 class="text-[44px]/[45px] text-white font-['Anton',system-ui,sans-serif]">Phase 0 — фундамент</h1>
-  <p class="mt-[16px] text-[15px] text-[#D6D2E0]">propshaft + tailwindcss-rails (v3) собирается. Дальше — literal-port страниц.</p>
-</main>

@@ -37,5 +37,77 @@ RSpec.describe "Public landing", type: :request do
 
       expect(response).to have_http_status(:ok)
     end
+
+    it "wires the self-hosted fonts and the landing JS layer" do
+      get "/"
+
+      expect(response.body).to match(%r{landing_fonts[-\w]*\.css})
+      expect(response.body).to match(%r{landing/hr-shared[-\w]*\.js})
+    end
+
+    it "passes the JS config via a CSP-safe data attribute (no inline script)" do
+      get "/"
+
+      expect(response.body).to include("data-hr-config=")
+      expect(response.body).not_to include("window.HR =")
+    end
+
+    it "restores I18n.locale after the request (with_locale — no thread-local leak)" do
+      I18n.with_locale(:en) do
+        get "/", params: { locale: "ru" }
+
+        expect(I18n.locale).to eq(:en) # restored to the outer locale, not left at :ru
+      end
+    end
+  end
+
+  # TASK-060 Phase 1: Slot A (Header + Hero + Explainer) literal port.
+  describe "Slot A (header + hero)" do
+    it "bakes the final header — menu + the post-fixHeader action buttons" do
+      get "/"
+
+      %w[СТРИМЕРАМ БРЕНДАМ ЗРИТЕЛЯМ].each { |item| expect(response.body).to include(item) }
+      expect(response.body).to include("МЕТОДОЛОГИЯ И ЦЕНЫ")          # ЦЕНЫ merged in
+      expect(response.body).to include("Открыть сервис")
+      expect(response.body).to include("Открыть расширение")
+      expect(response.body).to include("Подключить канал")
+    end
+
+    it "recolors the wordmark mark to the export's final accent (#67E8F9)" do
+      get "/"
+
+      expect(response.body).to include('fill="#67E8F9"')
+      expect(response.body).to include('viewBox="0 -9 176.3 53.9"') # SVG camelCase preserved
+    end
+
+    it "wires nav + CTAs to centralized links with stable analytics hooks" do
+      get "/"
+
+      expect(response.body).to include('data-hr-href="/"')          # wordmark → home
+      expect(response.body).to include('data-evt="nav:streamers"')
+      expect(response.body).to include('data-evt="cta:connect"')
+    end
+
+    it "offers a server-side RU/EN locale switch in the header" do
+      get "/"
+
+      expect(response.body).to include('href="/?locale=en"')
+      expect(response.body).to include('href="/?locale=ru"')
+    end
+
+    it "renders RU verbatim by default (no English leakage)" do
+      get "/"
+
+      expect(response.body).to include("СТРИМЕРАМ")
+      expect(response.body).not_to include("FOR STREAMERS")
+    end
+
+    it "server-renders the English variant via the dictionary (SEO, not a client swap)" do
+      get "/", params: { locale: "en" }
+
+      expect(response.body).to include("FOR STREAMERS")          # СТРИМЕРАМ text node
+      expect(response.body).to include("METHODOLOGY &amp; PRICING")
+      expect(response.body).to include("Connect a channel")
+    end
   end
 end

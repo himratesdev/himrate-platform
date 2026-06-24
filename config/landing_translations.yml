@@ -1,0 +1,1044 @@
+# HimRate landing RU→EN dictionary (TASK-060). Extracted verbatim from the
+# Pencil export hr-i18n.js (window.HR_TRANS). Keys = space-normalised Russian
+# leaf text; values = English. Consumed server-side by LandingI18n#hr_localize.
+---
+en:
+  "# присылает посты в Telegram / YouTube": "# posts to Telegram / YouTube"
+  "+ уровень надёжности канала за последние 30 стримов": "+ channel reliability over
+    the last 30 streams"
+  "+1 ч": "+1 h"
+  "+2 ч": "+2 h"
+  "+3 ч": "+3 h"
+  "+47 в 19:23": "+47 at 19:23"
+  "/ мес": "/ mo"
+  "/мес": "/mo"
+  04 · ИТОГИ И ПАМЯТЬ: 04 · RECAP & MEMORY
+  05 · СМЕНА КАНАЛА: 05 · CHANNEL SWITCH
+  06 · ОРГАНИЗАЦИЯ: 06 · ORGANIZATION
+  07 · НАРЕЗКИ: 07 · CLIPS
+  12 АКТИВНЫХ ПРЕДЛОЖЕНИЙ: 12 ACTIVE OFFERS
+  12 каналов: 12 channels
+  120 ч: 120 h
+  14 ч 20 мин: 14 h 20 min
+  18 каналов: 18 channels
+  19:23 · ПРОМОКОД: 19:23 · PROMO CODE
+  210 ч: 210 h
+  21:14 · СМЕНА ИГРЫ: 21:14 · GAME SWITCH
+  21:14 — сменил игру: 21:14 — switched games
+  3 новых канала: 3 new channels
+  38 ч: 38 h
+  41 ч: 41 h
+  42 КАНАЛА: 42 CHANNELS
+  47 человек в чате подхватили промокод: 47 people in chat picked up the promo code
+  5 000 онлайн: 5,000 online
+  ? 5 000 смотрят, а пишут 100 разных аккаунтов — повод присмотреться. Считаем уникальных
+    авторов чата.
+  : 5,000 watching but only 100 distinct accounts posting — worth a closer look. We
+    count unique chat authors.
+  54 ч: 54 h
+  6 МОМЕНТОВ: 6 MOMENTS
+  64 ч: 64 h
+  7 СИГНАЛОВ ПРОВЕРКИ — ПОЧЕМУ ОЦЕНКА ТАКАЯ: 7 VERIFICATION SIGNALS — WHY THE SCORE
+    IS WHAT IT IS
+  7 каналов: 7 channels
+  7–12 стримеров: 7–12 streamers
+  84% — живая аудитория: 84% — real audience
+  86 ч: 86 h
+  96 ч: 96 h
+  "@progamer_ru · базовый профиль": "@progamer_ru · basic profile"
+  A и выше: A and above
+  AI-ПЕРЕСКАЗ НЕДЕЛИ: AI WEEKLY RECAP
+  API и выгрузки данных: API & data exports
+  'BAA-связь: что сработало в эфире': 'BAA link: what worked on stream'
+  BUSINESS · АГЕНТСТВАМ: BUSINESS · FOR AGENCIES
+  Counter-Strike 2 · плей-офф: Counter-Strike 2 · playoffs
+  ESL_RU вышел в эфир — Counter-Strike 2, плей-офф.: ESL_RU just went live — Counter-Strike
+    2, playoffs.
+  HIMRATE BOT · СЕЙЧАС: HIMRATE BOT · NOW
+  Hades II · ранний доступ: Hades II · early access
+  Highlights — главное за эфир: Highlights — the best of the stream
+  ? HimRate показывает, кто из зрителей настоящий, куда они уходят и как слова стримера
+    влияют на их действия.
+  : HimRate shows which viewers are real, where they go, and how a streamer's words
+    shape what they do.
+  ? HimRate сам подмечает закономерности в просмотрах и напоминает, с чего всё начиналось.
+  : HimRate spots patterns in your viewing on its own and reminds you how it all started.
+  MANAGED · ПОД КЛЮЧ: MANAGED · TURNKEY
+  Managed — под ключ: Managed — turnkey
+  Moodbot HimRate за минуту: HimRate Moodbot in a minute
+  PRO · ПОПУЛЯРНЫЙ: PRO · POPULAR
+  PUBG · 2 ч в эфире: PUBG · 2 h live
+  TELEGRAM-АЛЕРТ: TELEGRAM ALERT
+  ? Twitch не отдаёт тебе твою собственную статистику просмотров. Мы собираем её и
+    показываем только тебе.
+  : Twitch won't give you your own watch history. We collect it and show it to you
+    alone.
+  Twitch не покажет тебе этого: Twitch won't show you this
+  ? Twitch покажет онлайн и графики. Но не покажет, куда утекают твои зрители между
+    стримами, с кем делят внимание сейчас и после чего ты их потерял. Мы — да.
+  : Twitch shows viewer count and charts. But not where your viewers drain off to
+    between streams, who they split attention with right now, or what made you lose
+    them. We do.
+  ? Twitch показывает графики и онлайн. Мы — куда уходят зрители, когда и после чего
+    вы их теряете. Базовое подключение бесплатно.
+  : Twitch shows charts and viewer count. We show where viewers go, when, and what
+    makes you lose them.
+  ? 'Twitch показывает плоскую цифру: «столько-то зрителей пересеклись с таким-то
+    каналом». Без времени, только по твоему каналу, без причины. Мы следим за твоими
+    залогиненными зрителями, которые пишут в чат — и знаем, куда и когда они утекают,
+    с кем делят внимание прямо сейчас и в какой момент стрима ты их потерял.'
+  : 'Twitch shows a flat number: “this many viewers overlapped with that channel.”
+    No timing, only your channel, no cause. We track your logged-in viewers who post
+    in chat — and know where and when they drain off, who they split attention with
+    right now, and the exact moment of the stream you lost them.'
+  Twitch показывает твой онлайн.: Twitch shows your viewer count.
+  Twitch — активна: Twitch — active
+  Twitch — полностью сейчас. Kick, YouTube Live, VK Play — в работе.: Twitch — fully
+    live now. Kick, YouTube Live, VK Play — in progress.
+  Watchlists любимых каналов: Watchlists of favorite channels
+  this boss again… чистая боль: this boss again… pure pain
+  "© 2026 HimRate · Аналитика Twitch": "© 2026 HimRate · Twitch analytics"
+  ? "«+47 регистраций в 19:23 — стример назвал промокод». И отличаем это от пентакилла
+    в игре в ту же минуту."
+  : "“+47 sign-ups at 19:23 — the streamer named the promo code.” And we tell that
+    apart from a pentakill in-game the same minute."
+  "«Вышла моя игра»": "“My game is out”"
+  "«Досмотрел 10 минут» — да или нет": "“Watched 10 minutes” — yes or no"
+  "«Кто хочет — промокод BRAND10 даёт бонус»": "“If you want it — promo code BRAND10
+    gives a bonus”"
+  "«спасибо, что вы со мной — лучшее комьюнити»": "“thank you for being here — best
+    community”"
+  "«стоп-стоп, это что, дата выхода? наконец-то»": "“wait wait, is that a release
+    date? finally”"
+  "«тут всё решает тайминг, а не скилл»": "“it's all about timing here, not skill”"
+  "«я не верю — он вынес всю команду один!»": "“no way — he wiped the whole team solo!”"
+  А Twitch показывает только «12+». Мы считаем точно — до месяца.: Twitch only shows
+    “12+”. We count exactly — down to the month.
+  АВТО-ИНСАЙТ НЕДЕЛИ: AUTO-INSIGHT OF THE WEEK
+  АВТОПОСТ: AUTOPOST
+  АВТО‑КЛИПЫ: AUTO-CLIPS
+  АКТИВНОСТЬ: ACTIVITY
+  АКТИВНОСТЬ ЧАТА: CHAT ACTIVITY
+  АУДИТОРИЯ РЕАЛЬНАЯ · 84%: REAL AUDIENCE · 84%
+  Авто-подстановка твоих данных → готовый PDF: Auto-fills your data → ready PDF
+  Автопостинг в Telegram и YouTube: Auto-posting to Telegram and YouTube
+  Авто‑нарезки и транскрипция стримов: Auto-clips and stream transcription
+  Аккаунты сразу в куче каналов: Accounts active across many channels at once
+  ? Алгоритм сравнивает все твои сессии и находит привычки, которые ты сам не замечаешь.
+  : The algorithm compares all your sessions and finds habits you don't notice yourself.
+  Аномалия онлайна: Viewer anomaly
+  ? Анонимные клики дают накрутке маскировку. Смотрим, какая доля онлайна — залогиненные
+    аккаунты.
+  : Anonymous clicks give inflation cover. We look at what share of the viewer count
+    are logged-in accounts.
+  Атака: Attack
+  Аудитория не заперта у одного топа: The audience isn't locked to one top streamer
+  Аудитория реальная: Real audience
+  Аудитория реальная · 84%: Real audience · 84%
+  БИРЖА · ПОИСК ПО ЦИФРАМ: MARKETPLACE · SEARCH BY NUMBERS
+  БИРЖА · СДЕЛКИ С БРЕНДАМИ: MARKETPLACE · BRAND DEALS
+  БРЕНД: BRAND
+  БРЕНДАМ: FOR BRANDS
+  БРЕНДАМ — ПО МАСШТАБУ: FOR BRANDS — BY SCALE
+  БРЕНДУ: FOR THE BRAND
+  БЮДЖЕТ: BUDGET
+  Базовая оценка реальных зрителей: Basic real-viewer estimate
+  Базовое подключение канала: Basic channel connection
+  Базовое — бесплатно. Платишь за глубину.: Basics are free. You pay for depth.
+  ? 'Базовые метрики работают всегда и без оплаты. Подписка открывает глубину: куда
+    уходит аудитория, почему уходит и что с этим делать.'
+  : 'Basic metrics always work, free. A subscription unlocks depth: where the audience
+    goes, why it leaves, and what to do about it.'
+  Базовый доступ: Basic access
+  Базы аккаунтов: Account databases
+  Базы известных аккаунтов: Databases of known accounts
+  Без аккаунта: No account
+  Без аккаунта и без карты.: No account, no card.
+  Без срока: No time limit
+  Безопасно для стримера? Не словлю бан Twitch?: Is it safe for the streamer? Will
+    I get a Twitch ban?
+  Безупречная: Flawless
+  ? Берём число в счётчике Twitch и показываем, сколько из этих зрителей — живые люди,
+    а не боты, накрутка и брошенные вкладки.
+  : We take the Twitch viewer count and show how many of them are real people — not
+    bots, inflation, or abandoned tabs.
+  Бесплатно: Free
+  ? 'Бесплатно: подключаешь канал через мод-бота или вход в Twitch — и видишь то,
+    чего Twitch не показывает: куда уходит твоя аудитория, в какой момент стрима ты
+    её теряешь, в какую игру играть, чтобы расти. Биржа сделок с брендами.'
+  : 'Free: connect your channel via the mod-bot or Twitch login — and see what Twitch
+    hides: where your audience goes, the moment of the stream you lose it, which game
+    to play to grow. Plus a marketplace for brand deals.'
+  ? Бесплатное расширение Chrome. Рядом с любой трансляцией — сколько из зрителей
+    живые люди. И собираем твою историю просмотров, которую сам Twitch тебе не показывает.
+  : A free Chrome extension. Next to any stream — how many viewers are real people.
+    And we collect your watch history, which Twitch itself won't show you.
+  ? 'Бесплатное расширение для Chrome: видишь, сколько живых людей реально смотрит
+    любой канал, и свою собственную историю просмотров, которую Twitch тебе не показывает.'
+  : 'A free Chrome extension: see how many real people actually watch any channel,
+    plus your own watch history that Twitch hides from you.'
+  Биржа исполнителей: Creator marketplace
+  'Биржа сделок: бренды находят тебя по реальным цифрам': 'Deals marketplace: brands
+    find you by real numbers'
+  'Биржа: входящие офферы': 'Marketplace: incoming offers'
+  'Биржа: отклики и сделки': 'Marketplace: responses and deals'
+  Бот не имеет доступа к личным данным — только публичные метрики Twitch.: The bot
+    has no access to private data — only public Twitch metrics.
+  Брендам: For brands
+  ? Бренды на бирже видят это число, а не CCV. Поэтому к тебе приходят по делу.
+  : Brands on the marketplace see this number, not CCV. That's why they reach out
+    with real intent.
+  Бюджет: Budget
+  В КАБИНЕТЕ TWITCH: IN THE TWITCH DASHBOARD
+  В базах ботов: In bot databases
+  В кабинет →: To dashboard →
+  В какой момент и почему зрители ушли: When and why viewers left
+  В какую игру играть, чтобы тебя заметили: Which game to play to get noticed
+  В куче каналов сразу: Across many channels at once
+  ВИДЕО СТРИМЕРА: STREAMER VIDEO
+  ВОПРОСЫ И ОТВЕТЫ: Q&A
+  ВОСПОМИНАНИЕ · ГОД НАЗАД: MEMORY · A YEAR AGO
+  ВСПЛЕСК · 19:23: SPIKE · 19:23
+  ВЫБОР КАТЕГОРИИ: CATEGORY CHOICE
+  ВЫБРАТЬ: CHOOSE
+  Ведение нескольких клиентов: Managing multiple clients
+  Веса — в секрете: Weights are kept secret
+  Видим пишущую часть: We see the posting share
+  ? Видим путь активной, пишущей части аудитории — обычно это около трети онлайна.
+    Молчаливых и анонимных зрителей Twitch не позволяет отследить никому, и мы честно
+    это говорим.
+  : We see the path of the active, posting share of the audience — usually about a
+    third of the viewer count. Twitch lets no one track silent or anonymous viewers,
+    and we say so honestly.
+  Видим путь активной, пишущей части — около трети онлайна.: We see the path of the
+    active, posting share — about a third of the viewer count.
+  Видите причину: You see the cause
+  Видишь то, чего Twitch не показывает: See what Twitch hides
+  Возраст аккаунтов: Account age
+  Войти: Log in
+  Войти через Twitch: Log in with Twitch
+  Вот этот клатч один в четыре — нарезку точно сделаем: That 1-v-4 clutch — we're
+    definitely clipping it
+  Вс: Sun
+  Все 21 стример по вашим фильтрам: All 21 streamers matching your filters
+  Все возможности: All features
+  Все площадки стримера в одном месте: All a streamer's platforms in one place
+  Все сделки и отклики — в личном кабинете: All deals and responses — in your dashboard
+  Все тарифы и опции →: All plans and options →
+  Всплеск по промокоду BRAND10: Spike from promo code BRAND10
+  Всё из Business: Everything in Business
+  Всё из Enterprise: Everything in Enterprise
+  Всё из Pro: Everything in Pro
+  Всё из Starter: Everything in Starter
+  Вт: Tue
+  Вход через Twitch: Log in with Twitch
+  'Входящие заявки по площадкам: YouTube · Telegram · VK · Twitch': 'Incoming requests
+    by platform: YouTube · Telegram · VK · Twitch'
+  Выделенный аналитик: Dedicated analyst
+  Выделенный менеджер: Dedicated manager
+  ? Вырасти с 10 до 100 зрителей онлайн — выбирай категорию, а не надейся на удачу
+  : Grow from 10 to 100 live viewers — pick the category, don't rely on luck
+  Вышла Hades II — а Northernlion уже запустил стрим. Заглянуть?: Hades II is out
+    — and Northernlion already went live. Take a look?
+  ГЛАВНОЕ: KEY POINT
+  ГЛАВНОЕ · ДВИЖЕНИЕ АУДИТОРИИ: KEY · AUDIENCE MOVEMENT
+  ГЛУБЖЕ: DEEPER
+  ГОТОВ НАЧАТЬ?: READY TO START?
+  Где в эфире зашло, где провалилось — настроение чата: Where the stream landed, where
+    it flopped — chat mood
+  Глубокая аналитика: Deep analytics
+  Глубокая аналитика канала: Deep channel analytics
+  ? Год назад ты впервые открыл канал «xQc» и досмотрел 47 минут подряд. Сегодня он
+    в твоём топ-5.
+  : A year ago you first opened “xQc” and watched 47 minutes straight. Today he's
+    in your top 5.
+  Готов увидеть, куда уходит: Ready to see where they go
+  Готовые нарезки лучших моментов: Ready clips of the best moments
+  Готовые шаблоны договоров: Ready contract templates
+  Грузите конверсии: Upload your conversions
+  ДВА СПОСОБА: TWO WAYS
+  ДЛЯ БРЕНДОВ: FOR BRANDS
+  ДЛЯ БРЕНДОВ И АГЕНТСТВ: FOR BRANDS AND AGENCIES
+  ДЛЯ ЗРИТЕЛЕЙ: FOR VIEWERS
+  ДЛЯ ЗРИТЕЛЕЙ · БЕСПЛАТНО: FOR VIEWERS · FREE
+  ДЛЯ СТРИМЕРОВ: FOR STREAMERS
+  ДОВЕРИЕ: TRUST
+  ДОКУМЕНТЫ: DOCUMENTS
+  ДОСТУПНОСТЬ: AVAILABILITY
+  Да, в любой момент. Доступ остаётся до конца оплаченного периода.: Yes, anytime.
+    Access stays until the end of the paid period.
+  Движение аудитории между каналами: Audience movement between channels
+  Девайсы · обзор + промокод: Devices · review + promo code
+  Делят внимание с тобой прямо сейчас — или это следующая остановка: Splitting attention
+    with you right now — or your next stop
+  Десктоп: Desktop
+  Динамика аудитории во времени: Audience dynamics over time
+  Для агентств: For agencies
+  Для агентств и медиабаеров.: For agencies and media buyers.
+  Для зрителей и на старте.: For viewers and getting started.
+  ? Для любого канала, прямо в Twitch, в реальном времени. Нейтральная оценка — без
+    ярлыков.
+  : For any channel, right in Twitch, in real time. A neutral estimate — no labels.
+  До 3 пользователей: Up to 3 users
+  ? 'Добавь мод‑бота одной командой или войди через Twitch. Важно: бот нужен только
+    для автопостинга — оценку зрителей, репутацию и движение аудитории мы считаем
+    из публичных данных, без доступа к каналу.'
+  : 'Add the mod-bot with one command or log in with Twitch. Note: the bot is only
+    needed for auto-posting — viewer estimates, reputation, and audience movement
+    we compute from public data, with no channel access.'
+  Документы: Documents
+  Доля залогиненных: Share of logged-in
+  Доля залогиненных зрителей: Share of logged-in viewers
+  Доступ к Бирже: Marketplace access
+  Доступ к бирже интеграций: Access to the integrations marketplace
+  Доступ к бирже стримеров: Access to the streamer marketplace
+  Душевный момент с чатом: A heartfelt moment with chat
+  Если вы рекламируетесь у стримеров — это для вас: If you advertise with streamers
+    — this is for you
+  Если коротко — мы детектор честности для Twitch: In short — we're an honesty detector
+    for Twitch
+  Есть trial-ловушки?: Are there trial traps?
+  Ещё 18 стримеров и вся биржа — в вашем кабинете: 18 more streamers and the full
+    marketplace — in your dashboard
+  Живая аудитория любого канала. Без аккаунта и без карты.: The real audience of any
+    channel. No account, no card.
+  Живой · 3 400/мин: Live · 3,400/min
+  ЗА ГОД: PER YEAR
+  ЗА МЕСЯЦ: PER MONTH
+  ЗА НЕДЕЛЮ: PER WEEK
+  ЗАПРОСИТЬ ДЕМО: REQUEST A DEMO
+  ЗРИТЕЛЕЙ ИЩУТ: VIEWERS WANTED
+  ЗРИТЕЛЬ: VIEWER
+  ЗРИТЕЛЯМ: FOR VIEWERS
+  За 2 часа после эфира 595 зрителей разошлись по другим каналам.: Within 2 hours
+    after the stream, 595 viewers scattered to other channels.
+  ? За неделю — 14 ч 20 мин. Больше всего шутеры (42%). Открыл 3 новых канала, один
+    сразу попал в избранное.
+  : This week — 14 h 20 min. Mostly shooters (42%). Opened 3 new channels, one went
+    straight to favorites.
+  ? Завышали бы — стримеры завалили бы нас спорами. Право оспорить = доказательство
+    честности.
+  : If we inflated, streamers would bury us in disputes. The right to dispute = proof
+    of honesty.
+  ? Загрузи свои регистрации, депозиты или промокоды — покажем, какие фразы и действия
+    стримера в какой момент реально дали результат. Плюс независимая проверка стримеров
+    и биржа.
+  : Upload your sign-ups, deposits, or promo codes — we'll show which streamer phrases
+    and actions, at which moment, actually drove results. Plus independent streamer
+    verification and the marketplace.
+  Залогиненные: Logged-in
+  Значительная аномалия: Significant anomaly
+  Зрители распределены: Viewers are spread out
+  Зрителям: For viewers
+  Зрителям и стримерам: For viewers and streamers
+  ИГРАЕТ: PLAYING
+  ИГРЫ / КАТЕГОРИИ: GAMES / CATEGORIES
+  ИИ находит пики чата и всплески эмоций: AI finds chat peaks and emotion spikes
+  ИЛИ: OR
+  ИНДИВИДУАЛЬНЫЙ ОБЪЁМ: CUSTOM VOLUME
+  ИСТОРИЯ + ГЛУБИНА — ПЛАТНО: HISTORY + DEPTH — PAID
+  Игровые события: In-game events
+  Игровые события в таймлайне: In-game events on the timeline
+  Игры · спонсорский стрим: Games · sponsored stream
+  Из 4 200 живых за вечер ушли 595 — и видно, к кому именно.: Of 4,200 real viewers
+    that evening, 595 left — and you can see exactly where to.
+  Из публичных данных: From public data
+  Изменчивая: Volatile
+  Измерение результата (BAA): Result measurement (BAA)
+  Измерение результата · BAA: Result measurement · BAA
+  Измерение результата кампании: Campaign result measurement
+  Имя: Name
+  Интеграция в эфире: In-stream integration
+  Историю баллов и рейдов теряет через неделю: Loses score and raid history after
+    a week
+  История за любой период: History for any period
+  История канала за любой период: Channel history for any period
+  История метрик за любой период: Metric history for any period
+  История по кампаниям: Campaign history
+  Итоги и воспоминания: Recaps and memories
+  К БИРЖЕ: TO THE MARKETPLACE
+  К МОМЕНТУ: TO THE MOMENT
+  КАНАЛ: CHANNEL
+  КАНАЛ ЗАЯВЛЯЕТ: THE CHANNEL CLAIMS
+  КАТЕГОРИЯ: CATEGORY
+  КОГДА ТЫ СМОТРИШЬ: WHEN YOU WATCH
+  КОМПАНИЯ: COMPANY
+  КОМУ ЭТО ПОДОЙДЁТ — ТРИ АУДИТОРИИ: WHO IT'S FOR — THREE AUDIENCES
+  КОНКУРЕНТ · ТОТ ЖЕ МОМЕНТ: COMPETITOR · SAME MOMENT
+  КОНТАКТЫ: CONTACTS
+  КОНТЕНТ ИЗ СТРИМА: CONTENT FROM THE STREAM
+  КРИТЕРИЙ 01: CRITERION 01
+  КРИТЕРИЙ 02: CRITERION 02
+  КРИТЕРИЙ 03: CRITERION 03
+  Казино · Twitch: Casino · Twitch
+  Как канал держится от стрима к стриму.: How the channel holds up stream to stream.
+  Как мы измеряем результат стрима →: How we measure stream results →
+  Как мы считаем: How we count
+  Как мы считаем реальную аудиторию. Не чёрный ящик.: How we count the real audience.
+    Not a black box.
+  Как пишут: How they post
+  Как пишут пишущие: How the posters post
+  Как считаем → Методология: How we count → Methodology
+  Как читать оценку: How to read the score
+  Как это работает: How it works
+  Как это работает ↓: How it works ↓
+  Как эфир приводит клиентов: How a stream brings in customers
+  Какая фраза стримера и в какой момент привела вам клиентов: Which streamer phrase,
+    and at which moment, brought you customers
+  Какие платформы?: Which platforms?
+  Какой стример реально дал результат: Which streamer actually delivered results
+  Кампании под ключ: Turnkey campaigns
+  Категория набирает обороты в Steam прямо сейчас: The category is gaining traction
+    on Steam right now
+  Кибатлы: Esports battles
+  Клатч 1 в 4 на последних секундах: 1-v-4 clutch in the final seconds
+  Клатч 1×4: 1×4 clutch
+  ? Клик по таймкоду — и ты сразу на нужной секунде. Мотать весь стрим не придётся.
+  : Click a timecode — and you're at the exact second. No need to scrub the whole
+    stream.
+  ? Когда на канал приходит волна зрителей с другого стрима — покажем, реальная это
+    аудитория или скоординированная накрутка.
+  : When a wave of viewers arrives from another stream — we show whether it's a real
+    audience or coordinated inflation.
+  Команда в чате стрима: A team in stream chat
+  Команда и несколько брендов: A team and several brands
+  Компания: Company
+  Контакт напрямую и бесплатный отчёт стримеру: Direct contact and a free report for
+    the streamer
+  ? 'Контакт стримера — напрямую, без менеджеров. При отклике стример получает бесплатный
+    отчёт: реальные зрители, надёжность и последние 10 стримов.'
+  : 'Contact the streamer directly, no managers. On response, the streamer gets a
+    free report: real viewers, reliability, and the last 10 streams.'
+  Коротко о главном — без мелкого шрифта.: The essentials — no fine print.
+  ? Кто возвращается каждый стрим — и кто растворяется после одного захода
+  : Who comes back every stream — and who vanishes after one visit
+  Кто пишет vs молчит: Who posts vs stays silent
+  Кто пишет в чат: Who posts in chat
+  Кто пишет в чат, а кто молчит: Who posts in chat and who stays silent
+  Кто пишет, а кто молчит: Who posts and who stays silent
+  Куда и когда утекает аудитория — по часам, с причиной: Where and when the audience
+    drains off — by the hour, with a cause
+  Куда пойти, когда любимый офлайн: Where to go when your favorite is offline
+  Куда утекает аудитория: Where the audience drains off
+  ? Куда уходит аудитория в первые часы после эфира — распределением, а не топ-листом
+  : Where the audience goes in the first hours after the stream — as a distribution,
+    not a top list
+  Куда уходит аудитория и почему ушли: Where the audience goes and why it left
+  Куда уходит и приходит аудитория: Where the audience goes and comes from
+  Куда уходит твоя аудитория: Where your audience goes
+  ЛЕНТА СООБЩЕНИЙ: MESSAGE FEED
+  ЛИЧНЫЙ КАБИНЕТ · ВСЯ БИРЖА: DASHBOARD · FULL MARKETPLACE
+  ЛУЧШИЕ МОМЕНТЫ · СТРИМ 3 Ч 12 МИН: BEST MOMENTS · STREAM 3 H 12 MIN
+  Личная история просмотров: Personal watch history
+  Лучшие моменты без пересмотра: Best moments without re-watching
+  Лучшие моменты и нарезки: Best moments and clips
+  Лучшие моменты → вертикальные нарезки: Best moments → vertical clips
+  ? Любимый стример закончил — а смотреть хочется. Наведи на любой канал и получи
+    живую сводку, не заходя внутрь.
+  : Your favorite streamer wrapped up — but you still want to watch. Hover over any
+    channel and get a live summary without going in.
+  ? Любимый стример редко включает игру, которая тебе нравится. Подпишись на кастомный
+    алерт — пришлём в Telegram, как только он запустит именно её, и только то, что
+    тебе правда интересно.
+  : Your favorite streamer rarely plays the game you like. Subscribe to a custom alert
+    — we'll ping you on Telegram the moment they launch it, and only what truly interests
+    you.
+  ? 'Любой может найти корреляцию. Мы доказываем, что связь реальна: сдвинь время
+    события на 3 минуты — и корреляция пропадает. Если не пропадает — мы не выдаём
+    это за результат.'
+  : 'Anyone can find a correlation. We prove the link is real: shift the event time
+    by 3 minutes — and the correlation disappears. If it doesn''t, we won''t pass
+    it off as a result.'
+  МЕДИА-КАРТИНА · ПУБЛИЧНЫЕ ДАННЫЕ: MEDIA PICTURE · PUBLIC DATA
+  МЕТКИ РЕАЛЬНОГО ОНЛАЙНА: REAL-VIEWER MARKERS
+  МЕТОДОЛОГИЯ: METHODOLOGY
+  МЕТОДОЛОГИЯ И ЦЕНЫ: METHODOLOGY & PRICING
+  МИН. РЕАЛЬНЫХ ЗРИТЕЛЕЙ: MIN. REAL VIEWERS
+  МОМЕНТ: MOMENT
+  Масштаб, интеграции, команда.: Scale, integrations, team.
+  ? Менеджер стримера покажет красивые цифры. Мы считаем реальную живую аудиторию
+    из публичных данных — независимо от стримера. А после кампании показываем, какая
+    фраза и в какой момент дала результат.
+  : A streamer's manager will show you pretty numbers. We count the real live audience
+    from public data — independent of the streamer. And after the campaign, we show
+    which phrase, at which moment, drove the result.
+  Методология: Methodology
+  Мод‑бот делает только это: The mod-bot does only this
+  Можно оспорить: Can be disputed
+  Можно отменить?: Can I cancel?
+  Музыка: Music
+  Музыка для работы: Music to work to
+  Мультиканальность: Multi-channel
+  Мы ведём кампании за вас.: We run campaigns for you.
+  Мы ведём кампанию целиком — стратегия, подбор стримеров и отчётность.: We run the
+    whole campaign — strategy, streamer selection, and reporting.
+  Мы видим, куда и когда утекает твоя аудитория: We see where and when your audience
+    drains off
+  Мы видим, куда уходит твоя аудитория — и почему: We see where your audience goes
+    — and why
+  Мы не заменяем кабинет Twitch — достраиваем то, чего в нём нет.: We don't replace
+    the Twitch dashboard — we build out what's missing from it.
+  Мы реально перепроверяем: We genuinely re-check
+  Мы — кто эти люди: Us — who these people are
+  НА ЧЁМ ПОСТРОЕНА ОЦЕНКА: WHAT THE SCORE IS BUILT ON
+  НАВЕДИ НА СТРИМ → СВОДКА: HOVER A STREAM → SUMMARY
+  НАДЁЖНОСТЬ: RELIABILITY
+  НАДЁЖНОСТЬ КАНАЛА · ОКНО 30 СТРИМОВ: CHANNEL RELIABILITY · 30-STREAM WINDOW
+  НАЙДЕНО · 21 СТРИМЕР: FOUND · 21 STREAMERS
+  НАЧАТЬ: START
+  НАША ЧЕСТНОСТЬ: OUR HONESTY
+  НОВИНКА ↑: NEW ↑
+  НОВЫЙ СПИСОК: NEW LIST
+  На каждом канале — свои теги и личные заметки.: Each channel gets its own tags and
+    private notes.
+  На профиле плашка «на пересмотре»: A “under review” badge on the profile
+  ? На странице методологии показано, как мы считаем реальную аудиторию. Точные веса
+    держим в секрете, чтобы не скопировали. Не чёрный ящик.
+  : The methodology page shows how we count the real audience. We keep exact weights
+    secret so they aren't copied. Not a black box.
+  ? 'На таймлайне — точки оттока и что было: сменил игру, встал, подключился конкурент,
+    реклама. Причину знаем, потому что видим, куда чат-зрители ушли писать.'
+  : 'On the timeline — drop-off points and what happened: switched games, stepped
+    away, a competitor went live, an ad. We know the cause because we see where chat
+    viewers went to post.'
+  На чём построена оценка реальности: What the reality score is built on
+  Нажимая «Отправить», вы соглашаетесь с политикой конфиденциальности.: By clicking
+    “Send”, you agree to the privacy policy.
+  Найдите стримеров по реальным цифрам — и свяжитесь напрямую: Find streamers by real
+    numbers — and reach out directly
+  Нарезки: Clips
+  Начать: Start
+  Начать бесплатно: Start free
+  ? 'Не дублируем твой кабинет Twitch. Показываем то, чего в нём нет: сколько из твоего
+    онлайна — живые люди и куда уходит твоя аудитория между стримами.'
+  : 'We don''t duplicate your Twitch dashboard. We show what''s not in it: how many
+    of your viewers are real people and where your audience goes between streams.'
+  Не из кабинета стримера: Not from the streamer's dashboard
+  ? Не нужно заходить в каждый стрим. Наведи курсор — и сразу видно, стоит ли переходить.
+  : No need to open every stream. Hover — and you instantly see whether it's worth
+    switching.
+  ? Не нужно отсматривать трёхчасовой стрим. Нарезка с таймкодами и краткой расшифровкой
+    — клик переносит сразу к моменту.
+  : No need to watch a three-hour stream. A clip with timecodes and a short transcript
+    — one click takes you to the moment.
+  Не переплачивайте: Don't overpay
+  Не согласен с оценкой — оспорь: Disagree with the score — dispute it
+  ? 'Не топ‑игры — там тебя не увидят за тысячами стримеров. Ищи категории, где зрители
+    хотят зрелища, но вещают единицы: новинка набирает обороты в Steam, в категории
+    всего 7–12 стримеров, а аудитория распределена между ними.'
+  : 'Not the top games — there you''ll be lost behind thousands of streamers. Look
+    for categories where viewers want a show but few broadcast: a new release gaining
+    traction on Steam, only 7–12 streamers in the category, and the audience spread
+    among them.'
+  ? Не „промокод дал 200 регистраций“, а в какой момент и после какой фразы.
+  : Not “the promo code gave 200 sign-ups,” but at which moment and after which phrase.
+  Независимая проверка: Independent verification
+  Независимая проверка стримеров: Independent streamer verification
+  Нейтральные формулировки, без ярлыков.: Neutral wording, no labels.
+  Нестабильная: Unstable
+  Нет. Бесплатное — бессрочно, без автосписания и скрытых продлений.: No. The free
+    tier is permanent — no auto-charges, no hidden renewals.
+  ? Нет. Работаем через публичные данные Twitch, на стороне зрителя. Никаких санкций.
+  : No. We work through public Twitch data, on the viewer's side. No penalties.
+  Низкая конкуренция — тебя реально видно: Low competition — you're actually visible
+  ? Никаких авто-списаний и ловушек пробного периода. Платишь за глубину, а не за
+    доступ.
+  : No auto-charges, no trial traps. You pay for depth, not for access.
+  Новинка растёт: A new release is rising
+  Нужен индивидуальный объём? Поговорим.: Need custom volume? Let's talk.
+  ОБСУДИТЬ: DISCUSS
+  ОДИН ДВИЖОК · ТРИ АУДИТОРИИ: ONE ENGINE · THREE AUDIENCES
+  ОДИН ДВИЖОК — ТРИ ОТВЕТА: ONE ENGINE — THREE ANSWERS
+  ОНЛАЙН — БЕСПЛАТНО ВСЕМ: VIEWER COUNT — FREE FOR ALL
+  ОПЛАТА И ДОСТУП: BILLING & ACCESS
+  ОТКРЫТАЯ МЕТОДОЛОГИЯ · НЕ ЧЁРНЫЙ ЯЩИК: OPEN METHODOLOGY · NOT A BLACK BOX
+  ОТКРЫТЫЕ МЕТРИКИ: OPEN METRICS
+  ОТПРАВИТЬ: SEND
+  ОЦЕНКА РЕАЛЬНОЙ АУДИТОРИИ: REAL-AUDIENCE ESTIMATE
+  Общение: Chatting
+  Общение · Q&A: Chatting · Q&A
+  Общение · Q&amp;A: Chatting · Q&A
+  Общий онлайн — одно число: Total viewer count — a single number
+  Объяснил сложную механику просто: Explained a complex mechanic simply
+  'Объясняю билд: берём криты и скорость атаки, остальное мусор': 'Explaining the
+    build: we take crit and attack speed, the rest is junk'
+  ? 'Один движок — три ответа: куда утекают твои зрители, почему ушли в этот момент
+    и как реклама в эфире приводит клиентов.'
+  : 'One engine — three answers: where your viewers drain off, why they left at that
+    moment, and how in-stream ads bring in customers.'
+  Один принцип для всего продукта: One principle for the whole product
+  Одновременно vs последовательно: Simultaneously vs sequentially
+  ? Около трети онлайна. Молчаливых и анонимных Twitch не даёт отследить никому.
+  : About a third of the viewer count. Twitch lets no one track silent or anonymous
+    viewers.
+  ? Они показывают вчерашнюю статистику. Мы работаем в реальном времени, отличаем
+    живой чат от подозрительного онлайна и показываем движение аудитории между каналами
+    во времени.
+  : They show yesterday's stats. We work in real time, tell live chat from suspicious
+    viewer counts, and show audience movement between channels over time.
+  ? Онлайн 500 → 2 000 за минуту, а число пишущих не изменилось — инъекция «смотрящих,
+    но не живущих».
+  : Viewer count 500 → 2,000 in a minute while the number posting didn't change —
+    an injection of “watching but not living.”
+  ? 'Онлайн любого канала — бесплатно всем. Платишь только за глубокую аналитику и
+    биржу: понятные тарифы для зрителей, стримеров и брендов.'
+  : 'Any channel''s viewer count — free for everyone. You only pay for deep analytics
+    and the marketplace: clear plans for viewers, streamers, and brands.'
+  Онлайн сейчас + последние 18 часов: Viewer count now + the last 18 hours
+  ? Онлайн — бесплатно. Платишь за историю (дни/месяцы/годы), глубину (движение аудитории,
+    BAA) и биржу.
+  : Viewer count is free. You pay for history (days/months/years), depth (audience
+    movement, BAA), and the marketplace.
+  Опишите объём и задачи — вернёмся с расчётом и демо под вашу кампанию.: Describe
+    the volume and goals — we'll come back with a quote and a demo for your campaign.
+  Организуй любимые каналы: Organize your favorite channels
+  Органический: Organic
+  Органический или атака?: Organic or an attack?
+  Оспариваешь оценку: You dispute the score
+  Открытая методология: Open methodology
+  Открытая методология →: Open methodology →
+  Открытая методология, без чёрного ящика: Open methodology, no black box
+  Открыть биржу — ещё 9 предложений: Open the marketplace — 9 more offers
+  Открыть расширение: Open extension
+  Открыть сервис: Open the service
+  Открыть сервис →: Open the service →
+  Отметь каналы — и узнаешь первым, когда они начнут трансляцию.: Mark channels —
+    and be the first to know when they go live.
+  Отчёт при отклике: Report on response
+  Отчёты по стримерам: Streamer reports
+  Оценка реальных зрителей: Real-viewer estimate
+  ПЕРЕХОД К МОМЕНТУ: JUMP TO MOMENT
+  ПИЛОН 1 · НЕЗАВИСИМАЯ ПРОВЕРКА: PILLAR 1 · INDEPENDENT VERIFICATION
+  ПЛАТФОРМА: PLATFORM
+  ПЛАТФОРМЫ: PLATFORMS
+  ПО КАКИМ СИГНАЛАМ СЧИТАЕМ ЖИВЫХ: BY WHICH SIGNALS WE COUNT THE REAL ONES
+  ПОГОВОРИТЬ С НАМИ: TALK TO US
+  ПОГОВОРИТЬ С ПРОДАЖАМИ: TALK TO SALES
+  ПОДОБРАТЬ СТРИМЕРОВ: FIND STREAMERS
+  ПОДПИСКИ: SUBSCRIPTIONS
+  ПОДТВЕРЖДЕНО · НАДЁЖНОСТЬ A: VERIFIED · RELIABILITY A
+  ПОДХОДИШЬ: YOU MATCH
+  ПОПУЛЯРНЫЙ: POPULAR
+  ПОЧТИ: ALMOST
+  ПРИНЦИП ДОСТУПА: ACCESS PRINCIPLE
+  ПРОВЕРИТЬ СТРИМЕРА: CHECK A STREAMER
+  ПРОВЕРКА ПЕРЕД ОПЛАТОЙ: VERIFY BEFORE PAYING
+  ПРОДУКТ: PRODUCT
+  ПРОСТЫМИ СЛОВАМИ: IN PLAIN WORDS
+  ПРОСТЫМИ СЛОВАМИ — ДЛЯ БРЕНДА: IN PLAIN WORDS — FOR THE BRAND
+  ПРЯМО СЕЙЧАС: RIGHT NOW
+  ПУБЛИЧНЫЕ ДАННЫЕ: PUBLIC DATA
+  Плоский % пересечения, без времени: A flat overlap %, no timing
+  Пн: Mon
+  ? Подключение к бирже бесплатно. Бренды видят твою живую аудиторию и надёжность
+    — ты видишь бюджет и формат до отклика.
+  : Joining the marketplace is free. Brands see your real audience and reliability
+    — you see the budget and format before you respond.
+  Подключение канала: Channel connection
+  Подключение канала + автопостинг: Channel connection + auto-posting
+  Подключить аналитику: Connect analytics
+  Подключить канал: Connect a channel
+  Подключить канал — бесплатно: Connect a channel — free
+  Подключить свой канал: Connect your channel
+  Подключить свой канал — бесплатно: Connect your channel — free
+  Подключить свой канал →: Connect your channel →
+  Поиск по реальным цифрам: Search by real numbers
+  Поиск по тексту стрима: Search the stream transcript
+  ? Показывает рядом с любой трансляцией, сколько зрителей — живые люди, и собирает
+    твою историю просмотров, которую Twitch тебе не показывает.
+  : Shows next to any stream how many viewers are real people, and collects your watch
+    history that Twitch hides from you.
+  Полная картина аудитории в реальном времени.: The full audience picture in real
+    time.
+  Полный текст стрима — найди и процитируй любой момент: The full stream transcript
+    — find and quote any moment
+  Посмотреть что внутри ↓: See what's inside ↓
+  Поставь расширение —: Install the extension —
+  Почему зрители ушли — причины оттока: Why viewers left — the reasons for drop-off
+  Почему нашим цифрам можно верить: Why our numbers can be trusted
+  Почему уходят зрители: Why viewers leave
+  Почему ушли в этот момент: Why they left at that moment
+  Почему ушли именно в этот момент: Why they left at exactly that moment
+  Право на спор: Right to dispute
+  Право оспорить: Right to dispute
+  ? 'Привязываем всплеск к таймлайну эфира: что сказал стример, что было на экране,
+    что происходило в игре.'
+  : 'We tie the spike to the stream timeline: what the streamer said, what was on
+    screen, what was happening in-game.'
+  Привязываем отток к тому, что было на стриме в эту секунду: We tie the drop-off
+    to what was on stream that exact second
+  Приоритетный SLA: Priority SLA
+  'Причины:': 'Reasons:'
+  Проверить канал: Check a channel
+  Проверка и поиск под кампании.: Verification and search for campaigns.
+  Проверка на накрутку: Inflation check
+  Проверка, измерение и биржа.: Verification, measurement, and marketplace.
+  Проверьте стримера,: Check the streamer,
+  Прозрачность: Transparency
+  Прозрачные цены — без trial-ловушек: Transparent pricing — no trial traps
+  ? Промокод сказал «пришло 200 регистраций». Но в какой момент стрима? После какой
+    фразы? Из-за тебя или из-за пентакилла в игре? Загрузи свои данные — мы свяжем
+    каждый всплеск с тем, что стример сказал и сделал в эту секунду.
+  : The promo code said “200 sign-ups came in.” But at which moment of the stream?
+    After which phrase? Because of you, or a pentakill in-game? Upload your data —
+    we'll tie every spike to what the streamer said and did that exact second.
+  Прямо в Twitch — расширение для Chrome: Right in Twitch — a Chrome extension
+  Прямой контакт без посредников: Direct contact, no middlemen
+  Прямой контакт со стримером: Direct contact with the streamer
+  Пт: Fri
+  Публичные данные: Public data
+  РАСТЁТ ↑: RISING ↑
+  РЕАЛЬНАЯ АУДИТОРИЯ: REAL AUDIENCE
+  РЕАЛЬНОСТЬ АУДИТОРИИ: AUDIENCE REALITY
+  РЕАЛЬНЫЕ: REAL
+  РЕАЛЬНЫЕ ЗРИТЕЛИ: REAL VIEWERS
+  РЕАЛЬНЫХ ЗРИТЕЛЕЙ СЕЙЧАС: REAL VIEWERS NOW
+  РЕГИСТРАЦИИ · 19:00–20:00: SIGN-UPS · 19:00–20:00
+  РЕГИСТРАЦИИ ПО МИНУТАМ: SIGN-UPS BY MINUTE
+  РЕЙД: RAID
+  РЕКОМЕНДАЦИИ: RECOMMENDATIONS
+  РЕКОМЕНДУЕМ: RECOMMENDED
+  Работаем на твоей платформе: We work on your platform
+  Разброс 62%: Spread 62%
+  Размещаешь объявление — площадка, формат, цена: You post a listing — platform, format,
+    price
+  ? 'Распределение по часам после эфира, а не один список: кто делит внимание сейчас
+    vs уводит позже.'
+  : 'A distribution by the hour after the stream, not one list: who splits attention
+    now vs draws them away later.'
+  Растекание после эфира: Drain-off after the stream
+  Расширение Chrome: Chrome extension
+  ? 'Расширение Chrome + кабинет аналитики для Twitch. Показываем то, чего Twitch
+    не показывает: сколько живых людей реально смотрит и куда уходит аудитория.'
+  : 'A Chrome extension + an analytics dashboard for Twitch. We show what Twitch doesn''t:
+    how many real people actually watch and where the audience goes.'
+  ? Расширение Chrome, метрики онлайна любого канала и базовое подключение канала
+    стримеру.
+  : A Chrome extension, viewer-count metrics for any channel, and basic channel connection
+    for the streamer.
+  ? Расширение ставится за 30 секунд — без регистрации. Подключение канала — после
+    входа через Twitch. Бренды — отдельный путь.
+  : The extension installs in 30 seconds — no sign-up. Channel connection comes after
+    logging in with Twitch. Brands follow a separate path.
+  ? Расширение — бесплатно навсегда. Стримеру базовое подключение — бесплатно. Глубокая
+    аналитика — от $9.99/мес. Бренду — от $299/мес.
+  : The extension is free forever. Basic channel connection for streamers is free.
+    Deep analytics — from $9.99/mo. For brands — from $299/mo.
+  Реакция: Reaction
+  Реакция на анонс Hades II: Reaction to the Hades II announcement
+  Реальная аудитория любого канала: The real audience of any channel
+  Реальные зрители против накрутки: Real viewers vs inflation
+  ? Регистрации, депозиты, активации промокодов. Мы работаем с хэшами событий — не
+    с персональными данными.
+  : Sign-ups, deposits, promo-code activations. We work with event hashes — not personal
+    data.
+  Регистрируешься: You sign up
+  Репутация и история канала: Channel reputation and history
+  Ретроспектива, движение аудитории и сделки — в Pro и на Бирже.: Retrospective, audience
+    movement, and deals — in Pro and on the Marketplace.
+  ? Ровные интервалы, шаблонные ответы, ноль канальных эмоутов у десятков аккаунтов
+    сразу — похоже на скрипты.
+  : Even intervals, templated replies, zero channel emotes across dozens of accounts
+    at once — looks like scripts.
+  Русский: Russian
+  С КАКОГО УСТРОЙСТВА: FROM WHICH DEVICE
+  С ТАЙМКОДАМИ: WITH TIMECODES
+  С начала игры прошло 15 минут, счёт 8:5 в пользу стримера: 15 minutes into the match,
+    score 8:5 in the streamer's favor
+  С учётом российской маркировки рекламы: Compliant with Russian ad-labeling rules
+  СВОДКА ЗА СЕКУНДУ: A SUMMARY IN A SECOND
+  СВЯЗАТЬСЯ: GET IN TOUCH
+  СЕЙЧАС В ЭФИРЕ: LIVE NOW
+  СЕМЬ ПРОВЕРОК: SEVEN CHECKS
+  СЛЕДУЮЩАЯ ОСТАНОВКА: NEXT STOP
+  СМЕНА КАТЕГОРИИ: CATEGORY SWITCH
+  СМОТРЯТ: WATCHING
+  СОРТИРОВКА: SORT
+  СПИСКИ · ДО 100 КАНАЛОВ: LISTS · UP TO 100 CHANNELS
+  СПОРНЫЙ СЛУЧАЙ: DISPUTED CASE
+  СТРИМЕР: STREAMER
+  СТРИМЕРАМ: FOR STREAMERS
+  СТРИМЕРОВ: STREAMERS
+  СТРИМЕРУ: FOR THE STREAMER
+  ? Сам по себе не приговор. Но пачка аккаунтов, созданных в один день и сразу набежавших,
+    — сигнал.
+  : Not a verdict on its own. But a batch of accounts created the same day and swarming
+    in at once — that's a signal.
+  Сб: Sat
+  Свободно: Available
+  ? Свои списки, теги и заметки. Сортируй по тому, что важно именно тебе — и не пропускай
+    выход в эфир.
+  : Your own lists, tags, and notes. Sort by what matters to you — and never miss
+    a go-live.
+  Связаться: Get in touch
+  Связаться с нами: Contact us
+  Связаться с продажами: Contact sales
+  Связываем со всплеском: We link it to the spike
+  Связь, не доказательство: A link, not proof
+  ? Сдвиньте время события на 3 минуты — корреляция должна пропасть. Не пропадает
+    — значит, мы не выдаём это за результат.
+  : Shift the event time by 3 minutes — the correlation should vanish. If it doesn't,
+    we won't pass it off as a result.
+  Серверы в Европе. Соответствие GDPR.: Servers in Europe. GDPR-compliant.
+  Сколько живых людей реально смотрит: How many real people actually watch
+  Сколько из него живых + кто эти люди: How many of them are real + who they are
+  Сколько из онлайна — реальные живые люди: How many of the viewer count are real
+    live people
+  Сколько на канале реальных зрителей — прямо сейчас: How many real viewers a channel
+    has — right now
+  Сколько у стримера реальных зрителей — независимо от него: How many real viewers
+    a streamer has — independent of them
+  Сколько угодно списков: As many lists as you want
+  Скопировать: Copy
+  ? Следим за твоими залогиненными зрителями, которые пишут в чат — знаем, куда и
+    когда они уходят и после чего.
+  : We track your logged-in viewers who post in chat — we know where and when they
+    leave, and after what.
+  Слоты · Twitch: Slots · Twitch
+  Сменил игру · PUBG → Just Chatting: Switched games · PUBG → Just Chatting
+  Сменил категорию → пост подписчикам: Switched category → post to subscribers
+  Смотришь Twitch? Это бесплатное дополнение для тебя: Watch Twitch? This free add-on
+    is for you
+  ? Собираем и обновляем публичные базы бот-аккаунтов и сверяем с ними чат канала.
+  : We collect and update public bot-account databases and cross-check the channel's
+    chat against them.
+  Совпадения с базами бот-аккаунтов: Matches against bot-account databases
+  Сообщение: Message
+  Ср: Wed
+  Сравнение по реальным зрителям и надёжности: Comparison by real viewers and reliability
+  Стабильная: Stable
+  Статистическая связь, а не лабораторный эксперимент.: A statistical link, not a
+    lab experiment.
+  Статистическая связь, не лабораторное доказательство.: A statistical link, not lab
+    proof.
+  ? Статистическая связь, не лабораторное доказательство. Мы говорим „всплеск на X%
+    в этот момент“, а не „продажи выросли из-за вас“.
+  : A statistical link, not lab proof. We say “a spike of X% at this moment,” not
+    “sales rose because of you.”
+  Стрим начался → пост в Telegram и YouTube: Stream started → post to Telegram and
+    YouTube
+  ? 'Стрим превращается в контент автоматически: полный текст с таймкодами и вертикальные
+    клипы лучших моментов — без ручного монтажа.'
+  : 'The stream turns into content automatically: a full transcript with timecodes
+    and vertical clips of the best moments — no manual editing.'
+  ? Стример может оспорить оценку → на профиле плашка «на пересмотре» → мы реально
+    перепроверяем. Завышали бы — нас завалили бы спорами.
+  : A streamer can dispute the score → a “under review” badge appears on the profile
+    → we genuinely re-check. If we inflated, we'd be buried in disputes.
+  ? Стример может оспорить цифру → на профиле плашка „на пересмотре“ → мы реально
+    перепроверяем. Завышали бы — нас завалили бы спорами.
+  : A streamer can dispute the number → a “under review” badge appears on the profile
+    → we genuinely re-check. If we inflated, we'd be buried in disputes.
+  Стримерам: For streamers
+  Считаем и без бота: We count even without the bot
+  ? Считаем из публичных данных Twitch, а не из кабинета стримера, который можно подкрасить
+    под отчёт.
+  : We count from public Twitch data, not from a streamer's dashboard that can be
+    touched up for a report.
+  ? Считаем из публичных данных Twitch, а не из кабинета стримера, который можно подкрасить.
+  : We count from public Twitch data, not from a streamer's dashboard that can be
+    touched up.
+  Считаем из публичных данных Twitch, а не из отчётов стримера.: We count from public
+    Twitch data, not from a streamer's reports.
+  Считаем по живым зрителям, а не по счётчику Twitch: We count by real viewers, not
+    by the Twitch counter
+  ? Считаем реальную живую аудиторию независимо от стримера и связываем ваши продажи
+    с конкретными моментами эфира.
+  : We count the real live audience independent of the streamer and tie your sales
+    to specific moments of the stream.
+  Счётчик прыгнул — а чат молчит: The counter jumped — but chat is silent
+  Счётчик ↔ чат: Counter ↔ chat
+  ТАРИФЫ: PLANS
+  ТАРИФЫ · ОПЛАТА ЗА РЕЗУЛЬТАТ: PLANS · PAY FOR RESULTS
+  ТВ / консоль: TV / console
+  ТВОЙ ПРОФИЛЬ НА БИРЖЕ: YOUR MARKETPLACE PROFILE
+  ТВОЯ ЛИЧНАЯ ИСТОРИЯ: YOUR PERSONAL HISTORY
+  ТЕКУЩИЙ: CURRENT
+  ТОП-КАНАЛЫ: TOP CHANNELS
+  ТОЧНЫЙ СТАЖ ПОДПИСКИ: EXACT SUB TENURE
+  ТРАНСКРИПЦИЯ: TRANSCRIPT
+  ТРАНСКРИПЦИЯ · ПОИСК ПО СЛОВУ: TRANSCRIPT · SEARCH BY WORD
+  Так, погнали — этот босс меня вынес тридцать раз, сегодня закрываем: Alright, let's
+    go — this boss wiped me thirty times, today we close it
+  Тарифы для брендов: Plans for brands
+  Тарифы для брендов и агентств: Plans for brands and agencies
+  Твоя история на Twitch, которой Twitch не показывает: Your Twitch history that Twitch
+    won't show you
+  Телефон: Phone
+  Тест на честность ±3 мин: Honesty test ±3 min
+  Точные веса проверок держим закрытыми, чтобы их не скопировали.: We keep the exact
+    check weights closed so they can't be copied.
+  Транскрипция и нарезки: Transcription and clips
+  Транскрипция стрима и готовые нарезки: Stream transcription and ready clips
+  Туториал: Tutorial
+  УВЕДОМЛЕНИЕ · ВЫХОД В ЭФИР: ALERT · GOING LIVE
+  УРОВЕНЬ ИГРЫ: SKILL LEVEL
+  Уведомления, когда канал в эфире: Alerts when a channel goes live
+  Узнай, куда уходит твоя аудитория: Find out where your audience goes
+  Узнай, что из стрима реально привело клиентов: Find out what on the stream actually
+    brought customers
+  Узнайте, что сработало.: Find out what worked.
+  Установить расширение: Install the extension
+  Установить расширение — бесплатно: Install the extension — free
+  Установить расширение →: Install the extension →
+  Учёба: Studying
+  ФОРМАТ: FORMAT
+  Фильтры: Filters
+  ? Фильтры по реальным цифрам, история стримов, надёжность и прямой контакт со стримером
+    — без менеджеров.
+  : Filters by real numbers, stream history, reliability, and direct contact with
+    the streamer — no managers.
+  Храним и показываем динамику: We store and show the dynamics
+  ЦЕЛЬ: GOAL
+  ЦЕНЫ: PRICING
+  ЦЕНЫ · ОПЛАТА ЗА РЕЗУЛЬТАТ: PRICING · PAY FOR RESULTS
+  Цены: Pricing
+  Цены честные. Без скрытых продлений и ловушек пробного периода.: Honest pricing.
+    No hidden renewals or trial traps.
+  ЧАСОВ ПРОСМОТРА: HOURS WATCHED
+  ЧАТ: CHAT
+  ЧЕГО НЕТ В КАБИНЕТЕ TWITCH: WHAT'S MISSING FROM THE TWITCH DASHBOARD
+  ЧЕСТНО: HONESTLY
+  ЧТО ВЫЗВАЛО ВСПЛЕСК: WHAT CAUSED THE SPIKE
+  Частые вопросы: FAQ
+  Частые вопросы о ценах: Pricing FAQ
+  Чат с брендом прямо в кабинете: Chat with the brand right in the dashboard
+  Чат — только число сообщений: Chat — just the message count
+  'Чат, голосуем: идём в PvP или фармим ещё час?': 'Chat, let''s vote: go PvP or farm
+    another hour?'
+  ? Человек смотрит один канал. Аккаунт активен в 5+ каналах одновременно — вероятно
+    бот-ферма.
+  : A person watches one channel. An account active in 5+ channels at once — likely
+    a bot farm.
+  Чем отличается от других трекеров Twitch?: How is it different from other Twitch
+    trackers?
+  Чем платный отличается?: How is the paid tier different?
+  Честно о покрытии: Honest about coverage
+  ? 'Честно: мы не обещаем, что на всех площадках — одни и те же люди. И мы не продаём
+    за деньги глубокую соц-аналитику — это публичная картина охвата, а не аудит пересечения
+    аудиторий.'
+  : 'Honestly: we don''t promise the same people are on every platform. And we don''t
+    sell deep social analytics for money — this is a public reach picture, not an
+    audience-overlap audit.'
+  Честные ограничения: Honest limits
+  Чилл: Chill
+  Чилл вечером: Chill in the evening
+  Чт: Thu
+  Что бесплатно навсегда?: What's free forever?
+  ? Что и зачем мы проверяем — рассказываем полностью. Точные веса держим в секрете,
+    чтобы их не скопировали. Считаем по живым, пишущим в чат зрителям — из публичных
+    данных Twitch, а не из кабинета стримера, который можно подкрасить.
+  : What we check and why — we explain fully. We keep the exact weights secret so
+    they aren't copied. We count by real viewers who post in chat — from public Twitch
+    data, not from a streamer's dashboard that can be touched up.
+  Что из стрима реально сработало.: What on the stream actually worked.
+  Что такое HimRate в одном предложении?: What is HimRate in one sentence?
+  ШКАЛА ДОВЕРИЯ: TRUST SCALE
+  Шаблонные сообщения: Templated messages
+  Шаблонные сообщения и ровные интервалы: Templated messages and even intervals
+  Шаблоны договоров: Contract templates
+  Шаблоны под Twitch · YouTube · Telegram · VK: Templates for Twitch · YouTube · Telegram
+    · VK
+  Энергетики · интеграция в эфире: Energy drinks · in-stream integration
+  Это бесплатно?: Is it free?
+  ? 'Это маркетплейс: бренды публикуют предложения с бюджетом и форматом, а сделка
+    считается по живой аудитории — не по CCV из кабинета Twitch.'
+  : 'It''s a marketplace: brands post offers with a budget and format, and the deal
+    is counted by the real audience — not the CCV from the Twitch dashboard.'
+  Я бренд — отдельный путь →: I'm a brand — separate path →
+  Я бренд →: I'm a brand →
+  Я зритель →: I'm a viewer →
+  ЯЗЫК: LANGUAGE
+  Ядро 38%: Core 38%
+  Ядро vs разброс: Core vs spread
+  а настройки графики покажешь?: gonna show the graphics settings?
+  'активность: высокая': 'activity: high'
+  базовое подключение бесплатно: basic connection is free
+  бесплатно навсегда, без аккаунта: free forever, no account
+  больше: more
+  бюджет: budget
+  в 19:23: at 19:23
+  в 19:23 · прямо из чата: at 19:23 · straight from chat
+  в месяц: per month
+  вечерний зритель вторника: a Tuesday-evening viewer
+  вместо чёрного ящика: instead of a black box
+  во что играет прямо сейчас: what they're playing right now
+  возвращаются каждый стрим: come back every stream
+  встал: stepped away
+  гг, всем спать: gg, everyone to bed
+  день × час · ярче = больше времени: day × hour · brighter = more time
+  держится уверенно, редкие отклонения: holds steady, rare deviations
+  до $1 000: up to $1,000
+  до $1 500: up to $1,500
+  до $2 200: up to $2,200
+  до $900: up to $900
+  живых зрителей: real viewers
+  живых из 5 000: real of 5,000
+  живых людей: real people
+  живых на самом деле: actually real
+  за всё время · 8 412: all-time · 8,412
+  за пустые цифры.: for empty numbers.
+  заметно скачет между стримами: noticeably jumps between streams
+  запросить свою платформу →: request your platform →
+  и вот тут начинается самое интересное: and here's where it gets interesting
+  и забирает раунд — невероятно: and takes the round — unbelievable
+  и куда они уходят.: and where they go.
+  и почему ты теряешь её в этот момент.: and why you lose it at that moment.
+  и твоя история на Twitch. Бесплатно.: and your Twitch history. Free.
+  из 5 000 в счётчике Twitch: of 5,000 in the Twitch counter
+  из 5 000 на счётчике: of 5,000 on the counter
+  клатч: clutch
+  клатч один в четыре, он остаётся один: 1-v-4 clutch, he's the last one standing
+  ключевой момент стрима: key moment of the stream
+  конкурент: competitor
+  конкурент · сейчас: competitor · now
+  лучший клатч за весь стрим, го реплей: best clutch of the whole stream, replay it
+  меньше: less
+  месяцев: months
+  навсегда: forever
+  надёжность: reliability
+  нейтральные формулировки: neutral wording
+  низко: low
+  норма: normal
+  общее настроение: overall mood
+  онлайн выше живой активности — есть вопросы: viewer count above real activity —
+    questionable
+  онлайн резко оторван от активности: viewer count sharply detached from activity
+  онлайн совпадает с активностью чата: viewer count matches chat activity
+  остальные в работе: the rest in progress
+  от: from
+  офлайн: offline
+  подписчиков: subscribers
+  подписчиков канала: channel subscribers
+  потом, последовательно: later, sequentially
+  почти не меняется от стрима к стриму: barely changes stream to stream
+  прежде чем платить: before you pay
+  приходят раз и уходят: come once and leave
+  прямо в Twitch: right in Twitch
+  реальную аудиторию.: the real audience.
+  реальных: real
+  регистраций: sign-ups
+  реклама: ad
+  сбросить: reset
+  сейчас, параллельно: now, in parallel
+  сильно прыгает — доверять сложно: jumps a lot — hard to trust
+  следим: tracking
+  сменил игру: switched games
+  сообщество: community
+  'сортировка: бюджет': 'sort: budget'
+  'сортировка: реальные зрители': 'sort: real viewers'
+  считаем по живым зрителям: we count by real viewers
+  твои сообщения в чатах — Twitch их тебе не хранит: your chat messages — Twitch doesn't
+    keep them for you
+  твоя аудитория?: your audience?
+  твоё любимое время на Twitch: your favorite time on Twitch
+  точка оттока на таймлайне эфира: a drop-off point on the stream timeline
+  увидишь реальную аудиторию любого канала: you'll see the real audience of any channel
+  целевой коридор 80–95%: target band 80–95%
+  чат живой или притих: chat lively or gone quiet
+  чат просто взорвался эмодзи: chat just exploded with emotes
+  чего нет в кабинете Twitch: what's missing from the Twitch dashboard
+  чисто: clean
+  шутеры 42%: shooters 42%
+  "★ ГЛАВНОЕ": "★ KEY POINT"
+  "\U0001F48E ГЛАВНОЕ · BRAND ATTRIBUTION": "\U0001F48E KEY · BRAND ATTRIBUTION"
