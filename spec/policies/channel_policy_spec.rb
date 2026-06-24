@@ -148,4 +148,58 @@ RSpec.describe ChannelPolicy, type: :policy do
       it { is_expected.to forbid_action(:view_365d_trends) }
     end
   end
+
+  describe "T1-061 card predicates" do
+    let(:channel) { create(:channel) }
+
+    describe "#card? (universal object — never denied)" do
+      it "allows guest and free" do
+        expect(described_class.new(nil, channel).card?).to be(true)
+        expect(described_class.new(create(:user, tier: "free"), channel).card?).to be(true)
+      end
+    end
+
+    describe "#card_period_depth? (role+payment, NO live exception — adversarial blocker fix)" do
+      it "denies a free viewer even on a LIVE channel (no live-leak)" do
+        create(:stream, channel: channel, ended_at: nil)
+        expect(described_class.new(create(:user, tier: "free"), channel).card_period_depth?).to be(false)
+      end
+
+      it "allows business" do
+        expect(described_class.new(create(:user, tier: "business"), channel).card_period_depth?).to be(true)
+      end
+
+      it "allows the channel owner (streamer)" do
+        owner = create(:user, :streamer)
+        create(:auth_provider, user: owner, provider: "twitch", provider_id: channel.twitch_id)
+        expect(described_class.new(owner, channel).card_period_depth?).to be(true)
+      end
+    end
+
+    describe "#card_live_drill?" do
+      it "allows a registered viewer on a live channel" do
+        create(:stream, channel: channel, ended_at: nil)
+        expect(described_class.new(create(:user, tier: "free"), channel).card_live_drill?).to be(true)
+      end
+
+      it "denies a guest on a live channel" do
+        create(:stream, channel: channel, ended_at: nil)
+        expect(described_class.new(nil, channel).card_live_drill?).to be(false)
+      end
+
+      it "denies a registered viewer on an offline channel (no window)" do
+        expect(described_class.new(create(:user, tier: "free"), channel).card_live_drill?).to be(false)
+      end
+    end
+
+    describe "#card_role_tools?" do
+      it "allows brand (business tier)" do
+        expect(described_class.new(create(:user, tier: "business"), channel).card_role_tools?).to be(true)
+      end
+
+      it "denies a free viewer" do
+        expect(described_class.new(create(:user, tier: "free"), channel).card_role_tools?).to be(false)
+      end
+    end
+  end
 end

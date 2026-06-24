@@ -7,8 +7,10 @@
 module Api
   module V1
     class ChannelsController < Api::BaseController
-      before_action :authenticate_user!, except: :show
-      before_action :authenticate_user_optional!, only: :show
+      # T1-061 (DEC-5): :card is the universal card-object — guest-accessible (free layers 1+3),
+      # so it joins :show in the optional-auth path instead of the required-auth path.
+      before_action :authenticate_user!, except: %i[show card]
+      before_action :authenticate_user_optional!, only: %i[show card]
 
       # CR PG-iter1: surface BillingNotConfigured как 402 Payment Required
       # (matches doc comment intent). Loud signal к operator, machine-readable
@@ -140,43 +142,21 @@ module Api
       end
 
       # TASK-035 FR-036: GET /api/v1/channels/:id/card — Channel Card data
+      # T1-061: universal layered card-object (extension + ЛК). Thin delegate to Cards::CardService
+      # (gate-then-assemble; reputation from T1-065, never Trust(:full)). card? always allows; the
+      # per-layer surface+role+payment gating lives in the service.
       def card
         channel = find_channel
         authorize channel, :card?
 
-        trust = Trust::ShowService.new(channel: channel, view: :full, user: current_user).call
+        payload = Cards::CardService.new(channel: channel, context: pundit_user).call
+        payload[:badge_url] = "#{request.base_url}/api/v1/channels/#{channel.id}/badge.svg"
+        payload[:public_url] = "https://himrate.com/channel/#{channel.login}"
 
-        # CR-iter1 MF-1 (PR-A1): preload :post_stream_report for format_stream rendering
-        # (Stream#current_* derive methods hit PSR) — avoids N+1 over recent 5 streams.
-        # `stream_stats` does its own JOIN via Arel; this scope feeds the row-level rendering.
-        completed_streams = channel.streams.where.not(ended_at: nil)
-        recent = completed_streams.includes(:post_stream_report).order(ended_at: :desc).limit(5)
-
-        # S2 fix: prefetch TI records for all recent streams in one query (no N+1)
-        recent_ti = prefetch_ti_for_streams(recent, channel.id)
-
-        render json: {
-          data: {
-            channel: {
-              login: channel.login,
-              display_name: channel.display_name,
-              avatar_url: channel.profile_image_url,
-              partner_status: channel.broadcaster_type,
-              created_at: channel.created_at.iso8601,
-              followers_count: channel.followers_total
-            },
-            trust: trust.slice(:ti_score, :classification, :erv_percent, :erv_label, :erv_label_color),
-            reputation: trust[:streamer_reputation],
-            # T1-064 FR-3/FR-7: Reputation Categorical band (replaces removed philosophy-v2 Health Score).
-            reputation_band: trust[:reputation_band],
-            reputation_tier: trust[:reputation_tier],
-            reputation_stream_count: trust[:reputation_stream_count],
-            stats: stream_stats(completed_streams, channel),
-            recent_streams: recent.map { |s| format_stream(s, recent_ti[s.id]) },
-            badge_url: "#{request.base_url}/api/v1/channels/#{channel.id}/badge.svg",
-            public_url: "https://himrate.com/channel/#{channel.login}"
-          }
-        }
+        etag_value = Digest::MD5.hexdigest(payload.to_json)
+        if stale?(etag: etag_value)
+          render json: { data: payload }
+        end
       end
 
       private
@@ -219,80 +199,11 @@ module Api
       # totals reported here equal the daily aggregate sums (mid-race streams without PSR
       # are correctly excluded from "completed" stats — they show up once PostStreamWorker
       # finishes).
-      def stream_stats(completed_streams, channel)
-        agg = completed_streams
-          .joins("INNER JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
-          .where.not(post_stream_reports: { ccv_avg: nil })
-          .pick(
-            Arel.sql("COUNT(streams.id)"),
-            Arel.sql("AVG(post_stream_reports.ccv_avg)"),
-            Arel.sql("MAX(post_stream_reports.ccv_peak)"),
-            Arel.sql("AVG(post_stream_reports.duration_ms)")
-          )
-
-        total = agg[0].to_i
-        {
-          total_streams: total,
-          avg_ccv: agg[1]&.to_i,
-          peak_ccv: agg[2]&.to_i,
-          avg_duration_hours: agg[3] ? (agg[3].to_f / 3_600_000).round(1) : nil,
-          streams_per_week: streams_per_week(channel)
-        }
-      end
-
       def badge_html(channel, svg_url, ti_score)
         login = ERB::Util.html_escape(channel.login)
         %(<a href="https://himrate.com/channel/#{login}" target="_blank" rel="noopener">) +
           %(<img src="#{ERB::Util.html_escape(svg_url)}" alt="HimRate Trust Index: #{ti_score}" width="200" height="40" />) +
           %(</a>)
-      end
-
-      # CR iter-3 N-1 (PR-A1): align denominator with `stream_stats` total — both report
-      # over the same "completed ended streams with PSR" set so the API response is internally
-      # consistent (no silent divergence between `total_streams` count and the implied
-      # denominator of `streams_per_week`).
-      def streams_per_week(channel)
-        first_stream = channel.streams.order(:started_at).first
-        return nil unless first_stream
-
-        weeks = [ (Time.current - first_stream.started_at) / 1.week, 1 ].max
-        total = channel.streams
-                       .where.not(ended_at: nil)
-                       .joins("INNER JOIN post_stream_reports ON post_stream_reports.stream_id = streams.id")
-                       .where.not(post_stream_reports: { ccv_avg: nil })
-                       .count
-        (total.to_f / weeks).round(1)
-      end
-
-      # S2 fix: single query for all recent streams' TI records (no N+1)
-      def prefetch_ti_for_streams(streams, channel_id)
-        return {} if streams.empty?
-
-        min_start = streams.map(&:started_at).min
-        max_end = streams.map { |s| s.ended_at || Time.current }.max
-
-        all_ti = TrustIndexHistory
-          .where(channel_id: channel_id)
-          .where(calculated_at: min_start..max_end)
-          .order(calculated_at: :desc)
-
-        streams.to_h do |s|
-          ti = all_ti.find { |t| t.calculated_at.between?(s.started_at, s.ended_at || Time.current) }
-          [ s.id, ti ]
-        end
-      end
-
-      def format_stream(stream, ti = nil)
-        # PR-A1: derive from CcvSnapshot (live) / PostStreamReport (ended).
-        duration_ms = stream.current_duration_ms
-        {
-          date: stream.started_at.iso8601,
-          duration_hours: duration_ms ? (duration_ms / 3_600_000.0).round(1) : nil,
-          peak_ccv: stream.current_peak_ccv,
-          avg_ccv: stream.current_avg_ccv,
-          ti_score: ti&.trust_index_score&.to_f&.round(1),
-          erv_percent: ti&.erv_percent&.to_f&.round(1)
-        }
       end
 
       # FR-007/011: Find channel by UUID, login, or twitch_id
