@@ -14,8 +14,9 @@
 
     <%# Export reset + FOUC guard. The export's static decorative dot field
         ([data-pencil-name="Dot BG"]) is stripped from the markup at render time, so
-        the animated <canvas> (hr-shared.js) is the only background. Paint the dark
-        bg up front so there is no flash before the canvas initialises. %>
+        the animated dot canvas (hr-shared.js on the inner pages, index.js on the
+        home page) is the only background. Paint the dark bg up front so there is no
+        flash before the canvas initialises. %>
     <style>
       *, ::before, ::after { box-sizing: border-box; }
       body { margin: 0; }
