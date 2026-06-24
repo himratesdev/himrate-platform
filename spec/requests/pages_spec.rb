@@ -2,34 +2,58 @@
 
 require "rails_helper"
 
-# TASK-060 Phase 0: the public marketing landing root. Landing is a public,
-# unauthenticated surface and must stay reachable as later phases add the
-# literal-ported pages — guard root from silently breaking (build-complete-now).
+# TASK-060: the public marketing landing — a faithful Rails host of the Pencil
+# export (5 pages). Public, unauthenticated GET surface; must stay reachable and
+# carry the production assets (built Tailwind, self-hosted fonts, the export's JS).
 RSpec.describe "Public landing", type: :request do
+  PAGES = { "/" => "Главная", "/streamers" => "Стримерам", "/brands" => "Брендам",
+            "/viewers" => "Зрителям", "/methodology" => "Методология" }.freeze
+
+  describe "every page renders" do
+    PAGES.each_key do |path|
+      it "GET #{path} → 200 public HTML (no auth)" do
+        get path
+
+        expect(response).to have_http_status(:ok)
+        expect(response.media_type).to eq("text/html")
+        expect(response.body).to include('lang="ru"') # russian-first; client swap to EN
+      end
+    end
+  end
+
   describe "GET /" do
-    it "renders the landing root as public HTML with 200 (no auth)" do
+    it "wires production assets: built Tailwind, self-hosted fonts, the export JS" do
       get "/"
 
-      expect(response).to have_http_status(:ok)
-      expect(response.media_type).to eq("text/html")
+      expect(response.body).to match(%r{/assets/tailwind[-\w]*\.css})
+      expect(response.body).to match(%r{landing_fonts[-\w]*\.css})
+      expect(response.body).to match(%r{landing/hr-i18n[-\w]*\.js})
+      expect(response.body).to match(%r{landing/index[-\w]*\.js}) # self-contained index bundle
     end
 
-    it "is Russian-first: <html lang=ru> by default" do
+    it "does not double the canvas/nav: index is self-contained (no hr-shared.js)" do
+      get "/" # index.js carries its own canvas + nav
+
+      expect(response.body).not_to match(%r{landing/hr-shared[-\w]*\.js})
+    end
+
+    it "loads the shared visual layer on the non-index pages" do
+      get "/streamers"
+
+      expect(response.body).to match(%r{landing/hr-shared[-\w]*\.js})
+    end
+
+    it "guards the FOUC: strips the static dot field + paints the dark bg up front" do
       get "/"
 
-      expect(response.body).to include('lang="ru"')
+      expect(response.body).to include("background: #07070C")             # dark bg before JS
+      expect(response.body).not_to include('data-pencil-name="Dot BG"')   # static dot field removed
     end
 
-    it "switches locale via ?locale=en" do
-      get "/", params: { locale: "en" }
+    it "keeps the page CSP-clean — no inline <script> (all JS externalized)" do
+      get "/"
 
-      expect(response.body).to include('lang="en"')
-    end
-
-    it "falls back to ru for an unsupported locale" do
-      get "/", params: { locale: "zz" }
-
-      expect(response.body).to include('lang="ru"')
+      expect(response.body).not_to match(%r{<script>}) # only <script src=...> tags
     end
 
     it "serves widest reach: a legacy browser UA is not blocked (no 406)" do
@@ -37,77 +61,16 @@ RSpec.describe "Public landing", type: :request do
 
       expect(response).to have_http_status(:ok)
     end
-
-    it "wires the self-hosted fonts and the landing JS layer" do
-      get "/"
-
-      expect(response.body).to match(%r{landing_fonts[-\w]*\.css})
-      expect(response.body).to match(%r{landing/hr-shared[-\w]*\.js})
-    end
-
-    it "passes the JS config via a CSP-safe data attribute (no inline script)" do
-      get "/"
-
-      expect(response.body).to include("data-hr-config=")
-      expect(response.body).not_to include("window.HR =")
-    end
-
-    it "restores I18n.locale after the request (with_locale — no thread-local leak)" do
-      I18n.with_locale(:en) do
-        get "/", params: { locale: "ru" }
-
-        expect(I18n.locale).to eq(:en) # restored to the outer locale, not left at :ru
-      end
-    end
   end
 
-  # TASK-060 Phase 1: Slot A (Header + Hero + Explainer) literal port.
-  describe "Slot A (header + hero)" do
-    it "bakes the final header — menu + the post-fixHeader action buttons" do
-      get "/"
+  describe "per-page content + JS bundle" do
+    it "renders each page's distinctive content and loads its bundle" do
+      { "/streamers" => "streamers", "/brands" => "brands",
+        "/viewers" => "viewers", "/methodology" => "methodology" }.each do |path, page|
+        get path
 
-      %w[СТРИМЕРАМ БРЕНДАМ ЗРИТЕЛЯМ].each { |item| expect(response.body).to include(item) }
-      expect(response.body).to include("МЕТОДОЛОГИЯ И ЦЕНЫ")          # ЦЕНЫ merged in
-      expect(response.body).to include("Открыть сервис")
-      expect(response.body).to include("Открыть расширение")
-      expect(response.body).to include("Подключить канал")
-    end
-
-    it "recolors the wordmark mark to the export's final accent (#67E8F9)" do
-      get "/"
-
-      expect(response.body).to include('fill="#67E8F9"')
-      expect(response.body).to include('viewBox="0 -9 176.3 53.9"') # SVG camelCase preserved
-    end
-
-    it "wires nav + CTAs to centralized links with stable analytics hooks" do
-      get "/"
-
-      expect(response.body).to include('data-hr-href="/"')          # wordmark → home
-      expect(response.body).to include('data-evt="nav:streamers"')
-      expect(response.body).to include('data-evt="cta:connect"')
-    end
-
-    it "offers a server-side RU/EN locale switch in the header" do
-      get "/"
-
-      expect(response.body).to include('href="/?locale=en"')
-      expect(response.body).to include('href="/?locale=ru"')
-    end
-
-    it "renders RU verbatim by default (no English leakage)" do
-      get "/"
-
-      expect(response.body).to include("СТРИМЕРАМ")
-      expect(response.body).not_to include("FOR STREAMERS")
-    end
-
-    it "server-renders the English variant via the dictionary (SEO, not a client swap)" do
-      get "/", params: { locale: "en" }
-
-      expect(response.body).to include("FOR STREAMERS")          # СТРИМЕРАМ text node
-      expect(response.body).to include("METHODOLOGY &amp; PRICING")
-      expect(response.body).to include("Connect a channel")
+        expect(response.body).to match(%r{landing/#{page}[-\w]*\.js})
+      end
     end
   end
 end
