@@ -25,19 +25,15 @@ module Cards
     end
 
     def call
-      live_drill_ok = @policy.card_live_drill?
-      period_ok     = @policy.card_period_depth?
-      tools_ok      = @policy.card_role_tools?
-
       {
         channel: channel_meta,
         surface: @context.surface,
         layers: {
           headline:     { available: true, data: headline_data },
-          live_drill:   live_drill_layer(live_drill_ok),
+          live_drill:   live_drill_layer(live_drill_granted?),
           reputation:   { available: true, data: Reputation::HistoryService.cached_for(@channel) },
-          period_depth: paid_layer(period_ok, :period_depth) { period_depth_data },
-          role_tools:   paid_layer(tools_ok, :role_tools) { {} }
+          period_depth: paid_layer(@policy.card_period_depth?, :period_depth) { period_depth_data },
+          role_tools:   paid_layer(@policy.card_role_tools?, :role_tools) { {} }
         }
       }
     end
@@ -46,6 +42,14 @@ module Cards
 
     def extension?
       @context.surface == EXTENSION
+    end
+
+    # Memoized — used both for the live_drill layer and to pick the Trust::ShowService view, so
+    # card_live_drill? (and its record.live?/window checks) runs once per request.
+    def live_drill_granted?
+      return @live_drill_granted if defined?(@live_drill_granted)
+
+      @live_drill_granted = @policy.card_live_drill?
     end
 
     def channel_meta
@@ -63,7 +67,11 @@ module Cards
     # the caller is entitled to. NEVER :full (DEC-4); reputation_band is intentionally not read here.
     def trust_payload
       @trust_payload ||= begin
-        view = @policy.card_live_drill? ? :drill_down : :headline
+        view = live_drill_granted? ? :drill_down : :headline
+        # Reuses the TrustController cache key (trust:id:view) — intentionally NOT scoped by
+        # user/surface. Safe today: the only user-dependent drill field (post_stream_window_expired)
+        # is always false whenever :drill_down is reachable here. A future user-specific field in
+        # build_drill_down would leak across users — scope the key by user then.
         Rails.cache.fetch("trust:#{@channel.id}:#{view}", expires_in: TRUST_CACHE_TTL) do
           Trust::ShowService.new(channel: @channel, view: view, user: @user).call
         end

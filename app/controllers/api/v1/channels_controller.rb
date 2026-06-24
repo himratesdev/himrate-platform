@@ -191,14 +191,6 @@ module Api
         )
       end
 
-      # W1 fix: single aggregate query instead of 3 separate (count + avg + max)
-      # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns
-      # dropped from streams. For ENDED streams source of truth is post_stream_reports.
-      # CR-iter2 N-2: INNER JOIN (not LEFT) + ccv_avg NOT NULL filter — matches the
-      # symmetric pattern used by Trends::Aggregation::DailyBuilder#ccv_aggregates so
-      # totals reported here equal the daily aggregate sums (mid-race streams without PSR
-      # are correctly excluded from "completed" stats — they show up once PostStreamWorker
-      # finishes).
       def badge_html(channel, svg_url, ti_score)
         login = ERB::Util.html_escape(channel.login)
         %(<a href="https://himrate.com/channel/#{login}" target="_blank" rel="noopener">) +
