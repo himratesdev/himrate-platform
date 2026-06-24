@@ -65,11 +65,33 @@ class ChannelPolicy < ApplicationPolicy
     owns_channel?(record)
   end
 
-  # TASK-035 FR-036: Channel Card — Streamer own channel only
+  # T1-061 (DEC-1): Channel Card is now the universal layered card-object — available to ANY viewer
+  # (guest incl). Per-layer access (free 1-3 / paid 4-5) is decided inside Cards::CardService via the
+  # card_* predicates below; the object itself is never denied. (Was streamer-own owns_channel?.)
   def card?
+    true
+  end
+
+  # T1-061 layer 2 (live_drill): free, but registered + (live OR post-stream window) — mirrors the
+  # serializer_view :drill_down ladder.
+  def card_live_drill?
+    registered? && (record.live? || post_stream_window_open?(record))
+  end
+
+  # T1-061 layer 4 (period_depth): ROLE + PAYMENT only. Deliberately NOT view_trends_historical? —
+  # that one has `return true if record.live?`, which would grant a free viewer the paid layer on any
+  # live channel (access leak). No live exception here. Guard registered? first: premium_access_for?
+  # → channel_tracked? dereferences user.tracked_channels (not nil-safe), and a guest can never have
+  # paid access anyway.
+  def card_period_depth?
     return false unless registered?
 
-    owns_channel?(record)
+    premium_access_for?(record) || streamer_on_channel?(record) || effective_business?
+  end
+
+  # T1-061 layer 5 (role_tools): own-channel streamer tools OR brand (BAA).
+  def card_role_tools?
+    owns_channel?(record) || brand?
   end
 
   # TASK-032 CR #4: show_erv? — always allows (headline for all)

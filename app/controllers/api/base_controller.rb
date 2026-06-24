@@ -143,14 +143,15 @@ module Api
       end
     end
 
-    # badge?/card? are ownership denials (non-owner), NOT tier paywalls — they keep a dedicated
-    # 403 code on BOTH surfaces and never collapse to an honest-empty data-state.
+    # badge? is an ownership denial (non-owner), NOT a tier paywall — it keeps a dedicated 403 code
+    # on BOTH surfaces and never collapses to an honest-empty data-state. (T1-061: card? is now the
+    # always-allow universal card-object — it no longer denies, so it's not handled here.)
     def resolve_channel_policy_code(query)
       case query
       when "destroy?" then "CHANNEL_NOT_TRACKED"
       when "view_report?" then "POST_STREAM_WINDOW_EXPIRED"
       when "view_365d_trends?" then "TRENDS_BUSINESS_REQUIRED"
-      when "badge?", "card?" then "CHANNEL_NOT_OWNED"
+      when "badge?" then "CHANNEL_NOT_OWNED"
       else paywall_code
       end
     end
