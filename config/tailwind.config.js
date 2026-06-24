@@ -8,7 +8,7 @@ module.exports = {
     "./app/views/layouts/landing.html.erb",
     "./app/views/shared/**/*.{erb,html}",
     "./app/helpers/landing_helper.rb",
-    "./app/javascript/landing/**/*.js",
+    "./app/assets/javascripts/landing/**/*.js",
   ],
   corePlugins: { preflight: false },
   theme: { extend: {} },

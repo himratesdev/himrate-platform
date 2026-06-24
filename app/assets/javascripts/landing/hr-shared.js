@@ -127,6 +127,23 @@
     });
   }
 
+  /* Body CTAs: the export matched purple / rounded-verb buttons by text and gave
+     them hover + routing. Header CTAs carry real data-hr-href (above); body CTA
+     destinations are wired in a later phase (their target pages don't exist yet),
+     so here we only restore hover feedback + scroll-to-top on click. */
+  function wireCTAs() {
+    var ROUND = /rounded-\[(6|8|10|12|999)px\]/;
+    var CTA = /^(подключить|установить|начать|связаться|все тарифы|оформить|выбрать|как это работает|как мы измеряем|узнать|смотреть|посмотреть|открыть|запросить|войти|получить|попробовать|демо|я бренд|я зритель|я стример|выбрать план|перейти)/i;
+    $all('div').forEach(function (el) {
+      var c = cls(el); var purple = /bg-\[#7C3AED\]/.test(c); var txt = (el.textContent || '').trim();
+      var verb = ROUND.test(c) && CTA.test(txt) && txt.length <= 64;
+      if ((!purple && !verb) || txt.length === 0 || txt.length > 72) return;
+      if (el.hasAttribute('data-hr-href') || el.querySelector('[data-hr-btn]')) return;
+      el.setAttribute('data-hr-btn', '');
+      el.addEventListener('click', function (e) { e.stopPropagation(); window.__hrGo('#'); });
+    });
+  }
+
   /* ---------------- card hover ---------------- */
   function tagCards(root) {
     var RND = /rounded-\[(10|12|14|16|18|20|24)px\]/;
@@ -307,6 +324,7 @@
   function init() {
     injectCSS();
     wireNav();
+    wireCTAs();
     var root = ROOT_SEL ? $(ROOT_SEL) : ($all('body > div[data-pencil-name]')[0] || document.body);
     var tries = 0;
     (function poll() { var ok = bg(); tagCards(root); if (ok || tries > 40) return; tries++; setTimeout(poll, 200); })();

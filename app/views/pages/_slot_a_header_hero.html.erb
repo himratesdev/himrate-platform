@@ -1,0 +1,2227 @@
+<%# Slot A — Header + Hero + Explainer (TASK-060 Phase 1, literal port of the
+    Pencil export index.html lines 32-2243). The Header is baked in its final,
+    post-fixHeader() state (the export builds it at runtime); Hero + Explainer
+    are ported verbatim. i18n is server-side via hr_localize (see index view). %>
+<div
+  data-pencil-name="Slot A — Header+Hero+Explainer"
+  class="box-border w-full h-fit shrink-0 flex flex-col gap-0 justify-start items-start"
+>
+    <div
+      data-pencil-name="Header"
+      class="box-border w-full h-fit shrink-0 flex flex-row gap-0 p-[20px_56px] justify-between items-center bg-[#09090FD9] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF14]"
+    >
+      <div
+        data-pencil-name="Logo"
+        class="box-border w-fit shrink-0 h-fit flex flex-row gap-[10px] justify-start items-center"
+      ><div data-pencil-name="Wordmark" class="box-border flex items-center cursor-pointer" style="height:30px" data-hr-href="<%= landing_link(:home) %>" data-evt="nav:home"><svg viewBox="0 -9 176.3 53.9" fill="#FFFFFF" xmlns="http://www.w3.org/2000/svg" style="display:block;height:100%;width:auto" role="img" aria-label="HimRate"><path fill="#FFFFFF" d="m64.4 2.8h-6.7v31.8h6.7v-12.7h3.6v12.8l6.4-0.1v-31.8h-6.4v13.5h-3.6v-13.5z"/><path fill="#FFFFFF" d="m77.1 2.8h6.3v31.8h-6.3v-31.8z"/><path fill="#FFFFFF" d="m86.2 2.8h6.2l3.6 13.7 3.9-13.7h6.6v31.8h-6.1v-15.5l-4.4 12.9-4-12.8v15.4h-5.8v-31.8z"/><path fill="#FFFFFF" d="m122.7 2.8h-13.4v31.8h6.3v-10.1h0.9l3.1 10.1h6.5l-3.4-10c2.1 0.3 3-1.1 3-3v-15.2c0-2.9-2.1-3.6-3-3.6zm-3.3 16.8h-3.7v-11.3h3.1c0.7 0 0.7 0.5 0.7 1.2v9.3c0 0.5 0 0.8-0.1 0.8z"/><path fill="#FFFFFF" d="m140 2.8h-6.3l-6.3 31.8h6.6l0.6-4h4.3l0.6 4h6.3l-5.8-31.8zm-4.7 23.1 1.5-11.2 1.5 11.2h-3z"/><path fill="#FFFFFF" d="m146 2.8-1.8 5.9h4.4v26h6.9v-26h4l-1.5-5.9h-12z"/><path fill="#FFFFFF" d="m161.4 2.8h11.5l1.2 5.9h-6.7v7.6h5.1v5.6h-5.1v6.8h6.5l-1.2 5.9h-11.3l-0.1-0.1 0.1-31.7z"/><rect fill="#67E8F9" x="2.3" y="39.7" width="171.8" height="3.1"/><path fill="#67E8F9" d="m48.8 35-1.5-4.1c-1-2.4-4.5-7.9-7.6-10.3-1.8-1.5-3.6-1.9-5.8-1.7-6.2 0.6-7.6 8.5-8.2 16h23.1v0.1z"/><path fill="#67E8F9" d="m29.3 4.1-0.4-2.5-2.5 0.4 0.4 2.4c-3 0.6-5.4 3.3-5.4 6.8 0 4 3.1 7.6 7.2 7.6s7.1-3.2 7.1-7.5c0-3.5-2.8-7.1-6.4-7.2zm0 9.9c-1.4 0-3-1.4-3-3.1 0-1 0.6-2 1.5-2.5l-0.9-4 2.4-0.2 0.5 4.1c1.4 0.1 2.6 1.3 2.6 2.6 0 1.5-1.4 3.1-3.1 3.1z"/><path fill="#67E8F9" d="m17.8 29.8c-2.1 0-4.1 1.4-4.9 3.4h-8c-1.9 0.2-1.3-1.6-1-2.5l4-10.7c0.5-1.4 1.3-2.4 1.6-1.2 1 3.8 3 9.8 3.1 9.9l2-0.5-4.6-23.7-2 0.5c-0.1 0-0.1 6.8 0.8 11.4-1.4 0.7-2.2 2.1-2.9 3.9l-3 7.9c-0.6 2-1.9 5-0.3 6.2 0.5 0.4 1 0.6 2 0.6h18.1c0-2.7-2-5.2-4.9-5.2z"/><circle cx="80.25" cy="-2.8" r="3.6" fill="#67E8F9"/></svg></div></div>
+      <div
+        data-pencil-name="Menu"
+        class="box-border w-fit shrink-0 h-fit flex flex-row gap-[14px] justify-start items-center"
+      >
+            <div
+              data-pencil-name="СТРИМЕРАМ"
+              class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
+              data-hr-href="<%= landing_link(:streamers) %>" data-evt="nav:streamers"
+            >
+              СТРИМЕРАМ
+            </div>
+            <div
+              data-pencil-name="dot"
+              class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+            >
+              ·
+            </div>
+            <div
+              data-pencil-name="БРЕНДАМ"
+              class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
+              data-hr-href="<%= landing_link(:brands) %>" data-evt="nav:brands"
+            >
+              БРЕНДАМ
+            </div>
+            <div
+              data-pencil-name="dot"
+              class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+            >
+              ·
+            </div>
+            <div
+              data-pencil-name="ЗРИТЕЛЯМ"
+              class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
+              data-hr-href="<%= landing_link(:viewers) %>" data-evt="nav:viewers"
+            >
+              ЗРИТЕЛЯМ
+            </div>
+            <div
+              data-pencil-name="dot"
+              class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+            >
+              ·
+            </div>
+            <div
+              data-pencil-name="МЕТОДОЛОГИЯ И ЦЕНЫ"
+              class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
+              data-hr-href="<%= landing_link(:methodology) %>" data-evt="nav:methodology"
+            >
+              МЕТОДОЛОГИЯ И ЦЕНЫ
+            </div>
+      </div>
+      <div
+        data-pencil-name="Actions"
+        class="box-border w-fit shrink-0 h-fit flex flex-row gap-[14px] justify-start items-center"
+      >
+<%# RU/EN language switch — server-side ?locale= (replaces the export's client swap) %>
+<div
+  data-pencil-name="Lang"
+  class="box-border w-fit shrink-0 h-fit flex flex-row items-center"
+  style="border:1px solid #FFFFFF24;border-radius:6px;overflow:hidden"
+>
+  <% %w[ru en].each do |lg| %>
+    <a
+      href="<%= landing_locale_url(lg) %>"
+      data-evt="lang:<%= lg %>"
+      style="padding:8px 9px;font-family:'Geist Mono',monospace;font-size:11.5px;font-weight:600;letter-spacing:1px;text-decoration:none;<%= I18n.locale.to_s == lg ? 'background:#FFFFFF1A;color:#F5F2EC' : 'color:#8E8A9A' %>"
+    ><%= lg.upcase %></a>
+  <% end %>
+</div>
+            <div
+              data-pencil-name="Открыть сервис"
+              class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[9px_13px] justify-start items-center bg-[#FFFFFF12] [border:1px_solid_#FFFFFF3D] rounded-[6px]"
+              data-hr-href="<%= landing_link(:app) %>" data-evt="cta:open-service"
+            >
+              <div class="text-[12.5px]/[normal] box-border text-[#F5F2EC] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1px] text-left [white-space:nowrap]">Открыть сервис</div>
+            </div>
+            <div
+              data-pencil-name="Открыть расширение"
+              class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[9px_13px] justify-start items-center bg-[#FFFFFF12] [border:1px_solid_#FFFFFF3D] rounded-[6px]"
+              data-hr-href="<%= landing_link(:extension) %>" data-evt="cta:open-extension"
+            >
+              <div class="text-[12.5px]/[normal] box-border text-[#F5F2EC] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1px] text-left [white-space:nowrap]">Открыть расширение</div>
+            </div>
+            <div
+              data-pencil-name="Подключить канал"
+              class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[10px_15px] justify-start items-center bg-[#7C3AED] rounded-[6px]"
+              data-hr-href="<%= landing_link(:auth) %>" data-evt="cta:connect"
+            >
+              <div class="text-[12.5px]/[normal] box-border text-[#FFFFFF] font-['Geist_Mono',system-ui,sans-serif] font-semibold tracking-[1px] text-left [white-space:nowrap]">Подключить канал</div>
+            </div>
+      </div>
+    </div>
+        <div
+          data-pencil-name="Hero"
+          class="box-border w-full h-[760px] shrink-0 flex flex-col gap-[24px] p-[92px_56px_64px_56px] justify-center items-start overflow-hidden relative"
+        >
+          <div
+            data-pencil-name="Dot BG"
+            class="box-border w-[1440px] h-[760px] absolute left-0 top-0 overflow-hidden [z-index:0]"
+          >
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.393px] h-[5.393px] opacity-[0.351] absolute left-[25.303px] top-[25.303px] bg-[#6366F1] rounded-full [z-index:0]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.196px] h-[7.196px] opacity-[0.539] absolute left-[76.402px] top-[24.402px] bg-[#22D3EE] rounded-full [z-index:1]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.624px] h-[6.624px] opacity-[0.48] absolute left-[128.688px] top-[24.688px] bg-[#22D3EE] rounded-full [z-index:2]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.281px] h-[4.281px] opacity-[0.236] absolute left-[181.859px] top-[25.859px] bg-[#6366F1] rounded-full [z-index:3]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.575px] h-[2.575px] opacity-[0.058] absolute left-[234.712px] top-[26.712px] bg-[#6366F1] rounded-full [z-index:4]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.234px] h-[3.234px] opacity-[0.126] absolute left-[286.383px] top-[26.383px] bg-[#6366F1] rounded-full [z-index:5]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.569px] h-[5.569px] opacity-[0.37] absolute left-[337.216px] top-[25.216px] bg-[#22D3EE] rounded-full [z-index:6]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.229px] h-[7.229px] opacity-[0.543] absolute left-[388.386px] top-[24.386px] bg-[#22D3EE] rounded-full [z-index:7]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.585px] h-[6.585px] opacity-[0.476] absolute left-[440.707px] top-[24.707px] bg-[#22D3EE] rounded-full [z-index:8]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.307px] h-[4.307px] opacity-[0.238] absolute left-[493.846px] top-[25.846px] bg-[#6366F1] rounded-full [z-index:9]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.61px] h-[2.61px] opacity-[0.061] absolute left-[546.695px] top-[26.695px] bg-[#6366F1] rounded-full [z-index:10]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.062px] h-[3.062px] opacity-[0.109] absolute left-[598.469px] top-[26.469px] bg-[#6366F1] rounded-full [z-index:11]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.17px] h-[5.17px] opacity-[0.328] absolute left-[649.415px] top-[25.415px] bg-[#6366F1] rounded-full [z-index:12]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.01px] h-[7.01px] opacity-[0.52] absolute left-[700.495px] top-[24.495px] bg-[#22D3EE] rounded-full [z-index:13]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.08px] h-[7.08px] opacity-[0.527] absolute left-[752.46px] top-[24.46px] bg-[#22D3EE] rounded-full [z-index:14]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.502px] h-[5.502px] opacity-[0.363] absolute left-[805.249px] top-[25.249px] bg-[#22D3EE] rounded-full [z-index:15]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.604px] h-[3.604px] opacity-[0.165] absolute left-[858.198px] top-[26.198px] bg-[#6366F1] rounded-full [z-index:16]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.583px] h-[2.583px] opacity-[0.059] absolute left-[910.709px] top-[26.709px] bg-[#6366F1] rounded-full [z-index:17]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.647px] h-[2.647px] opacity-[0.065] absolute left-[962.676px] top-[26.676px] bg-[#6366F1] rounded-full [z-index:18]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.225px] h-[3.225px] opacity-[0.126] absolute left-[1014.388px] top-[26.388px] bg-[#6366F1] rounded-full [z-index:19]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.659px] h-[3.659px] opacity-[0.171] absolute left-[1066.17px] top-[26.17px] bg-[#6366F1] rounded-full [z-index:20]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.62px] h-[3.62px] opacity-[0.167] absolute left-[1118.19px] top-[26.19px] bg-[#6366F1] rounded-full [z-index:21]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.132px] h-[3.132px] opacity-[0.116] absolute left-[1170.434px] top-[26.434px] bg-[#6366F1] rounded-full [z-index:22]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.585px] h-[2.585px] opacity-[0.059] absolute left-[1222.707px] top-[26.707px] bg-[#6366F1] rounded-full [z-index:23]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.662px] h-[2.662px] opacity-[0.067] absolute left-[1274.669px] top-[26.669px] bg-[#6366F1] rounded-full [z-index:24]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.86px] h-[3.86px] opacity-[0.192] absolute left-[1326.07px] top-[26.07px] bg-[#6366F1] rounded-full [z-index:25]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.804px] h-[5.804px] opacity-[0.394] absolute left-[1377.098px] top-[25.098px] bg-[#22D3EE] rounded-full [z-index:26]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.846px] h-[5.846px] opacity-[0.399] absolute left-[25.077px] top-[77.077px] bg-[#22D3EE] rounded-full [z-index:27]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.291px] h-[7.291px] opacity-[0.549] absolute left-[76.355px] top-[76.355px] bg-[#22D3EE] rounded-full [z-index:28]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.221px] h-[6.221px] opacity-[0.438] absolute left-[128.89px] top-[76.89px] bg-[#22D3EE] rounded-full [z-index:29]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.767px] h-[3.767px] opacity-[0.182] absolute left-[182.116px] top-[78.116px] bg-[#6366F1] rounded-full [z-index:30]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.5px] h-[2.5px] opacity-[0.05] absolute left-[234.75px] top-[78.75px] bg-[#6366F1] rounded-full [z-index:31]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.732px] h-[3.732px] opacity-[0.178] absolute left-[286.134px] top-[78.134px] bg-[#6366F1] rounded-full [z-index:32]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.172px] h-[6.172px] opacity-[0.432] absolute left-[336.914px] top-[76.914px] bg-[#22D3EE] rounded-full [z-index:33]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.297px] h-[7.297px] opacity-[0.55] absolute left-[388.352px] top-[76.352px] bg-[#22D3EE] rounded-full [z-index:34]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.969px] h-[5.969px] opacity-[0.411] absolute left-[441.016px] top-[77.016px] bg-[#22D3EE] rounded-full [z-index:35]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.562px] h-[3.562px] opacity-[0.161] absolute left-[494.219px] top-[78.219px] bg-[#6366F1] rounded-full [z-index:36]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.505px] h-[2.505px] opacity-[0.051] absolute left-[546.747px] top-[78.747px] bg-[#6366F1] rounded-full [z-index:37]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.82px] h-[3.82px] opacity-[0.187] absolute left-[598.09px] top-[78.09px] bg-[#6366F1] rounded-full [z-index:38]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.171px] h-[6.171px] opacity-[0.432] absolute left-[648.914px] top-[76.914px] bg-[#22D3EE] rounded-full [z-index:39]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.3px] h-[7.3px] opacity-[0.55] absolute left-[700.35px] top-[76.35px] bg-[#22D3EE] rounded-full [z-index:40]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.229px] h-[6.229px] opacity-[0.438] absolute left-[752.885px] top-[76.885px] bg-[#22D3EE] rounded-full [z-index:41]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.036px] h-[4.036px] opacity-[0.21] absolute left-[805.982px] top-[77.982px] bg-[#6366F1] rounded-full [z-index:42]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.603px] h-[2.603px] opacity-[0.061] absolute left-[858.699px] top-[78.699px] bg-[#6366F1] rounded-full [z-index:43]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.846px] h-[2.846px] opacity-[0.086] absolute left-[910.577px] top-[78.577px] bg-[#6366F1] rounded-full [z-index:44]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.186px] h-[4.186px] opacity-[0.226] absolute left-[961.907px] top-[77.907px] bg-[#6366F1] rounded-full [z-index:45]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.489px] h-[5.489px] opacity-[0.361] absolute left-[1013.255px] top-[77.255px] bg-[#22D3EE] rounded-full [z-index:46]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.138px] h-[6.138px] opacity-[0.429] absolute left-[1064.931px] top-[76.931px] bg-[#22D3EE] rounded-full [z-index:47]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.085px] h-[6.085px] opacity-[0.423] absolute left-[1116.957px] top-[76.957px] bg-[#22D3EE] rounded-full [z-index:48]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.325px] h-[5.325px] opacity-[0.344] absolute left-[1169.338px] top-[77.338px] bg-[#6366F1] rounded-full [z-index:49]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.956px] h-[3.956px] opacity-[0.202] absolute left-[1222.022px] top-[78.022px] bg-[#6366F1] rounded-full [z-index:50]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.709px] h-[2.709px] opacity-[0.072] absolute left-[1274.645px] top-[78.645px] bg-[#6366F1] rounded-full [z-index:51]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.718px] h-[2.718px] opacity-[0.073] absolute left-[1326.641px] top-[78.641px] bg-[#6366F1] rounded-full [z-index:52]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.367px] h-[4.367px] opacity-[0.244] absolute left-[1377.816px] top-[77.816px] bg-[#6366F1] rounded-full [z-index:53]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.158px] h-[6.158px] opacity-[0.431] absolute left-[24.921px] top-[128.921px] bg-[#22D3EE] rounded-full [z-index:54]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.295px] h-[7.295px] opacity-[0.549] absolute left-[76.353px] top-[128.353px] bg-[#22D3EE] rounded-full [z-index:55]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.88px] h-[5.88px] opacity-[0.402] absolute left-[129.06px] top-[129.06px] bg-[#22D3EE] rounded-full [z-index:56]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.423px] h-[3.423px] opacity-[0.146] absolute left-[182.288px] top-[130.288px] bg-[#6366F1] rounded-full [z-index:57]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.536px] h-[2.536px] opacity-[0.054] absolute left-[234.732px] top-[130.732px] bg-[#6366F1] rounded-full [z-index:58]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.156px] h-[4.156px] opacity-[0.222] absolute left-[285.922px] top-[129.922px] bg-[#6366F1] rounded-full [z-index:59]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.561px] h-[6.561px] opacity-[0.473] absolute left-[336.72px] top-[128.72px] bg-[#22D3EE] rounded-full [z-index:60]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.212px] h-[7.212px] opacity-[0.541] absolute left-[388.394px] top-[128.394px] bg-[#22D3EE] rounded-full [z-index:61]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.433px] h-[5.433px] opacity-[0.356] absolute left-[441.283px] top-[129.283px] bg-[#6366F1] rounded-full [z-index:62]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.099px] h-[3.099px] opacity-[0.112] absolute left-[494.45px] top-[130.45px] bg-[#6366F1] rounded-full [z-index:63]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.643px] h-[2.643px] opacity-[0.065] absolute left-[546.678px] top-[130.678px] bg-[#6366F1] rounded-full [z-index:64]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.519px] h-[4.519px] opacity-[0.26] absolute left-[597.74px] top-[129.74px] bg-[#6366F1] rounded-full [z-index:65]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.778px] h-[6.778px] opacity-[0.496] absolute left-[648.611px] top-[128.611px] bg-[#22D3EE] rounded-full [z-index:66]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.131px] h-[7.131px] opacity-[0.532] absolute left-[700.435px] top-[128.435px] bg-[#22D3EE] rounded-full [z-index:67]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.272px] h-[5.272px] opacity-[0.339] absolute left-[753.364px] top-[129.364px] bg-[#6366F1] rounded-full [z-index:68]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.075px] h-[3.075px] opacity-[0.11] absolute left-[806.462px] top-[130.462px] bg-[#6366F1] rounded-full [z-index:69]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.596px] h-[2.596px] opacity-[0.06] absolute left-[858.702px] top-[130.702px] bg-[#6366F1] rounded-full [z-index:70]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.092px] h-[4.092px] opacity-[0.216] absolute left-[909.954px] top-[129.954px] bg-[#6366F1] rounded-full [z-index:71]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.085px] h-[6.085px] opacity-[0.423] absolute left-[960.957px] top-[128.957px] bg-[#22D3EE] rounded-full [z-index:72]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.151px] h-[7.151px] opacity-[0.534] absolute left-[1012.424px] top-[128.424px] bg-[#22D3EE] rounded-full [z-index:73]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.297px] h-[7.297px] opacity-[0.55] absolute left-[1064.352px] top-[128.352px] bg-[#22D3EE] rounded-full [z-index:74]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.3px] h-[7.3px] opacity-[0.55] absolute left-[1116.35px] top-[128.35px] bg-[#22D3EE] rounded-full [z-index:75]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.064px] h-[7.064px] opacity-[0.525] absolute left-[1168.468px] top-[128.468px] bg-[#22D3EE] rounded-full [z-index:76]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.817px] h-[5.817px] opacity-[0.396] absolute left-[1221.092px] top-[129.092px] bg-[#22D3EE] rounded-full [z-index:77]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.783px] h-[3.783px] opacity-[0.184] absolute left-[1274.109px] top-[130.109px] bg-[#6366F1] rounded-full [z-index:78]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.521px] h-[2.521px] opacity-[0.052] absolute left-[1326.739px] top-[130.739px] bg-[#6366F1] rounded-full [z-index:79]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.339px] h-[3.339px] opacity-[0.137] absolute left-[1378.331px] top-[130.331px] bg-[#6366F1] rounded-full [z-index:80]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.345px] h-[6.345px] opacity-[0.451] absolute left-[24.827px] top-[180.827px] bg-[#22D3EE] rounded-full [z-index:81]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.267px] h-[7.267px] opacity-[0.547] absolute left-[76.366px] top-[180.366px] bg-[#22D3EE] rounded-full [z-index:82]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.646px] h-[5.646px] opacity-[0.378] absolute left-[129.177px] top-[181.177px] bg-[#22D3EE] rounded-full [z-index:83]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.224px] h-[3.224px] opacity-[0.125] absolute left-[182.388px] top-[182.388px] bg-[#6366F1] rounded-full [z-index:84]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.601px] h-[2.601px] opacity-[0.061] absolute left-[234.699px] top-[182.699px] bg-[#6366F1] rounded-full [z-index:85]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.444px] h-[4.444px] opacity-[0.253] absolute left-[285.778px] top-[181.778px] bg-[#6366F1] rounded-full [z-index:86]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.776px] h-[6.776px] opacity-[0.495] absolute left-[336.612px] top-[180.612px] bg-[#22D3EE] rounded-full [z-index:87]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.097px] h-[7.097px] opacity-[0.529] absolute left-[388.451px] top-[180.451px] bg-[#22D3EE] rounded-full [z-index:88]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.068px] h-[5.068px] opacity-[0.318] absolute left-[441.466px] top-[181.466px] bg-[#6366F1] rounded-full [z-index:89]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.86px] h-[2.86px] opacity-[0.088] absolute left-[494.57px] top-[182.57px] bg-[#6366F1] rounded-full [z-index:90]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.829px] h-[2.829px] opacity-[0.084] absolute left-[546.586px] top-[182.586px] bg-[#6366F1] rounded-full [z-index:91]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5px] h-[5px] opacity-[0.31] absolute left-[597.5px] top-[181.5px] bg-[#6366F1] rounded-full [z-index:92]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.063px] h-[7.063px] opacity-[0.525] absolute left-[648.468px] top-[180.468px] bg-[#22D3EE] rounded-full [z-index:93]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.839px] h-[6.839px] opacity-[0.502] absolute left-[700.581px] top-[180.581px] bg-[#22D3EE] rounded-full [z-index:94]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.58px] h-[4.58px] opacity-[0.267] absolute left-[753.71px] top-[181.71px] bg-[#6366F1] rounded-full [z-index:95]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.662px] h-[2.662px] opacity-[0.067] absolute left-[806.669px] top-[182.669px] bg-[#6366F1] rounded-full [z-index:96]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.045px] h-[3.045px] opacity-[0.107] absolute left-[858.477px] top-[182.477px] bg-[#6366F1] rounded-full [z-index:97]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.27px] h-[5.27px] opacity-[0.339] absolute left-[909.365px] top-[181.365px] bg-[#6366F1] rounded-full [z-index:98]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.095px] h-[7.095px] opacity-[0.529] absolute left-[960.452px] top-[180.452px] bg-[#22D3EE] rounded-full [z-index:99]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.019px] h-[7.019px] opacity-[0.521] absolute left-[1012.49px] top-[180.49px] bg-[#22D3EE] rounded-full [z-index:100]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.968px] h-[5.968px] opacity-[0.411] absolute left-[1065.016px] top-[181.016px] bg-[#22D3EE] rounded-full [z-index:101]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.098px] h-[6.098px] opacity-[0.425] absolute left-[1116.951px] top-[180.951px] bg-[#22D3EE] rounded-full [z-index:102]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.146px] h-[7.146px] opacity-[0.534] absolute left-[1168.427px] top-[180.427px] bg-[#22D3EE] rounded-full [z-index:103]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.926px] h-[6.926px] opacity-[0.511] absolute left-[1220.537px] top-[180.537px] bg-[#22D3EE] rounded-full [z-index:104]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.893px] h-[4.893px] opacity-[0.299] absolute left-[1273.554px] top-[181.554px] bg-[#6366F1] rounded-full [z-index:105]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.824px] h-[2.824px] opacity-[0.084] absolute left-[1326.588px] top-[182.588px] bg-[#6366F1] rounded-full [z-index:106]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.833px] h-[2.833px] opacity-[0.085] absolute left-[1378.583px] top-[182.583px] bg-[#6366F1] rounded-full [z-index:107]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.423px] h-[6.423px] opacity-[0.459] absolute left-[24.789px] top-[232.789px] bg-[#22D3EE] rounded-full [z-index:108]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.248px] h-[7.248px] opacity-[0.545] absolute left-[76.376px] top-[232.376px] bg-[#22D3EE] rounded-full [z-index:109]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.542px] h-[5.542px] opacity-[0.367] absolute left-[129.229px] top-[233.229px] bg-[#22D3EE] rounded-full [z-index:110]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.143px] h-[3.143px] opacity-[0.117] absolute left-[182.428px] top-[234.428px] bg-[#6366F1] rounded-full [z-index:111]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.639px] h-[2.639px] opacity-[0.065] absolute left-[234.68px] top-[234.68px] bg-[#6366F1] rounded-full [z-index:112]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.573px] h-[4.573px] opacity-[0.266] absolute left-[285.713px] top-[233.713px] bg-[#6366F1] rounded-full [z-index:113]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.859px] h-[6.859px] opacity-[0.504] absolute left-[336.57px] top-[232.57px] bg-[#22D3EE] rounded-full [z-index:114]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.033px] h-[7.033px] opacity-[0.522] absolute left-[388.484px] top-[232.484px] bg-[#22D3EE] rounded-full [z-index:115]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.907px] h-[4.907px] opacity-[0.301] absolute left-[441.547px] top-[233.547px] bg-[#6366F1] rounded-full [z-index:116]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.773px] h-[2.773px] opacity-[0.078] absolute left-[494.613px] top-[234.613px] bg-[#6366F1] rounded-full [z-index:117]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.933px] h-[2.933px] opacity-[0.095] absolute left-[546.534px] top-[234.534px] bg-[#6366F1] rounded-full [z-index:118]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.212px] h-[5.212px] opacity-[0.333] absolute left-[597.394px] top-[233.394px] bg-[#6366F1] rounded-full [z-index:119]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.156px] h-[7.156px] opacity-[0.535] absolute left-[648.422px] top-[232.422px] bg-[#22D3EE] rounded-full [z-index:120]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.668px] h-[6.668px] opacity-[0.484] absolute left-[700.666px] top-[232.666px] bg-[#22D3EE] rounded-full [z-index:121]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.276px] h-[4.276px] opacity-[0.235] absolute left-[753.862px] top-[233.862px] bg-[#6366F1] rounded-full [z-index:122]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.556px] h-[2.556px] opacity-[0.056] absolute left-[806.722px] top-[234.722px] bg-[#6366F1] rounded-full [z-index:123]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.359px] h-[3.359px] opacity-[0.139] absolute left-[858.321px] top-[234.321px] bg-[#6366F1] rounded-full [z-index:124]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.817px] h-[5.817px] opacity-[0.396] absolute left-[909.092px] top-[233.092px] bg-[#22D3EE] rounded-full [z-index:125]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.29px] h-[7.29px] opacity-[0.549] absolute left-[960.355px] top-[232.355px] bg-[#22D3EE] rounded-full [z-index:126]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.218px] h-[6.218px] opacity-[0.437] absolute left-[1012.891px] top-[232.891px] bg-[#22D3EE] rounded-full [z-index:127]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.851px] h-[3.851px] opacity-[0.191] absolute left-[1066.075px] top-[234.075px] bg-[#6366F1] rounded-full [z-index:128]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.18px] h-[4.18px] opacity-[0.225] absolute left-[1117.91px] top-[233.91px] bg-[#6366F1] rounded-full [z-index:129]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.531px] h-[6.531px] opacity-[0.47] absolute left-[1168.735px] top-[232.735px] bg-[#22D3EE] rounded-full [z-index:130]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.22px] h-[7.22px] opacity-[0.542] absolute left-[1220.39px] top-[232.39px] bg-[#22D3EE] rounded-full [z-index:131]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.434px] h-[5.434px] opacity-[0.356] absolute left-[1273.283px] top-[233.283px] bg-[#6366F1] rounded-full [z-index:132]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.073px] h-[3.073px] opacity-[0.11] absolute left-[1326.463px] top-[234.463px] bg-[#6366F1] rounded-full [z-index:133]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.675px] h-[2.675px] opacity-[0.068] absolute left-[1378.662px] top-[234.662px] bg-[#6366F1] rounded-full [z-index:134]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.4px] h-[6.4px] opacity-[0.456] absolute left-[24.8px] top-[284.8px] bg-[#22D3EE] rounded-full [z-index:135]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.254px] h-[7.254px] opacity-[0.545] absolute left-[76.373px] top-[284.373px] bg-[#22D3EE] rounded-full [z-index:136]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.573px] h-[5.573px] opacity-[0.37] absolute left-[129.213px] top-[285.213px] bg-[#22D3EE] rounded-full [z-index:137]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.167px] h-[3.167px] opacity-[0.119] absolute left-[182.417px] top-[286.417px] bg-[#6366F1] rounded-full [z-index:138]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.627px] h-[2.627px] opacity-[0.063] absolute left-[234.686px] top-[286.686px] bg-[#6366F1] rounded-full [z-index:139]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.534px] h-[4.534px] opacity-[0.262] absolute left-[285.733px] top-[285.733px] bg-[#6366F1] rounded-full [z-index:140]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.835px] h-[6.835px] opacity-[0.502] absolute left-[336.583px] top-[284.583px] bg-[#22D3EE] rounded-full [z-index:141]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.053px] h-[7.053px] opacity-[0.524] absolute left-[388.473px] top-[284.473px] bg-[#22D3EE] rounded-full [z-index:142]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.955px] h-[4.955px] opacity-[0.306] absolute left-[441.522px] top-[285.522px] bg-[#6366F1] rounded-full [z-index:143]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.798px] h-[2.798px] opacity-[0.081] absolute left-[494.601px] top-[286.601px] bg-[#6366F1] rounded-full [z-index:144]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.9px] h-[2.9px] opacity-[0.092] absolute left-[546.55px] top-[286.55px] bg-[#6366F1] rounded-full [z-index:145]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.149px] h-[5.149px] opacity-[0.326] absolute left-[597.426px] top-[285.426px] bg-[#6366F1] rounded-full [z-index:146]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.13px] h-[7.13px] opacity-[0.532] absolute left-[648.435px] top-[284.435px] bg-[#22D3EE] rounded-full [z-index:147]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.722px] h-[6.722px] opacity-[0.49] absolute left-[700.639px] top-[284.639px] bg-[#22D3EE] rounded-full [z-index:148]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.367px] h-[4.367px] opacity-[0.244] absolute left-[753.816px] top-[285.816px] bg-[#6366F1] rounded-full [z-index:149]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.583px] h-[2.583px] opacity-[0.059] absolute left-[806.709px] top-[286.709px] bg-[#6366F1] rounded-full [z-index:150]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.257px] h-[3.257px] opacity-[0.129] absolute left-[858.371px] top-[286.371px] bg-[#6366F1] rounded-full [z-index:151]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.654px] h-[5.654px] opacity-[0.378] absolute left-[909.173px] top-[285.173px] bg-[#22D3EE] rounded-full [z-index:152]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.255px] h-[7.255px] opacity-[0.545] absolute left-[960.372px] top-[284.372px] bg-[#22D3EE] rounded-full [z-index:153]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.531px] h-[6.531px] opacity-[0.47] absolute left-[1012.735px] top-[284.735px] bg-[#22D3EE] rounded-full [z-index:154]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.713px] h-[4.713px] opacity-[0.281] absolute left-[1065.643px] top-[285.643px] bg-[#6366F1] rounded-full [z-index:155]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.94px] h-[4.94px] opacity-[0.304] absolute left-[1117.53px] top-[285.53px] bg-[#6366F1] rounded-full [z-index:156]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.777px] h-[6.777px] opacity-[0.496] absolute left-[1168.612px] top-[284.612px] bg-[#22D3EE] rounded-full [z-index:157]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.151px] h-[7.151px] opacity-[0.534] absolute left-[1220.424px] top-[284.424px] bg-[#22D3EE] rounded-full [z-index:158]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.27px] h-[5.27px] opacity-[0.339] absolute left-[1273.365px] top-[285.365px] bg-[#6366F1] rounded-full [z-index:159]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.991px] h-[2.991px] opacity-[0.101] absolute left-[1326.505px] top-[286.505px] bg-[#6366F1] rounded-full [z-index:160]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.718px] h-[2.718px] opacity-[0.073] absolute left-[1378.641px] top-[286.641px] bg-[#6366F1] rounded-full [z-index:161]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.273px] h-[6.273px] opacity-[0.443] absolute left-[24.863px] top-[336.863px] bg-[#22D3EE] rounded-full [z-index:162]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.281px] h-[7.281px] opacity-[0.548] absolute left-[76.36px] top-[336.36px] bg-[#22D3EE] rounded-full [z-index:163]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.739px] h-[5.739px] opacity-[0.387] absolute left-[129.131px] top-[337.131px] bg-[#22D3EE] rounded-full [z-index:164]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.3px] h-[3.3px] opacity-[0.133] absolute left-[182.35px] top-[338.35px] bg-[#6366F1] rounded-full [z-index:165]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.572px] h-[2.572px] opacity-[0.057] absolute left-[234.714px] top-[338.714px] bg-[#6366F1] rounded-full [z-index:166]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.33px] h-[4.33px] opacity-[0.241] absolute left-[285.835px] top-[337.835px] bg-[#6366F1] rounded-full [z-index:167]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.695px] h-[6.695px] opacity-[0.487] absolute left-[336.652px] top-[336.652px] bg-[#22D3EE] rounded-full [z-index:168]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.148px] h-[7.148px] opacity-[0.534] absolute left-[388.426px] top-[336.426px] bg-[#22D3EE] rounded-full [z-index:169]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.213px] h-[5.213px] opacity-[0.333] absolute left-[441.394px] top-[337.394px] bg-[#6366F1] rounded-full [z-index:170]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.948px] h-[2.948px] opacity-[0.097] absolute left-[494.526px] top-[338.526px] bg-[#6366F1] rounded-full [z-index:171]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.747px] h-[2.747px] opacity-[0.076] absolute left-[546.626px] top-[338.626px] bg-[#6366F1] rounded-full [z-index:172]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.81px] h-[4.81px] opacity-[0.291] absolute left-[597.595px] top-[337.595px] bg-[#6366F1] rounded-full [z-index:173]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.963px] h-[6.963px] opacity-[0.515] absolute left-[648.518px] top-[336.518px] bg-[#22D3EE] rounded-full [z-index:174]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.97px] h-[6.97px] opacity-[0.516] absolute left-[700.515px] top-[336.515px] bg-[#22D3EE] rounded-full [z-index:175]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.854px] h-[4.854px] opacity-[0.295] absolute left-[753.573px] top-[337.573px] bg-[#6366F1] rounded-full [z-index:176]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.798px] h-[2.798px] opacity-[0.081] absolute left-[806.601px] top-[338.601px] bg-[#6366F1] rounded-full [z-index:177]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.824px] h-[2.824px] opacity-[0.084] absolute left-[858.588px] top-[338.588px] bg-[#6366F1] rounded-full [z-index:178]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.787px] h-[4.787px] opacity-[0.288] absolute left-[909.606px] top-[337.606px] bg-[#6366F1] rounded-full [z-index:179]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.765px] h-[6.765px] opacity-[0.494] absolute left-[960.618px] top-[336.618px] bg-[#22D3EE] rounded-full [z-index:180]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.282px] h-[7.282px] opacity-[0.548] absolute left-[1012.359px] top-[336.359px] bg-[#22D3EE] rounded-full [z-index:181]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.846px] h-[6.846px] opacity-[0.503] absolute left-[1064.577px] top-[336.577px] bg-[#22D3EE] rounded-full [z-index:182]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.909px] h-[6.909px] opacity-[0.509] absolute left-[1116.545px] top-[336.545px] bg-[#22D3EE] rounded-full [z-index:183]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.3px] h-[7.3px] opacity-[0.55] absolute left-[1168.35px] top-[336.35px] bg-[#22D3EE] rounded-full [z-index:184]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.539px] h-[6.539px] opacity-[0.471] absolute left-[1220.73px] top-[336.73px] bg-[#22D3EE] rounded-full [z-index:185]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.429px] h-[4.429px] opacity-[0.251] absolute left-[1273.786px] top-[337.786px] bg-[#6366F1] rounded-full [z-index:186]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.662px] h-[2.662px] opacity-[0.067] absolute left-[1326.669px] top-[338.669px] bg-[#6366F1] rounded-full [z-index:187]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.01px] h-[3.01px] opacity-[0.103] absolute left-[1378.495px] top-[338.495px] bg-[#6366F1] rounded-full [z-index:188]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.031px] h-[6.031px] opacity-[0.418] absolute left-[24.985px] top-[388.985px] bg-[#22D3EE] rounded-full [z-index:189]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.3px] h-[7.3px] opacity-[0.55] absolute left-[76.35px] top-[388.35px] bg-[#22D3EE] rounded-full [z-index:190]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.026px] h-[6.026px] opacity-[0.417] absolute left-[128.987px] top-[388.987px] bg-[#22D3EE] rounded-full [z-index:191]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.562px] h-[3.562px] opacity-[0.161] absolute left-[182.219px] top-[390.219px] bg-[#6366F1] rounded-full [z-index:192]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.512px] h-[2.512px] opacity-[0.051] absolute left-[234.744px] top-[390.744px] bg-[#6366F1] rounded-full [z-index:193]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.974px] h-[3.974px] opacity-[0.204] absolute left-[286.013px] top-[390.013px] bg-[#6366F1] rounded-full [z-index:194]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.406px] h-[6.406px] opacity-[0.457] absolute left-[336.797px] top-[388.797px] bg-[#22D3EE] rounded-full [z-index:195]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.262px] h-[7.262px] opacity-[0.546] absolute left-[388.369px] top-[388.369px] bg-[#22D3EE] rounded-full [z-index:196]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.663px] h-[5.663px] opacity-[0.379] absolute left-[441.169px] top-[389.169px] bg-[#22D3EE] rounded-full [z-index:197]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.28px] h-[3.28px] opacity-[0.131] absolute left-[494.36px] top-[390.36px] bg-[#6366F1] rounded-full [z-index:198]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.563px] h-[2.563px] opacity-[0.057] absolute left-[546.719px] top-[390.719px] bg-[#6366F1] rounded-full [z-index:199]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.217px] h-[4.217px] opacity-[0.229] absolute left-[597.892px] top-[389.892px] bg-[#6366F1] rounded-full [z-index:200]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.546px] h-[6.546px] opacity-[0.471] absolute left-[648.727px] top-[388.727px] bg-[#22D3EE] rounded-full [z-index:201]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.244px] h-[7.244px] opacity-[0.544] absolute left-[700.378px] top-[388.378px] bg-[#22D3EE] rounded-full [z-index:202]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.697px] h-[5.697px] opacity-[0.383] absolute left-[753.152px] top-[389.152px] bg-[#22D3EE] rounded-full [z-index:203]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.442px] h-[3.442px] opacity-[0.148] absolute left-[806.279px] top-[390.279px] bg-[#6366F1] rounded-full [z-index:204]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.502px] h-[2.502px] opacity-[0.05] absolute left-[858.749px] top-[390.749px] bg-[#6366F1] rounded-full [z-index:205]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.466px] h-[3.466px] opacity-[0.151] absolute left-[910.267px] top-[390.267px] bg-[#6366F1] rounded-full [z-index:206]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.27px] h-[5.27px] opacity-[0.339] absolute left-[961.365px] top-[389.365px] bg-[#6366F1] rounded-full [z-index:207]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.586px] h-[6.586px] opacity-[0.476] absolute left-[1012.707px] top-[388.707px] bg-[#22D3EE] rounded-full [z-index:208]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.064px] h-[7.064px] opacity-[0.525] absolute left-[1064.468px] top-[388.468px] bg-[#22D3EE] rounded-full [z-index:209]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.032px] h-[7.032px] opacity-[0.522] absolute left-[1116.484px] top-[388.484px] bg-[#22D3EE] rounded-full [z-index:210]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.443px] h-[6.443px] opacity-[0.461] absolute left-[1168.779px] top-[388.779px] bg-[#22D3EE] rounded-full [z-index:211]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5px] h-[5px] opacity-[0.31] absolute left-[1221.5px] top-[389.5px] bg-[#6366F1] rounded-full [z-index:212]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.225px] h-[3.225px] opacity-[0.126] absolute left-[1274.388px] top-[390.388px] bg-[#6366F1] rounded-full [z-index:213]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.514px] h-[2.514px] opacity-[0.051] absolute left-[1326.743px] top-[390.743px] bg-[#6366F1] rounded-full [z-index:214]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.745px] h-[3.745px] opacity-[0.18] absolute left-[1378.128px] top-[390.128px] bg-[#6366F1] rounded-full [z-index:215]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.655px] h-[5.655px] opacity-[0.379] absolute left-[25.172px] top-[441.172px] bg-[#22D3EE] rounded-full [z-index:216]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.262px] h-[7.262px] opacity-[0.546] absolute left-[76.369px] top-[440.369px] bg-[#22D3EE] rounded-full [z-index:217]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.403px] h-[6.403px] opacity-[0.457] absolute left-[128.798px] top-[440.798px] bg-[#22D3EE] rounded-full [z-index:218]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.983px] h-[3.983px] opacity-[0.204] absolute left-[182.009px] top-[442.009px] bg-[#6366F1] rounded-full [z-index:219]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.515px] h-[2.515px] opacity-[0.052] absolute left-[234.742px] top-[442.742px] bg-[#6366F1] rounded-full [z-index:220]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.506px] h-[3.506px] opacity-[0.155] absolute left-[286.247px] top-[442.247px] bg-[#6366F1] rounded-full [z-index:221]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.921px] h-[5.921px] opacity-[0.406] absolute left-[337.039px] top-[441.039px] bg-[#22D3EE] rounded-full [z-index:222]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.293px] h-[7.293px] opacity-[0.549] absolute left-[388.354px] top-[440.354px] bg-[#22D3EE] rounded-full [z-index:223]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.251px] h-[6.251px] opacity-[0.441] absolute left-[440.874px] top-[440.874px] bg-[#22D3EE] rounded-full [z-index:224]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.869px] h-[3.869px] opacity-[0.193] absolute left-[494.065px] top-[442.065px] bg-[#6366F1] rounded-full [z-index:225]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.51px] h-[2.51px] opacity-[0.051] absolute left-[546.745px] top-[442.745px] bg-[#6366F1] rounded-full [z-index:226]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.462px] h-[3.462px] opacity-[0.15] absolute left-[598.269px] top-[442.269px] bg-[#6366F1] rounded-full [z-index:227]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.757px] h-[5.757px] opacity-[0.389] absolute left-[649.122px] top-[441.122px] bg-[#22D3EE] rounded-full [z-index:228]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.243px] h-[7.243px] opacity-[0.544] absolute left-[700.378px] top-[440.378px] bg-[#22D3EE] rounded-full [z-index:229]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.668px] h-[6.668px] opacity-[0.484] absolute left-[752.666px] top-[440.666px] bg-[#22D3EE] rounded-full [z-index:230]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.672px] h-[4.672px] opacity-[0.276] absolute left-[805.664px] top-[441.664px] bg-[#6366F1] rounded-full [z-index:231]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.928px] h-[2.928px] opacity-[0.095] absolute left-[858.536px] top-[442.536px] bg-[#6366F1] rounded-full [z-index:232]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.54px] h-[2.54px] opacity-[0.054] absolute left-[910.73px] top-[442.73px] bg-[#6366F1] rounded-full [z-index:233]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.324px] h-[3.324px] opacity-[0.136] absolute left-[962.338px] top-[442.338px] bg-[#6366F1] rounded-full [z-index:234]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.379px] h-[4.379px] opacity-[0.246] absolute left-[1013.81px] top-[441.81px] bg-[#6366F1] rounded-full [z-index:235]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5px] h-[5px] opacity-[0.31] absolute left-[1065.5px] top-[441.5px] bg-[#6366F1] rounded-full [z-index:236]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.946px] h-[4.946px] opacity-[0.305] absolute left-[1117.527px] top-[441.527px] bg-[#6366F1] rounded-full [z-index:237]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.234px] h-[4.234px] opacity-[0.231] absolute left-[1169.883px] top-[441.883px] bg-[#6366F1] rounded-full [z-index:238]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.162px] h-[3.162px] opacity-[0.119] absolute left-[1222.419px] top-[442.419px] bg-[#6366F1] rounded-full [z-index:239]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.506px] h-[2.506px] opacity-[0.051] absolute left-[1274.747px] top-[442.747px] bg-[#6366F1] rounded-full [z-index:240]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.121px] h-[3.121px] opacity-[0.115] absolute left-[1326.44px] top-[442.44px] bg-[#6366F1] rounded-full [z-index:241]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.005px] h-[5.005px] opacity-[0.311] absolute left-[1377.497px] top-[441.497px] bg-[#6366F1] rounded-full [z-index:242]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.136px] h-[5.136px] opacity-[0.325] absolute left-[25.432px] top-[493.432px] bg-[#6366F1] rounded-full [z-index:243]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.101px] h-[7.101px] opacity-[0.529] absolute left-[76.449px] top-[492.449px] bg-[#22D3EE] rounded-full [z-index:244]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.811px] h-[6.811px] opacity-[0.499] absolute left-[128.594px] top-[492.594px] bg-[#22D3EE] rounded-full [z-index:245]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.578px] h-[4.578px] opacity-[0.266] absolute left-[181.711px] top-[493.711px] bg-[#6366F1] rounded-full [z-index:246]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.675px] h-[2.675px] opacity-[0.068] absolute left-[234.662px] top-[494.662px] bg-[#6366F1] rounded-full [z-index:247]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.007px] h-[3.007px] opacity-[0.103] absolute left-[286.496px] top-[494.496px] bg-[#6366F1] rounded-full [z-index:248]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.217px] h-[5.217px] opacity-[0.333] absolute left-[337.392px] top-[493.392px] bg-[#6366F1] rounded-full [z-index:249]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.106px] h-[7.106px] opacity-[0.53] absolute left-[388.447px] top-[492.447px] bg-[#22D3EE] rounded-full [z-index:250]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.852px] h-[6.852px] opacity-[0.503] absolute left-[440.574px] top-[492.574px] bg-[#22D3EE] rounded-full [z-index:251]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.744px] h-[4.744px] opacity-[0.284] absolute left-[493.628px] top-[493.628px] bg-[#6366F1] rounded-full [z-index:252]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.798px] h-[2.798px] opacity-[0.081] absolute left-[546.601px] top-[494.601px] bg-[#6366F1] rounded-full [z-index:253]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.773px] h-[2.773px] opacity-[0.078] absolute left-[598.614px] top-[494.614px] bg-[#6366F1] rounded-full [z-index:254]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.602px] h-[4.602px] opacity-[0.269] absolute left-[649.699px] top-[493.699px] bg-[#6366F1] rounded-full [z-index:255]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.643px] h-[6.643px] opacity-[0.482] absolute left-[700.679px] top-[492.679px] bg-[#22D3EE] rounded-full [z-index:256]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.276px] h-[7.276px] opacity-[0.547] absolute left-[752.362px] top-[492.362px] bg-[#22D3EE] rounded-full [z-index:257]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.206px] h-[6.206px] opacity-[0.436] absolute left-[804.897px] top-[492.897px] bg-[#22D3EE] rounded-full [z-index:258]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.397px] h-[4.397px] opacity-[0.248] absolute left-[857.801px] top-[493.801px] bg-[#6366F1] rounded-full [z-index:259]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.01px] h-[3.01px] opacity-[0.103] absolute left-[910.495px] top-[494.495px] bg-[#6366F1] rounded-full [z-index:260]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.51px] h-[2.51px] opacity-[0.051] absolute left-[962.745px] top-[494.745px] bg-[#6366F1] rounded-full [z-index:261]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.62px] h-[2.62px] opacity-[0.063] absolute left-[1014.69px] top-[494.69px] bg-[#6366F1] rounded-full [z-index:262]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.824px] h-[2.824px] opacity-[0.084] absolute left-[1066.588px] top-[494.588px] bg-[#6366F1] rounded-full [z-index:263]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.803px] h-[2.803px] opacity-[0.082] absolute left-[1118.598px] top-[494.598px] bg-[#6366F1] rounded-full [z-index:264]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.585px] h-[2.585px] opacity-[0.059] absolute left-[1170.707px] top-[494.707px] bg-[#6366F1] rounded-full [z-index:265]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.535px] h-[2.535px] opacity-[0.054] absolute left-[1222.733px] top-[494.733px] bg-[#6366F1] rounded-full [z-index:266]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.167px] h-[3.167px] opacity-[0.119] absolute left-[1274.416px] top-[494.416px] bg-[#6366F1] rounded-full [z-index:267]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.672px] h-[4.672px] opacity-[0.276] absolute left-[1325.664px] top-[493.664px] bg-[#6366F1] rounded-full [z-index:268]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.451px] h-[6.451px] opacity-[0.462] absolute left-[1376.774px] top-[492.774px] bg-[#22D3EE] rounded-full [z-index:269]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.489px] h-[4.489px] opacity-[0.257] absolute left-[25.756px] top-[545.756px] bg-[#6366F1] rounded-full [z-index:270]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.745px] h-[6.745px] opacity-[0.492] absolute left-[76.627px] top-[544.627px] bg-[#22D3EE] rounded-full [z-index:271]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.153px] h-[7.153px] opacity-[0.535] absolute left-[128.423px] top-[544.423px] bg-[#22D3EE] rounded-full [z-index:272]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.328px] h-[5.328px] opacity-[0.345] absolute left-[181.336px] top-[545.336px] bg-[#6366F1] rounded-full [z-index:273]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.089px] h-[3.089px] opacity-[0.111] absolute left-[234.456px] top-[546.456px] bg-[#6366F1] rounded-full [z-index:274]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.616px] h-[2.616px] opacity-[0.062] absolute left-[286.692px] top-[546.692px] bg-[#6366F1] rounded-full [z-index:275]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.33px] h-[4.33px] opacity-[0.241] absolute left-[337.835px] top-[545.835px] bg-[#6366F1] rounded-full [z-index:276]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.571px] h-[6.571px] opacity-[0.474] absolute left-[388.715px] top-[544.715px] bg-[#22D3EE] rounded-full [z-index:277]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.253px] h-[7.253px] opacity-[0.545] absolute left-[440.373px] top-[544.373px] bg-[#22D3EE] rounded-full [z-index:278]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.811px] h-[5.811px] opacity-[0.395] absolute left-[493.094px] top-[545.094px] bg-[#22D3EE] rounded-full [z-index:279]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.59px] h-[3.59px] opacity-[0.164] absolute left-[546.205px] top-[546.205px] bg-[#6366F1] rounded-full [z-index:280]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.503px] h-[2.503px] opacity-[0.05] absolute left-[598.749px] top-[546.749px] bg-[#6366F1] rounded-full [z-index:281]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.353px] h-[3.353px] opacity-[0.139] absolute left-[650.323px] top-[546.323px] bg-[#6366F1] rounded-full [z-index:282]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.34px] h-[5.34px] opacity-[0.346] absolute left-[701.33px] top-[545.33px] bg-[#6366F1] rounded-full [z-index:283]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.951px] h-[6.951px] opacity-[0.514] absolute left-[752.524px] top-[544.524px] bg-[#22D3EE] rounded-full [z-index:284]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.232px] h-[7.232px] opacity-[0.543] absolute left-[804.384px] top-[544.384px] bg-[#22D3EE] rounded-full [z-index:285]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.298px] h-[6.298px] opacity-[0.446] absolute left-[856.851px] top-[544.851px] bg-[#22D3EE] rounded-full [z-index:286]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.915px] h-[4.915px] opacity-[0.302] absolute left-[909.543px] top-[545.543px] bg-[#6366F1] rounded-full [z-index:287]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.773px] h-[3.773px] opacity-[0.183] absolute left-[962.113px] top-[546.113px] bg-[#6366F1] rounded-full [z-index:288]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.121px] h-[3.121px] opacity-[0.115] absolute left-[1014.44px] top-[546.44px] bg-[#6366F1] rounded-full [z-index:289]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.87px] h-[2.87px] opacity-[0.089] absolute left-[1066.565px] top-[546.565px] bg-[#6366F1] rounded-full [z-index:290]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.889px] h-[2.889px] opacity-[0.091] absolute left-[1118.556px] top-[546.556px] bg-[#6366F1] rounded-full [z-index:291]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.191px] h-[3.191px] opacity-[0.122] absolute left-[1170.405px] top-[546.405px] bg-[#6366F1] rounded-full [z-index:292]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.918px] h-[3.918px] opacity-[0.198] absolute left-[1222.041px] top-[546.041px] bg-[#6366F1] rounded-full [z-index:293]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.125px] h-[5.125px] opacity-[0.323] absolute left-[1273.438px] top-[545.438px] bg-[#6366F1] rounded-full [z-index:294]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.493px] h-[6.493px] opacity-[0.466] absolute left-[1324.754px] top-[544.754px] bg-[#22D3EE] rounded-full [z-index:295]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.282px] h-[7.282px] opacity-[0.548] absolute left-[1376.359px] top-[544.359px] bg-[#22D3EE] rounded-full [z-index:296]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.769px] h-[3.769px] opacity-[0.182] absolute left-[26.116px] top-[598.116px] bg-[#6366F1] rounded-full [z-index:297]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.142px] h-[6.142px] opacity-[0.429] absolute left-[76.929px] top-[596.929px] bg-[#22D3EE] rounded-full [z-index:298]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.3px] h-[7.3px] opacity-[0.55] absolute left-[128.35px] top-[596.35px] bg-[#22D3EE] rounded-full [z-index:299]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.148px] h-[6.148px] opacity-[0.43] absolute left-[180.926px] top-[596.926px] bg-[#22D3EE] rounded-full [z-index:300]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.818px] h-[3.818px] opacity-[0.187] absolute left-[234.091px] top-[598.091px] bg-[#6366F1] rounded-full [z-index:301]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.511px] h-[2.511px] opacity-[0.051] absolute left-[286.744px] top-[598.744px] bg-[#6366F1] rounded-full [z-index:302]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.405px] h-[3.405px] opacity-[0.144] absolute left-[338.298px] top-[598.298px] bg-[#6366F1] rounded-full [z-index:303]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.633px] h-[5.633px] opacity-[0.376] absolute left-[389.183px] top-[597.183px] bg-[#22D3EE] rounded-full [z-index:304]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.198px] h-[7.198px] opacity-[0.539] absolute left-[440.401px] top-[596.401px] bg-[#22D3EE] rounded-full [z-index:305]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.798px] h-[6.798px] opacity-[0.498] absolute left-[492.601px] top-[596.601px] bg-[#22D3EE] rounded-full [z-index:306]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.858px] h-[4.858px] opacity-[0.296] absolute left-[545.571px] top-[597.571px] bg-[#6366F1] rounded-full [z-index:307]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.989px] h-[2.989px] opacity-[0.101] absolute left-[598.505px] top-[598.505px] bg-[#6366F1] rounded-full [z-index:308]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.559px] h-[2.559px] opacity-[0.056] absolute left-[650.721px] top-[598.721px] bg-[#6366F1] rounded-full [z-index:309]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.713px] h-[3.713px] opacity-[0.176] absolute left-[702.143px] top-[598.143px] bg-[#6366F1] rounded-full [z-index:310]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.529px] h-[5.529px] opacity-[0.366] absolute left-[753.236px] top-[597.236px] bg-[#22D3EE] rounded-full [z-index:311]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.901px] h-[6.901px] opacity-[0.508] absolute left-[804.549px] top-[596.549px] bg-[#22D3EE] rounded-full [z-index:312]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.296px] h-[7.296px] opacity-[0.55] absolute left-[856.352px] top-[596.352px] bg-[#22D3EE] rounded-full [z-index:313]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.87px] h-[6.87px] opacity-[0.505] absolute left-[908.565px] top-[596.565px] bg-[#22D3EE] rounded-full [z-index:314]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.11px] h-[6.11px] opacity-[0.426] absolute left-[960.945px] top-[596.945px] bg-[#22D3EE] rounded-full [z-index:315]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.446px] h-[5.446px] opacity-[0.357] absolute left-[1013.277px] top-[597.277px] bg-[#6366F1] rounded-full [z-index:316]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.095px] h-[5.095px] opacity-[0.32] absolute left-[1065.453px] top-[597.453px] bg-[#6366F1] rounded-full [z-index:317]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.125px] h-[5.125px] opacity-[0.323] absolute left-[1117.438px] top-[597.438px] bg-[#6366F1] rounded-full [z-index:318]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.531px] h-[5.531px] opacity-[0.366] absolute left-[1169.235px] top-[597.235px] bg-[#22D3EE] rounded-full [z-index:319]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.229px] h-[6.229px] opacity-[0.438] absolute left-[1220.885px] top-[596.885px] bg-[#22D3EE] rounded-full [z-index:320]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.97px] h-[6.97px] opacity-[0.516] absolute left-[1272.515px] top-[596.515px] bg-[#22D3EE] rounded-full [z-index:321]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.299px] h-[7.299px] opacity-[0.55] absolute left-[1324.351px] top-[596.351px] bg-[#22D3EE] rounded-full [z-index:322]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.749px] h-[6.749px] opacity-[0.493] absolute left-[1376.625px] top-[596.625px] bg-[#22D3EE] rounded-full [z-index:323]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.089px] h-[3.089px] opacity-[0.111] absolute left-[26.456px] top-[650.456px] bg-[#6366F1] rounded-full [z-index:324]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.289px] h-[5.289px] opacity-[0.341] absolute left-[77.355px] top-[649.355px] bg-[#6366F1] rounded-full [z-index:325]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.113px] h-[7.113px] opacity-[0.531] absolute left-[128.443px] top-[648.443px] bg-[#22D3EE] rounded-full [z-index:326]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.873px] h-[6.873px] opacity-[0.506] absolute left-[180.563px] top-[648.563px] bg-[#22D3EE] rounded-full [z-index:327]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.833px] h-[4.833px] opacity-[0.293] absolute left-[233.584px] top-[649.584px] bg-[#6366F1] rounded-full [z-index:328]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.867px] h-[2.867px] opacity-[0.088] absolute left-[286.566px] top-[650.566px] bg-[#6366F1] rounded-full [z-index:329]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.698px] h-[2.698px] opacity-[0.071] absolute left-[338.651px] top-[650.651px] bg-[#6366F1] rounded-full [z-index:330]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.406px] h-[4.406px] opacity-[0.249] absolute left-[389.797px] top-[649.797px] bg-[#6366F1] rounded-full [z-index:331]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.5px] h-[6.5px] opacity-[0.467] absolute left-[440.75px] top-[648.75px] bg-[#22D3EE] rounded-full [z-index:332]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.293px] h-[7.293px] opacity-[0.549] absolute left-[492.353px] top-[648.353px] bg-[#22D3EE] rounded-full [z-index:333]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.264px] h-[6.264px] opacity-[0.442] absolute left-[544.868px] top-[648.868px] bg-[#22D3EE] rounded-full [z-index:334]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.291px] h-[4.291px] opacity-[0.237] absolute left-[597.854px] top-[649.854px] bg-[#6366F1] rounded-full [z-index:335]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.782px] h-[2.782px] opacity-[0.079] absolute left-[650.609px] top-[650.609px] bg-[#6366F1] rounded-full [z-index:336]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.602px] h-[2.602px] opacity-[0.061] absolute left-[702.699px] top-[650.699px] bg-[#6366F1] rounded-full [z-index:337]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.644px] h-[3.644px] opacity-[0.169] absolute left-[754.178px] top-[650.178px] bg-[#6366F1] rounded-full [z-index:338]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.17px] h-[5.17px] opacity-[0.328] absolute left-[805.415px] top-[649.415px] bg-[#6366F1] rounded-full [z-index:339]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.444px] h-[6.444px] opacity-[0.461] absolute left-[856.778px] top-[648.778px] bg-[#22D3EE] rounded-full [z-index:340]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.13px] h-[7.13px] opacity-[0.532] absolute left-[908.435px] top-[648.435px] bg-[#22D3EE] rounded-full [z-index:341]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.3px] h-[7.3px] opacity-[0.55] absolute left-[960.35px] top-[648.35px] bg-[#22D3EE] rounded-full [z-index:342]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.213px] h-[7.213px] opacity-[0.541] absolute left-[1012.394px] top-[648.394px] bg-[#22D3EE] rounded-full [z-index:343]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.111px] h-[7.111px] opacity-[0.53] absolute left-[1064.444px] top-[648.444px] bg-[#22D3EE] rounded-full [z-index:344]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.121px] h-[7.121px] opacity-[0.531] absolute left-[1116.439px] top-[648.439px] bg-[#22D3EE] rounded-full [z-index:345]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.232px] h-[7.232px] opacity-[0.543] absolute left-[1168.384px] top-[648.384px] bg-[#22D3EE] rounded-full [z-index:346]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.298px] h-[7.298px] opacity-[0.55] absolute left-[1220.351px] top-[648.351px] bg-[#22D3EE] rounded-full [z-index:347]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.063px] h-[7.063px] opacity-[0.525] absolute left-[1272.468px] top-[648.468px] bg-[#22D3EE] rounded-full [z-index:348]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.283px] h-[6.283px] opacity-[0.444] absolute left-[1324.858px] top-[648.858px] bg-[#22D3EE] rounded-full [z-index:349]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.937px] h-[4.937px] opacity-[0.304] absolute left-[1377.532px] top-[649.532px] bg-[#6366F1] rounded-full [z-index:350]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.613px] h-[2.613px] opacity-[0.062] absolute left-[26.694px] top-[702.694px] bg-[#6366F1] rounded-full [z-index:351]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.276px] h-[4.276px] opacity-[0.235] absolute left-[77.862px] top-[701.862px] bg-[#6366F1] rounded-full [z-index:352]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.498px] h-[6.498px] opacity-[0.466] absolute left-[128.751px] top-[700.751px] bg-[#22D3EE] rounded-full [z-index:353]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.277px] h-[7.277px] opacity-[0.548] absolute left-[180.362px] top-[700.362px] bg-[#22D3EE] rounded-full [z-index:354]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.968px] h-[5.968px] opacity-[0.411] absolute left-[233.016px] top-[701.016px] bg-[#22D3EE] rounded-full [z-index:355]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.757px] h-[3.757px] opacity-[0.181] absolute left-[286.121px] top-[702.121px] bg-[#6366F1] rounded-full [z-index:356]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.521px] h-[2.521px] opacity-[0.052] absolute left-[338.74px] top-[702.74px] bg-[#6366F1] rounded-full [z-index:357]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.216px] h-[3.216px] opacity-[0.125] absolute left-[390.392px] top-[702.392px] bg-[#6366F1] rounded-full [z-index:358]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.204px] h-[5.204px] opacity-[0.332] absolute left-[441.398px] top-[701.398px] bg-[#6366F1] rounded-full [z-index:359]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.929px] h-[6.929px] opacity-[0.511] absolute left-[492.535px] top-[700.535px] bg-[#22D3EE] rounded-full [z-index:360]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[7.2px] h-[7.2px] opacity-[0.54] absolute left-[544.4px] top-[700.4px] bg-[#22D3EE] rounded-full [z-index:361]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.969px] h-[5.969px] opacity-[0.411] absolute left-[597.016px] top-[701.016px] bg-[#22D3EE] rounded-full [z-index:362]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.148px] h-[4.148px] opacity-[0.222] absolute left-[649.926px] top-[701.926px] bg-[#6366F1] rounded-full [z-index:363]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.816px] h-[2.816px] opacity-[0.083] absolute left-[702.592px] top-[702.592px] bg-[#6366F1] rounded-full [z-index:364]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[2.53px] h-[2.53px] opacity-[0.053] absolute left-[754.735px] top-[702.735px] bg-[#6366F1] rounded-full [z-index:365]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.18px] h-[3.18px] opacity-[0.121] absolute left-[806.41px] top-[702.41px] bg-[#6366F1] rounded-full [z-index:366]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.276px] h-[4.276px] opacity-[0.235] absolute left-[857.862px] top-[701.862px] bg-[#6366F1] rounded-full [z-index:367]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.34px] h-[5.34px] opacity-[0.346] absolute left-[909.33px] top-[701.33px] bg-[#6366F1] rounded-full [z-index:368]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.114px] h-[6.114px] opacity-[0.426] absolute left-[960.943px] top-[700.943px] bg-[#22D3EE] rounded-full [z-index:369]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.562px] h-[6.562px] opacity-[0.473] absolute left-[1012.719px] top-[700.719px] bg-[#22D3EE] rounded-full [z-index:370]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.749px] h-[6.749px] opacity-[0.493] absolute left-[1064.625px] top-[700.625px] bg-[#22D3EE] rounded-full [z-index:371]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.734px] h-[6.734px] opacity-[0.491] absolute left-[1116.633px] top-[700.633px] bg-[#22D3EE] rounded-full [z-index:372]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.512px] h-[6.512px] opacity-[0.468] absolute left-[1168.744px] top-[700.744px] bg-[#22D3EE] rounded-full [z-index:373]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[6.017px] h-[6.017px] opacity-[0.416] absolute left-[1220.991px] top-[700.991px] bg-[#22D3EE] rounded-full [z-index:374]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[5.191px] h-[5.191px] opacity-[0.33] absolute left-[1273.404px] top-[701.404px] bg-[#6366F1] rounded-full [z-index:375]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[4.1px] h-[4.1px] opacity-[0.217] absolute left-[1325.95px] top-[701.95px] bg-[#6366F1] rounded-full [z-index:376]"
+            ></div>
+            <div
+              data-pencil-name="d"
+              class="box-border w-[3.038px] h-[3.038px] opacity-[0.106] absolute left-[1378.481px] top-[702.481px] bg-[#6366F1] rounded-full [z-index:377]"
+            ></div>
+          </div>
+          <div
+            data-pencil-name="Hero Row"
+            class="box-border w-full h-fit shrink-0 flex flex-row gap-[48px] justify-between items-center relative [z-index:1]"
+          >
+            <div
+              data-pencil-name="Left"
+              class="box-border w-[760px] shrink-0 h-fit flex flex-col gap-[22px] justify-start items-start"
+            >
+              <div
+                data-pencil-name="Eyebrow"
+                class="box-border w-fit h-fit shrink-0 flex flex-row gap-[10px] justify-start items-center"
+              >
+                <div
+                  data-pencil-name="sq"
+                  class="box-border w-[8px] shrink-0 h-[8px] bg-[#22D3EE]"
+                ></div>
+                <div
+                  data-pencil-name="t"
+                  class="text-[13px]/[normal] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#B9C6CE] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[2.5px] text-left [white-space:nowrap]"
+                >
+                  ОДИН ДВИЖОК · ТРИ АУДИТОРИИ
+                </div>
+              </div>
+              <div
+                data-pencil-name="Headline"
+                class="box-border w-fit h-fit shrink-0 flex flex-col gap-0 p-[2px_0px_0px_0px] justify-start items-start"
+              >
+                <div
+                  data-pencil-name="L1"
+                  class="text-[48px]/[51px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#F7F4EE] font-['Playfair_Display',system-ui,sans-serif] font-black tracking-[-1px] text-left [white-space:nowrap]"
+                >
+                  Twitch показывает твой онлайн.
+                </div>
+                <div
+                  data-pencil-name="L2"
+                  class="text-[48px]/[51px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#F7F4EE] font-['Playfair_Display',system-ui,sans-serif] font-black tracking-[-1px] text-left [white-space:nowrap]"
+                >
+                  Мы — кто эти люди
+                </div>
+                <div
+                  data-pencil-name="L3"
+                  class="text-[48px]/[52px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#67E8F9] font-['Playfair_Display',system-ui,sans-serif] font-black italic tracking-[-1px] text-left [white-space:nowrap]"
+                >
+                  и куда они уходят.
+                </div>
+              </div>
+              <div
+                data-pencil-name="Sub"
+                class="text-[17px]/[26px] box-border w-[560px] [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#D4D0DE] font-[Inter,system-ui,sans-serif] font-normal text-left"
+              >
+                Не дублируем твой кабинет Twitch. Показываем то, чего в нём нет: сколько из твоего
+                онлайна — живые люди и куда уходит твоя аудитория между стримами.
+              </div>
+              <div
+                data-pencil-name="Proofs"
+                class="box-border w-fit h-fit shrink-0 flex flex-col gap-[11px] p-[4px_0px_0px_0px] justify-start items-start"
+              >
+                <div
+                  data-pencil-name="p"
+                  class="box-border w-fit h-fit shrink-0 flex flex-row gap-[10px] justify-start items-center"
+                >
+                  <svg
+                    data-pencil-name="c"
+                    data-icon-name="check"
+                    data-icon-set="lucide"
+                    viewBox="0 0 13.99993896484375 14"
+                    preserveAspectRatio="xMidYMid meet"
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="box-border w-[16px] shrink-0 h-[16px]"
+                  >
+                    <path
+                      d="M11.48096 2.95313q-0.07178 0.01367-0.12989 0.0581-0.05469 0.04102-3.07617 3.06592l-3.0249 3.00781-1.28857-1.28857q-1.28857-1.28516-1.38086-1.32618-0.08887-0.04443-0.22217-0.04443-0.1333 0-0.23242 0.0376-0.0957 0.03418-0.18799 0.11279-0.08887 0.0752-0.1333 0.1709-0.02734 0.07178-0.03418 0.11279-0.00684 0.04102-0.00684 0.14014l0 0.04102q-0.01367 0.11279 0.04102 0.19824 0.07178 0.10938 0.36572 0.40332 0.19482 0.21191 0.96729 0.98096l1.49707 1.48339q0.28027 0.2666 0.38964 0.33838 0.07178 0.05469 0.18457 0.04102l0.09571 0.01367q0.07178 0 0.14013-0.02734 0.08545-0.07178 0.32129-0.28711 0.23926-0.21875 0.79981-0.76221l2.2832-2.2832q2.08496-2.09863 2.7002-2.71387 0.61524-0.61865 0.64599-0.68701 0.04102-0.08545 0.04102-0.23926 0-0.09912-0.00684-0.14014-0.00684-0.04102-0.03418-0.11279-0.04443-0.08203-0.13672-0.16406-0.08887-0.08545-0.18115-0.11963-0.08887-0.0376-0.20849-0.0376-0.11963 0-0.18799 0.02734z"
+                      fill="#34D399"
+                    ></path>
+                  </svg>
+                  <div
+                    data-pencil-name="t"
+                    class="text-[14.5px]/[normal] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#D4D0DE] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                  >
+                    Считаем по живым зрителям, а не по счётчику Twitch
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="p"
+                  class="box-border w-fit h-fit shrink-0 flex flex-row gap-[10px] justify-start items-center"
+                >
+                  <svg
+                    data-pencil-name="c"
+                    data-icon-name="check"
+                    data-icon-set="lucide"
+                    viewBox="0 0 13.99993896484375 14"
+                    preserveAspectRatio="xMidYMid meet"
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="box-border w-[16px] shrink-0 h-[16px]"
+                  >
+                    <path
+                      d="M11.48096 2.95313q-0.07178 0.01367-0.12989 0.0581-0.05469 0.04102-3.07617 3.06592l-3.0249 3.00781-1.28857-1.28857q-1.28857-1.28516-1.38086-1.32618-0.08887-0.04443-0.22217-0.04443-0.1333 0-0.23242 0.0376-0.0957 0.03418-0.18799 0.11279-0.08887 0.0752-0.1333 0.1709-0.02734 0.07178-0.03418 0.11279-0.00684 0.04102-0.00684 0.14014l0 0.04102q-0.01367 0.11279 0.04102 0.19824 0.07178 0.10938 0.36572 0.40332 0.19482 0.21191 0.96729 0.98096l1.49707 1.48339q0.28027 0.2666 0.38964 0.33838 0.07178 0.05469 0.18457 0.04102l0.09571 0.01367q0.07178 0 0.14013-0.02734 0.08545-0.07178 0.32129-0.28711 0.23926-0.21875 0.79981-0.76221l2.2832-2.2832q2.08496-2.09863 2.7002-2.71387 0.61524-0.61865 0.64599-0.68701 0.04102-0.08545 0.04102-0.23926 0-0.09912-0.00684-0.14014-0.00684-0.04102-0.03418-0.11279-0.04443-0.08203-0.13672-0.16406-0.08887-0.08545-0.18115-0.11963-0.08887-0.0376-0.20849-0.0376-0.11963 0-0.18799 0.02734z"
+                      fill="#34D399"
+                    ></path>
+                  </svg>
+                  <div
+                    data-pencil-name="t"
+                    class="text-[14.5px]/[normal] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#D4D0DE] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                  >
+                    Прямо в Twitch — расширение для Chrome
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="p"
+                  class="box-border w-fit h-fit shrink-0 flex flex-row gap-[10px] justify-start items-center"
+                >
+                  <svg
+                    data-pencil-name="c"
+                    data-icon-name="check"
+                    data-icon-set="lucide"
+                    viewBox="0 0 13.99993896484375 14"
+                    preserveAspectRatio="xMidYMid meet"
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="box-border w-[16px] shrink-0 h-[16px]"
+                  >
+                    <path
+                      d="M11.48096 2.95313q-0.07178 0.01367-0.12989 0.0581-0.05469 0.04102-3.07617 3.06592l-3.0249 3.00781-1.28857-1.28857q-1.28857-1.28516-1.38086-1.32618-0.08887-0.04443-0.22217-0.04443-0.1333 0-0.23242 0.0376-0.0957 0.03418-0.18799 0.11279-0.08887 0.0752-0.1333 0.1709-0.02734 0.07178-0.03418 0.11279-0.00684 0.04102-0.00684 0.14014l0 0.04102q-0.01367 0.11279 0.04102 0.19824 0.07178 0.10938 0.36572 0.40332 0.19482 0.21191 0.96729 0.98096l1.49707 1.48339q0.28027 0.2666 0.38964 0.33838 0.07178 0.05469 0.18457 0.04102l0.09571 0.01367q0.07178 0 0.14013-0.02734 0.08545-0.07178 0.32129-0.28711 0.23926-0.21875 0.79981-0.76221l2.2832-2.2832q2.08496-2.09863 2.7002-2.71387 0.61524-0.61865 0.64599-0.68701 0.04102-0.08545 0.04102-0.23926 0-0.09912-0.00684-0.14014-0.00684-0.04102-0.03418-0.11279-0.04443-0.08203-0.13672-0.16406-0.08887-0.08545-0.18115-0.11963-0.08887-0.0376-0.20849-0.0376-0.11963 0-0.18799 0.02734z"
+                      fill="#34D399"
+                    ></path>
+                  </svg>
+                  <div
+                    data-pencil-name="t"
+                    class="text-[14.5px]/[normal] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#D4D0DE] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                  >
+                    Открытая методология, без чёрного ящика
+                  </div>
+                </div>
+              </div>
+              <div
+                data-pencil-name="CTA Row"
+                class="box-border w-fit h-fit shrink-0 flex flex-row gap-[16px] p-[6px_0px_0px_0px] justify-start items-center"
+              >
+                <div
+                  data-pencil-name="Primary"
+                  class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[15px_26px] justify-start items-start bg-[#7C3AED] rounded-[6px]"
+                >
+                  <div
+                    data-pencil-name="t"
+                    class="text-[14px]/[normal] box-border text-[#FFFFFF] font-['Geist_Mono',system-ui,sans-serif] font-semibold tracking-[0.5px] text-left [white-space:nowrap]"
+                  >
+                    Подключить канал — бесплатно
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="lb"
+                  class="text-[13.5px]/[normal] box-border text-[#67E8F9] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[0.5px] text-left [white-space:nowrap]">
+                  Я бренд →
+                </div>
+                <div
+                  data-pencil-name="lv"
+                  class="text-[13.5px]/[normal] box-border text-[#C4B5FD] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[0.5px] text-left [white-space:nowrap]"
+                >
+                  Я зритель →
+                </div>
+              </div>
+            </div>
+            <div
+              data-pencil-name="Live Card"
+              class="box-border w-[440px] shrink-0 h-fit flex flex-col gap-[16px] p-[22px] justify-start items-start bg-[#0D0B14F2] [border:1px_solid_#FFFFFF1F] rounded-[16px]"
+            >
+              <div
+                data-pencil-name="Hdr"
+                class="box-border w-full h-fit shrink-0 flex flex-row gap-0 justify-between items-center"
+              >
+                <div
+                  data-pencil-name="l"
+                  class="box-border w-fit shrink-0 h-fit flex flex-row gap-[11px] justify-start items-center"
+                >
+                  <div
+                    data-pencil-name="av"
+                    class="box-border w-[40px] shrink-0 h-[40px] flex flex-row gap-0 justify-center items-center bg-[#22D3EE] rounded-[999px]"
+                  >
+                    <div
+                      data-pencil-name="s"
+                      class="text-[18px]/[normal] box-border text-[#07070C] font-[Anton,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    >
+                      S
+                    </div>
+                  </div>
+                  <div
+                    data-pencil-name="nm"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col gap-[2px] justify-start items-start"
+                  >
+                    <div
+                      data-pencil-name="a"
+                      class="text-[15px]/[normal] box-border text-[#F5F2EC] font-[Geist,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    >
+                      shadow_play
+                    </div>
+                    <div
+                      data-pencil-name="b"
+                      class="text-[12.5px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    >
+                      PUBG · 2 ч в эфире
+                    </div>
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="r"
+                  class="box-border w-fit shrink-0 h-fit flex flex-col gap-[4px] justify-start items-end"
+                >
+                  <div
+                    data-pencil-name="live"
+                    class="box-border w-fit h-fit shrink-0 flex flex-row gap-[6px] p-[5px_9px] justify-start items-center bg-[#EF444422] rounded-[999px]"
+                  >
+                    <div
+                      data-pencil-name="d"
+                      class="box-border w-[7px] shrink-0 h-[7px] bg-[#EF4444] rounded-full"
+                    ></div>
+                    <div
+                      data-pencil-name="t"
+                      class="text-[11px]/[normal] box-border text-[#FF7A7A] font-['Geist_Mono',system-ui,sans-serif] font-bold tracking-[0.5px] text-left [white-space:nowrap]"
+                    >
+                      LIVE
+                    </div>
+                  </div>
+                  <div
+                    data-pencil-name="on"
+                    class="text-[12.5px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                  >
+                    5 000 онлайн
+                  </div>
+                </div>
+              </div>
+              <div
+                data-pencil-name="Meter"
+                class="box-border w-full h-fit shrink-0 flex flex-col gap-[13px] p-[16px] justify-start items-start bg-[#FFFFFF08] rounded-[12px]"
+              >
+                <div
+                  data-pencil-name="sr"
+                  class="box-border w-fit h-fit shrink-0 flex flex-row gap-[12px] justify-start items-end"
+                >
+                  <div
+                    data-pencil-name="big"
+                    class="text-[46px]/[39px] box-border text-[#F7F4EE] font-[Anton,system-ui,sans-serif] font-normal tracking-[-1px] text-left [white-space:nowrap]"
+                  >
+                    4 200
+                  </div>
+                  <div
+                    data-pencil-name="sc"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col gap-[1px] p-[0px_0px_6px_0px] justify-start items-start"
+                  >
+                    <div
+                      data-pencil-name="a"
+                      class="text-[13.5px]/[normal] box-border text-[#D4D0DE] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    >
+                      живых зрителей
+                    </div>
+                    <div
+                      data-pencil-name="b"
+                      class="text-[12px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    >
+                      из 5 000 на счётчике
+                    </div>
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="track"
+                  class="box-border w-full h-[10px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FFFFFF14] rounded-[2px]"
+                >
+                  <div
+                    data-pencil-name="bar"
+                    class="box-border w-[306px] shrink-0 h-[10px] flex flex-row gap-0 justify-start items-start bg-[#22D3EE] rounded-[2px]"
+                  ></div>
+                </div>
+                <div
+                  data-pencil-name="badge"
+                  class="box-border w-fit h-fit shrink-0 flex flex-row gap-[7px] p-[6px_11px] justify-start items-center bg-[#10B98122] rounded-[999px]"
+                >
+                  <div
+                    data-pencil-name="d"
+                    class="box-border w-[7px] shrink-0 h-[7px] bg-[#34D399] rounded-full"
+                  ></div>
+                  <div
+                    data-pencil-name="t"
+                    class="text-[11.5px]/[normal] box-border text-[#6EE7B7] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[0.5px] text-left [white-space:nowrap]"
+                  >
+                    Аудитория реальная · 84%
+                  </div>
+                </div>
+              </div>
+              <div
+                data-pencil-name="div"
+                class="box-border w-full h-[1px] shrink-0 bg-[#FFFFFF12]"
+              ></div>
+              <div
+                data-pencil-name="Now"
+                class="box-border w-full h-fit shrink-0 flex flex-col gap-[9px] justify-start items-start"
+              >
+                <div
+                  data-pencil-name="l"
+                  class="text-[10.5px]/[normal] box-border text-[#8E8A9A] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
+                >
+                  ПРЯМО СЕЙЧАС
+                </div>
+                <div
+                  data-pencil-name="chips"
+                  class="box-border w-fit h-fit shrink-0 flex flex-row gap-[8px] justify-start items-start"
+                >
+                  <div
+                    data-pencil-name="320 → xQc"
+                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[6px_11px] justify-start items-start bg-[#EC489922] rounded-[999px]"
+                  >
+                    <div
+                      data-pencil-name="t"
+                      class="text-[12px]/[normal] box-border text-[#F9A8D4] font-['Geist_Mono',system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    >
+                      320 → xQc
+                    </div>
+                  </div>
+                  <div
+                    data-pencil-name="+47 · BRAND10"
+                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[6px_11px] justify-start items-start bg-[#22D3EE22] rounded-[999px]"
+                  >
+                    <div
+                      data-pencil-name="t"
+                      class="text-[12px]/[normal] box-border text-[#67E8F9] font-['Geist_Mono',system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    >
+                      +47 · BRAND10
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div
+          data-pencil-name="Sec Explainer NEW"
+          class="box-border w-full h-fit shrink-0 flex flex-col gap-[22px] p-[60px_56px] justify-start items-start bg-[#090910]"
+        >
+          <div
+            data-pencil-name="H"
+            class="box-border w-fit h-fit shrink-0 flex flex-col gap-[10px] justify-start items-start"
+          >
+            <div
+              data-pencil-name="eb"
+              class="text-[13px]/[normal] box-border text-[#8E8A9A] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[3px] text-left [white-space:nowrap]"
+            >
+              ПРОСТЫМИ СЛОВАМИ
+            </div>
+            <div
+              data-pencil-name="h"
+              class="text-[40px]/[40px] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[-0.5px] text-left [white-space:nowrap]"
+            >
+              Если коротко — мы детектор честности для Twitch
+            </div>
+          </div>
+          <div
+            data-pencil-name="Punchline"
+            class="box-border w-full h-fit shrink-0 flex flex-row gap-[14px] p-[22px] justify-start items-center bg-[#160F26] [border:1.5px_solid_#A855F77A] rounded-[14px]"
+          >
+            <svg
+              data-pencil-name="i"
+              data-icon-name="sparkles"
+              data-icon-set="lucide"
+              viewBox="0 0 13.99993896484375 14"
+              preserveAspectRatio="xMidYMid meet"
+              xmlns="http://www.w3.org/2000/svg"
+              class="box-border w-[22px] shrink-0 h-[22px]"
+            >
+              <path
+                d="M6.84619 0.58789q-0.28027 0.04102-0.54687 0.22559-0.29395 0.2085-0.40674 0.57422-0.02734 0.08203-0.3418 1.75683-0.31445 1.67139-0.35889 1.76367-0.04102 0.08887-0.10937 0.16065-0.07178 0.08203-0.15381 0.11279-0.11279 0.04102-0.4751 0.12305l-1.28857 0.23926q-1.68164 0.32129-1.77734 0.34863-0.23926 0.07178-0.44434 0.27002-0.20166 0.19482-0.29395 0.44092-0.08887 0.24268-0.06152 0.50244 0.02734 0.25635 0.16748 0.4956 0.09912 0.16748 0.27344 0.30762 0.17432 0.14014 0.35889 0.19824 0.0957 0.02734 1.76367 0.34863l1.28515 0.25293q0.37939 0.06836 0.50586 0.10938 0.08203 0.04443 0.15381 0.11279 0.05469 0.08545 0.09912 0.16748 0.04102 0.12646 0.10938 0.50586l0.23926 1.24414q0.32129 1.68164 0.34863 1.76367 0.15381 0.46484 0.58789 0.67335 0.2666 0.14014 0.51953 0.14013 0.25293 0 0.51953-0.14013 0.43408-0.2085 0.58789-0.67335 0.02734-0.08203 0.3418-1.74658 0.31445-1.66797 0.3418-1.72265 0.02734-0.11279 0.12646-0.2085 0.09912-0.09912 0.21191-0.14355 0.06836-0.02734 1.73291-0.3418 1.66797-0.31445 1.75-0.3418 0.46484-0.15381 0.67335-0.58789 0.2666-0.51953 0-1.03906-0.09912-0.2085-0.28028-0.36231-0.18115-0.15381-0.39307-0.22558-0.0957-0.02734-1.77734-0.34863l-1.23047-0.23926q-0.37939-0.06836-0.50586-0.10938-0.0957-0.03076-0.15381-0.08545-0.10938-0.11279-0.1538-0.23925-0.02734-0.06836-0.3418-1.73291-0.31445-1.66797-0.3418-1.75-0.14014-0.46484-0.60498-0.68702-0.14014-0.07178-0.31445-0.09912-0.17432-0.02734-0.3418-0.01367z m4.73047 0.01367q-0.12305 0.01367-0.24268 0.09912-0.11963 0.08203-0.1914 0.19483-0.04102 0.08545-0.05469 0.20508-0.01367 0.11621-0.01367 0.35546l0 0.29395-0.36572 0q-0.26318 0.01367-0.32813 0.02051-0.06152 0.00684-0.1333 0.03418-0.2666 0.12646-0.31445 0.42041-0.04785 0.29395 0.14697 0.50586 0.08545 0.08203 0.18115 0.14013 0.08545 0.02734 0.14697 0.03418 0.06494 0.00684 0.31788 0.02051l0.34863 0 0 0.34863q0.01367 0.25293 0.02051 0.31788 0.00683 0.06152 0.03418 0.14697 0.05811 0.0957 0.14013 0.18115 0.21191 0.19482 0.50586 0.14697 0.29395-0.04785 0.42041-0.31445 0.02734-0.08545 0.03418-0.14014 0.00684-0.05811 0.02051-0.32129l0-0.36572 0.29395 0q0.32129 0 0.45458-0.03418 0.1333-0.03418 0.25293-0.15381 0.11963-0.11963 0.15381-0.31445 0.03418-0.19824-0.04785-0.35205-0.04443-0.08203-0.12305-0.15039-0.0752-0.07178-0.1538-0.10596-0.07519-0.0376-0.14014-0.04443-0.06152-0.00684-0.32813-0.02051l-0.3623 0 0-0.34863q0-0.23926-0.00684-0.30762-0.00684-0.07178-0.03418-0.12646-0.08545-0.21191-0.25293-0.30762-0.16748-0.09912-0.37939-0.05811z m-4.26904 2.7583q0.23926 1.26123 0.29394 1.55518 0.05811 0.29395 0.1128 0.42041 0.12646 0.30762 0.38281 0.56738 0.25977 0.25635 0.56738 0.38281 0.12646 0.05469 0.41358 0.1128 0.28711 0.05469 1.54833 0.29394 1.56885 0.29395 1.57569 0.30762 0.00684 0.01367-1.60303 0.31445-1.60986 0.30078-1.72266 0.32813-0.39307 0.09912-0.72119 0.40674-0.32813 0.30762-0.46826 0.70068-0.04443 0.09912-0.09912 0.43408l-0.32129 1.63721q-0.25293 1.37402-0.2666 1.37402-0.01367 0-0.30762-1.55517-0.23926-1.2749-0.29736-1.56202-0.05469-0.28711-0.10938-0.41357-0.09912-0.23584-0.30078-0.46484-0.20166-0.23242-0.41357-0.35889-0.14014-0.09912-0.2666-0.14014-0.16748-0.04102-0.57422-0.12646l-1.28516-0.25293q-1.6543-0.30762-1.64062-0.32129 0.01367-0.01367 1.60986-0.30762l1.51416-0.29394q0.25293-0.05811 0.38965-0.1128 0.29395-0.11279 0.56738-0.37597 0.27344-0.2666 0.3999-0.57422 0.05469-0.12646 0.10938-0.41358 0.05811-0.28711 0.29736-1.56201 0.29395-1.55518 0.30762-1.55517 0.01367 0 0.30762 1.55517z m-5.33203 6.59326q-0.31104 0.07178-0.57764 0.23926-0.26318 0.16748-0.46143 0.42041-0.34863 0.4751-0.34863 1.05615 0 0.58105 0.3418 1.04249 0.34521 0.46143 0.91943 0.6289 0.64258 0.18457 1.25781-0.10937 0.32471-0.15381 0.56055-0.44092 0.23926-0.28711 0.35205-0.65283 0.02734-0.11279 0.03418-0.18116 0.00684-0.06836 0.02051-0.28027 0-0.25293-0.02051-0.3623-0.02051-0.11279-0.10596-0.32471-0.15381-0.36231-0.46826-0.63574-0.31445-0.27344-0.70752-0.38623-0.15381-0.02734-0.3999-0.03418-0.24268-0.00684-0.39648 0.0205z m0.60156 1.18946q0.24951 0.11279 0.31787 0.38623 0.07178 0.27344-0.0957 0.48193-0.12646 0.15381-0.29395 0.21192-0.16748 0.05469-0.33496 0-0.25293-0.07178-0.37939-0.33497-0.04102-0.09912-0.03418-0.23242 0.00684-0.1333 0.04785-0.23242 0.09912-0.22217 0.32129-0.29736 0.22559-0.07861 0.45117 0.01709z"
+                fill="#C4B5FD"
+              ></path>
+            </svg>
+            <div
+              data-pencil-name="t"
+              class="text-[17px]/[25px] box-border [flex:1_1_0] text-[#F5F2EC] font-[Inter,system-ui,sans-serif] font-medium text-left"
+            >
+              HimRate показывает, кто из зрителей настоящий, куда они уходят и как слова стримера
+              влияют на их действия.
+            </div>
+          </div>
+          <div
+            data-pencil-name="sub eb"
+            class="text-[13px]/[normal] box-border text-[#8E8A9A] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[2.5px] text-left [white-space:nowrap]"
+          >
+            КОМУ ЭТО ПОДОЙДЁТ — ТРИ АУДИТОРИИ
+          </div>
+          <div
+            data-pencil-name="Audience Cards"
+            class="box-border w-full h-[384px] shrink-0 flex flex-row gap-[20px] justify-start items-start"
+          >
+            <div
+              data-pencil-name="Card СТРИМЕР"
+              class="box-border [flex:1_1_0] h-full flex flex-col gap-[16px] p-[24px] justify-between items-start bg-[#0D0B14] [border:1px_solid_#A855F77A] rounded-[16px]"
+            >
+              <div
+                data-pencil-name="Top"
+                class="box-border w-full h-fit shrink-0 flex flex-col gap-[14px] justify-start items-start"
+              >
+                <div
+                  data-pencil-name="IconHead"
+                  class="box-border w-[48px] h-[48px] shrink-0 flex flex-row gap-0 justify-center items-center bg-[#A855F71A] rounded-[12px]"
+                >
+                  <svg
+                    data-pencil-name="i"
+                    data-icon-name="radio"
+                    data-icon-set="lucide"
+                    viewBox="0 0 13.99993896484375 14"
+                    preserveAspectRatio="xMidYMid meet"
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="box-border w-[24px] shrink-0 h-[24px]"
+                  >
+                    <path
+                      d="M2.7583 2.31055q-0.12646 0.02734-0.23926 0.11279-0.10938 0.08203-0.30761 0.32129-1.35693 1.52441-1.5962 3.56836-0.02734 0.2666-0.02734 0.68701 0 0.42041 0.02734 0.68701 0.21191 1.85937 1.36036 3.28809 0.12305 0.18457 0.29736 0.37256 0.17773 0.18799 0.25293 0.24609 0.07861 0.05469 0.18799 0.08887 0.11279 0.03418 0.21191 0.02051 0.22559-0.02734 0.37256-0.18799 0.14697-0.16064 0.14697-0.37256 0-0.16748-0.05127-0.25635-0.04785-0.09228-0.229-0.31787-0.50586-0.54346-0.81348-1.13135-0.60156-1.13477-0.60156-2.43701 0-1.30225 0.60156-2.43701 0.30762-0.58789 0.81348-1.13135 0.18115-0.22559 0.229-0.31445 0.05127-0.09229 0.05127-0.27344 0-0.18457-0.12646-0.33838-0.12646-0.15381-0.32129-0.19482-0.12646-0.02734-0.23926 0z m8.2168 0q-0.2085 0.05469-0.33496 0.24609-0.12646 0.18799-0.08545 0.41016 0.01367 0.11279 0.06836 0.19824 0.05811 0.08203 0.22558 0.2666 0.49219 0.52979 0.79981 1.13135 0.60156 1.13477 0.60156 2.43701 0 1.30225-0.60156 2.43701-0.30762 0.60156-0.79981 1.13135-0.16748 0.18457-0.22558 0.27002-0.05469 0.08203-0.06836 0.19482-0.02734 0.2085 0.07178 0.37598 0.09912 0.16748 0.27343 0.24609 0.17432 0.0752 0.36914 0.02051 0.11279-0.02734 0.20166-0.0957 0.09229-0.07178 0.25977-0.25293 1.40137-1.5415 1.6543-3.64014 0.02734-0.23926 0.02734-0.68017 0-0.44092-0.02734-0.69385-0.19824-1.62354-1.08008-2.91211-0.16748-0.24951-0.39307-0.52295-0.22217-0.27344-0.37597-0.41357-0.11279-0.09912-0.26661-0.14014-0.15381-0.04102-0.29394-0.01367z m-6.53858 1.65088q-0.18115 0.01367-0.38964 0.22558-0.75537 0.76904-1.02198 1.90381-0.09912 0.42041-0.09912 0.90918 0 0.48877 0.09912 0.90918 0.19482 0.86816 0.71436 1.5415 0.12305 0.16748 0.28369 0.33496 0.16406 0.16748 0.23242 0.21192 0.2666 0.12305 0.52637 0 0.25977-0.12646 0.31445-0.40674 0.02734-0.15381-0.02392-0.28711-0.04785-0.1333-0.18457-0.30078-0.40674-0.44775-0.60499-0.93652-0.19482-0.49219-0.19482-1.06641 0-0.57422 0.19482-1.06299 0.19824-0.49219 0.60499-0.93994 0.13672-0.16748 0.18457-0.30078 0.05127-0.1333 0.02392-0.28711-0.02734-0.08203-0.0581-0.13672-0.02734-0.05811-0.09571-0.14355-0.19482-0.2085-0.50586-0.16748z m4.95606 0q-0.19482 0.01367-0.33496 0.16748-0.06836 0.08545-0.09912 0.14355-0.02734 0.05469-0.05469 0.13672-0.02734 0.15381 0.02051 0.28711 0.05127 0.1333 0.18798 0.30078 0.72803 0.7998 0.78614 1.79443 0.08203 1.25781-0.78614 2.21143-0.13672 0.16748-0.18798 0.30078-0.04785 0.1333-0.02051 0.28711 0.05469 0.28027 0.31445 0.40674 0.25977 0.12305 0.52637 0 0.06836-0.04443 0.23584-0.21192 0.43408-0.44775 0.70752-1.03564 0.27344-0.58789 0.35889-1.23047 0.04102-0.32471 0.02734-0.72119-0.01367-0.3999-0.09912-0.70752-0.19482-0.86816-0.71436-1.5415-0.12646-0.16748-0.28711-0.33496-0.16064-0.16748-0.229-0.21192-0.15381-0.06836-0.35205-0.04101z m-2.67285 1.31591q-0.3623 0.05811-0.69385 0.2837-0.32813 0.22217-0.52295 0.52978-0.2666 0.46143-0.24609 0.97412 0.02051 0.50928 0.31445 0.93652 0.29395 0.42725 0.78613 0.62208 0.43408 0.16748 0.89551 0.10595 0.46143-0.06494 0.82373-0.35205 0.36572-0.28711 0.54688-0.71777 0.12646-0.32471 0.12646-0.65967 0-0.33496-0.12646-0.64258-0.18115-0.43408-0.54004-0.72119-0.35547-0.28711-0.8169-0.35889-0.28027-0.04102-0.54687 0z m0.5332 1.20313q0.18115 0.08545 0.2666 0.2666 0.02734 0.05811 0.04102 0.09912 0.01367 0.04102 0.01367 0.15381 0 0.11279-0.01367 0.15381-0.01367 0.04102-0.04102 0.09912-0.09912 0.18115-0.2666 0.28027-0.08545 0.04102-0.25293 0.04102-0.16748 0-0.25293-0.04102-0.16748-0.09912-0.2666-0.28027-0.02734-0.05811-0.04102-0.09912-0.01367-0.04102-0.01367-0.15381 0-0.11279 0.01367-0.15381 0.01367-0.04102 0.04102-0.09912 0.11279-0.22217 0.36572-0.30762 0.04102-0.01367 0.18115-0.00683 0.14014 0.00684 0.22559 0.04785z"
+                      fill="#C4B5FD"
+                    ></path>
+                  </svg>
+                </div>
+                <div
+                  data-pencil-name="Label Row"
+                  class="box-border w-fit h-[20px] shrink-0 flex flex-row gap-[8px] justify-start items-center"
+                >
+                  <div
+                    data-pencil-name="Dot"
+                    class="box-border w-[8px] shrink-0 h-[8px] bg-[#A855F7] rounded-full"
+                  ></div>
+                  <div
+                    data-pencil-name="Label"
+                    class="text-[12px]/[normal] box-border text-[#A855F7] font-['Geist_Mono',system-ui,sans-serif] font-normal tracking-[2px] text-left [white-space:nowrap]"
+                  >
+                    СТРИМЕР
+                  </div>
+                  <div
+                    data-pencil-name="Tag"
+                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[3px_8px] justify-start items-center bg-[#A855F722] rounded-[999px]"
+                  >
+                    <div
+                      data-pencil-name="Tag Label"
+                      class="text-[10px]/[normal] box-border text-[#A855F7] font-['Geist_Mono',system-ui,sans-serif] font-normal tracking-[1px] text-left [white-space:nowrap]"
+                    >
+                      ГЛАВНОЕ
+                    </div>
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="Mini Heading"
+                  class="text-[21px]/[25px] box-border w-full text-[#F5F2EC] font-[Geist,system-ui,sans-serif] font-semibold text-left"
+                >
+                  Видишь то, чего Twitch не показывает
+                </div>
+                <div
+                  data-pencil-name="Body"
+                  class="text-[15px]/[23px] box-border w-full text-[#A7A3B0] font-[Inter,system-ui,sans-serif] font-normal text-left"
+                >
+                  Бесплатно: подключаешь канал через мод-бота или вход в Twitch — и видишь то, чего
+                  Twitch не показывает: куда уходит твоя аудитория, в какой момент стрима ты её
+                  теряешь, в какую игру играть, чтобы расти. Биржа сделок с брендами.
+                </div>
+              </div>
+              <div
+                data-pencil-name="Primary Button"
+                class="box-border w-fit h-fit shrink-0 flex flex-row gap-[8px] p-[13px_20px] justify-start items-center bg-[#7C3AED] rounded-[6px]"
+              >
+                <div
+                  data-pencil-name="Label"
+                  class="text-[14px]/[normal] box-border text-[#FFFFFF] font-['Geist_Mono',system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                >
+                  Подключить свой канал →
+                </div>
+              </div>
+            </div>
+            <div
+              data-pencil-name="Card БРЕНД"
+              class="box-border [flex:1_1_0] h-full flex flex-col gap-[16px] p-[24px] justify-between items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+            >
+              <div
+                data-pencil-name="Top"
+                class="box-border w-full h-fit shrink-0 flex flex-col gap-[14px] justify-start items-start"
+              >
+                <div
+                  data-pencil-name="IconHead"
+                  class="box-border w-[48px] h-[48px] shrink-0 flex flex-row gap-0 justify-center items-center bg-[#22D3EE1A] rounded-[12px]"
+                >
+                  <svg
+                    data-pencil-name="i"
+                    data-icon-name="target"
+                    data-icon-set="lucide"
+                    viewBox="0 0 13.99993896484375 14"
+                    preserveAspectRatio="xMidYMid meet"
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="box-border w-[24px] shrink-0 h-[24px]"
+                  >
+                    <path
+                      d="M6.69238 0.60156q-1.16211 0.04102-2.22851 0.50586-1.06299 0.46143-1.90381 1.26807-0.8374 0.80322-1.34326 1.85254-0.48877 1.0083-0.60157 2.15674-0.02734 0.19482-0.02734 0.61523 0 0.42041 0.02734 0.61523 0.11279 1.14844 0.60157 2.15674 0.65967 1.40137 1.89697 2.33789 1.24072 0.93652 2.75146 1.20313 0.5332 0.09912 1.13477 0.09912 0.75537 0 1.43213-0.15381 0.68018-0.15381 1.35351-0.4751 1.26123-0.61865 2.16358-1.70215 0.90234-1.0835 1.25439-2.44384 0.29395-1.11768 0.18116-2.25244-0.11279-1.13477-0.60157-2.17041-0.58789-1.20313-1.62011-2.08497-1.02881-0.88184-2.31397-1.2749-1.0083-0.30762-2.15674-0.25293z m0.96729 1.18946q1.07666 0.14014 1.99267 0.68017 0.91602 0.54004 1.56201 1.4082 0.82715 1.104 1.00831 2.54639 0.01367 0.16748 0.01367 0.57422 0 0.40674-0.01367 0.57422-0.14014 1.16211-0.7212 2.12939-0.58105 0.96387-1.53466 1.62354-0.4751 0.33496-1.04932 0.56055-0.57422 0.22217-1.18945 0.30761-0.25293 0.04102-0.72803 0.04102-0.4751 0-0.72803-0.04102-1.07666-0.15381-1.95849-0.68701-0.88184-0.5332-1.52784-1.3877-0.82715-1.104-1.0083-2.54638-0.01367-0.16748-0.01367-0.57422 0-0.40674 0.01367-0.57422 0.14014-1.12109 0.66993-2.05078 0.5332-0.92969 1.43212-1.58936 0.54346-0.40674 1.20655-0.66992 0.6665-0.2666 1.32617-0.3247l0.25293-0.02735q0.0957-0.01367 0.4751 0 0.37939 0.01367 0.51953 0.02735z m-1.16211 1.16211q-0.57422 0.07178-1.11426 0.30419-0.54004 0.229-0.98779 0.6084-0.22217 0.18115-0.46143 0.45459-0.23926 0.27002-0.3999 0.51612-0.16064 0.24609-0.30078 0.5913-0.14014 0.3418-0.2085 0.64942-0.09912 0.43408-0.09912 0.92285 0 0.48877 0.09912 0.92285 0.22217 0.92627 0.79639 1.64063 0.12646 0.15381 0.34863 0.37256 0.22559 0.21533 0.3794 0.3247 0.78613 0.58789 1.8081 0.77246 0.19482 0.04102 0.64258 0.04102 0.44775 0 0.64258-0.04102 1.02197-0.18457 1.8081-0.77246 0.15381-0.10938 0.42725-0.38281 0.27344-0.27344 0.38281-0.42725 0.58789-0.78613 0.77246-1.8081 0.04102-0.18115 0.04102-0.64258 0-0.46143-0.04102-0.64258-0.22559-1.28857-1.09375-2.18408-0.3623-0.37939-0.75537-0.62207-0.39307-0.24609-0.88183-0.41357-0.40674-0.14014-0.88184-0.18799-0.4751-0.05127-0.92285 0.00341z m0.99121 1.17578q0.82715 0.14014 1.45605 0.70752 0.63232 0.56738 0.86817 1.39453 0.09912 0.34863 0.09912 0.76904 0 0.42041-0.11279 0.76904-0.2085 0.77246-0.76905 1.31934-0.56055 0.54346-1.31591 0.73828-0.33496 0.08545-0.71436 0.08545-0.37939 0-0.71436-0.08545-0.84082-0.2085-1.42871-0.85107-0.58789-0.646-0.72802-1.48682-0.04102-0.22217-0.04102-0.48877 0-0.2666 0.04102-0.48877 0.07178-0.44775 0.29394-0.875 0.22559-0.42725 0.54688-0.73486 0.51953-0.47852 1.16894-0.68018 0.65283-0.20166 1.3501-0.09228z m-0.76904 1.14843q-0.3623 0.05811-0.69385 0.2837-0.32813 0.22217-0.52295 0.52978-0.2666 0.46143-0.24609 0.97412 0.02051 0.50928 0.31445 0.93652 0.29395 0.42725 0.78613 0.62208 0.43408 0.16748 0.89551 0.10595 0.46143-0.06494 0.82373-0.35205 0.36572-0.28711 0.54688-0.71777 0.12646-0.32471 0.12646-0.65967 0-0.33496-0.12646-0.64258-0.18115-0.43408-0.54004-0.72119-0.35547-0.28711-0.8169-0.35889-0.28027-0.04102-0.54687 0z m0.5332 1.20313q0.18115 0.08545 0.2666 0.2666 0.02734 0.05811 0.04102 0.09912 0.01367 0.04102 0.01367 0.15381 0 0.11279-0.01367 0.15381-0.01367 0.04102-0.04102 0.09912-0.09912 0.18115-0.2666 0.28027-0.08545 0.04102-0.25293 0.04102-0.16748 0-0.25293-0.04102-0.16748-0.09912-0.2666-0.28027-0.02734-0.05811-0.04102-0.09912-0.01367-0.04102-0.01367-0.15381 0-0.11279 0.01367-0.15381 0.01367-0.04102 0.04102-0.09912 0.11279-0.22217 0.36572-0.30762 0.04102-0.01367 0.18115-0.00683 0.14014 0.00684 0.22559 0.04785z"
+                      fill="#67E8F9"
+                    ></path>
+                  </svg>
+                </div>
+                <div
+                  data-pencil-name="Label Row"
+                  class="box-border w-fit h-[20px] shrink-0 flex flex-row gap-[8px] justify-start items-center"
+                >
+                  <div
+                    data-pencil-name="Dot"
+                    class="box-border w-[8px] shrink-0 h-[8px] bg-[#22D3EE] rounded-full"
+                  ></div>
+                  <div
+                    data-pencil-name="Label"
+                    class="text-[12px]/[normal] box-border text-[#22D3EE] font-['Geist_Mono',system-ui,sans-serif] font-normal tracking-[2px] text-left [white-space:nowrap]"
+                  >
+                    БРЕНД
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="Mini Heading"
+                  class="text-[21px]/[25px] box-border w-full text-[#F5F2EC] font-[Geist,system-ui,sans-serif] font-semibold text-left"
+                >
+                  Какой стример реально дал результат
+                </div>
+                <div
+                  data-pencil-name="Body"
+                  class="text-[15px]/[23px] box-border w-full text-[#A7A3B0] font-[Inter,system-ui,sans-serif] font-normal text-left"
+                >
+                  Загрузи свои регистрации, депозиты или промокоды — покажем, какие фразы и действия
+                  стримера в какой момент реально дали результат. Плюс независимая проверка
+                  стримеров и биржа.
+                </div>
+              </div>
+              <div
+                data-pencil-name="Ghost Link"
+                class="text-[14px]/[normal] box-border text-[#22D3EE] font-['Geist_Mono',system-ui,sans-serif] font-medium text-left [white-space:nowrap]">
+                Как мы измеряем результат стрима →
+              </div>
+            </div>
+            <div
+              data-pencil-name="Card ЗРИТЕЛЬ"
+              class="box-border [flex:1_1_0] h-full flex flex-col gap-[16px] p-[24px] justify-between items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+            >
+              <div
+                data-pencil-name="Top"
+                class="box-border w-full h-fit shrink-0 flex flex-col gap-[14px] justify-start items-start"
+              >
+                <div
+                  data-pencil-name="IconHead"
+                  class="box-border w-[48px] h-[48px] shrink-0 flex flex-row gap-0 justify-center items-center bg-[#EC48991A] rounded-[12px]"
+                >
+                  <svg
+                    data-pencil-name="i"
+                    data-icon-name="eye"
+                    data-icon-set="lucide"
+                    viewBox="0 0 13.99993896484375 14"
+                    preserveAspectRatio="xMidYMid meet"
+                    xmlns="http://www.w3.org/2000/svg"
+                    class="box-border w-[24px] shrink-0 h-[24px]"
+                  >
+                    <path
+                      d="M6.67871 2.35156q-1.23389 0.04102-2.38916 0.54004-1.15186 0.49561-2.05078 1.37744-0.9502 0.92627-1.46973 2.05762-0.10938 0.25293-0.14697 0.37939-0.03418 0.12646-0.03418 0.29395 0 0.16748 0.03418 0.28711 0.0376 0.11963 0.1333 0.35547 0.37939 0.82715 0.97412 1.5415 0.59473 0.71436 1.33643 1.24756 1.45605 1.00488 3.2915 1.20313 0.2085 0.02734 0.64258 0.02734 0.43408 0 0.62891-0.02734 1.20654-0.12647 2.24902-0.60157 1.04248-0.47851 1.8833-1.28857 0.96387-0.93994 1.4834-2.10205 0.0957-0.23584 0.12988-0.35547 0.0376-0.11963 0.0376-0.28711 0-0.16748-0.0376-0.28711-0.03418-0.11963-0.12988-0.35547-0.36572-0.78613-0.93311-1.4834-0.56396-0.70068-1.27832-1.22021-0.84082-0.61523-1.82861-0.9502-0.98779-0.33838-2.02344-0.36572-0.2085 0-0.50244 0.01367z m0.99463 1.18946q1.46973 0.16748 2.67285 1.05273 1.20313 0.88184 1.81836 2.2251l0.08545 0.18115-0.08545 0.19482q-0.62891 1.34668-1.83203 2.22168-1.20313 0.875-2.73096 1.05616-0.18115 0.01367-0.60156 0.01367-0.42041 0-0.60156-0.01367-1.10742-0.12647-2.0542-0.62207-0.94336-0.49902-1.65772-1.32618-0.51611-0.61523-0.85107-1.34326l-0.08545-0.18115 0.08545-0.18115q0.43408-0.95361 1.18945-1.69531 0.75537-0.7417 1.75-1.16211 0.90918-0.39307 1.94483-0.44776 0.14014-0.01367 0.46142 0 0.32129 0.01367 0.49219 0.02735z m-1.03564 1.1621q-0.89893 0.15381-1.44239 0.82715-0.18457 0.22217-0.29052 0.44776-0.10254 0.22559-0.18799 0.51953-0.02734 0.10938-0.03418 0.19482-0.00684 0.08203-0.00684 0.30762 0 0.28027 0.02735 0.43408 0.02734 0.15381 0.11279 0.3794 0.16748 0.4751 0.52978 0.84082 0.36572 0.3623 0.84082 0.52978 0.22559 0.08545 0.3794 0.11279 0.15381 0.02734 0.43408 0.02735 0.28027 0 0.43408-0.02735 0.15381-0.02734 0.3794-0.11279 0.4751-0.16748 0.8374-0.52978 0.36572-0.36572 0.5332-0.84082 0.08545-0.22559 0.1128-0.3794 0.02734-0.15381 0.02734-0.43408 0-0.28027-0.02734-0.43408-0.02734-0.15381-0.1128-0.3794-0.2085-0.55713-0.6665-0.95019-0.45459-0.39307-1.04248-0.51953-0.14014-0.02734-0.42725-0.03418-0.28711-0.00684-0.41015 0.02051z m0.65625 1.16211q0.28027 0.07178 0.52294 0.31788 0.24609 0.24268 0.31788 0.52294 0.02734 0.12646 0.02734 0.29395 0 0.16748-0.02734 0.28027-0.07178 0.29395-0.3042 0.53321-0.229 0.23584-0.53662 0.32129-0.11279 0.02734-0.29395 0.02734-0.18115 0-0.29395-0.02734-0.30762-0.08545-0.54003-0.32129-0.229-0.23926-0.30079-0.53321-0.02734-0.11279-0.02734-0.28027 0-0.16748 0.02734-0.29395 0.05811-0.22559 0.22559-0.43408 0.16748-0.2085 0.40674-0.32129 0.34863-0.18115 0.79639-0.08545z"
+                      fill="#F9A8D4"
+                    ></path>
+                  </svg>
+                </div>
+                <div
+                  data-pencil-name="Label Row"
+                  class="box-border w-fit h-[20px] shrink-0 flex flex-row gap-[8px] justify-start items-center"
+                >
+                  <div
+                    data-pencil-name="Dot"
+                    class="box-border w-[8px] shrink-0 h-[8px] bg-[#EC4899] rounded-full"
+                  ></div>
+                  <div
+                    data-pencil-name="Label"
+                    class="text-[12px]/[normal] box-border text-[#EC4899] font-['Geist_Mono',system-ui,sans-serif] font-normal tracking-[2px] text-left [white-space:nowrap]"
+                  >
+                    ЗРИТЕЛЬ
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="Mini Heading"
+                  class="text-[21px]/[25px] box-border w-full text-[#F5F2EC] font-[Geist,system-ui,sans-serif] font-semibold text-left"
+                >
+                  Сколько живых людей реально смотрит
+                </div>
+                <div
+                  data-pencil-name="Body"
+                  class="text-[15px]/[23px] box-border w-full text-[#A7A3B0] font-[Inter,system-ui,sans-serif] font-normal text-left"
+                >
+                  Бесплатное расширение для Chrome: видишь, сколько живых людей реально смотрит
+                  любой канал, и свою собственную историю просмотров, которую Twitch тебе не
+                  показывает.
+                </div>
+              </div>
+              <div
+                data-pencil-name="Ghost Link"
+                class="text-[14px]/[normal] box-border text-[#EC4899] font-['Geist_Mono',system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+              >
+                Установить расширение →
+              </div>
+            </div>
+          </div>
+        </div>
+  </div>
