@@ -44,6 +44,21 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).to match(%r{landing_fonts[-\w]*\.css})
       expect(response.body).to match(%r{landing/hr-shared[-\w]*\.js})
     end
+
+    it "passes the JS config via a CSP-safe data attribute (no inline script)" do
+      get "/"
+
+      expect(response.body).to include("data-hr-config=")
+      expect(response.body).not_to include("window.HR =")
+    end
+
+    it "restores I18n.locale after the request (with_locale — no thread-local leak)" do
+      I18n.with_locale(:en) do
+        get "/", params: { locale: "ru" }
+
+        expect(I18n.locale).to eq(:en) # restored to the outer locale, not left at :ru
+      end
+    end
   end
 
   # TASK-060 Phase 1: Slot A (Header + Hero + Explainer) literal port.

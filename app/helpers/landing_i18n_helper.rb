@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "nokogiri"
+require "concurrent/map"
 
 # Server-side i18n for the public landing (TASK-060).
 #
@@ -20,7 +21,8 @@ module LandingI18nHelper
   ).fetch("en").freeze
 
   # Per-process cache of localized renders (landing content is static per deploy).
-  HR_CACHE = {}
+  # Concurrent::Map — the helper runs on pooled Puma threads.
+  HR_CACHE = Concurrent::Map.new
 
   # Localize a rendered landing HTML fragment to the current locale. RU returns the
   # input verbatim; other locales translate leaf text nodes via the dictionary,
@@ -28,7 +30,7 @@ module LandingI18nHelper
   def hr_localize(html)
     return html.html_safe if I18n.locale == :ru
 
-    (HR_CACHE["#{I18n.locale}:#{html.hash}"] ||= hr_translate_fragment(html)).html_safe
+    HR_CACHE.fetch_or_store("#{I18n.locale}:#{html.hash}") { hr_translate_fragment(html) }.html_safe
   end
 
   private

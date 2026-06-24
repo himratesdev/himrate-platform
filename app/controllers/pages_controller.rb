@@ -7,9 +7,11 @@ class PagesController < ApplicationController
   layout "landing"
 
   # Landing is Russian-first (PO authors RU; EN is derived via i18n). Scope the
-  # locale per request (?locale=en switches) without touching the app-wide
-  # default (:en), so <html lang> matches the rendered content for SEO/a11y.
-  before_action :set_landing_locale
+  # locale to the request with around_action + I18n.with_locale so it is restored
+  # afterwards — a before_action `I18n.locale =` leaks across pooled Puma threads.
+  # The app-wide default (:en) and other surfaces stay unaffected; <html lang>
+  # matches the rendered content for SEO/a11y.
+  around_action :with_landing_locale
 
   # Phase 0 = root smoke only. streamers / brands / viewers / methodology + legal
   # actions are added with their views in the literal-port phases.
@@ -23,8 +25,9 @@ class PagesController < ApplicationController
     false
   end
 
-  def set_landing_locale
+  def with_landing_locale(&action)
     requested = params[:locale].to_s.to_sym
-    I18n.locale = I18n.available_locales.include?(requested) ? requested : :ru
+    locale = I18n.available_locales.include?(requested) ? requested : :ru
+    I18n.with_locale(locale, &action)
   end
 end

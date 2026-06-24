@@ -2,20 +2,14 @@
     Root "Главная" is the export's fixed 1440px artboard (responsive merge = Phase 6);
     centered under the full-viewport animated canvas background (hr-shared.js).
     Slots are rendered in order and localized server-side via hr_localize. %>
+<%# Per-page background-effect config travels in a CSP-safe data attribute
+    (script_src 'self' forbids inline <script>); hr-shared.js reads it. %>
 <div class="w-full flex justify-center">
   <div
     data-pencil-name="Главная"
+    data-hr-config="<%= { root: '[data-pencil-name=\"Главная\"]', accent: ['34,211,238', '99,102,241'] }.to_json %>"
     class="box-border w-[1440px] h-fit flex flex-col gap-0 justify-start items-start bg-[#07070C] overflow-hidden"
   >
     <%= hr_localize(render "slot_a_header_hero") %>
   </div>
 </div>
-
-<% content_for :landing_config do %>
-  <script>
-    window.HR = {
-      root: '[data-pencil-name="Главная"]',
-      accent: ["34,211,238", "99,102,241"]
-    };
-  </script>
-<% end %>

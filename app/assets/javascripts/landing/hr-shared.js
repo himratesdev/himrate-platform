@@ -8,11 +8,19 @@
        hover, leaving transition, injected keyframes/CSS) is the genuine client
        visual layer and is ported verbatim from the export.
 
-   Per-page config BEFORE this script:
-     window.HR = { word:'ЖИВЫЕ', accent:['34,211,238','99,102,241'], styles:[0,2,3] };
-   Falls back to sensible defaults if HR is missing. */
+   Per-page config is read from a CSP-safe data attribute on the page root
+   (set by the Rails view), e.g.:
+     <div data-hr-config='{"root":"[data-pencil-name=\"Главная\"]","accent":["34,211,238","99,102,241"]}'>
+   Falls back to window.HR, then to sensible defaults. */
 (function () {
-  var CFG = window.HR || {};
+  function readConfig() {
+    if (window.HR) return window.HR;
+    try {
+      var el = document.querySelector('[data-hr-config]');
+      return el ? JSON.parse(el.getAttribute('data-hr-config')) : {};
+    } catch (e) { return {}; }
+  }
+  var CFG = readConfig();
   var ROOT_SEL = CFG.root || null;
   var WORD = CFG.word || 'HimRate';
   var COLS = (CFG.accent && CFG.accent.length) ? CFG.accent : ['34,211,238', '99,102,241'];

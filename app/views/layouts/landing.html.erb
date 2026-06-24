@@ -25,8 +25,8 @@
   <body>
     <%= yield %>
 
-    <%# Per-page background-effect config — must be defined BEFORE hr-shared.js. %>
-    <%= yield :landing_config %>
+    <%# Background-effect config travels in a [data-hr-config] attribute on the
+        page root (CSP-safe); hr-shared.js reads it. %>
     <%= javascript_include_tag "landing/hr-shared", defer: true %>
     <%= yield :page_scripts %>
   </body>
