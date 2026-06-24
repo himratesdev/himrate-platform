@@ -110,4 +110,20 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).to include("Connect a channel")
     end
   end
+
+  # TASK-060 Phase 1.1: Slot B (Platforms + Audience) literal port.
+  describe "Slot B (platforms + audience)" do
+    it "renders the slot after Slot A (RU verbatim)" do
+      get "/"
+
+      expect(response.body).to include("Slot B — Platforms+Audience")
+      expect(response.body).to include("Работаем на твоей платформе")
+    end
+
+    it "server-renders the English variant" do
+      get "/", params: { locale: "en" }
+
+      expect(response.body).to include("We work on your platform")
+    end
+  end
 end
