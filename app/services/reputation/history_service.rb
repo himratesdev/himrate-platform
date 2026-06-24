@@ -147,7 +147,7 @@ module Reputation
         {
           stream_index: i - display_start,
           ended_at: ended_at.iso8601,
-          ti_score: tih&.trust_index_score&.to_f,
+          ti_score: tih&.trust_index_score&.to_f&.clamp(0.0, 100.0),
           real_audience_pct: tih&.erv_percent&.to_f&.clamp(0.0, 100.0),
           band: band
         }
