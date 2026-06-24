@@ -93,6 +93,14 @@ jobs:
           CLICKHOUSE_USER: default
           CLICKHOUSE_PASSWORD: himrate_test
         run: bundle exec rake clickhouse:setup
+      # TASK-060: build the landing Tailwind bundle before specs. The compiled
+      # app/assets/builds/tailwind.css is gitignored, so propshaft cannot resolve
+      # stylesheet_link_tag "tailwind" in view-rendering request specs without it.
+      # Also validates the Tailwind config + content globs compile on every PR.
+      - name: Build Tailwind CSS
+        env:
+          RAILS_ENV: test
+        run: bundle exec rails tailwindcss:build
       - name: Run RSpec
         env:
           RAILS_ENV: test

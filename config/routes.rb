@@ -157,6 +157,9 @@ Rails.application.routes.draw do
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
-  # Defines the root path route ("/")
-  # root "posts#index"
+  # --- Public marketing landing (TASK-060) ---
+  # Phase 0 = foundation only (root smoke). Per-page routes (streamers/brands/
+  # viewers/methodology + legal) are added together with each page's view in the
+  # literal-port phases, so no route ever points at a missing template.
+  root "pages#index"
 end

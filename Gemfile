@@ -82,6 +82,12 @@ gem "thruster", require: false
 # Use Active Storage variants [https://guides.rubyonrails.org/active_storage_overview.html#transforming-images]
 gem "image_processing", "~> 1.2"
 
+# --- Public landing frontend (TASK-060) ---
+# App is otherwise API-only (JSON for the extension). These add the minimal
+# asset pipeline to serve the public marketing landing as server-rendered HTML.
+gem "propshaft"                         # asset pipeline (CSS/JS/fonts/images)
+gem "tailwindcss-rails", "~> 2.7"       # Tailwind v3 standalone CLI — matches Pencil export (cdn.tailwindcss.com = v3)
+
 group :development, :test do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
