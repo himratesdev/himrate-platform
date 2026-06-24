@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="<%= I18n.locale %>">
+  <head>
+    <meta charset="utf-8">
+    <title><%= content_for(:title) || "HimRate" %></title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <%= yield :head %>
+
+    <%# Pencil export reset (Tailwind preflight is disabled — see tailwind.config.js) %>
+    <style>*,::before,::after{box-sizing:border-box}body{margin:0}</style>
+
+    <%# Self-host fonts + GTM + SEO meta wired in later phases (3) %>
+    <%= stylesheet_link_tag "tailwind" %>
+  </head>
+  <body>
+    <%= yield %>
+  </body>
+</html>

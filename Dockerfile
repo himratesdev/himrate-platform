@@ -53,6 +53,11 @@ COPY . .
 # -j 1 disable parallel compilation to avoid a QEMU bug: https://github.com/rails/bootsnap/issues/495
 RUN bundle exec bootsnap precompile -j 1 app/ lib/
 
+# Precompile public-landing assets (TASK-060): propshaft digests + tailwindcss-rails
+# builds Tailwind CSS by scanning app/views. SECRET_KEY_BASE_DUMMY avoids needing
+# real secrets at build time. Extension/API traffic is unaffected by this step.
+RUN SECRET_KEY_BASE_DUMMY=1 bundle exec rails assets:precompile
+
 
 
 
