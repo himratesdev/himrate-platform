@@ -110,4 +110,20 @@ RSpec.describe Reputation::BandService do
       expect(described_class.cached_for(channel)).to eq(written)
     end
   end
+
+  # T1-065 DEC-2: the pure band cascade extracted for Reputation::HistoryService trajectory reuse.
+  describe ".classify (single-source band cascade)" do
+    it "classifies by level + stability + anomaly rate" do
+      expect(described_class.classify(Array.new(5, 90.0), 0.0)).to eq("impeccable")
+      expect(described_class.classify(Array.new(5, 75.0), 0.0)).to eq("stable")
+      expect(described_class.classify([ 90.0, 60.0, 95.0, 55.0, 88.0 ], 0.0)).to eq("variable")
+      expect(described_class.classify(Array.new(5, 40.0), 0.0)).to eq("unstable")
+      expect(described_class.classify(Array.new(5, 90.0), 0.5)).to eq("unstable") # rate > UNSTABLE_RATE
+    end
+
+    it "is the method #derive_band delegates to (instance behaviour unchanged)" do
+      # full-tier clean channel → instance #call still yields the classify result.
+      expect(band_for(build_channel(Array.new(10, 90)))[:band]).to eq("impeccable")
+    end
+  end
 end

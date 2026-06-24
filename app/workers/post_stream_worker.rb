@@ -161,6 +161,10 @@ class PostStreamWorker
 
   def refresh_reputation_band(channel)
     Reputation::BandService.refresh(channel)
+    # T1-065 (DEC-4): the reputation trajectory window now includes this just-finalized stream.
+    # It is invalidate-on-write (vs the band's warm) — drop the cache so the next viewer recomputes
+    # the fresh window (current + trajectory + trend); avoids warming every channel each stream-end.
+    Rails.cache.delete(Reputation::HistoryService.cache_key(channel.id))
   rescue StandardError => e
     Rails.logger.error("PostStreamWorker: band refresh failed for channel #{channel.id} — #{e.message}")
   end

@@ -34,6 +34,22 @@ module Reputation
       "reputation_band:#{channel_id}"
     end
 
+    # T1-065 DEC-2: pure band cascade — the SINGLE source of truth for the descriptor, reused by
+    # Reputation::HistoryService to derive the per-point rolling-window band trajectory. Caller
+    # supplies `scores` (>= 2 final TI snapshots) + `severe_rate` (severe anomalies / window size).
+    # Identical cascade to the instance path → /trust, /reputation/history and the trajectory all
+    # classify from one place (thresholds can't drift). Assumes scores.size >= 2 (callers gate).
+    def self.classify(scores, severe_rate)
+      mean = scores.sum / scores.size
+      std = Math.sqrt(scores.sum { |s| (s - mean)**2 } / scores.size)
+
+      return "unstable"   if mean < UNSTABLE_TI || severe_rate > UNSTABLE_RATE
+      return "impeccable" if mean >= IMPECCABLE_TI && std <= IMPECCABLE_STD && severe_rate.zero?
+      return "stable"     if mean >= STABLE_TI && std <= STABLE_STD && severe_rate <= STABLE_RATE
+
+      "variable"
+    end
+
     # Read path (card / trust full view): cache hit or lazy compute.
     def self.cached_for(channel)
       Rails.cache.fetch(cache_key(channel.id), expires_in: CACHE_TTL) { new(channel).call }
@@ -83,16 +99,10 @@ module Reputation
     end
 
     # ADR DEC-1 cascade (worst-first): level (mean_ti) + stability (stddev) + anomalies (rate).
+    # T1-065 DEC-2: delegates to the pure class-method classify (single source) with this window's
+    # severe_anomaly_rate — instance behaviour is unchanged (T1-064 band_service_spec stays green).
     def derive_band(scores)
-      mean = scores.sum / scores.size
-      std = Math.sqrt(scores.sum { |s| (s - mean)**2 } / scores.size)
-      rate = severe_anomaly_rate
-
-      return "unstable"   if mean < UNSTABLE_TI || rate > UNSTABLE_RATE
-      return "impeccable" if mean >= IMPECCABLE_TI && std <= IMPECCABLE_STD && rate.zero?
-      return "stable"     if mean >= STABLE_TI && std <= STABLE_STD && rate <= STABLE_RATE
-
-      "variable"
+      self.class.classify(scores, severe_anomaly_rate)
     end
 
     # ADR DEC-3: final TI snapshot per completed stream (settled value), last 30 sessions.
