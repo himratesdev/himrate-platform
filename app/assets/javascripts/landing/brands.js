@@ -1,6 +1,5 @@
-/* HimRate landing — brands page scripts (TASK-060, Export 3 clean). Externalised
-   verbatim from brands.html inline <script> blocks (incl. responsive burger); routes
-   patched; CSP-safe. */
+/* HimRate landing — brands page scripts (TASK-060). Externalized verbatim from
+   the Pencil export brands.html inline <script> blocks (CSP-safe; no inline scripts). */
 
 window.HR = {
   root: '[data-pencil-name="Брендам"]',
@@ -19,7 +18,7 @@ window.HR = {
   function run(){
     /* ---- C5: drop the top "Простыми словами — для бренда" strip (redundant with the hero) ----
        This also makes "Б2 Проверка" the 2nd block, right after the hero (C3). ---- */
-    
+    var b0=q('Б0 Простыми словами'); if(b0) b0.style.display='none';
 
     /* ---- C6 + C7: trim the empty space under the Meter / Checks panels ---- */
     var row=q('Б2 Проверка') && q('Б2 Проверка').querySelector('[data-pencil-name="Row"]');
@@ -49,6 +48,9 @@ window.HR = {
 
     /* C7: header logo accent -> page cyan (#67E8F9, the "Узнайте, что сработало" hex) */
     var _logo=q1('Logo'); if(_logo){ Array.prototype.slice.call(_logo.querySelectorAll('[fill="#6366F1"]')).forEach(function(n){ n.setAttribute('fill','#67E8F9'); }); }
+
+    /* C1: remove the honesty plashka inside the media block */
+    var _b6=q1('Б6 Медиа'); if(_b6){ Array.prototype.slice.call(_b6.children).forEach(function(ch){ if(/\bflex-row\b/.test(ch.className||'')) ch.style.display='none'; }); }
 
     /* C8: Meter — classic scroll counter; bar fills, verdict text changes with the number */
     (function(){
@@ -134,26 +136,4 @@ window.HR = {
   }
   if(document.readyState==='complete'||document.readyState==='interactive') setTimeout(start, 700);
   else window.addEventListener('DOMContentLoaded', function(){ setTimeout(start, 700); });
-})();
-
-
-
-/* Mobile burger for 04-brendam — activates ≤1024 via CSS. Reuses hr-shared nav + lang. */
-(function(){
-  function build(){
-    var hdr=document.querySelector('[data-pencil-name="Header"]'); if(!hdr||document.querySelector('.hr-burger')) return;
-    var b=document.createElement('div'); b.className='hr-burger'; b.setAttribute('aria-label','Меню'); b.innerHTML='<span></span><span></span><span></span>';
-    hdr.appendChild(b);
-    var nav=document.createElement('nav'); nav.className='hr-mnav';
-    var links=[['Главная','/'],['Стримерам','/streamers'],['Брендам','/brands'],['Зрителям','/viewers'],['Методология и цены','/methodology']];
-    nav.innerHTML=links.map(function(l){return '<a href="'+l[1]+'">'+l[0]+'<span>&rarr;</span></a>';}).join('')
-      +'<a class="cta" href="methodology.html">Подключить канал</a>'
-      +'<div class="hr-mlang"><button data-l="ru">RU</button><button data-l="en">EN</button></div>';
-    document.body.appendChild(nav);
-    function set(o){ nav.classList.toggle('open',o); b.classList.toggle('x',o); document.body.style.overflow=o?'hidden':''; }
-    var open=false; b.addEventListener('click',function(){ open=!open; set(open); });
-    nav.querySelectorAll('a').forEach(function(a){ a.addEventListener('click',function(){ open=false; set(false); }); });
-    nav.querySelectorAll('.hr-mlang button').forEach(function(bt){ bt.addEventListener('click', function(){ if(window.__hrSetLang) window.__hrSetLang(bt.getAttribute('data-l')); }); });
-  }
-  if(document.readyState!=='loading') setTimeout(build,600); else window.addEventListener('DOMContentLoaded',function(){ setTimeout(build,600); });
 })();

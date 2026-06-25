@@ -1,6 +1,5 @@
-/* HimRate landing — viewers page scripts (TASK-060, Export 3 clean). Externalised
-   verbatim from viewers.html inline <script> blocks (incl. responsive burger); routes
-   patched; CSP-safe. */
+/* HimRate landing — viewers page scripts (TASK-060). Externalized verbatim from
+   the Pencil export viewers.html inline <script> blocks (CSP-safe; no inline scripts). */
 
 window.HR = {
   root: '[data-pencil-name="Зрителям"]',
@@ -21,7 +20,7 @@ window.HR = {
   }
   function run(){
     /* ---- C11: remove the whole message-feed row (ЛЕНТА СООБЩЕНИЙ) ---- */
-    
+    var r3=q('Row 3'); if(r3 && /ЛЕНТА СООБЩЕНИЙ/i.test(r3.textContent||'')) r3.style.display='none';
 
     /* ---- C15: the top "Простыми словами" strip reads awkwardly at the very top — drop it below the hero ---- */
     var z0=q('З0 Простыми словами'), hero=q('З1 Hero');
@@ -83,7 +82,7 @@ window.HR = {
     });
 
     /* ---- d64021b057: drop the three "proof" check-chips from the hero ---- */
-    
+    var proofs=q('Proofs'); if(proofs) proofs.style.display='none';
 
     /* ---- C8: HIMRATE BOT note becomes a placeholder link to the Telegram bot ---- */
     Array.prototype.slice.call(document.querySelectorAll('.bg-\\[\\#0E1116\\]')).forEach(function(note){
@@ -245,26 +244,4 @@ window.HR = {
   }
   if(document.readyState==='complete'||document.readyState==='interactive') setTimeout(start, 700);
   else window.addEventListener('DOMContentLoaded', function(){ setTimeout(start, 700); });
-})();
-
-
-
-/* Mobile burger for 02-zritelyam — activates ≤1024 via CSS. Reuses hr-shared nav + lang. */
-(function(){
-  function build(){
-    var hdr=document.querySelector('[data-pencil-name="Header"]'); if(!hdr||document.querySelector('.hr-burger')) return;
-    var b=document.createElement('div'); b.className='hr-burger'; b.setAttribute('aria-label','Меню'); b.innerHTML='<span></span><span></span><span></span>';
-    hdr.appendChild(b);
-    var nav=document.createElement('nav'); nav.className='hr-mnav';
-    var links=[['Главная','/'],['Стримерам','/streamers'],['Брендам','/brands'],['Зрителям','/viewers'],['Методология и цены','/methodology']];
-    nav.innerHTML=links.map(function(l){return '<a href="'+l[1]+'">'+l[0]+'<span>&rarr;</span></a>';}).join('')
-      +'<a class="cta" href="methodology.html">Подключить канал</a>'
-      +'<div class="hr-mlang"><button data-l="ru">RU</button><button data-l="en">EN</button></div>';
-    document.body.appendChild(nav);
-    function set(o){ nav.classList.toggle('open',o); b.classList.toggle('x',o); document.body.style.overflow=o?'hidden':''; }
-    var open=false; b.addEventListener('click',function(){ open=!open; set(open); });
-    nav.querySelectorAll('a').forEach(function(a){ a.addEventListener('click',function(){ open=false; set(false); }); });
-    nav.querySelectorAll('.hr-mlang button').forEach(function(bt){ bt.addEventListener('click', function(){ if(window.__hrSetLang) window.__hrSetLang(bt.getAttribute('data-l')); }); });
-  }
-  if(document.readyState!=='loading') setTimeout(build,600); else window.addEventListener('DOMContentLoaded',function(){ setTimeout(build,600); });
 })();
