@@ -86,6 +86,42 @@ RSpec.describe Reputation::BandService do
     end
   end
 
+  describe "#call severe-anomaly whitelist + distinct-stream (BUG-band-unstable)" do
+    it "ignores statistical CCV-shape detector fires (ccv_step_function/ccv_tier_clustering)" do
+      # Prod: honest channels carry hundreds of these per window (recrent 118+79) — must NOT count.
+      channel = build_channel(Array.new(10, 90))
+      channel.streams.each do |s|
+        10.times { create(:anomaly, stream: s, anomaly_type: "ccv_step_function") }
+        create(:anomaly, stream: s, anomaly_type: "ccv_tier_clustering")
+      end
+      expect(band_for(channel)[:band]).to eq("impeccable")
+    end
+
+    it "ignores routine TI-signal anomalies (ti_drop / erv_divergence)" do
+      channel = build_channel(Array.new(10, 90))
+      channel.streams.each do |s|
+        create(:anomaly, stream: s, anomaly_type: "ti_drop")
+        create(:anomaly, stream: s, anomaly_type: "erv_divergence")
+      end
+      expect(band_for(channel)[:band]).to eq("impeccable")
+    end
+
+    it "counts DISTINCT streams with a bot event, not raw anomaly rows" do
+      # 50 viewbot rows on ONE stream → 1 severe stream / 10 = rate 0.1 (stable), not 5.0 (unstable).
+      channel = build_channel(Array.new(10, 75))
+      one = channel.streams.first
+      50.times { create(:anomaly, stream: one, anomaly_type: "viewbot_spike") }
+      expect(band_for(channel)[:band]).to eq("stable")
+    end
+
+    it "still flags a genuinely botted channel (bot events on > 1/3 of window streams)" do
+      # known_bot_match (whitelist) on 4/10 streams → rate 0.4 > 0.34 → unstable.
+      channel = build_channel(Array.new(10, 80))
+      channel.streams.first(4).each { |s| create(:anomaly, stream: s, anomaly_type: "known_bot_match") }
+      expect(band_for(channel)[:band]).to eq("unstable")
+    end
+  end
+
   describe "#call edge cases" do
     it "derives from available TIH when some streams lack a snapshot (partial window)" do
       result = band_for(build_channel(Array.new(10, 90), tih: :partial))

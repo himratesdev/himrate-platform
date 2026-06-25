@@ -313,18 +313,37 @@ jobs:
           end
 
           # === StreamerReputation — known broken (BUG #1) ===
-          section("StreamerReputation (3 components — BUG #1)") do
+          section("StreamerReputation (3 components)") do
             cols = ActiveRecord::Base.connection.columns("streamer_reputations").map(&:name)
             puts "  available columns: #{cols.inspect}"
             scope = StreamerReputation.where(channel_id: c.id)
             puts "  rows for this channel: #{scope.count}"
-            row = scope.first
+            row = scope.order(calculated_at: :desc).first
             if row
               puts "  Latest row:"
               row.attributes.each { |k, v| puts "    #{k}: #{v.inspect[0..100]}" }
             else
-              puts "  no row (BUG #1 — RefreshWorker STUB)"
+              puts "  no row (RefreshWorker needs >= 7 completed streams)"
             end
+          end
+
+          # === Anomaly distribution + Reputation Band (BUG-band-unstable diagnostics) ===
+          section("Anomaly distribution + Reputation Band") do
+            window_ids = c.streams.where.not(ended_at: nil).order(ended_at: :desc).limit(30).pluck(:id)
+            n = window_ids.size
+            puts "  window completed streams: #{n}"
+            by_type = Anomaly.where(stream_id: window_ids).group(:anomaly_type).count
+            puts "  anomaly rows by type (window):"
+            by_type.sort_by { |_, cnt| -cnt }.each { |t, cnt| puts "    #{t}: #{cnt}" }
+            severe_types = (Reputation::BandService::SEVERE_ANOMALY_TYPES rescue
+              %w[viewbot_spike anomaly_wave follow_bot raid_bot chat_bot known_bot_match account_profile_scoring])
+            total_rows = by_type.values.sum
+            severe_streams = Anomaly.where(stream_id: window_ids, anomaly_type: severe_types).distinct.count(:stream_id)
+            rate = n.zero? ? 0.0 : (severe_streams.to_f / n).round(3)
+            puts "  whitelist (bot-identity severe types): #{severe_types.inspect}"
+            puts "  total anomaly rows (all types): #{total_rows}"
+            puts "  severe STREAMS (distinct, bot-identity): #{severe_streams}/#{n} -> rate #{rate} (>0.34 = unstable)"
+            puts "  band (deployed code): #{Reputation::BandService.new(c).call.inspect}"
           end
 
           # === FollowerSnapshot — adapt to real columns ===

@@ -50,9 +50,9 @@ module Reputation
       ordered = load_window_streams
       ids = ordered.map(&:first)
       tih_by_stream = load_final_tih(ids)
-      severe_by_stream = load_severe_anomalies(ids)
+      severe_streams = load_severe_streams(ids)
 
-      trajectory = build_trajectory(ordered, tih_by_stream, severe_by_stream)
+      trajectory = build_trajectory(ordered, tih_by_stream, severe_streams)
 
       {
         channel_id: @channel.id,
@@ -115,21 +115,21 @@ module Reputation
         .index_by(&:stream_id)
     end
 
-    # Severe anomalies per stream (≠ benign/excluded). Mirrors BandService#severe_anomaly_rate.
-    # Streams with zero anomalies are simply absent from the hash → callers default to 0.
-    def load_severe_anomalies(stream_ids)
-      return {} if stream_ids.empty?
+    # Set of window stream_ids that carried >=1 genuine bot-identity anomaly. Mirrors
+    # BandService#severe_anomaly_rate (BUG-band-unstable: whitelist SEVERE_ANOMALY_TYPES + DISTINCT
+    # stream, not raw rows). A stream is "severe" or not — its raw anomaly-row count is irrelevant.
+    def load_severe_streams(stream_ids)
+      return Set.new if stream_ids.empty?
 
       Anomaly
-        .where(stream_id: stream_ids)
-        .where.not(anomaly_type: BandService::BENIGN_OR_EXCLUDED)
-        .group(:stream_id)
-        .count
+        .where(stream_id: stream_ids, anomaly_type: BandService::SEVERE_ANOMALY_TYPES)
+        .distinct.pluck(:stream_id)
+        .to_set
     end
 
     # DEC-2: display the most recent WINDOW streams; each point's band = derive over its trailing
     # <=WINDOW sub-window via the shared BandService.classify (single source).
-    def build_trajectory(ordered, tih_by_stream, severe_by_stream)
+    def build_trajectory(ordered, tih_by_stream, severe_streams)
       display_start = [ ordered.size - WINDOW, 0 ].max
 
       (display_start...ordered.size).map do |i|
@@ -137,10 +137,9 @@ module Reputation
         sub = ordered[[ 0, i - WINDOW + 1 ].max..i] # trailing <=30 streams incl. current
 
         scores = sub.filter_map { |sid, _| tih_by_stream[sid]&.trust_index_score&.to_f }
-        # Denominator = ALL streams in sub (incl. TIH-less) — mirrors band_service.rb:115-119
-        # (severe events per session). `|| 0`: zero-anomaly streams are absent from the hash;
-        # without the default `.sum` would raise TypeError on nil (adversarial review, lens A).
-        severe_rate = sub.sum { |sid, _| severe_by_stream[sid] || 0 }.to_f / sub.size
+        # Fraction of sub streams that had >=1 bot event (∈ [0,1]); denominator = ALL sub streams
+        # (TIH-less still an observed session) — mirrors BandService#severe_anomaly_rate.
+        severe_rate = sub.count { |sid, _| severe_streams.include?(sid) }.to_f / sub.size
         band = scores.size < 2 ? nil : BandService.classify(scores, severe_rate)
 
         tih = tih_by_stream[stream_id]
