@@ -1,14 +1,12 @@
-/* HimRate landing — index page (TASK-060). The export's index.html was
-   self-contained (its own canvas bg + nav + dataviz, no hr-shared.js); kept
-   verbatim, with .html nav/CTA targets repointed to real Rails routes. The
-   layout therefore does NOT load hr-shared.js on index (would double the
-   canvas/nav). CSP-safe: externalised, no inline <script>. */
+/* HimRate landing — index page scripts (TASK-060, Export 3 clean). Externalised
+   verbatim from index.html inline <script> blocks (incl. responsive burger); routes
+   patched; CSP-safe. */
 
 (function(){
   var CUR = location.pathname;
   var NAV = {
     'СТРИМЕРАМ':'/streamers','БРЕНДАМ':'/brands','ЗРИТЕЛЯМ':'/viewers',
-    'МЕТОДОЛОГИЯ':'/methodology','ЦЕНЫ':'/methodology',
+    'МЕТОДОЛОГИЯ':'/methodology','МЕТОДОЛОГИЯ И ЦЕНЫ':'/methodology','ЦЕНЫ':'/methodology',
     'Стримерам':'/streamers','Брендам':'/brands','Зрителям':'/viewers',
     'Цены':'/methodology','Методология':'/methodology','Главная':'/'
   };
@@ -140,7 +138,6 @@
       mq.style.overflow='hidden';
       var kids=$all(':scope > *', strip);
       // keep exactly 8 (two seamless sets of 4 unique)
-      while(strip.children.length>8) strip.removeChild(strip.lastElementChild);
       $all(':scope > *', strip).forEach(function(ch){ ch.style.flex='0 0 auto'; ch.style.width='248px'; ch.style.justifyContent='center'; });
       strip.style.width='max-content';
       strip.style.animation='hrMarquee 26s linear infinite';
@@ -183,47 +180,13 @@
   }
 
   // ---------- (6) Twitch-vs grid: shrink cards, bump small text ----------
-  function shrinkGrid(){
-    try{
-      var g=$('[data-pencil-name="Grid"]'); if(!g||g.__grid) return;
-      var cards=[]; $all(':scope > *', g).forEach(function(row){ $all(':scope > *', row).forEach(function(c){ cards.push(c); }); row.style.display='none'; });
-      if(!cards.length) return; g.__grid=1;
-      g.style.display='grid'; g.style.gridTemplateColumns='repeat(6,1fr)'; g.style.gap='12px'; g.style.alignItems='stretch';
-      cards.forEach(function(c,i){ c.className=(c.className||'').replace(/h-\[\d+px\]/,''); c.style.height='auto'; c.style.padding='14px 16px'; c.style.gridColumn=(i<3?'span 2':'span 3'); g.appendChild(c); });
-      $all('div', g).forEach(function(el){ if(el.children.length) return; var c=el.className||''; var m=c.match(/text-\[(\d+(?:\.\d+)?)px\]/); if(m){ var px=parseFloat(m[1]); if(px>=11 && px<=14){ el.style.fontSize=(px+1)+'px'; } } });
-      var sec=$('[data-pencil-name="Sec TwitchVsUs NEW"]'); if(sec){ sec.style.paddingTop='52px'; sec.style.paddingBottom='40px'; }
-    }catch(e){}
-  }
+  function shrinkGrid(){ /* reshaping baked into static markup */ }
 
   // ---------- (7) "7 сигналов" chips into one row ----------
-  function oneRowSignals(){
-    try{
-      var cc=$('[data-pencil-name="Checks Compact"]'); if(!cc) return;
-      var chipRows=$all(':scope > *', cc).filter(function(el){ return /\b0[1-9]\b/.test(el.textContent||''); });
-      if(!chipRows.length) return;
-      var first=chipRows[0];
-      chipRows.forEach(function(r,i){ if(i===0) return; $all(':scope > *', r).forEach(function(ch){ first.appendChild(ch); }); r.style.display='none'; });
-      first.style.flexWrap='nowrap'; first.style.gap='6px'; first.style.width='100%';
-      $all(':scope > *', first).forEach(function(ch){ ch.style.flex='1 1 0'; ch.style.minWidth='0'; ch.style.padding='7px 7px'; ch.style.justifyContent='center';
-        $all('div', ch).forEach(function(t){ if(t.children.length) return; var c=t.className||''; var mm=c.match(/text-\[(\d+(?:\.\d+)?)px\]/); if(mm && parseFloat(mm[1])>9){ t.style.fontSize='10.5px'; } t.style.whiteSpace='nowrap'; t.style.overflow='hidden'; t.style.textOverflow='ellipsis'; });
-      });
-    }catch(e){}
-  }
+  function oneRowSignals(){ /* reshaping baked into static markup */ }
 
   // ---------- (8) Big-idea rows: equal-height columns, fill vertical space, align ----------
-  function balanceRows(){
-    try{
-      ['Ряд · Стримеру','Ряд · Бренду','Audience Cards'].forEach(function(name){
-        var row=$('[data-pencil-name="'+name+'"]'); if(!row) return;
-        row.className=(row.className||'').replace(/h-\[\d+px\]/,'');
-        row.style.alignItems='stretch'; row.style.height='auto';
-        var jc=(name==='Audience Cards')?'space-between':'flex-start';
-        $all(':scope > *', row).forEach(function(col){ col.className=(col.className||'').replace(/overflow-hidden/,'').replace(/h-full/,''); col.style.display='flex'; col.style.flexDirection='column'; col.style.justifyContent=jc; col.style.height='auto'; col.style.overflow='visible'; });
-      });
-      // remove the "ГЛАВНОЕ" badge (whole chip) on the СТРИМЕР card
-      var ac=$('[data-pencil-name="Audience Cards"]'); if(ac){ $all('div', ac).forEach(function(e){ if(!e.children.length && (e.textContent||'').trim()==='ГЛАВНОЕ'){ var chip=(e.parentElement && /rounded|bg-\[#/.test(e.parentElement.className||''))?e.parentElement:e; chip.style.display='none'; } }); }
-    }catch(e){}
-  }
+  function balanceRows(){ /* reshaping baked into static markup */ }
 
   // ---------- (9) Hover purple-ring on content cards ----------
   function tagCards(){
@@ -294,9 +257,6 @@
         if(!m) return; var rr=+m[1], gg=+m[2], bb=+m[3];
         if(rr<11 && gg<11 && bb<18){ el.style.background='transparent'; cleared++; }
       });
-      $all('[data-pencil-name="CTA Dot Field"]').forEach(function(f){ f.style.display='none'; });
-      // hide the hero's own dot field so the live canvas drives the dots from the very first block
-      $all('[data-pencil-name="Dot BG"]').forEach(function(f){ f.style.display='none'; });
       if(!__hrBgInit){ __hrBgInit=true; initBgCanvas(fx); }
       return cleared>0;
     }catch(e){ return true; }
@@ -477,4 +437,51 @@
     (function loop(){ tick(); requestAnimationFrame(loop); })();
   }
   if(document.readyState!=='loading') setTimeout(start,750); else window.addEventListener('DOMContentLoaded',function(){ setTimeout(start,750); });
+})();
+
+
+
+/* Mobile header burger — only active ≤720px (CSS controls visibility). Reuses page nav targets. */
+(function(){
+  function build(){
+    var hdr=document.querySelector('[data-pencil-name="Header"]'); if(!hdr || document.querySelector('.hr-burger')) return;
+    var actions=document.querySelector('[data-pencil-name="Actions"]')||hdr;
+    var b=document.createElement('div'); b.className='hr-burger'; b.setAttribute('aria-label','Меню'); b.innerHTML='<span></span><span></span><span></span>';
+    actions.appendChild(b);
+    var nav=document.createElement('nav'); nav.className='hr-mnav';
+    var links=[['Главная','/'],['Стримерам','/streamers'],['Брендам','/brands'],['Зрителям','/viewers'],['Методология и цены','/methodology']];
+    nav.innerHTML=links.map(function(l){ return '<a href="'+l[1]+'">'+l[0]+'<span>&rarr;</span></a>'; }).join('')+'<a class="cta" href="methodology.html">Подключить канал</a>';
+    document.body.appendChild(nav);
+    function set(o){ nav.classList.toggle('open',o); b.classList.toggle('x',o); document.body.style.overflow=o?'hidden':''; }
+    var open=false;
+    b.addEventListener('click', function(){ open=!open; set(open); });
+    nav.querySelectorAll('a').forEach(function(a){ a.addEventListener('click', function(){ open=false; set(false); }); });
+  }
+  if(document.readyState!=='loading') setTimeout(build,400); else window.addEventListener('DOMContentLoaded', function(){ setTimeout(build,400); });
+})();
+
+
+
+/* Page 01 — RU/EN language switch (header is FINAL in HTML; this script only translates, never rebuilds). */
+(function(){
+  var I18N_RE=/[А-Яа-яЁё]/;
+  function getLang(){ try{ return localStorage.getItem('hr-lang')||'ru'; }catch(e){ return 'ru'; } }
+  function applyLang(lang){
+    var T=window.HR_TRANS||{};
+    Array.prototype.slice.call(document.querySelectorAll('div,span,a,p,li,button')).forEach(function(el){
+      if(el.children.length) return;
+      var tag=el.tagName; if(tag==='SCRIPT'||tag==='STYLE') return;
+      if(el.getAttribute && el.getAttribute('data-hr-skip')) return;
+      var ru=el.getAttribute&&el.getAttribute('data-i18n-ru');
+      if(ru==null){ var cur=el.textContent; if(!cur||!I18N_RE.test(cur)) return; ru=cur.replace(/\s+/g,' ').trim();
+        try{ el.setAttribute('data-i18n-ru',ru); el.setAttribute('data-i18n-o',cur); }catch(e){ return; } }
+      if(lang==='en'){ var en=T[ru]; if(en!=null && el.textContent!==en) el.textContent=en; }
+      else { var o=el.getAttribute('data-i18n-o'); if(o!=null && el.textContent!==o) el.textContent=o; }
+    });
+    try{ document.documentElement.setAttribute('lang', lang==='en'?'en':'ru'); }catch(e){}
+    Array.prototype.slice.call(document.querySelectorAll('[data-hr-lang-btn]')).forEach(function(b){ var on=b.getAttribute('data-hr-lang-btn')===lang; b.style.background=on?'#FFFFFF1A':'transparent'; b.style.color=on?'#F5F2EC':'#8E8A9A'; });
+  }
+  window.__hrSetLang=function(l){ l=(l==='en')?'en':'ru'; try{ localStorage.setItem('hr-lang',l); }catch(e){} applyLang(l); };
+  function go(){ try{ applyLang(getLang()); }catch(e){} setTimeout(function(){ try{ applyLang(getLang()); }catch(e){} }, 1400); }
+  if(document.readyState==='complete'||document.readyState==='interactive') setTimeout(go,100); else window.addEventListener('DOMContentLoaded', function(){ setTimeout(go,100); });
 })();

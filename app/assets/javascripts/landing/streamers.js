@@ -1,5 +1,6 @@
-/* HimRate landing — streamers page scripts (TASK-060). Externalized verbatim from
-   the Pencil export streamers.html inline <script> blocks (CSP-safe; no inline scripts). */
+/* HimRate landing — streamers page scripts (TASK-060, Export 3 clean). Externalised
+   verbatim from streamers.html inline <script> blocks (incl. responsive burger); routes
+   patched; CSP-safe. */
 
 window.HR = {
   root: '[data-pencil-name="Стримерам"]',
@@ -37,10 +38,10 @@ window.HR = {
     }
 
     /* C8: remove the hero chips row */
-    var chips=q('Chips'); if(chips) chips.style.display='none';
+    
 
     /* remove the "Простыми словами" intro strip */
-    var c0=q('C0 Простыми словами'); if(c0) c0.style.display='none';
+    
 
     /* C9: logo accent -> page bottom-text colour (header + footer) */
     ['Logo','logo'].forEach(function(nm){ qa(nm).forEach(function(lg){
@@ -107,4 +108,26 @@ window.HR = {
   }
   if(document.readyState==='complete'||document.readyState==='interactive') setTimeout(start, 700);
   else window.addEventListener('DOMContentLoaded', function(){ setTimeout(start, 700); });
+})();
+
+
+
+/* Mobile burger for 03-streameram — activates ≤1024 via CSS. Reuses hr-shared nav + lang. */
+(function(){
+  function build(){
+    var hdr=document.querySelector('[data-pencil-name="Header"]'); if(!hdr||document.querySelector('.hr-burger')) return;
+    var b=document.createElement('div'); b.className='hr-burger'; b.setAttribute('aria-label','Меню'); b.innerHTML='<span></span><span></span><span></span>';
+    hdr.appendChild(b);
+    var nav=document.createElement('nav'); nav.className='hr-mnav';
+    var links=[['Главная','/'],['Стримерам','/streamers'],['Брендам','/brands'],['Зрителям','/viewers'],['Методология и цены','/methodology']];
+    nav.innerHTML=links.map(function(l){return '<a href="'+l[1]+'">'+l[0]+'<span>&rarr;</span></a>';}).join('')
+      +'<a class="cta" href="methodology.html">Подключить канал</a>'
+      +'<div class="hr-mlang"><button data-l="ru">RU</button><button data-l="en">EN</button></div>';
+    document.body.appendChild(nav);
+    function set(o){ nav.classList.toggle('open',o); b.classList.toggle('x',o); document.body.style.overflow=o?'hidden':''; }
+    var open=false; b.addEventListener('click',function(){ open=!open; set(open); });
+    nav.querySelectorAll('a').forEach(function(a){ a.addEventListener('click',function(){ open=false; set(false); }); });
+    nav.querySelectorAll('.hr-mlang button').forEach(function(bt){ bt.addEventListener('click', function(){ if(window.__hrSetLang) window.__hrSetLang(bt.getAttribute('data-l')); }); });
+  }
+  if(document.readyState!=='loading') setTimeout(build,600); else window.addEventListener('DOMContentLoaded',function(){ setTimeout(build,600); });
 })();
