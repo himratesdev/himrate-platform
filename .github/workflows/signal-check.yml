@@ -368,6 +368,36 @@ jobs:
             puts "  current_duration_ms: #{s.current_duration_ms rescue 'method missing'}"
           end
 
+          # === Cross-channel temporal co-occurrence — GLOBAL distribution (T1-057 calibration) ===
+          # One user posting in N distinct channels inside a short time bucket = bot signal. This
+          # probe shows the distribution of "max distinct channels any user reached in a Δt bucket"
+          # over a 6h slice, so we can calibrate the Δt window + the K threshold (where do bots
+          # separate from legitimate multi-taskers). Fixed buckets (slight boundary undercount) are
+          # fine for the distribution shape. GLOBAL (channel-independent) — runs regardless of login.
+          section("Cross-channel temporal co-occurrence — GLOBAL distribution (T1-057)") do
+            [ 1, 2, 5 ].each do |dt|
+              sql = <<~SQL
+                SELECT max_concurrent, count() AS users
+                FROM (
+                  SELECT username, max(ch) AS max_concurrent
+                  FROM (
+                    SELECT username, toStartOfInterval(timestamp, INTERVAL #{dt} SECOND) AS bucket,
+                           uniqExact(channel_login) AS ch
+                    FROM chat_messages
+                    WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 6 HOUR
+                    GROUP BY username, bucket
+                  )
+                  GROUP BY username
+                )
+                WHERE max_concurrent >= 2
+                GROUP BY max_concurrent
+                ORDER BY max_concurrent
+              SQL
+              puts "  Δt=#{dt}s — users by MAX distinct channels in a #{dt}s bucket (6h window, >=2):"
+              Clickhouse.client.select(sql).each { |r| puts "    #{r['max_concurrent']} channels: #{r['users']} users" }
+            end
+          end
+
           puts "\n===== DEEP DIVE COMPLETE for #{login} ====="
           RUBY_EOF
           echo "Script built ($(wc -l < /tmp/deep-dive.rb) lines)"
