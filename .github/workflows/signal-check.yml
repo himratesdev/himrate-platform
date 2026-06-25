@@ -335,14 +335,15 @@ jobs:
             by_type = Anomaly.where(stream_id: window_ids).group(:anomaly_type).count
             puts "  anomaly rows by type (window):"
             by_type.sort_by { |_, cnt| -cnt }.each { |t, cnt| puts "    #{t}: #{cnt}" }
-            benign = %w[organic_spike host_raid compute_failure]
-            manip  = %w[viewbot_spike anomaly_wave follow_bot raid_bot chat_bot ccv_step_function known_bot_match account_profile_scoring ccv_tier_clustering ccv_chat_correlation]
-            cur = by_type.reject { |t, _| benign.include?(t) }.values.sum
-            wl  = by_type.select { |t, _| manip.include?(t) }.values.sum
-            rate = ->(x) { n.zero? ? 0.0 : (x.to_f / n).round(3) }
-            puts "  CURRENT severe (blacklist, rows): #{cur} -> rate #{rate.call(cur)} (>0.34 = unstable)"
-            puts "  PROPOSED severe (whitelist manipulation, rows): #{wl} -> rate #{rate.call(wl)}"
-            puts "  band (current code): #{Reputation::BandService.new(c).call.inspect}"
+            severe_types = (Reputation::BandService::SEVERE_ANOMALY_TYPES rescue
+              %w[viewbot_spike anomaly_wave follow_bot raid_bot chat_bot known_bot_match account_profile_scoring])
+            total_rows = by_type.values.sum
+            severe_streams = Anomaly.where(stream_id: window_ids, anomaly_type: severe_types).distinct.count(:stream_id)
+            rate = n.zero? ? 0.0 : (severe_streams.to_f / n).round(3)
+            puts "  whitelist (bot-identity severe types): #{severe_types.inspect}"
+            puts "  total anomaly rows (all types): #{total_rows}"
+            puts "  severe STREAMS (distinct, bot-identity): #{severe_streams}/#{n} -> rate #{rate} (>0.34 = unstable)"
+            puts "  band (deployed code): #{Reputation::BandService.new(c).call.inspect}"
           end
 
           # === FollowerSnapshot — adapt to real columns ===

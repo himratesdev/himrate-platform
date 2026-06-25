@@ -17,9 +17,16 @@ module Reputation
     # recompute churn; band is a window-level descriptor, not a real-time signal.
     CACHE_TTL = 6.hours
 
-    # ADR DEC-2: benign (organic_spike/host_raid) + system (compute_failure) anomaly types
-    # do NOT penalize the band. Everything else counts as severe (safe default for new types).
-    BENIGN_OR_EXCLUDED = %w[organic_spike host_raid compute_failure].freeze
+    # ADR DEC-2 (amended BUG-band-unstable 2026-06-25): the band's anomaly component counts ONLY
+    # high-confidence bot-identity events — a WHITELIST, not a blacklist. Prod data (recrent ti=98,
+    # melharucos ti=83) showed honest channels carry hundreds of statistical CCV-shape detector fires
+    # (ccv_step_function/ccv_tier_clustering) + routine TI-signal anomalies (erv_divergence/ti_drop/
+    # auth_ratio/...) — all already reflected in the TI mean — but ZERO genuine bot events. The old
+    # blacklist ("everything except 3 benign is severe") counted that noise as severe → every channel
+    # was "unstable". A whitelist is the safe default: a new anomaly type is NOT severe until added.
+    SEVERE_ANOMALY_TYPES = %w[
+      viewbot_spike anomaly_wave follow_bot raid_bot chat_bot known_bot_match account_profile_scoring
+    ].freeze
 
     # ADR DEC-1: band thresholds (tunable constants — deterministic derivation, no Flipper).
     IMPECCABLE_TI = 85.0
@@ -122,17 +129,20 @@ module Reputation
         @channel.streams.where.not(ended_at: nil).order(ended_at: :desc).limit(WINDOW).pluck(:id)
     end
 
-    # severe anomalies per stream across the window. Denominator = all completed streams in the
-    # window (window_stream_ids), NOT just streams that have a TIH: anomalies are counted per
-    # session, so a stream missing a TIH snapshot still counts as an observed session. This means
-    # the rate can be slightly diluted vs mean/stddev (computed only over streams with a TIH) —
-    # intentional, "severe events per session" is the meaningful unit.
+    # Fraction of window streams that carried at least one genuine bot-identity event (∈ [0, 1]).
+    # BUG-band-unstable (2026-06-25): count DISTINCT streams, not raw anomaly rows. The detectors
+    # fire many rows per stream (recrent: 323 rows over 11 streams), so raw rows / streams gave a
+    # rate of ~29 — meaningless against the 0.34 threshold, which expects "share of streams with a
+    # severe issue". Denominator = all completed streams in the window (a stream missing a TIH still
+    # counts as an observed session, consistent with mean/stddev being over TIH'd streams only).
     def severe_anomaly_rate
       ids = window_stream_ids
       return 0.0 if ids.empty?
 
-      severe = Anomaly.where(stream_id: ids).where.not(anomaly_type: BENIGN_OR_EXCLUDED).count
-      severe.to_f / ids.size
+      streams_with_severe = Anomaly
+        .where(stream_id: ids, anomaly_type: SEVERE_ANOMALY_TYPES)
+        .distinct.count(:stream_id)
+      streams_with_severe.to_f / ids.size
     end
   end
 end
