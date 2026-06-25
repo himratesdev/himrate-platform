@@ -1,7 +1,106 @@
 <% content_for :title, "HimRate для брендов" %>
 <% content_for :description, "Проверяй реальную аудиторию стримеров перед интеграциями — данные, а не догадки." %>
 
-<div
+<style id="hr-responsive">
+  /* ===== RESPONSIVE LAYOUT (added) — layout only; motion/engine untouched ===== */
+  [data-pencil-name="Брендам"]{ width:100% !important; max-width:1440px !important; margin-left:auto !important; margin-right:auto !important; }
+
+  .hr-burger{ display:none; }
+  .hr-mnav{ position:fixed; inset:0; z-index:80; background:rgba(7,7,12,.97); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px); display:flex; flex-direction:column; padding:88px 22px 28px; gap:2px; opacity:0; transform:translateY(-10px); pointer-events:none; transition:opacity .25s, transform .25s; }
+  .hr-mnav.open{ opacity:1; transform:none; pointer-events:auto; }
+  .hr-mnav a{ display:flex; justify-content:space-between; align-items:center; padding:16px 4px; border-bottom:1px solid rgba(255,255,255,.09); color:#F5F2EC; text-decoration:none; font:600 19px/1 'Geist',system-ui,sans-serif; }
+  .hr-mnav a span{ color:#8E8A9A; font:500 13px 'Geist Mono',monospace; }
+  .hr-mnav a.cta{ margin-top:18px; justify-content:center; background:#7C3AED; border-radius:11px; border-bottom:none; color:#fff; padding:17px; }
+  .hr-mlang{ display:flex; gap:8px; margin-top:16px; }
+  .hr-mlang button{ flex:1; padding:12px; border:1px solid rgba(255,255,255,.16); border-radius:9px; background:transparent; color:#8E8A9A; font:600 13px 'Geist Mono',monospace; cursor:pointer; }
+
+  @media (max-width:1080px){
+    [data-pencil-name="Брендам"] *{ max-width:100% !important; }
+    [data-pencil-name="Strip"]{ max-width:none !important; }
+    [data-pencil-name="L1"],[data-pencil-name="L2"],[data-pencil-name="L3"],[data-pencil-name="Headline"],
+    [data-pencil-name="Heading"],[data-pencil-name="H"],[data-pencil-name="h"],[data-pencil-name="Sub"],
+    [data-pencil-name="sub"],[data-pencil-name="Subhead"],[data-pencil-name="Подзаголовок"],[data-pencil-name="title"],
+    [data-pencil-name="Body"],[data-pencil-name="intro"],[data-pencil-name="s"],[data-pencil-name="Link"]{ white-space:normal !important; }
+    [data-pencil-name="Header"],
+    [data-pencil-name="Б0 Простыми словами"],
+    [data-pencil-name="Hero"],
+    [data-pencil-name="Б4 BAA"],
+    [data-pencil-name="Б6 Медиа"],
+    [data-pencil-name="Б5 Биржа"],
+    [data-pencil-name="Б3 Доверие"],
+    [data-pencil-name="Б7 Тарифы"],
+    [data-pencil-name="Б8 Контакт"],
+    [data-pencil-name="Б9 CTA"],
+    [data-pencil-name="Footer"]{ padding-left:32px !important; padding-right:32px !important; }
+    [data-pencil-name="Header"]{ padding-left:28px !important; padding-right:28px !important; }
+  }
+
+  /* header → burger ≤1024 */
+  @media (max-width:1024px){
+    [data-pencil-name="Menu"]{ display:none !important; }
+    [data-pencil-name="Actions"]{ display:none !important; }
+    .hr-burger{ display:flex !important; flex-direction:column; gap:5px; width:42px; height:42px; align-items:center; justify-content:center; border:1px solid rgba(255,255,255,.18); border-radius:9px; background:#0D0B14; cursor:pointer; }
+    .hr-burger span{ width:18px; height:2px; background:#F5F2EC; border-radius:2px; transition:transform .25s, opacity .2s; }
+    .hr-burger.x span:nth-child(1){ transform:translateY(7px) rotate(45deg); }
+    .hr-burger.x span:nth-child(2){ opacity:0; }
+    .hr-burger.x span:nth-child(3){ transform:translateY(-7px) rotate(-45deg); }
+  }
+
+  @media (max-width:900px){
+    [data-pencil-name="Header"]{ padding-left:18px !important; padding-right:18px !important; }
+    [data-pencil-name="Header"],
+    [data-pencil-name="Б0 Простыми словами"],
+    [data-pencil-name="Hero"],
+    [data-pencil-name="Б4 BAA"],
+    [data-pencil-name="Б6 Медиа"],
+    [data-pencil-name="Б5 Биржа"],
+    [data-pencil-name="Б3 Доверие"],
+    [data-pencil-name="Б7 Тарифы"],
+    [data-pencil-name="Б8 Контакт"],
+    [data-pencil-name="Б9 CTA"],
+    [data-pencil-name="Footer"]{ padding-left:18px !important; padding-right:18px !important; }
+    /* stack card-grid rows */
+    [data-pencil-name="Cards"],
+    [data-pencil-name="r1"],
+    [data-pencil-name="r2"],
+    [data-pencil-name="Б0 Простыми словами"],
+    [data-pencil-name="Steps"],
+    [data-pencil-name="Exchange Row"],
+    [data-pencil-name="Streamer"],
+    [data-pencil-name="Row"],
+    [data-pencil-name="Footer"]{ flex-direction:column !important; height:auto !important; align-items:stretch !important; }
+    [data-pencil-name="Cards"] > *,
+    [data-pencil-name="r1"] > *,
+    [data-pencil-name="r2"] > *,
+    [data-pencil-name="Б0 Простыми словами"] > *,
+    [data-pencil-name="Steps"] > *,
+    [data-pencil-name="Exchange Row"] > *,
+    [data-pencil-name="Streamer"] > *,
+    [data-pencil-name="Row"] > *,
+    [data-pencil-name="Footer"] > *{ width:100% !important; height:auto !important; min-height:0 !important; align-self:stretch !important; }
+    /* footer columns + button rows wrap */
+    [data-pencil-name="Columns"],[data-pencil-name="Cols"]{ flex-wrap:wrap !important; gap:26px 40px !important; width:100% !important; }
+    [data-pencil-name="Buttons"],[data-pencil-name="CTAs"],[data-pencil-name="CTA Row"],[data-pencil-name="Buttons Row"]{ flex-wrap:wrap !important; justify-content:center !important; width:100% !important; }
+  }
+
+  /* TABLET-REFINE: 721-900 stays single-column but with tablet (not phone) spacing */
+  @media (min-width:721px) and (max-width:900px){
+    [data-pencil-name="Header"],
+    [data-pencil-name="Header"],
+    [data-pencil-name="Hero"],
+    [data-pencil-name="Б0 Простыми словами"],
+    [data-pencil-name="Б4 BAA"],
+    [data-pencil-name="Б6 Медиа"],
+    [data-pencil-name="Б5 Биржа"],
+    [data-pencil-name="Б3 Доверие"],
+    [data-pencil-name="Б7 Тарифы"],
+    [data-pencil-name="Б8 Контакт"],
+    [data-pencil-name="Б9 CTA"],
+    [data-pencil-name="Footer"]{ padding-left:30px !important; padding-right:30px !important; }
+    [data-pencil-name="L1"],[data-pencil-name="L2"],[data-pencil-name="L3"]{ font-size:42px !important; line-height:1.08 !important; }
+  }
+</style>
+    <div
       data-pencil-name="Брендам"
       class="box-border w-[1440px] h-fit flex flex-col gap-0 justify-start items-start bg-[#07070C] overflow-hidden"
     >
@@ -17,136 +116,10 @@
             data-pencil-name="Logo"
             class="box-border w-fit shrink-0 h-fit flex flex-row gap-[10px] justify-start items-center"
           ><div data-pencil-name="Wordmark" class="box-border flex items-center cursor-pointer" style="height:30px"><svg viewBox="0 -9 176.3 53.9" fill="#FFFFFF" xmlns="http://www.w3.org/2000/svg" style="display:block;height:100%;width:auto" role="img" aria-label="HimRate"><path fill="#FFFFFF" d="m64.4 2.8h-6.7v31.8h6.7v-12.7h3.6v12.8l6.4-0.1v-31.8h-6.4v13.5h-3.6v-13.5z"/><path fill="#FFFFFF" d="m77.1 2.8h6.3v31.8h-6.3v-31.8z"/><path fill="#FFFFFF" d="m86.2 2.8h6.2l3.6 13.7 3.9-13.7h6.6v31.8h-6.1v-15.5l-4.4 12.9-4-12.8v15.4h-5.8v-31.8z"/><path fill="#FFFFFF" d="m122.7 2.8h-13.4v31.8h6.3v-10.1h0.9l3.1 10.1h6.5l-3.4-10c2.1 0.3 3-1.1 3-3v-15.2c0-2.9-2.1-3.6-3-3.6zm-3.3 16.8h-3.7v-11.3h3.1c0.7 0 0.7 0.5 0.7 1.2v9.3c0 0.5 0 0.8-0.1 0.8z"/><path fill="#FFFFFF" d="m140 2.8h-6.3l-6.3 31.8h6.6l0.6-4h4.3l0.6 4h6.3l-5.8-31.8zm-4.7 23.1 1.5-11.2 1.5 11.2h-3z"/><path fill="#FFFFFF" d="m146 2.8-1.8 5.9h4.4v26h6.9v-26h4l-1.5-5.9h-12z"/><path fill="#FFFFFF" d="m161.4 2.8h11.5l1.2 5.9h-6.7v7.6h5.1v5.6h-5.1v6.8h6.5l-1.2 5.9h-11.3l-0.1-0.1 0.1-31.7z"/><rect fill="#6366F1" x="2.3" y="39.7" width="171.8" height="3.1"/><path fill="#6366F1" d="m48.8 35-1.5-4.1c-1-2.4-4.5-7.9-7.6-10.3-1.8-1.5-3.6-1.9-5.8-1.7-6.2 0.6-7.6 8.5-8.2 16h23.1v0.1z"/><path fill="#6366F1" d="m29.3 4.1-0.4-2.5-2.5 0.4 0.4 2.4c-3 0.6-5.4 3.3-5.4 6.8 0 4 3.1 7.6 7.2 7.6s7.1-3.2 7.1-7.5c0-3.5-2.8-7.1-6.4-7.2zm0 9.9c-1.4 0-3-1.4-3-3.1 0-1 0.6-2 1.5-2.5l-0.9-4 2.4-0.2 0.5 4.1c1.4 0.1 2.6 1.3 2.6 2.6 0 1.5-1.4 3.1-3.1 3.1z"/><path fill="#6366F1" d="m17.8 29.8c-2.1 0-4.1 1.4-4.9 3.4h-8c-1.9 0.2-1.3-1.6-1-2.5l4-10.7c0.5-1.4 1.3-2.4 1.6-1.2 1 3.8 3 9.8 3.1 9.9l2-0.5-4.6-23.7-2 0.5c-0.1 0-0.1 6.8 0.8 11.4-1.4 0.7-2.2 2.1-2.9 3.9l-3 7.9c-0.6 2-1.9 5-0.3 6.2 0.5 0.4 1 0.6 2 0.6h18.1c0-2.7-2-5.2-4.9-5.2z"/><circle cx="80.25" cy="-2.8" r="3.6" fill="#6366F1"/></svg></div></div>
-          <div
-            data-pencil-name="Menu"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-[14px] justify-start items-center"
-          >
-            <div
-              data-pencil-name="СТРИМЕРАМ"
-              class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
-            >
-              СТРИМЕРАМ
-            </div>
-            <div
-              data-pencil-name="dot"
-              class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
-            >
-              ·
-            </div>
-            <div
-              data-pencil-name="БРЕНДАМ"
-              class="text-[12.5px]/[normal] box-border text-[#FFFFFF] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
-            >
-              БРЕНДАМ
-            </div>
-            <div
-              data-pencil-name="dot"
-              class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
-            >
-              ·
-            </div>
-            <div
-              data-pencil-name="ЗРИТЕЛЯМ"
-              class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
-            >
-              ЗРИТЕЛЯМ
-            </div>
-            <div
-              data-pencil-name="dot"
-              class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
-            >
-              ·
-            </div>
-            <div
-              data-pencil-name="МЕТОДОЛОГИЯ"
-              class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
-            >
-              МЕТОДОЛОГИЯ
-            </div>
-            <div
-              data-pencil-name="dot"
-              class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
-            >
-              ·
-            </div>
-            <div
-              data-pencil-name="ЦЕНЫ"
-              class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]"
-            >
-              ЦЕНЫ
-            </div>
-          </div>
-          <div
-            data-pencil-name="Actions"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-[14px] justify-start items-center"
-          >
-            <div
-              data-pencil-name="Войти"
-              class="text-[12.5px]/[normal] box-border text-[#F5F2EC] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1px] text-left [white-space:nowrap]"
-            >
-              Войти
-            </div>
-            <div
-              data-pencil-name="CTA"
-              class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[11px_18px] justify-start items-start bg-[#7C3AED] rounded-[6px]"
-            >
-              <div
-                data-pencil-name="t"
-                class="text-[12.5px]/[normal] box-border text-[#FFFFFF] font-['Geist_Mono',system-ui,sans-serif] font-semibold tracking-[1px] text-left [white-space:nowrap]"
-              >
-                Подключить канал
-              </div>
-            </div>
-          </div>
+          <div data-pencil-name="Menu" class="box-border w-fit shrink-0 h-fit flex flex-row gap-[14px] justify-start items-center"><div data-pencil-name="СТРИМЕРАМ" class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]">СТРИМЕРАМ</div><div data-pencil-name="dot" class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]">·</div><div data-pencil-name="БРЕНДАМ" class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]">БРЕНДАМ</div><div data-pencil-name="dot" class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]">·</div><div data-pencil-name="ЗРИТЕЛЯМ" class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]">ЗРИТЕЛЯМ</div><div data-pencil-name="dot" class="text-[12.5px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]">·</div><div data-pencil-name="МЕТОДОЛОГИЯ И ЦЕНЫ" class="text-[12.5px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left [white-space:nowrap]">МЕТОДОЛОГИЯ И ЦЕНЫ</div></div>
+          <div data-pencil-name="Actions" data-hr-actions="1" class="box-border w-fit shrink-0 h-fit flex flex-row gap-[14px] justify-start items-center"><div data-hr-lang="" class="box-border w-fit shrink-0 h-fit flex flex-row items-center" style="border:1px solid #FFFFFF24;border-radius:6px;overflow:hidden"><div data-hr-lang-btn="ru" onclick="window.__hrSetLang &amp;&amp; window.__hrSetLang('ru')" style="padding:8px 9px;font-family:Geist Mono,monospace;font-size:11.5px;font-weight:600;letter-spacing:1px;cursor:pointer;color:#8E8A9A">RU</div><div data-hr-lang-btn="en" onclick="window.__hrSetLang &amp;&amp; window.__hrSetLang('en')" style="padding:8px 9px;font-family:Geist Mono,monospace;font-size:11.5px;font-weight:600;letter-spacing:1px;cursor:pointer;color:#8E8A9A">EN</div></div><div data-pencil-name="Открыть сервис" class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[9px_13px] justify-start items-center bg-[#FFFFFF12] [border:1px_solid_#FFFFFF3D] rounded-[6px]" style="cursor:pointer"><div class="text-[12.5px]/[normal] box-border text-[#F5F2EC] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1px] text-left [white-space:nowrap]">Открыть сервис</div></div><div data-pencil-name="Открыть расширение" class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[9px_13px] justify-start items-center bg-[#FFFFFF12] [border:1px_solid_#FFFFFF3D] rounded-[6px]" style="cursor:pointer"><div class="text-[12.5px]/[normal] box-border text-[#F5F2EC] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1px] text-left [white-space:nowrap]">Открыть расширение</div></div><div data-pencil-name="Подключить канал" class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[10px_15px] justify-start items-center bg-[#7C3AED] rounded-[6px]" style="cursor:pointer"><div class="text-[12.5px]/[normal] box-border text-[#FFFFFF] font-['Geist_Mono',system-ui,sans-serif] font-semibold tracking-[1px] text-left [white-space:nowrap]">Подключить канал</div></div></div>
         </div>
-        <div
-          data-pencil-name="Б0 Простыми словами"
-          class="box-border w-full h-fit shrink-0 flex flex-row gap-[18px] p-[40px_56px] justify-start items-start bg-[#090910] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF0F]"
-        >
-          <div
-            data-pencil-name="ic"
-            class="box-border w-[44px] shrink-0 h-[44px] flex flex-row gap-0 justify-center items-center bg-[#22D3EE18] rounded-[10px]"
-          >
-            <svg
-              data-pencil-name="i"
-              data-icon-name="info"
-              data-icon-set="lucide"
-              viewBox="0 0 13.99993896484375 14"
-              preserveAspectRatio="xMidYMid meet"
-              xmlns="http://www.w3.org/2000/svg"
-              class="box-border w-[22px] shrink-0 h-[22px]"
-            >
-              <path
-                d="M6.69238 0.60156q-1.16211 0.04102-2.22851 0.50586-1.06299 0.46143-1.90381 1.26807-0.8374 0.80322-1.34326 1.85254-0.48877 1.0083-0.60157 2.15674-0.02734 0.19482-0.02734 0.61523 0 0.42041 0.02734 0.61523 0.11279 1.14844 0.60157 2.15674 0.65967 1.40137 1.89697 2.33789 1.24072 0.93652 2.75146 1.20313 0.5332 0.09912 1.13477 0.09912 0.75537 0 1.43213-0.15381 0.68018-0.15381 1.35351-0.4751 1.26123-0.61865 2.16358-1.70215 0.90234-1.0835 1.25439-2.44384 0.29395-1.11768 0.18116-2.25244-0.11279-1.13477-0.60157-2.17041-0.58789-1.20313-1.62011-2.08497-1.02881-0.88184-2.31397-1.2749-1.0083-0.30762-2.15674-0.25293z m0.96729 1.18946q1.07666 0.14014 1.99267 0.68017 0.91602 0.54004 1.56201 1.4082 0.82715 1.104 1.00831 2.54639 0.01367 0.16748 0.01367 0.57422 0 0.40674-0.01367 0.57422-0.14014 1.16211-0.7212 2.12939-0.58105 0.96387-1.53466 1.62354-0.4751 0.33496-1.04932 0.56055-0.57422 0.22217-1.18945 0.30761-0.25293 0.04102-0.72803 0.04102-0.4751 0-0.72803-0.04102-1.07666-0.15381-1.95849-0.68701-0.88184-0.5332-1.52784-1.3877-0.82715-1.104-1.0083-2.54638-0.01367-0.16748-0.01367-0.57422 0-0.40674 0.01367-0.57422 0.14014-1.12109 0.66993-2.05078 0.5332-0.92969 1.43212-1.58936 0.54346-0.40674 1.20655-0.66992 0.6665-0.2666 1.32617-0.3247l0.25293-0.02735q0.0957-0.01367 0.4751 0 0.37939 0.01367 0.51953 0.02735z m-0.75879 2.31054q-0.18115 0.02734-0.32129 0.16748-0.2085 0.21191-0.15381 0.50586 0.05469 0.29395 0.32129 0.42041 0.09912 0.04102 0.25293 0.04102 0.25293 0 0.42041-0.16748 0.12646-0.12646 0.15381-0.30762 0.05469-0.29395-0.15723-0.50244-0.2085-0.21191-0.51611-0.15723z m-0.05469 2.33789q-0.25293 0.08545-0.37939 0.30762l-0.04102 0.08545 0 2.46436q0 0.18115 0.03418 0.2666 0.0376 0.08203 0.11963 0.16748 0.08545 0.08203 0.18799 0.1333 0.10596 0.04785 0.23242 0.04785 0.12646 0 0.229-0.04785 0.10596-0.05127 0.18799-0.1333 0.08545-0.08545 0.11963-0.16748 0.0376-0.08545 0.0376-0.2666l0-2.46436-0.04102-0.08545q-0.09912-0.18115-0.28027-0.2666-0.08545-0.04102-0.22559-0.04785-0.14014-0.00684-0.18115 0.00683z"
-                fill="#67E8F9"
-              ></path>
-            </svg>
-          </div>
-          <div
-            data-pencil-name="c"
-            class="box-border [flex:1_1_0] h-fit flex flex-col gap-[7px] justify-start items-start"
-          >
-            <div
-              data-pencil-name="eb"
-              class="text-[12px]/[normal] box-border text-[#8E8A9A] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[2px] text-left [white-space:nowrap]"
-            >
-              ПРОСТЫМИ СЛОВАМИ — ДЛЯ БРЕНДА
-            </div>
-            <div
-              data-pencil-name="h"
-              class="text-[21px]/[normal] box-border text-[#F5F2EC] font-[Geist,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
-            >
-              Если вы рекламируетесь у стримеров — это для вас
-            </div>
-            <div
-              data-pencil-name="t"
-              class="text-[16px]/[25px] box-border w-full text-[#A7A3B0] font-[Inter,system-ui,sans-serif] font-normal text-left"
-            >
-              Считаем реальную живую аудиторию независимо от стримера и связываем ваши продажи с
-              конкретными моментами эфира.
-            </div>
-          </div>
-        </div>
+        
         <div
           data-pencil-name="Hero"
           class="box-border w-full h-[700px] shrink-0 flex flex-col gap-[22px] p-[86px_56px_58px_56px] justify-start items-start overflow-hidden relative"
@@ -251,6 +224,7 @@
             </div>
           </div>
         </div>
+
         <div
           data-pencil-name="Б4 BAA"
           class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[72px_56px] justify-start items-start bg-[#07070C]"
@@ -899,33 +873,7 @@
               </div>
             </div>
           </div>
-          <div
-            data-pencil-name="Honesty"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-[12px] p-[16px_18px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[12px]"
-          >
-            <svg
-              data-pencil-name="i"
-              data-icon-name="circle-alert"
-              data-icon-set="lucide"
-              viewBox="0 0 13.99993896484375 14"
-              preserveAspectRatio="xMidYMid meet"
-              xmlns="http://www.w3.org/2000/svg"
-              class="box-border w-[18px] shrink-0 h-[18px]"
-            >
-              <path
-                d="M6.69238 0.60156q-1.16211 0.04102-2.22851 0.50586-1.06299 0.46143-1.90381 1.26807-0.8374 0.80322-1.34326 1.85254-0.48877 1.0083-0.60157 2.15674-0.02734 0.19482-0.02734 0.61523 0 0.42041 0.02734 0.61523 0.11279 1.14844 0.60157 2.15674 0.65967 1.40137 1.89697 2.33789 1.24072 0.93652 2.75146 1.20313 0.5332 0.09912 1.13477 0.09912 0.75537 0 1.43213-0.15381 0.68018-0.15381 1.35351-0.4751 1.26123-0.61865 2.16358-1.70215 0.90234-1.0835 1.25439-2.44384 0.29395-1.11768 0.18116-2.25244-0.11279-1.13477-0.60157-2.17041-0.58789-1.20313-1.62011-2.08497-1.02881-0.88184-2.31397-1.2749-1.0083-0.30762-2.15674-0.25293z m0.96729 1.18946q1.07666 0.14014 1.99267 0.68017 0.91602 0.54004 1.56201 1.4082 0.82715 1.104 1.00831 2.54639 0.01367 0.16748 0.01367 0.57422 0 0.40674-0.01367 0.57422-0.14014 1.16211-0.7212 2.12939-0.58105 0.96387-1.53466 1.62354-0.4751 0.33496-1.04932 0.56055-0.57422 0.22217-1.18945 0.30761-0.25293 0.04102-0.72803 0.04102-0.4751 0-0.72803-0.04102-1.07666-0.15381-1.95849-0.68701-0.88184-0.5332-1.52784-1.3877-0.82715-1.104-1.0083-2.54638-0.01367-0.16748-0.01367-0.57422 0-0.40674 0.01367-0.57422 0.14014-1.12109 0.66993-2.05078 0.5332-0.92969 1.43212-1.58936 0.54346-0.40674 1.20655-0.66992 0.6665-0.2666 1.32617-0.3247l0.25293-0.02735q0.0957-0.01367 0.4751 0 0.37939 0.01367 0.51953 0.02735z m-0.75879 2.31054q-0.0957 0.01367-0.17432 0.05127-0.0752 0.03418-0.15381 0.12647-0.0752 0.08887-0.11279 0.16748-0.03418 0.0752-0.03418 0.25635l0 2.46435 0.04102 0.08545q0.04443 0.06836 0.12646 0.15381 0.08545 0.08203 0.16065 0.12646 0.07861 0.04102 0.24609 0.04102 0.16748 0 0.24268-0.04102 0.07861-0.04443 0.16064-0.12646 0.08545-0.08545 0.12988-0.15381l0.04102-0.08545 0-2.33789q0-0.2666-0.02051-0.3418-0.02051-0.07861-0.07861-0.16064l-0.01367-0.01367q-0.09912-0.12646-0.2461-0.18116-0.14697-0.05811-0.31445-0.03076z m-0.05469 4.67578q-0.2085 0.05811-0.32129 0.22559-0.11279 0.16748-0.09912 0.37256 0.01367 0.20166 0.15381 0.35547 0.08545 0.08203 0.15381 0.12646 0.21191 0.0957 0.42041 0.03418 0.2085-0.06494 0.33496-0.24609 0.12646-0.18115 0.08545-0.40674-0.01367-0.10938-0.05127-0.17773-0.03418-0.07178-0.11963-0.14014-0.08203-0.07178-0.16064-0.11279-0.0752-0.04443-0.19483-0.05127-0.11621-0.00684-0.20166 0.0205z"
-                fill="#FBBF24"
-              ></path>
-            </svg>
-            <div
-              data-pencil-name="t"
-              class="text-[14px]/[21px] box-border [flex:1_1_0] text-[#A7A3B0] font-[Inter,system-ui,sans-serif] font-normal text-left"
-            >
-              Честно: мы не обещаем, что на всех площадках — одни и те же люди. И мы не продаём за
-              деньги глубокую соц-аналитику — это публичная картина охвата, а не аудит пересечения
-              аудиторий.
-            </div>
-          </div>
+          
         </div>
         <div
           data-pencil-name="Б5 Биржа"

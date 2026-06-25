@@ -125,49 +125,7 @@
   window.__hrSetLang=function(l){ l=(l==='en')?'en':'ru'; try{ localStorage.setItem('hr-lang', l); }catch(e){} applyLang(l); };
 
   /* ---------------- navigation + buttons ---------------- */
-  function fixHeader(){
-    var meth=document.querySelector('[data-pencil-name="МЕТОДОЛОГИЯ"]');
-    var tseny=document.querySelector('[data-pencil-name="ЦЕНЫ"]');
-    if(meth && tseny){
-      meth.textContent='МЕТОДОЛОГИЯ И ЦЕНЫ';
-      meth.setAttribute('data-pencil-name','МЕТОДОЛОГИЯ И ЦЕНЫ');
-      var dot=tseny.previousElementSibling;
-      if(dot && (dot.getAttribute('data-pencil-name')||'')==='dot') dot.parentNode.removeChild(dot);
-      tseny.parentNode.removeChild(tseny);
-    }
-    var actions=document.querySelector('[data-pencil-name="Actions"]');
-    if(actions && !actions.getAttribute('data-hr-actions')){
-      actions.setAttribute('data-hr-actions','1');
-      while(actions.firstChild) actions.removeChild(actions.firstChild);
-      var mk=function(label, filled){
-        var b=document.createElement('div');
-        b.setAttribute('data-pencil-name',label);
-        b.style.cursor='pointer';
-        if(filled){ b.className='box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[10px_15px] justify-start items-center bg-[#7C3AED] rounded-[6px]';
-          b.innerHTML='<div class="text-[12.5px]/[normal] box-border text-[#FFFFFF] font-[\'Geist_Mono\',system-ui,sans-serif] font-semibold tracking-[1px] text-left [white-space:nowrap]">'+label+'</div>';
-        } else { b.className='box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[9px_13px] justify-start items-center bg-[#FFFFFF12] [border:1px_solid_#FFFFFF3D] rounded-[6px]';
-          b.innerHTML='<div class="text-[12.5px]/[normal] box-border text-[#F5F2EC] font-[\'Geist_Mono\',system-ui,sans-serif] font-medium tracking-[1px] text-left [white-space:nowrap]">'+label+'</div>';
-        }
-        return b;
-      };
-      actions.appendChild(mk('Открыть сервис', false));
-      actions.appendChild(mk('Открыть расширение', false));
-      actions.appendChild(mk('Подключить канал', true));
-      var sw=document.createElement('div');
-      sw.setAttribute('data-hr-lang','');
-      sw.className='box-border w-fit shrink-0 h-fit flex flex-row items-center';
-      sw.style.cssText='border:1px solid #FFFFFF24;border-radius:6px;overflow:hidden';
-      ['ru','en'].forEach(function(lg){
-        var t=document.createElement('div');
-        t.setAttribute('data-hr-lang-btn',lg);
-        t.textContent=lg.toUpperCase();
-        t.style.cssText='padding:8px 9px;font-family:Geist Mono,monospace;font-size:11.5px;font-weight:600;letter-spacing:1px;cursor:pointer;color:#8E8A9A';
-        t.addEventListener('click', function(){ window.__hrSetLang(lg); });
-        sw.appendChild(t);
-      });
-      actions.insertBefore(sw, actions.firstChild);
-    }
-  }
+  function fixHeader(){ /* header is baked final in the HTML now — nothing to merge or rebuild */ }
   function wireNav(){
     var CUR=location.pathname;
     var NAV={
@@ -293,7 +251,6 @@
 
   function initBgCanvas(fx){
     var cv=document.createElement('canvas'); fx.appendChild(cv);
-    try{ document.querySelectorAll('[data-pencil-name="Dot BG"],[data-pencil-name="Dots BG"],[data-pencil-name="Dots"],[data-pencil-name="Particles"]').forEach(function(e){ e.style.display='none'; }); }catch(e){}
     var ctx=cv.getContext('2d'); var DPR=Math.min(2, window.devicePixelRatio||1);
     var W=0,H=0,N=1900,dots=[],free=[];
     // scene list: each = {at, kind, style}. kind = 'logo' | 'word:XXX' | a shape key.
@@ -385,6 +342,7 @@
   function init(){
     injectCSS();
     fixHeader();
+    try{ document.documentElement.classList.add('hr-ready'); }catch(e){}
     wireNav();
     applyLang(getLang());
     setTimeout(function(){ applyLang(getLang()); }, 1400);
