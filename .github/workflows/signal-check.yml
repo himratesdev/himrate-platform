@@ -398,6 +398,46 @@ jobs:
             end
           end
 
+          # === Cross-channel TIERED REPETITION — Probe-2 (T1-057 R-distribution calibration) ===
+          # Probe-1 measured single-event shape (max distinct channels). Probe-2 calibrates the PO
+          # tiered-repetition model: an "event" = user writes to >=3 DISTINCT channels inside a
+          # W-second window; R = how many such events recur for a user over 24h. PO tiers:
+          #   R>=2 watch / R>=3 flag / R>=4 yellow / R>=7 confirmed.
+          # We approximate R with NON-OVERLAPPING fixed W-buckets (production will use true sliding /
+          # boundary-robust); fixed buckets slightly undercount boundary-straddling bursts but are
+          # good enough to confirm the tiers separate a bot tail from the legit mass + how W scales it.
+          # 24h window = production CH-scan semantics (CrossChannelDigestRefreshWorker). GLOBAL.
+          section("Cross-channel TIERED REPETITION — Probe-2 R-distribution (T1-057)") do
+            [ 5, 10, 15 ].each do |w|
+              per_user = <<~SQL
+                SELECT username, countIf(ch >= 3) AS r, max(ch) AS max_concurrent
+                FROM (
+                  SELECT username, toStartOfInterval(timestamp, INTERVAL #{w} SECOND) AS bucket,
+                         uniqExact(channel_login) AS ch
+                  FROM chat_messages
+                  WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR
+                  GROUP BY username, bucket
+                )
+                GROUP BY username
+              SQL
+
+              puts "  --- W=#{w}s (event = >=3 distinct channels in a #{w}s bucket; R = # such buckets / 24h) ---"
+
+              dist = Clickhouse.client.select("SELECT r, count() AS users FROM (#{per_user}) WHERE r >= 1 GROUP BY r ORDER BY r").to_a
+              puts "    R distribution (users by R, R>=1):"
+              dist.each { |row| puts "      R=#{row['r']}: #{row['users']} users" }
+              watch     = dist.select { |row| row['r'].to_i >= 2 }.sum { |row| row['users'].to_i }
+              flag      = dist.select { |row| row['r'].to_i >= 3 }.sum { |row| row['users'].to_i }
+              yellow    = dist.select { |row| row['r'].to_i >= 4 }.sum { |row| row['users'].to_i }
+              confirmed = dist.select { |row| row['r'].to_i >= 7 }.sum { |row| row['users'].to_i }
+              puts "    TIERS: R>=2 watch=#{watch} | R>=3 flag=#{flag} | R>=4 yellow=#{yellow} | R>=7 confirmed=#{confirmed}"
+
+              top = Clickhouse.client.select("SELECT username, r, max_concurrent FROM (#{per_user}) WHERE r >= 2 ORDER BY r DESC, max_concurrent DESC LIMIT 20").to_a
+              puts "    Top offenders (R>=2, by R desc — eyeball bot-ness):"
+              top.each { |row| puts "      #{row['username']}: R=#{row['r']} max_concurrent=#{row['max_concurrent']}" }
+            end
+          end
+
           puts "\n===== DEEP DIVE COMPLETE for #{login} ====="
           RUBY_EOF
           echo "Script built ($(wc -l < /tmp/deep-dive.rb) lines)"
