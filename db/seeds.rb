@@ -63,7 +63,10 @@ if defined?(SignalConfiguration)
     { signal_type: "chatter_ccv_ratio", category: "default", param_name: "expected_ratio_min", param_value: 0.040 },
     { signal_type: "chatter_ccv_ratio", category: "default", param_name: "expected_ratio_max", param_value: 0.20 },
 
-    # === Signal Weights (weight_in_ti for all 11 signals) ===
+    # === Signal Weights (weight_in_ti) ===
+    # T1-057: temporal_cross_channel added (0.05, conservative). Engine renormalizes across the
+    # AVAILABLE signals, so this only contributes when the signal has a value (Flipper-gated).
+    { signal_type: "temporal_cross_channel", category: "default", param_name: "weight_in_ti", param_value: 0.05 },
     { signal_type: "auth_ratio", category: "default", param_name: "weight_in_ti", param_value: 0.15 },
     { signal_type: "chatter_ccv_ratio", category: "default", param_name: "weight_in_ti", param_value: 0.10 },
     { signal_type: "ccv_step_function", category: "default", param_name: "weight_in_ti", param_value: 0.12 },

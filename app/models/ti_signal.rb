@@ -1,6 +1,6 @@
 # frozen_string_literal: true
 
-# TASK-028: 11 Live Signals per BFT §07.1.
+# TASK-028: Live Signals per BFT §07.1 (T1-057 added temporal_cross_channel → 12).
 # Each record = one signal computation for a stream at a point in time.
 
 class TiSignal < ApplicationRecord
@@ -9,6 +9,7 @@ class TiSignal < ApplicationRecord
   SIGNAL_TYPES = %w[
     auth_ratio chatter_ccv_ratio ccv_step_function ccv_tier_clustering
     chat_behavior channel_protection_score cross_channel_presence
+    temporal_cross_channel
     known_bot_match raid_attribution ccv_chat_correlation
     account_profile_scoring
   ].freeze

@@ -12,7 +12,7 @@
 # Cadence: throttled at one sweep per channel per `SWEEP_THROTTLE_TTL`
 # (Redis SETNX, defaults to 5 minutes). Multiple StreamMonitorWorker cycles
 # inside that window will SETNX-fail and noop — single-flight semantics
-# (same pattern as `CrossChannelDigestRefreshWorker`).
+# (same pattern as `CrossChannelIntelligenceWorker`).
 #
 # Operational gate: BigChannelChatterSweepWorker is wired but its execution is
 # itself gated by the `:big_channel_chatter_sweep` Flipper flag (default OFF
@@ -48,7 +48,7 @@ module Twitch
     # CR iter-1 M1: `:job` is a Kamal ROLE name, not a registered Sidekiq queue
     # (see config/sidekiq.yml :queues:) — enqueueing there would silently lose
     # jobs once the flag flips on. Sibling out-of-band Twitch-GQL probes
-    # (CrossChannelDigestRefreshWorker, FollowerSnapshotWorker, ChatterProfileRefreshWorker,
+    # (CrossChannelIntelligenceWorker, FollowerSnapshotWorker, ChatterProfileRefreshWorker,
     # StaleStreamSweepWorker, StreamMonitorWorker, ChannelDiscoveryWorker,
     # CleanupWorker) all use `:monitoring` — same class of work.
     sidekiq_options queue: :monitoring, retry: 2

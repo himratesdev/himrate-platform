@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # TASK-029 FR-001/002/005/006/010: Trust Index Engine.
-# Aggregates 11 signal results → TI score (0-100) + classification.
+# Aggregates the signal results → TI score (0-100) + classification.
 # Weights from signal_configurations DB. Null signals skipped, weights renormalized.
 # Bayesian shrinkage applied only when signal_confidence < bayesian_skip_threshold
 # (default 0.95 via SignalConfiguration). High-confidence signals stand by their
@@ -117,9 +117,12 @@ module TrustIndex
         return [ pop_mean, {}, 0.0 ]
       end
 
-      # Log warning if weights don't sum to ~1.0 before normalization
-      if available.size == 11 && (total_weight - 1.0).abs > 0.01
-        Rails.logger.warn("TrustIndex::Engine: weights sum=#{total_weight.round(4)}, expected ~1.0")
+      # Log warning if weights don't sum to the expected total before normalization. T1-057 added a
+      # 12th signal (temporal_cross_channel, 0.05) on top of the original 11 (which summed to 1.0), so
+      # the all-present total is now ~1.05. Renormalization (weight/total_weight) makes the absolute
+      # sum functionally irrelevant — this is a seed-misconfiguration sanity check only.
+      if available.size == TrustIndex::Signals::Registry::SIGNAL_CLASSES.size && (total_weight - 1.05).abs > 0.01
+        Rails.logger.warn("TrustIndex::Engine: weights sum=#{total_weight.round(4)}, expected ~1.05")
       end
 
       # Weighted bot_score: higher signal value = more bots

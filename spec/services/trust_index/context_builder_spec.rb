@@ -6,6 +6,11 @@ RSpec.describe TrustIndex::ContextBuilder do
   let(:channel) { Channel.create!(twitch_id: "cb_ch", login: "cb_channel", display_name: "CB") }
   let(:stream) { Stream.create!(channel: channel, started_at: 1.hour.ago, game_name: "Just Chatting") }
 
+  # build() now checks two flags (:cross_channel_digest + T1-057 :temporal_cross_channel). Default to
+  # the real (memory-adapter) Flipper for any flag the example doesn't explicitly stub, so a partial
+  # stub on one flag doesn't raise unexpected-arguments when build() checks the other.
+  before { allow(Flipper).to receive(:enabled?).and_call_original }
+
   it "returns Hash with all expected keys" do
     context = described_class.build(stream)
 
@@ -13,8 +18,8 @@ RSpec.describe TrustIndex::ContextBuilder do
       latest_ccv ccv_series_15min ccv_series_30min ccv_series_10min
       chat_rate_10min chat_username_counts_5min unique_chatters_60min
       chatters_present_total bot_scores
-      channel_protection_config cross_channel_counts raids recent_raids category
-      stream_duration_min
+      channel_protection_config cross_channel_counts temporal_cross_channel_flags
+      raids recent_raids category stream_duration_min
     ]
     expect(context.keys).to match_array(expected_keys)
   end

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # TASK-030 FR-003/011: ContextBuilder.
-# Collects all data needed for 11 signals from DB into a single Hash.
+# Collects all data needed for the signals from DB into a single Hash.
 # Optimized for 1000+ streams: batch-friendly queries, limited windows, no N+1.
 # Each query in rescue — one failure doesn't block the rest.
 
@@ -27,6 +27,7 @@ module TrustIndex
         bot_scores: fetch_bot_scores(stream),
         channel_protection_config: fetch_config(channel),
         cross_channel_counts: fetch_cross_channel(stream),
+        temporal_cross_channel_flags: fetch_temporal_cross_channel_flags(stream),
         raids: fetch_raids(stream),
         recent_raids: fetch_recent_raids(stream),
         category: resolve_category(stream),
@@ -113,7 +114,7 @@ module TrustIndex
       # BUG-SCW-CROSS-CHANNEL (2026-06-02): the original implementation ran a 24h full-scan of
       # `chat_messages` (5-8s/call, 82-88% of SignalComputeWorker work) — root cause of the
       # :signal_compute backlog. The digest path pre-computes (username → distinct_channels_24h)
-      # once per 5min via CrossChannelDigestRefreshWorker; the hot read becomes pick-500-chatters
+      # once per 5min via CrossChannelIntelligenceWorker; the hot read becomes pick-500-chatters
       # (CH, ~0.3-2s) + bulk_lookup (PG, ~5ms) instead of the second join-style 24h scan.
       #
       # Flipper[:cross_channel_digest] gates the new path so we can enable per-env after the
@@ -137,6 +138,27 @@ module TrustIndex
         end
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: cross_channel digest lookup failed (#{e.message})")
+        {}
+      end
+
+      # T1-057 FR-B2: per-channel temporal cross-channel bot flags for the chatters present in this
+      # stream. Gated by Flipper[:temporal_cross_channel] — while OFF this returns {} so the
+      # TemporalCrossChannel signal reports insufficient and is EXCLUDED from the weighted TI score
+      # (zero regression on existing channels until the signal is deliberately enabled + calibrated).
+      # Mirrors the digest read path: stream_chatters (CH) → bulk_lookup (one PG SELECT).
+      #
+      # Returns { total_chatters:, flagged: } — `total_chatters` (the full present-chatter set) is the
+      # signal's DENOMINATOR; `flagged` (R>=2 subset, usually a handful) is the numerator source. Empty
+      # ({}) signals insufficient.
+      def fetch_temporal_cross_channel_flags(stream)
+        return {} unless Flipper.enabled?(:temporal_cross_channel)
+
+        usernames = Clickhouse::ChatQueries.stream_chatters(stream)
+        return {} if usernames.empty?
+
+        { total_chatters: usernames.size, flagged: CrossChannelTemporalFlag.bulk_lookup(usernames) }
+      rescue ActiveRecord::StatementInvalid => e
+        Rails.logger.warn("ContextBuilder: temporal_cross_channel lookup failed (#{e.message})")
         {}
       end
 

@@ -207,13 +207,22 @@ Sidekiq.configure_server do |config|
       # 12.34M-row 24h slice = 5-8s/call, 82-88% of SCW work). Gated by Flipper[:cross_channel_digest]
       # so the refresh runs even before ContextBuilder switches over — once digest is populated +
       # verified, enable the flag to flip the read path.
-      "cross_channel_digest_refresh" => {
+      # T1-057: renamed from "cross_channel_digest_refresh" / CrossChannelDigestRefreshWorker. The
+      # worker now derives digest + overlap edges + temporal bot flags from one CH scan, each behind
+      # its own Flipper gate (:cross_channel_digest / :cross_channel_edges / :temporal_cross_channel).
+      "cross_channel_intelligence_refresh" => {
         "cron" => "*/5 * * * *", # Every 5 min — drift on 24h window ~0.3% (acceptable)
-        "class" => "CrossChannelDigestRefreshWorker",
+        "class" => "CrossChannelIntelligenceWorker",
         "queue" => "monitoring",
-        "description" => "BUG-SCW-CROSS-CHANNEL: refresh CrossChannelDigest from CH (1 scan/5min, replaces 7×/sec per-stream scans). Gated :cross_channel_digest."
+        "description" => "T1-057: refresh CrossChannelDigest + overlap edges + temporal bot flags from CH (1 cycle/5min). Per-section Flipper-gated."
       }
     }
+
+    # T1-057: destroy the legacy cron job name idempotently — sidekiq-cron persists jobs by name in
+    # Redis, so without this the renamed-away "cross_channel_digest_refresh" would linger and fire
+    # against the now-removed CrossChannelDigestRefreshWorker class (NameError every 5 min). No-op
+    # after the first boot post-deploy.
+    Sidekiq::Cron::Job.destroy("cross_channel_digest_refresh")
 
     schedule.each do |name, config_hash|
       Sidekiq::Cron::Job.create(name: name, **config_hash)

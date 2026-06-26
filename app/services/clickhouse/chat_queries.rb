@@ -121,6 +121,67 @@ module Clickhouse
       []
     end
 
+    # T1-057 FR-A: overlap edge-ledger source query. One row per (username, channel_login) over the
+    # rolling 24h window, for the OVERLAP COHORT only — users present in 2..max_channels distinct
+    # channels (single-channel chatters carry no overlap edge; users above the cap are bots/omnipresent
+    # and are kept OUT of the co-viewing GRAPH, BR-2). The temporal bot signal (temporal_co_occurrence)
+    # deliberately uses a DIFFERENT, all-channel cohort — overlap graph excludes bots, detection keeps
+    # them. CH `now()` is constant within a single query so the inner/outer 24h cutoffs do not drift.
+    #
+    # Returns Array<Hash> (string keys/values): username, channel_login, first_seen, last_seen,
+    # message_count. Does NOT rescue — lets Clickhouse::Error propagate so the worker can distinguish
+    # a CH failure (leave prior edges intact, skip prune) from a legitimately empty result (FR-A
+    # failure-isolation / prune-last contract, §5).
+    def cross_channel_edges(max_channels)
+      Clickhouse.client.select(<<~SQL)
+        SELECT username, channel_login,
+               min(timestamp) AS first_seen, max(timestamp) AS last_seen, count() AS message_count
+        FROM chat_messages
+        WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR
+          AND username IN (
+            SELECT username FROM chat_messages
+            WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR
+            GROUP BY username HAVING uniqExact(channel_login) BETWEEN 2 AND #{max_channels.to_i}
+          )
+        GROUP BY username, channel_login
+      SQL
+    end
+
+    # T1-057 FR-B: temporal co-occurrence bot signal (TIERED REPETITION). An "event" = the user
+    # posted in >=3 DISTINCT channels inside a <=W-second window; event_count (R) = how many such
+    # events recur over rolling 24h. Boundary-robust via TWO-PHASE OFFSET GRID (ADR DEC-3 amended):
+    # two fixed-bucket grids offset by W/2 (ARRAY JOIN over the two phase offsets in one scan); per
+    # user R = max over the two phases of countIf(>=3 channels), so a burst straddling one grid's
+    # boundary is caught centred in the other. mc = max distinct channels in any window. ALL channels
+    # (monitored or not — BR-4: detection loses no signal). Output bounded by HAVING event_count >= 2.
+    #
+    # Returns Array<Hash>: username, event_count, max_concurrent, last_event_at. tier + bot_type
+    # (allowlist + R thresholds) are applied in the worker (business logic, not the query). Does NOT
+    # rescue — Clickhouse::Error propagates for per-section failure isolation (§5).
+    def temporal_co_occurrence(window_seconds)
+      w = window_seconds.to_i
+      half = w / 2
+      Clickhouse.client.select(<<~SQL)
+        SELECT username, max(r) AS event_count, max(mc) AS max_concurrent, max(last_ts) AS last_event_at
+        FROM (
+          SELECT username, phase, countIf(ch >= 3) AS r, max(ch) AS mc, max(bucket_last) AS last_ts
+          FROM (
+            SELECT username, phase,
+                   toStartOfInterval(subtractSeconds(timestamp, phase), INTERVAL #{w} SECOND) AS bucket,
+                   uniqExact(channel_login) AS ch,
+                   max(timestamp) AS bucket_last
+            FROM chat_messages
+            ARRAY JOIN [0, #{half}] AS phase
+            WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR
+            GROUP BY username, phase, bucket
+          )
+          GROUP BY username, phase
+        )
+        GROUP BY username
+        HAVING event_count >= 2
+      SQL
+    end
+
     # ClickHouse string-literal escape: backslash first (CH single-quoted strings honor C-style
     # escapes), then single-quote. Block-form gsub avoids the gsub-replacement back-reference
     # interpretation that bites the naive `gsub('\\', '\\\\')` form. CR-206 Should-3.

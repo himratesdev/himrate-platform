@@ -27,15 +27,15 @@ RSpec.describe TrustIndex::Signals::Registry do
   end
 
   describe ".all" do
-    it "returns 11 signal instances" do
+    it "returns 12 signal instances" do
       signals = described_class.all
-      expect(signals.size).to eq(11)
+      expect(signals.size).to eq(12)
       expect(signals).to all(be_a(TrustIndex::Signals::BaseSignal))
     end
 
     it "each signal has unique signal_type" do
       types = described_class.all.map(&:signal_type)
-      expect(types.uniq.size).to eq(11)
+      expect(types.uniq.size).to eq(12)
       expect(types).to match_array(TiSignal::SIGNAL_TYPES)
     end
 
@@ -49,9 +49,9 @@ RSpec.describe TrustIndex::Signals::Registry do
   describe ".compute_all" do
     let(:context) { { latest_ccv: nil, category: "default" } }
 
-    it "returns hash with 11 keys" do
+    it "returns hash with 12 keys" do
       results = described_class.compute_all(context)
-      expect(results.size).to eq(11)
+      expect(results.size).to eq(12)
       expect(results.keys).to match_array(TiSignal::SIGNAL_TYPES)
     end
 
@@ -68,7 +68,7 @@ RSpec.describe TrustIndex::Signals::Registry do
       expect(results["auth_ratio"].value).to be_nil
       expect(results["auth_ratio"].metadata[:error]).to eq("StandardError")
       # Other signals still computed
-      expect(results.values.count { |r| r.metadata[:error].nil? }).to be >= 10
+      expect(results.values.count { |r| r.metadata[:error].nil? }).to be >= 11
     end
   end
 

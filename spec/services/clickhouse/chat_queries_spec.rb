@@ -601,4 +601,44 @@ RSpec.describe Clickhouse::ChatQueries do
       expect(described_class.viewer_first_last_seen_per_stream(stream_id)).to eq({})
     end
   end
+
+  # T1-057 — these two methods intentionally do NOT rescue Clickhouse::Error (the worker needs to
+  # distinguish a CH failure from an empty result for per-section failure isolation), so a raised
+  # error must propagate.
+  describe ".cross_channel_edges" do
+    it "queries the overlap cohort (2..cap distinct channels) grouped by username, channel_login" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/GROUP BY username, channel_login/)
+          .and(a_string_matching(/BETWEEN 2 AND 30/))
+          .and(a_string_matching(/min\(timestamp\) AS first_seen/))
+      ).and_return([ { "username" => "v1", "channel_login" => "c1", "first_seen" => "x", "last_seen" => "y", "message_count" => "3" } ])
+
+      rows = described_class.cross_channel_edges(30)
+      expect(rows.first["channel_login"]).to eq("c1")
+    end
+
+    it "lets Clickhouse::Error propagate (no internal rescue)" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::Error.new("ch down"))
+      expect { described_class.cross_channel_edges(30) }.to raise_error(Clickhouse::Error)
+    end
+  end
+
+  describe ".temporal_co_occurrence" do
+    it "builds a two-phase offset grid (phase 0 + W/2) and filters HAVING event_count >= 2" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/ARRAY JOIN \[0, 2\] AS phase/) # W=5 -> half=2
+          .and(a_string_matching(/subtractSeconds\(timestamp, phase\)/))
+          .and(a_string_matching(/INTERVAL 5 SECOND/))
+          .and(a_string_matching(/HAVING event_count >= 2/))
+      ).and_return([ { "username" => "bot", "event_count" => "9", "max_concurrent" => "3", "last_event_at" => "z" } ])
+
+      rows = described_class.temporal_co_occurrence(5)
+      expect(rows.first["event_count"]).to eq("9")
+    end
+
+    it "lets Clickhouse::Error propagate (no internal rescue)" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::Error.new("ch down"))
+      expect { described_class.temporal_co_occurrence(5) }.to raise_error(Clickhouse::Error)
+    end
+  end
 end
