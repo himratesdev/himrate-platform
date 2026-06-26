@@ -218,14 +218,15 @@ Sidekiq.configure_server do |config|
       }
     }
 
-    # T1-057: destroy the legacy cron job name idempotently — sidekiq-cron persists jobs by name in
-    # Redis, so without this the renamed-away "cross_channel_digest_refresh" would linger and fire
-    # against the now-removed CrossChannelDigestRefreshWorker class (NameError every 5 min). No-op
-    # after the first boot post-deploy.
-    Sidekiq::Cron::Job.destroy("cross_channel_digest_refresh")
-
     schedule.each do |name, config_hash|
       Sidekiq::Cron::Job.create(name: name, **config_hash)
     end
+
+    # T1-057: destroy the legacy cron job name idempotently — sidekiq-cron persists jobs by name in
+    # Redis, so without this the renamed-away "cross_channel_digest_refresh" would linger and fire
+    # against the now-removed CrossChannelDigestRefreshWorker class (NameError every 5 min). No-op
+    # after the first boot post-deploy. (Placed after schedule.each so the `}\n\n  schedule.each`
+    # adjacency that spec/initializers/sidekiq_cron_spec.rb parses for stays intact.)
+    Sidekiq::Cron::Job.destroy("cross_channel_digest_refresh")
   end
 end
