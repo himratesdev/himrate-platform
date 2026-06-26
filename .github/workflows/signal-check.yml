@@ -404,44 +404,24 @@ jobs:
             end
           end
 
-          # === T1-057 LIVE-VERIFY (post-merge, staging) — enable flags, run one worker cycle, probe
-          # the tables it writes against REAL prod data. The cron worker also runs */5, but this makes
-          # the verify deterministic. Flag enable persists on staging only (prod stays OFF; PO decides).
-          section("T1-057 LIVE-VERIFY — enable flags + run worker + probe") do
-            Flipper.enable(:cross_channel_edges)
-            Flipper.enable(:temporal_cross_channel)
+          # === T1-057 TI-INTEGRATION confirm (flags ON, PO prod-rollout "both ON, weight 0.05") ===
+          # Tables already populated by the */5 cron worker (flags now ON). Confirm the temporal signal
+          # actually FLOWS into a real channel's TI on the live env: ContextBuilder fetch -> signal calc.
+          section("T1-057 TI-INTEGRATION — temporal signal flows into TI") do
             puts "  flags: edges=#{Flipper.enabled?(:cross_channel_edges)} temporal=#{Flipper.enabled?(:temporal_cross_channel)}"
-            # Clear any stale cron lock so this one-shot verify actually computes (idempotent recompute).
-            (Sidekiq.redis { |c| c.del("cross_channel_digest_refresh:lock") }) rescue nil
-            t0 = Time.current
-            CrossChannelIntelligenceWorker.new.perform
-            puts "  worker cycle: #{((Time.current - t0) * 1000).to_i}ms"
             puts "  cross_channel_presences (source=live): #{CrossChannelPresence.where(source: 'live').count} edges"
-            tot = CrossChannelTemporalFlag.count
-            puts "  cross_channel_temporal_flags: total=#{tot} spam=#{CrossChannelTemporalFlag.where(bot_type: 'spam').count} utility=#{CrossChannelTemporalFlag.where(bot_type: 'utility').count}"
-            puts "  tier breakdown: #{CrossChannelTemporalFlag.group(:bot_flag_tier).count.inspect}"
-            puts "  --- ROOT-CAUSE: worker-query vs fresh single-phase count on CURRENT 24h window ---"
-            worker_rows = Clickhouse::ChatQueries.temporal_co_occurrence(5)
-            puts "    worker temporal_co_occurrence(5) rows (R>=2): #{worker_rows.size}"
-            fresh = Clickhouse.client.select(<<~SQL).first || {}
-              SELECT count() AS users FROM (
-                SELECT username, countIf(ch >= 3) AS r FROM (
-                  SELECT username, toStartOfInterval(timestamp, INTERVAL 5 SECOND) AS bucket, uniqExact(channel_login) AS ch
-                  FROM chat_messages WHERE msg_type='privmsg' AND username!='' AND timestamp > now()-INTERVAL 24 HOUR
-                  GROUP BY username, bucket
-                ) GROUP BY username
-              ) WHERE r >= 2
-            SQL
-            puts "    fresh single-phase Probe-2-style (R>=2): #{fresh['users']} (if ~= worker count, query is correct — just a quieter day)"
-            puts "  --- actual top flagged users NOW (eyeball bot-ness) ---"
-            CrossChannelTemporalFlag.order(event_count: :desc).limit(12).each do |f|
-              puts "    #{f.username}: tier=#{f.bot_flag_tier} type=#{f.bot_type} R=#{f.event_count} mc=#{f.max_concurrent_channels}"
+            puts "  cross_channel_temporal_flags: total=#{CrossChannelTemporalFlag.count} spam=#{CrossChannelTemporalFlag.where(bot_type: 'spam').count} utility=#{CrossChannelTemporalFlag.where(bot_type: 'utility').count}"
+            if defined?(s) && s
+              ctx = TrustIndex::ContextBuilder.build(s)
+              tcc = ctx[:temporal_cross_channel_flags]
+              puts "  context[:temporal_cross_channel_flags]: #{tcc.is_a?(Hash) ? "total_chatters=#{tcc[:total_chatters]} flagged=#{(tcc[:flagged] || {}).size}" : tcc.inspect}"
+              sig = TrustIndex::Signals::TemporalCrossChannel.new.calculate(ctx)
+              puts "  TemporalCrossChannel signal: value=#{sig.value.inspect} confidence=#{sig.confidence} meta=#{sig.metadata.inspect[0..160]}"
+              puts "  => #{sig.value.nil? ? 'INSUFFICIENT (no flagged chatters in this channel — correct for an honest/clean channel)' : 'CONTRIBUTES to TI (weight 0.05)'}"
+            else
+              puts "  (no stream for probe channel — integration plumbing still confirmed by flags+tables above)"
             end
-            puts "  --- utility allowlist check ---"
-            %w[nightbot streamelements moobot fossabot wizebot].each do |u|
-              f = CrossChannelTemporalFlag.find_by(username: u)
-              puts "    #{u}: #{f ? "type=#{f.bot_type} tier=#{f.bot_flag_tier} R=#{f.event_count}" : 'not in table this window'}"
-            end
+            puts "  weight_in_ti(temporal_cross_channel): #{SignalConfiguration.value_for('temporal_cross_channel', 'default', 'weight_in_ti') rescue 'MISSING'}"
           end
 
           puts "\n===== DEEP DIVE COMPLETE for #{login} ====="
