@@ -16,13 +16,15 @@ window.HR = {
   function q(n){ return document.querySelector('[data-pencil-name="'+n+'"]'); }
   function start(){ try{ run(); }catch(e){} }
   function run(){
+    /* Desktop-only height-equalisation (below lg cards stack; CSS owns layout). */
+    var DESK=(window.innerWidth||document.documentElement.clientWidth||0)>=1024;
     /* ---- C5: drop the top "Простыми словами — для бренда" strip (redundant with the hero) ----
        This also makes "Б2 Проверка" the 2nd block, right after the hero (C3). ---- */
     var b0=q('Б0 Простыми словами'); if(b0) b0.style.display='none';
 
     /* ---- C6 + C7: trim the empty space under the Meter / Checks panels ---- */
     var row=q('Б2 Проверка') && q('Б2 Проверка').querySelector('[data-pencil-name="Row"]');
-    if(row){
+    if(DESK && row){
       row.className=(row.className||'').replace(/h-\[\d+px\]/,'');
       row.style.height='auto'; row.style.alignItems='stretch';
       Array.prototype.slice.call(row.children).forEach(function(c){
@@ -127,7 +129,7 @@ window.HR = {
 
     /* C3: stretch the cabinet CTA to fill the empty space beside the tall filters */
     (function(){
-      var ex=q1('Exchange Row'); if(!ex) return;
+      var ex=q1('Exchange Row'); if(!ex||!DESK) return;
       ex.style.alignItems='stretch';
       var res=q1('Results', ex), cab=q1('Cabinet CTA', ex);
       if(res){ res.className=(res.className||'').replace(/h-fit/,''); res.style.height='auto'; res.style.alignSelf='stretch'; }

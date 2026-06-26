@@ -21,6 +21,10 @@
       *, ::before, ::after { box-sizing: border-box; }
       body { margin: 0; }
       html, body { background: #07070C; }
+      /* Safety net: the fluid layout fits the viewport at every width, but the
+         animated marquee / canvas background paint beyond it by design — clip any
+         horizontal bleed so phones never get a stray sideways scroll. */
+      html, body { overflow-x: hidden; max-width: 100%; }
     </style>
 
     <%= stylesheet_link_tag "landing_fonts" %>
@@ -36,5 +40,7 @@
     <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
     <%= javascript_include_tag "landing/hr-i18n" %>
     <% unless @page == "index" %><%= javascript_include_tag "landing/hr-shared" %><% end %>
+    <%# Responsive header burger — every page, including the self-contained index. %>
+    <%= javascript_include_tag "landing/mobile-nav" %>
   </body>
 </html>

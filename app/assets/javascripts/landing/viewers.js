@@ -19,6 +19,10 @@ window.HR = {
     try{ run(); }catch(e){ /* no-op */ }
   }
   function run(){
+    /* Desktop-only column height-equalisation: below lg the cards stack single
+       column and responsive CSS owns the layout, so these inline-style hacks
+       (height/alignItems/justify/minHeight) must NOT run — they fight the flow. */
+    var DESK=(window.innerWidth||document.documentElement.clientWidth||0)>=1024;
     /* ---- C11: remove the whole message-feed row (ЛЕНТА СООБЩЕНИЙ) ---- */
     var r3=q('Row 3'); if(r3 && /ЛЕНТА СООБЩЕНИЙ/i.test(r3.textContent||'')) r3.style.display='none';
 
@@ -38,6 +42,7 @@ window.HR = {
       });
     }
     /* Row 1 (Hours / Top-channels / Games): revert the earlier height-stretch — cards size to content (ccf4f656ca) */
+    if(DESK){
     stretchRow(q('Row 2'));
     var ai=q('AI-пересказ');
     if(ai){
@@ -74,6 +79,7 @@ window.HR = {
     /* ---- 1752f7290c: centre the "Надёжность" number column ---- */
     qa('c_r').forEach(function(c){ c.style.justifyContent='center'; });
     var hrel=q('h_НАДЁЖНОСТЬ'); if(hrel) hrel.style.justifyContent='center';
+    } /* end DESK equalisation */
 
     /* ---- c58f4f9a1c: theme the header + footer logo to this page's accent (violet), not the teal main-page colour ---- */
     var THEME='#A855F7';
