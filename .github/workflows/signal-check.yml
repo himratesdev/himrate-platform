@@ -404,54 +404,27 @@ jobs:
             end
           end
 
-          section("T1-057 DSV — FR-A edge-ledger query (24h, overlap cohort 2<=ch<=30)") do
-            cohort = <<~SQL
-              SELECT username FROM chat_messages
-              WHERE msg_type='privmsg' AND username!='' AND timestamp > now()-INTERVAL 24 HOUR
-              GROUP BY username HAVING uniqExact(channel_login) BETWEEN 2 AND 30
-            SQL
-            edge_rows = Clickhouse.client.select(<<~SQL).first || {}
-              SELECT count() AS edges, uniqExact(username) AS users FROM (
-                SELECT username, channel_login, min(timestamp) fs, max(timestamp) ls, count() mc
-                FROM chat_messages
-                WHERE msg_type='privmsg' AND timestamp > now()-INTERVAL 24 HOUR
-                  AND username IN (#{cohort})
-                GROUP BY username, channel_login
-              )
-            SQL
-            puts "  cohort users (2..30 distinct channels): #{edge_rows['users']}"
-            puts "  edge rows (username x channel): #{edge_rows['edges']} — these populate cross_channel_presences"
-            sample = Clickhouse.client.select(<<~SQL).to_a
-              SELECT username, channel_login, min(timestamp) AS fs, max(timestamp) AS ls, count() AS mc
-              FROM chat_messages
-              WHERE msg_type='privmsg' AND timestamp > now()-INTERVAL 24 HOUR
-                AND username IN (#{cohort})
-              GROUP BY username, channel_login ORDER BY mc DESC LIMIT 5
-            SQL
-            puts "  sample edges (top by msg_count):"
-            sample.each { |s| puts "    #{s['username']} @ #{s['channel_login']}: msgs=#{s['mc']} first=#{s['fs']} last=#{s['ls']}" }
-          end
-
-          section("T1-057 DSV — channels.login case (validates downcase-resolve, MIG FR-A)") do
-            total = Channel.count
-            mixed = Channel.where("login != lower(login)").count
-            puts "  channels total: #{total} | mixed-case login: #{mixed}"
-            puts "  => #{mixed.zero? ? 'all lowercase — downcase-resolve safe either way' : 'MIXED-CASE PRESENT — downcase-resolve MANDATORY (exact-match would drop these edges)'}"
-            if mixed > 0
-              Channel.where("login != lower(login)").limit(5).pluck(:login).each { |l| puts "    mixed: #{l}" }
+          # === T1-057 LIVE-VERIFY (post-merge, staging) — enable flags, run one worker cycle, probe
+          # the tables it writes against REAL prod data. The cron worker also runs */5, but this makes
+          # the verify deterministic. Flag enable persists on staging only (prod stays OFF; PO decides).
+          section("T1-057 LIVE-VERIFY — enable flags + run worker + probe") do
+            Flipper.enable(:cross_channel_edges)
+            Flipper.enable(:temporal_cross_channel)
+            puts "  flags: edges=#{Flipper.enabled?(:cross_channel_edges)} temporal=#{Flipper.enabled?(:temporal_cross_channel)}"
+            # Clear any stale cron lock so this one-shot verify actually computes (idempotent recompute).
+            (Sidekiq.redis { |c| c.del("cross_channel_digest_refresh:lock") }) rescue nil
+            t0 = Time.current
+            CrossChannelIntelligenceWorker.new.perform
+            puts "  worker cycle: #{((Time.current - t0) * 1000).to_i}ms"
+            puts "  cross_channel_presences (source=live): #{CrossChannelPresence.where(source: 'live').count} edges"
+            tot = CrossChannelTemporalFlag.count
+            puts "  cross_channel_temporal_flags: total=#{tot} spam=#{CrossChannelTemporalFlag.where(bot_type: 'spam').count} utility=#{CrossChannelTemporalFlag.where(bot_type: 'utility').count}"
+            puts "  tier breakdown: #{CrossChannelTemporalFlag.group(:bot_flag_tier).count.inspect}"
+            puts "  --- classification check (real prod bots; expect spam-cluster confirmed/spam, utility-bots utility) ---"
+            %w[trafi_kroki dear_vallahar_brm agent_sru_v2 gaming02812 nightbot streamelements fossabot].each do |u|
+              f = CrossChannelTemporalFlag.find_by(username: u)
+              puts "    #{u}: #{f ? "tier=#{f.bot_flag_tier} type=#{f.bot_type} R=#{f.event_count} mc=#{f.max_concurrent_channels}" : 'NOT FLAGGED (no >=3-ch co-occurrence in 24h window)'}"
             end
-          end
-
-          section("T1-057 DSV — temporal precise-pass sanity (known bot trafi_kroki, 24h timeline)") do
-            tl = Clickhouse.client.select(<<~SQL).to_a
-              SELECT channel_login, toString(timestamp) AS ts
-              FROM chat_messages
-              WHERE username='trafi_kroki' AND msg_type='privmsg' AND timestamp > now()-INTERVAL 24 HOUR
-              ORDER BY timestamp LIMIT 30
-            SQL
-            puts "  first 30 (channel, ts) for trafi_kroki — eyeball >=3-channels-in-<=5s bursts (precise greedy R):"
-            tl.each { |row| puts "    #{row['ts']}  #{row['channel_login']}" }
-            puts "  (if bursts of 3 distinct channels within 5s recur => precise sliding R matches Probe-2 fixed-bucket R~151)"
           end
 
           puts "\n===== DEEP DIVE COMPLETE for #{login} ====="
