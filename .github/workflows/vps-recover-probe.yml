@@ -1,0 +1,85 @@
+name: vps-recover-probe
+
+# Post-reboot resource diagnostic for HOSTKEY (escapes laptop SSH allowlist via CI runner).
+# Run AFTER the box is back (wait ~10-15 min uptime for docker-login race recovery).
+#   gh workflow run vps-recover-probe.yml --ref probe/vps-cpu                          # probe only
+#   gh workflow run vps-recover-probe.yml --ref probe/vps-cpu -f shed_t1057_load=true  # + disable T1-057 flags
+#
+# Identifies the CPU/disk culprit per-container (our Sidekiq/ClickHouse vs the PO's second service)
+# and optionally sheds the T1-057 cross-channel worker load (edge double-scan suspected).
+
+on:
+  workflow_dispatch:
+    inputs:
+      shed_t1057_load:
+        description: 'Disable :cross_channel_edges + :temporal_cross_channel to stop the heavy worker scans'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Reachability + uptime + load
+        run: |
+          echo "=== reachability / uptime / load (cores: $(ssh hostkey nproc 2>/dev/null || echo '?')) ==="
+          ssh hostkey "uptime; echo '--- loadavg ---'; cat /proc/loadavg; echo '--- since boot ---'; who -b 2>/dev/null || true"
+
+      - name: Memory + swap
+        run: |
+          echo "=== memory + swap (swap thrash = hang signal) ==="
+          ssh hostkey "free -h; echo '--- meminfo swap ---'; grep -iE 'SwapTotal|SwapFree|Dirty|Writeback' /proc/meminfo"
+
+      - name: Per-container CPU/MEM (culprit attribution — our worker vs second service)
+        run: |
+          echo "=== docker stats --no-stream (CPU% / MEM per container) ==="
+          ssh hostkey "docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}' 2>&1" | head -40
+
+      - name: All containers (incl second service + restart loops)
+        run: |
+          echo "=== docker ps -a (all containers — find the second service + Exited/Restarting) ==="
+          ssh hostkey 'docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Image}}" 2>&1' | head -40
+
+      - name: Top processes + disk I/O
+        run: |
+          echo "=== top processes by CPU (host-level, catches non-docker) ==="
+          ssh hostkey "top -bn1 | head -22"
+          echo ""
+          echo "=== disk I/O (the known bottleneck) ==="
+          ssh hostkey "command -v iostat >/dev/null && iostat -x 1 2 | tail -25 || echo 'iostat not installed'; echo '--- df ---'; df -h / | tail -1"
+
+      - name: Sidekiq queue health (which worker is backed up = CPU culprit)
+        run: |
+          echo "=== Sidekiq queues ==="
+          ssh hostkey "C=\$(docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1); [ -n \"\$C\" ] && docker exec \$C bin/rails runner '
+            require \"sidekiq/api\"
+            Sidekiq::Queue.all.sort_by(&:name).each { |q| puts \"  :#{q.name.ljust(24)} #{q.size} jobs (latency #{q.latency.round(1)}s)\" }
+            puts \"  retry #{Sidekiq::RetrySet.new.size} | dead #{Sidekiq::DeadSet.new.size} | scheduled #{Sidekiq::ScheduledSet.new.size}\"
+          ' 2>&1 | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof' || echo 'web container not up yet'"
+
+      - name: Optionally shed T1-057 load (disable flags)
+        if: ${{ inputs.shed_t1057_load }}
+        run: |
+          echo "=== SHEDDING T1-057 load: disabling :cross_channel_edges + :temporal_cross_channel ==="
+          ssh hostkey "C=\$(docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1); [ -n \"\$C\" ] && docker exec \$C bin/rails runner '
+            Flipper.disable(:cross_channel_edges)
+            Flipper.disable(:temporal_cross_channel)
+            puts \"flags now: edges=#{Flipper.enabled?(:cross_channel_edges)} temporal=#{Flipper.enabled?(:temporal_cross_channel)}\"
+          ' 2>&1 | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof' || echo 'web container not up yet — retry shed after recovery'"
