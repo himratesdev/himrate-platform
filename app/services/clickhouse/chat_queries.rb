@@ -165,7 +165,7 @@ module Clickhouse
       Clickhouse.client.select(<<~SQL)
         SELECT username, max(r) AS event_count, max(mc) AS max_concurrent, max(last_ts) AS last_event_at
         FROM (
-          SELECT username, phase, countIf(ch >= 3) AS r, max(ch) AS mc, max(bucket_last) AS last_ts
+          SELECT username, phase, countIf(ch >= 3) AS r, max(ch) AS mc, maxIf(bucket_last, ch >= 3) AS last_ts
           FROM (
             SELECT username, phase,
                    toStartOfInterval(subtractSeconds(timestamp, phase), INTERVAL #{w} SECOND) AS bucket,

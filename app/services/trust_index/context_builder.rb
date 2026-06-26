@@ -135,10 +135,8 @@ module TrustIndex
       def shared_stream_chatters(stream)
         return [] unless Flipper.enabled?(:cross_channel_digest) || Flipper.enabled?(:temporal_cross_channel)
 
+        # Clickhouse::ChatQueries.stream_chatters self-rescues Clickhouse::Error → [] (no extra guard).
         Clickhouse::ChatQueries.stream_chatters(stream)
-      rescue Clickhouse::Error => e
-        Rails.logger.warn("ContextBuilder: stream_chatters failed (#{e.message})")
-        []
       end
 
       def fetch_cross_channel(stream, chatters)
