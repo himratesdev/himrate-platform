@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # BUG-SCW-CROSS-CHANNEL (2026-06-02): pre-aggregated (username → distinct_channels_24h) snapshot,
-# refreshed every 5 min by CrossChannelDigestRefreshWorker via a single CH scan. Replaces the
+# refreshed every 5 min by CrossChannelIntelligenceWorker (T1-057, was CrossChannelDigestRefreshWorker)
 # per-stream 24h CH scan that ContextBuilder previously executed inside the SignalComputeWorker
 # hot path (5-8s, root cause of :signal_compute backlog).
 #
@@ -20,7 +20,7 @@ class CrossChannelDigest < ApplicationRecord
   # passed `HAVING c > 1` in the refresh worker). Absent usernames are omitted — callers should
   # use {.fetch_with_baseline} unless they specifically want raw digest contents.
   #
-  # Case-sensitive: writer (CrossChannelDigestRefreshWorker) sources usernames from CH
+  # Case-sensitive: writer (CrossChannelIntelligenceWorker) sources usernames from CH
   # chat_messages which is already IRC-lowercase, and the digest-path reader (ContextBuilder via
   # Clickhouse::ChatQueries.stream_chatters) reads the same lowercase column — both sides agree.
   def self.bulk_lookup(usernames)

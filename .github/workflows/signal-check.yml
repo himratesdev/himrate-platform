@@ -368,6 +368,92 @@ jobs:
             puts "  current_duration_ms: #{s.current_duration_ms rescue 'method missing'}"
           end
 
+          # T1-057 calibration probes (Probe-1 single-event + Probe-2 R-distribution) removed —
+          # results durably captured in SRS §2 (runs 28141174374 + 28142215588); git history 5e9b804.
+          # Kept: DSV probes below (the pre-Dev gate). Trimmed to stay under GH Actions 21000 expr limit.
+
+          # === T1-057 DSV — Data Source Verification (live probes, no mocks) ===
+          # Gate BEFORE Dev: confirm the real sources the SRS/ADR depend on actually work.
+          section("T1-057 DSV — FR-D0 data-map quality (last 1h privmsg)") do
+            q = <<~SQL
+              SELECT count() AS total,
+                     countIf(stream_id IS NULL) AS null_stream,
+                     round(countIf(stream_id IS NULL) / count(), 4) AS null_stream_ratio,
+                     countIf(username = '') AS empty_user,
+                     countIf(channel_login = '') AS empty_channel,
+                     round(countIf(toUnixTimestamp64Milli(timestamp) % 1000 != 0) / count(), 4) AS ms_precision_ratio
+              FROM chat_messages
+              WHERE msg_type = 'privmsg' AND timestamp > now() - INTERVAL 1 HOUR
+            SQL
+            r = Clickhouse.client.select(q).first || {}
+            total = r['total'].to_i
+            null_ratio = r['null_stream_ratio'].to_f
+            puts "  total privmsg (1h): #{total}"
+            puts "  stream_id NULL: #{r['null_stream']} (ratio #{null_ratio}) — expect LOW on live"
+            puts "  empty username: #{r['empty_user']} | empty channel_login: #{r['empty_channel']} — expect 0"
+            puts "  ms-precision ratio (ts with non-zero ms): #{r['ms_precision_ratio']} — note: data is second-truncated (W=5s unaffected)"
+            # T1-057 S3 / SRS §14: recurring FR-D0 gate — fail the run on silent ingestion drift.
+            # Threshold Architect-tunable; observed 0.0 on live, 0.10 leaves wide headroom. Min sample
+            # 100 so a quiet hour (total~0 → nan ratio) cannot false-trigger. The "FR-D0 GATE FAILED"
+            # marker is grep-gated by the run step → non-zero workflow exit.
+            null_ratio_max = 0.10
+            if total >= 100 && null_ratio > null_ratio_max
+              puts "  ❌ FR-D0 GATE FAILED: stream_id null-ratio #{null_ratio} > #{null_ratio_max} on live (ingestion drift — edge stream context + downstream at risk)"
+            else
+              puts "  ✅ FR-D0 OK: stream_id null-ratio #{null_ratio} <= #{null_ratio_max} (or sample <100)"
+            end
+          end
+
+          section("T1-057 DSV — FR-A edge-ledger query (24h, overlap cohort 2<=ch<=30)") do
+            cohort = <<~SQL
+              SELECT username FROM chat_messages
+              WHERE msg_type='privmsg' AND username!='' AND timestamp > now()-INTERVAL 24 HOUR
+              GROUP BY username HAVING uniqExact(channel_login) BETWEEN 2 AND 30
+            SQL
+            edge_rows = Clickhouse.client.select(<<~SQL).first || {}
+              SELECT count() AS edges, uniqExact(username) AS users FROM (
+                SELECT username, channel_login, min(timestamp) fs, max(timestamp) ls, count() mc
+                FROM chat_messages
+                WHERE msg_type='privmsg' AND timestamp > now()-INTERVAL 24 HOUR
+                  AND username IN (#{cohort})
+                GROUP BY username, channel_login
+              )
+            SQL
+            puts "  cohort users (2..30 distinct channels): #{edge_rows['users']}"
+            puts "  edge rows (username x channel): #{edge_rows['edges']} — these populate cross_channel_presences"
+            sample = Clickhouse.client.select(<<~SQL).to_a
+              SELECT username, channel_login, min(timestamp) AS fs, max(timestamp) AS ls, count() AS mc
+              FROM chat_messages
+              WHERE msg_type='privmsg' AND timestamp > now()-INTERVAL 24 HOUR
+                AND username IN (#{cohort})
+              GROUP BY username, channel_login ORDER BY mc DESC LIMIT 5
+            SQL
+            puts "  sample edges (top by msg_count):"
+            sample.each { |s| puts "    #{s['username']} @ #{s['channel_login']}: msgs=#{s['mc']} first=#{s['fs']} last=#{s['ls']}" }
+          end
+
+          section("T1-057 DSV — channels.login case (validates downcase-resolve, MIG FR-A)") do
+            total = Channel.count
+            mixed = Channel.where("login != lower(login)").count
+            puts "  channels total: #{total} | mixed-case login: #{mixed}"
+            puts "  => #{mixed.zero? ? 'all lowercase — downcase-resolve safe either way' : 'MIXED-CASE PRESENT — downcase-resolve MANDATORY (exact-match would drop these edges)'}"
+            if mixed > 0
+              Channel.where("login != lower(login)").limit(5).pluck(:login).each { |l| puts "    mixed: #{l}" }
+            end
+          end
+
+          section("T1-057 DSV — temporal precise-pass sanity (known bot trafi_kroki, 24h timeline)") do
+            tl = Clickhouse.client.select(<<~SQL).to_a
+              SELECT channel_login, toString(timestamp) AS ts
+              FROM chat_messages
+              WHERE username='trafi_kroki' AND msg_type='privmsg' AND timestamp > now()-INTERVAL 24 HOUR
+              ORDER BY timestamp LIMIT 30
+            SQL
+            puts "  first 30 (channel, ts) for trafi_kroki — eyeball >=3-channels-in-<=5s bursts (precise greedy R):"
+            tl.each { |row| puts "    #{row['ts']}  #{row['channel_login']}" }
+            puts "  (if bursts of 3 distinct channels within 5s recur => precise sliding R matches Probe-2 fixed-bucket R~151)"
+          end
+
           puts "\n===== DEEP DIVE COMPLETE for #{login} ====="
           RUBY_EOF
           echo "Script built ($(wc -l < /tmp/deep-dive.rb) lines)"
@@ -380,4 +466,11 @@ jobs:
           scp /tmp/deep-dive.rb ${TARGET}:/tmp/deep-dive.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "Container: ${CONTAINER}"
-          ssh ${TARGET} "docker cp /tmp/deep-dive.rb ${CONTAINER}:/tmp/deep-dive.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/deep-dive.rb > /tmp/output.txt 2>&1; cat /tmp/output.txt' 2>&1 | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof|Please add the'"
+          ssh ${TARGET} "docker cp /tmp/deep-dive.rb ${CONTAINER}:/tmp/deep-dive.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/deep-dive.rb > /tmp/output.txt 2>&1; cat /tmp/output.txt' 2>&1" | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof|Please add the' | tee /tmp/dd-filtered.txt
+          # T1-057 S3 / SRS §14: recurring FR-D0 data-map gate. The deep-dive emits "FR-D0 GATE FAILED"
+          # only when the live stream_id null-ratio exceeds the threshold (silent ingestion drift). Fail
+          # the run on that marker — section() swallows every other error, so this is the sole gate.
+          if grep -q "FR-D0 GATE FAILED" /tmp/dd-filtered.txt; then
+            echo "::error::T1-057 FR-D0 data-map gate breached — stream_id null-ratio over threshold on live"
+            exit 1
+          fi

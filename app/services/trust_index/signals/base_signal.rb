@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # TASK-028 FR-012: BaseSignal abstract class.
-# All 11 signal classes inherit from this.
+# All signal classes inherit from this.
 # Interface: #calculate(context) → {value: Float|nil, confidence: Float}
 # Thresholds and weights read from DB (FR-015) via SignalConfiguration.
 

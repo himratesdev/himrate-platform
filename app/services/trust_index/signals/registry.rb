@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # TASK-028 FR-013: SignalRegistry.
-# Loads and iterates all 11 signal classes.
+# Loads and iterates all signal classes (T1-057: 12, after temporal_cross_channel).
 # Each signal wrapped in rescue — error in one does not block others.
 
 module TrustIndex
@@ -15,6 +15,7 @@ module TrustIndex
         ChatBehavior,
         ChannelProtectionScore,
         CrossChannelPresence,
+        TemporalCrossChannel,
         KnownBotMatch,
         RaidAttribution,
         CcvChatCorrelation,

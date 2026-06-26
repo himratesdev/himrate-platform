@@ -51,7 +51,7 @@ RSpec.describe CrossChannelDigest do
     end
 
     # No case-folding: Twitch IRC pre-normalizes usernames to lowercase and the writer
-    # (CrossChannelDigestRefreshWorker) sources them from CH chat_messages — so all reads/writes
+    # (CrossChannelIntelligenceWorker) sources them from CH chat_messages — so all reads/writes
     # are already lowercase. A mismatched-case lookup is a caller bug, не подсмотренная feature.
     it "treats lookup case-sensitively (lowercase normalized at write time)" do
       result = described_class.bulk_lookup(%w[ALICE bob])

@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # TASK-030 FR-003/011: ContextBuilder.
-# Collects all data needed for 11 signals from DB into a single Hash.
+# Collects all data needed for the signals from DB into a single Hash.
 # Optimized for 1000+ streams: batch-friendly queries, limited windows, no N+1.
 # Each query in rescue — one failure doesn't block the rest.
 
@@ -12,6 +12,12 @@ module TrustIndex
     # Build context Hash for Registry.compute_all
     def self.build(stream)
       channel = stream.channel
+      # CR-323 S1: the digest path (fetch_cross_channel) and the temporal path
+      # (fetch_temporal_cross_channel_flags) both need the same "pick 500 chatters present in this
+      # stream" CH query. Compute it ONCE here and feed both consumers, so the steady-state (both
+      # flags ON) does not run the stream_chatters round-trip twice on the SignalComputeWorker hot
+      # path — that doubled scan is exactly what BUG-SCW-CROSS-CHANNEL exists to avoid.
+      chatters = shared_stream_chatters(stream)
 
       {
         latest_ccv: fetch_latest_ccv(stream),
@@ -26,7 +32,8 @@ module TrustIndex
         chatters_present_total: fetch_chatters_present_total(stream),
         bot_scores: fetch_bot_scores(stream),
         channel_protection_config: fetch_config(channel),
-        cross_channel_counts: fetch_cross_channel(stream),
+        cross_channel_counts: fetch_cross_channel(stream, chatters),
+        temporal_cross_channel_flags: fetch_temporal_cross_channel_flags(stream, chatters),
         raids: fetch_raids(stream),
         recent_raids: fetch_recent_raids(stream),
         category: resolve_category(stream),
@@ -113,7 +120,7 @@ module TrustIndex
       # BUG-SCW-CROSS-CHANNEL (2026-06-02): the original implementation ran a 24h full-scan of
       # `chat_messages` (5-8s/call, 82-88% of SignalComputeWorker work) — root cause of the
       # :signal_compute backlog. The digest path pre-computes (username → distinct_channels_24h)
-      # once per 5min via CrossChannelDigestRefreshWorker; the hot read becomes pick-500-chatters
+      # once per 5min via CrossChannelIntelligenceWorker; the hot read becomes pick-500-chatters
       # (CH, ~0.3-2s) + bulk_lookup (PG, ~5ms) instead of the second join-style 24h scan.
       #
       # Flipper[:cross_channel_digest] gates the new path so we can enable per-env after the
@@ -122,21 +129,49 @@ module TrustIndex
       #
       # CR-206 Should-2 (preserved on fallback): capture-once `24.hours.ago` so a single absolute
       # timestamp drives the CH query (a server-side `now()` would drift across the 24h boundary).
-      def fetch_cross_channel(stream)
+      # CR-323 S1: the present-chatter set (CH `stream_chatters`, pick 500) shared by the digest +
+      # temporal read paths, fetched at most ONCE per build. Skips the CH round-trip entirely when
+      # neither path needs it (both flags OFF → the legacy `cross_channel` fallback handles its own).
+      def shared_stream_chatters(stream)
+        return [] unless Flipper.enabled?(:cross_channel_digest) || Flipper.enabled?(:temporal_cross_channel)
+
+        # Clickhouse::ChatQueries.stream_chatters self-rescues Clickhouse::Error → [] (no extra guard).
+        Clickhouse::ChatQueries.stream_chatters(stream)
+      end
+
+      def fetch_cross_channel(stream, chatters)
         if Flipper.enabled?(:cross_channel_digest)
-          usernames = Clickhouse::ChatQueries.stream_chatters(stream)
-          return {} if usernames.empty?
+          return {} if chatters.empty?
 
           # CR-258 M1: fetch_with_baseline post-fills single-channel chatters with 1 so the
           # downstream signal's denominator (`cross_channel_counts.size`) stays stable across
           # the Flipper flip — the digest filters `HAVING c > 1` for compactness, not because
           # those chatters don't count.
-          CrossChannelDigest.fetch_with_baseline(usernames)
+          CrossChannelDigest.fetch_with_baseline(chatters)
         else
           Clickhouse::ChatQueries.cross_channel(stream, 24.hours.ago.change(usec: 0))
         end
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: cross_channel digest lookup failed (#{e.message})")
+        {}
+      end
+
+      # T1-057 FR-B2: per-channel temporal cross-channel bot flags for the chatters present in this
+      # stream. Gated by Flipper[:temporal_cross_channel] — while OFF this returns {} so the
+      # TemporalCrossChannel signal reports insufficient and is EXCLUDED from the weighted TI score
+      # (zero regression on existing channels until the signal is deliberately enabled + calibrated).
+      # Mirrors the digest read path: stream_chatters (CH) → bulk_lookup (one PG SELECT).
+      #
+      # Returns { total_chatters:, flagged: } — `total_chatters` (the full present-chatter set) is the
+      # signal's DENOMINATOR; `flagged` (R>=2 subset, usually a handful) is the numerator source. Empty
+      # ({}) signals insufficient.
+      def fetch_temporal_cross_channel_flags(_stream, chatters)
+        return {} unless Flipper.enabled?(:temporal_cross_channel)
+        return {} if chatters.empty?
+
+        { total_chatters: chatters.size, flagged: CrossChannelTemporalFlag.bulk_lookup(chatters) }
+      rescue ActiveRecord::StatementInvalid => e
+        Rails.logger.warn("ContextBuilder: temporal_cross_channel lookup failed (#{e.message})")
         {}
       end
 
