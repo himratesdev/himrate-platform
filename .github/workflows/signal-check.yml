@@ -420,10 +420,27 @@ jobs:
             tot = CrossChannelTemporalFlag.count
             puts "  cross_channel_temporal_flags: total=#{tot} spam=#{CrossChannelTemporalFlag.where(bot_type: 'spam').count} utility=#{CrossChannelTemporalFlag.where(bot_type: 'utility').count}"
             puts "  tier breakdown: #{CrossChannelTemporalFlag.group(:bot_flag_tier).count.inspect}"
-            puts "  --- classification check (real prod bots; expect spam-cluster confirmed/spam, utility-bots utility) ---"
-            %w[trafi_kroki dear_vallahar_brm agent_sru_v2 gaming02812 nightbot streamelements fossabot].each do |u|
+            puts "  --- ROOT-CAUSE: worker-query vs fresh single-phase count on CURRENT 24h window ---"
+            worker_rows = Clickhouse::ChatQueries.temporal_co_occurrence(5)
+            puts "    worker temporal_co_occurrence(5) rows (R>=2): #{worker_rows.size}"
+            fresh = Clickhouse.client.select(<<~SQL).first || {}
+              SELECT count() AS users FROM (
+                SELECT username, countIf(ch >= 3) AS r FROM (
+                  SELECT username, toStartOfInterval(timestamp, INTERVAL 5 SECOND) AS bucket, uniqExact(channel_login) AS ch
+                  FROM chat_messages WHERE msg_type='privmsg' AND username!='' AND timestamp > now()-INTERVAL 24 HOUR
+                  GROUP BY username, bucket
+                ) GROUP BY username
+              ) WHERE r >= 2
+            SQL
+            puts "    fresh single-phase Probe-2-style (R>=2): #{fresh['users']} (if ~= worker count, query is correct — just a quieter day)"
+            puts "  --- actual top flagged users NOW (eyeball bot-ness) ---"
+            CrossChannelTemporalFlag.order(event_count: :desc).limit(12).each do |f|
+              puts "    #{f.username}: tier=#{f.bot_flag_tier} type=#{f.bot_type} R=#{f.event_count} mc=#{f.max_concurrent_channels}"
+            end
+            puts "  --- utility allowlist check ---"
+            %w[nightbot streamelements moobot fossabot wizebot].each do |u|
               f = CrossChannelTemporalFlag.find_by(username: u)
-              puts "    #{u}: #{f ? "tier=#{f.bot_flag_tier} type=#{f.bot_type} R=#{f.event_count} mc=#{f.max_concurrent_channels}" : 'NOT FLAGGED (no >=3-ch co-occurrence in 24h window)'}"
+              puts "    #{u}: #{f ? "type=#{f.bot_type} tier=#{f.bot_flag_tier} R=#{f.event_count}" : 'not in table this window'}"
             end
           end
 
