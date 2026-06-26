@@ -96,7 +96,10 @@
       'body.hr-leaving{ opacity:0; }',
       'html, body{ scroll-behavior:smooth; }',
       '#hr-bgfx{ position:fixed; inset:0; z-index:0; pointer-events:none; background:#07070C; overflow:hidden; }',
-      '#hr-bgfx canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }'
+      '#hr-bgfx canvas{ position:absolute; inset:0; width:100%; height:100%; display:block; }',
+      '[data-hr-menu].hr-open{ display:flex; }',
+      '[data-hr-burger].hr-open{ background:#FFFFFF1F; }',
+      '[data-hr-mlink]:active{ opacity:.6; }'
     ].join('\n');
     (document.head||document.documentElement).appendChild(s);
   }
@@ -210,6 +213,19 @@
         if(dest){ e.stopPropagation(); window.__hrGo(dest); }
       });
     });
+  }
+  /* mobile burger menu (header is responsive: nav/actions collapse below lg) */
+  function wireMobileNav(){
+    var burger=$('[data-hr-burger]'), menu=$('[data-hr-menu]');
+    if(burger && menu && !burger.__hrw){
+      burger.__hrw=1;
+      burger.addEventListener('click', function(e){ e.stopPropagation(); var open=menu.classList.toggle('hr-open'); burger.classList.toggle('hr-open', open); });
+      menu.addEventListener('click', function(e){ if(e.target.closest('[data-hr-mlink],[data-pencil-name]')){ menu.classList.remove('hr-open'); burger.classList.remove('hr-open'); } });
+      document.addEventListener('click', function(e){ if(!menu.contains(e.target) && !burger.contains(e.target)){ menu.classList.remove('hr-open'); burger.classList.remove('hr-open'); } });
+      window.addEventListener('resize', function(){ if(window.innerWidth>=1024){ menu.classList.remove('hr-open'); burger.classList.remove('hr-open'); } });
+    }
+    // lang buttons baked into the mobile menu need their own click wiring
+    $all('[data-hr-lang-btn]').forEach(function(b){ if(b.__hrl) return; b.__hrl=1; b.addEventListener('click', function(e){ e.stopPropagation(); window.__hrSetLang(b.getAttribute('data-hr-lang-btn')); }); });
   }
 
   /* ---------------- card hover ---------------- */
@@ -386,6 +402,7 @@
     injectCSS();
     fixHeader();
     wireNav();
+    wireMobileNav();
     applyLang(getLang());
     setTimeout(function(){ applyLang(getLang()); }, 1400);
     var root = ROOT_SEL ? $(ROOT_SEL) : ($all('body > div[data-pencil-name]')[0]||document.body);
