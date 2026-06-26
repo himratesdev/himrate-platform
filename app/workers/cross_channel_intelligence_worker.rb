@@ -141,7 +141,7 @@ class CrossChannelIntelligenceWorker
   # === Section 2: edges (FR-A) =====================================================================
   # Failure-isolated: a CH error leaves prior edges intact and skips the edge prune (prune-last).
   def compute_edges!(_refreshed_at)
-    edges = Clickhouse::ChatQueries.cross_channel_edges(BOT_CAP_OVERLAP)
+    edges = Clickhouse::ChatQueries.cross_channel_edges(BOT_CAP_OVERLAP, ROW_CAP)
     channel_map = monitored_channel_map
     payload = edges.filter_map do |row|
       channel_id = channel_map[row["channel_login"]]

@@ -150,7 +150,7 @@ module FlipperDefaults
     accessory_auto_remediation: "BUG-010 PR3", # Kill switch для AutoRemediation::TriggerService
     # GitHub workflow_dispatch. Default OFF — operators enable через
     # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.
-    cross_channel_digest: "BUG-SCW-CROSS-CHANNEL", # CrossChannelDigestRefreshWorker + ContextBuilder
+    cross_channel_digest: "BUG-SCW-CROSS-CHANNEL", # CrossChannelIntelligenceWorker + ContextBuilder
     # short-circuit (read digest table instead of CH 24h scan). OFF by default — enable per-env
     # after the worker has populated the digest at least once (cron */5 min) and DV confirms
     # SCW latency drop. Toggling OFF reverts ContextBuilder to the original CH path.

@@ -132,7 +132,7 @@ module Clickhouse
     # message_count. Does NOT rescue — lets Clickhouse::Error propagate so the worker can distinguish
     # a CH failure (leave prior edges intact, skip prune) from a legitimately empty result (FR-A
     # failure-isolation / prune-last contract, §5).
-    def cross_channel_edges(max_channels)
+    def cross_channel_edges(max_channels, row_cap)
       Clickhouse.client.select(<<~SQL)
         SELECT username, channel_login,
                min(timestamp) AS first_seen, max(timestamp) AS last_seen, count() AS message_count
@@ -144,6 +144,7 @@ module Clickhouse
             GROUP BY username HAVING uniqExact(channel_login) BETWEEN 2 AND #{max_channels.to_i}
           )
         GROUP BY username, channel_login
+        LIMIT #{row_cap.to_i}
       SQL
     end
 

@@ -12,6 +12,12 @@ module TrustIndex
     # Build context Hash for Registry.compute_all
     def self.build(stream)
       channel = stream.channel
+      # CR-323 S1: the digest path (fetch_cross_channel) and the temporal path
+      # (fetch_temporal_cross_channel_flags) both need the same "pick 500 chatters present in this
+      # stream" CH query. Compute it ONCE here and feed both consumers, so the steady-state (both
+      # flags ON) does not run the stream_chatters round-trip twice on the SignalComputeWorker hot
+      # path — that doubled scan is exactly what BUG-SCW-CROSS-CHANNEL exists to avoid.
+      chatters = shared_stream_chatters(stream)
 
       {
         latest_ccv: fetch_latest_ccv(stream),
@@ -26,8 +32,8 @@ module TrustIndex
         chatters_present_total: fetch_chatters_present_total(stream),
         bot_scores: fetch_bot_scores(stream),
         channel_protection_config: fetch_config(channel),
-        cross_channel_counts: fetch_cross_channel(stream),
-        temporal_cross_channel_flags: fetch_temporal_cross_channel_flags(stream),
+        cross_channel_counts: fetch_cross_channel(stream, chatters),
+        temporal_cross_channel_flags: fetch_temporal_cross_channel_flags(stream, chatters),
         raids: fetch_raids(stream),
         recent_raids: fetch_recent_raids(stream),
         category: resolve_category(stream),
@@ -123,16 +129,27 @@ module TrustIndex
       #
       # CR-206 Should-2 (preserved on fallback): capture-once `24.hours.ago` so a single absolute
       # timestamp drives the CH query (a server-side `now()` would drift across the 24h boundary).
-      def fetch_cross_channel(stream)
+      # CR-323 S1: the present-chatter set (CH `stream_chatters`, pick 500) shared by the digest +
+      # temporal read paths, fetched at most ONCE per build. Skips the CH round-trip entirely when
+      # neither path needs it (both flags OFF → the legacy `cross_channel` fallback handles its own).
+      def shared_stream_chatters(stream)
+        return [] unless Flipper.enabled?(:cross_channel_digest) || Flipper.enabled?(:temporal_cross_channel)
+
+        Clickhouse::ChatQueries.stream_chatters(stream)
+      rescue Clickhouse::Error => e
+        Rails.logger.warn("ContextBuilder: stream_chatters failed (#{e.message})")
+        []
+      end
+
+      def fetch_cross_channel(stream, chatters)
         if Flipper.enabled?(:cross_channel_digest)
-          usernames = Clickhouse::ChatQueries.stream_chatters(stream)
-          return {} if usernames.empty?
+          return {} if chatters.empty?
 
           # CR-258 M1: fetch_with_baseline post-fills single-channel chatters with 1 so the
           # downstream signal's denominator (`cross_channel_counts.size`) stays stable across
           # the Flipper flip — the digest filters `HAVING c > 1` for compactness, not because
           # those chatters don't count.
-          CrossChannelDigest.fetch_with_baseline(usernames)
+          CrossChannelDigest.fetch_with_baseline(chatters)
         else
           Clickhouse::ChatQueries.cross_channel(stream, 24.hours.ago.change(usec: 0))
         end
@@ -150,13 +167,11 @@ module TrustIndex
       # Returns { total_chatters:, flagged: } — `total_chatters` (the full present-chatter set) is the
       # signal's DENOMINATOR; `flagged` (R>=2 subset, usually a handful) is the numerator source. Empty
       # ({}) signals insufficient.
-      def fetch_temporal_cross_channel_flags(stream)
+      def fetch_temporal_cross_channel_flags(_stream, chatters)
         return {} unless Flipper.enabled?(:temporal_cross_channel)
+        return {} if chatters.empty?
 
-        usernames = Clickhouse::ChatQueries.stream_chatters(stream)
-        return {} if usernames.empty?
-
-        { total_chatters: usernames.size, flagged: CrossChannelTemporalFlag.bulk_lookup(usernames) }
+        { total_chatters: chatters.size, flagged: CrossChannelTemporalFlag.bulk_lookup(chatters) }
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: temporal_cross_channel lookup failed (#{e.message})")
         {}

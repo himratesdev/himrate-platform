@@ -606,20 +606,21 @@ RSpec.describe Clickhouse::ChatQueries do
   # distinguish a CH failure from an empty result for per-section failure isolation), so a raised
   # error must propagate.
   describe ".cross_channel_edges" do
-    it "queries the overlap cohort (2..cap distinct channels) grouped by username, channel_login" do
+    it "queries the overlap cohort (2..cap distinct channels) grouped by username, channel_login, bounded by row_cap" do
       expect(ch).to receive(:select).with(
         a_string_matching(/GROUP BY username, channel_login/)
           .and(a_string_matching(/BETWEEN 2 AND 30/))
           .and(a_string_matching(/min\(timestamp\) AS first_seen/))
+          .and(a_string_matching(/LIMIT 500000/))
       ).and_return([ { "username" => "v1", "channel_login" => "c1", "first_seen" => "x", "last_seen" => "y", "message_count" => "3" } ])
 
-      rows = described_class.cross_channel_edges(30)
+      rows = described_class.cross_channel_edges(30, 500_000)
       expect(rows.first["channel_login"]).to eq("c1")
     end
 
     it "lets Clickhouse::Error propagate (no internal rescue)" do
       allow(ch).to receive(:select).and_raise(Clickhouse::Error.new("ch down"))
-      expect { described_class.cross_channel_edges(30) }.to raise_error(Clickhouse::Error)
+      expect { described_class.cross_channel_edges(30, 500_000) }.to raise_error(Clickhouse::Error)
     end
   end
 

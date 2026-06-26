@@ -386,10 +386,22 @@ jobs:
               WHERE msg_type = 'privmsg' AND timestamp > now() - INTERVAL 1 HOUR
             SQL
             r = Clickhouse.client.select(q).first || {}
-            puts "  total privmsg (1h): #{r['total']}"
-            puts "  stream_id NULL: #{r['null_stream']} (ratio #{r['null_stream_ratio']}) — expect LOW on live"
+            total = r['total'].to_i
+            null_ratio = r['null_stream_ratio'].to_f
+            puts "  total privmsg (1h): #{total}"
+            puts "  stream_id NULL: #{r['null_stream']} (ratio #{null_ratio}) — expect LOW on live"
             puts "  empty username: #{r['empty_user']} | empty channel_login: #{r['empty_channel']} — expect 0"
-            puts "  ms-precision ratio (ts with non-zero ms): #{r['ms_precision_ratio']} — expect HIGH (real ms, not truncated to sec)"
+            puts "  ms-precision ratio (ts with non-zero ms): #{r['ms_precision_ratio']} — note: data is second-truncated (W=5s unaffected)"
+            # T1-057 S3 / SRS §14: recurring FR-D0 gate — fail the run on silent ingestion drift.
+            # Threshold Architect-tunable; observed 0.0 on live, 0.10 leaves wide headroom. Min sample
+            # 100 so a quiet hour (total~0 → nan ratio) cannot false-trigger. The "FR-D0 GATE FAILED"
+            # marker is grep-gated by the run step → non-zero workflow exit.
+            null_ratio_max = 0.10
+            if total >= 100 && null_ratio > null_ratio_max
+              puts "  ❌ FR-D0 GATE FAILED: stream_id null-ratio #{null_ratio} > #{null_ratio_max} on live (ingestion drift — edge stream context + downstream at risk)"
+            else
+              puts "  ✅ FR-D0 OK: stream_id null-ratio #{null_ratio} <= #{null_ratio_max} (or sample <100)"
+            end
           end
 
           section("T1-057 DSV — FR-A edge-ledger query (24h, overlap cohort 2<=ch<=30)") do
@@ -454,4 +466,11 @@ jobs:
           scp /tmp/deep-dive.rb ${TARGET}:/tmp/deep-dive.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "Container: ${CONTAINER}"
-          ssh ${TARGET} "docker cp /tmp/deep-dive.rb ${CONTAINER}:/tmp/deep-dive.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/deep-dive.rb > /tmp/output.txt 2>&1; cat /tmp/output.txt' 2>&1 | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof|Please add the'"
+          ssh ${TARGET} "docker cp /tmp/deep-dive.rb ${CONTAINER}:/tmp/deep-dive.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/deep-dive.rb > /tmp/output.txt 2>&1; cat /tmp/output.txt' 2>&1" | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof|Please add the' | tee /tmp/dd-filtered.txt
+          # T1-057 S3 / SRS §14: recurring FR-D0 data-map gate. The deep-dive emits "FR-D0 GATE FAILED"
+          # only when the live stream_id null-ratio exceeds the threshold (silent ingestion drift). Fail
+          # the run on that marker — section() swallows every other error, so this is the sole gate.
+          if grep -q "FR-D0 GATE FAILED" /tmp/dd-filtered.txt; then
+            echo "::error::T1-057 FR-D0 data-map gate breached — stream_id null-ratio over threshold on live"
+            exit 1
+          fi
