@@ -21,6 +21,10 @@
       *, ::before, ::after { box-sizing: border-box; }
       body { margin: 0; }
       html, body { background: #07070C; }
+      /* Safety net: the fluid layout fits the viewport at every width, but the
+         animated marquee / canvas background paint beyond it by design — clip any
+         horizontal bleed so phones never get a stray sideways scroll. */
+      html, body { overflow-x: hidden; max-width: 100%; }
     </style>
 
     <%= stylesheet_link_tag "landing_fonts" %>
