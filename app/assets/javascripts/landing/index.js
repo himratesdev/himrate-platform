@@ -419,7 +419,12 @@
     })();
   }
   function init(){
-    fixMarquee(); shrinkGrid(); oneRowSignals(); balanceRows(); tagCards(); wireCTAs();
+    // Desktop-only layout rebuilders (6-col grid, one-row chips, equalisation):
+    // below lg the page stacks and responsive CSS owns the layout.
+    var DESK = (window.innerWidth || document.documentElement.clientWidth || 0) >= 1024;
+    fixMarquee();
+    if (DESK) { shrinkGrid(); oneRowSignals(); balanceRows(); }
+    tagCards(); wireCTAs();
     geomPoll();
     // scroll-scrubbed numbers (hero card + audience meter), updated continuously
     if(!window.__hrScrub){ window.__hrScrub=setInterval(function(){ runHero(); runMeter(); }, 33); }

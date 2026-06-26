@@ -402,7 +402,7 @@
     injectCSS();
     fixHeader();
     wireNav();
-    wireMobileNav();
+    /* burger menu wired by landing/mobile-nav.js (shared across all pages) */
     applyLang(getLang());
     setTimeout(function(){ applyLang(getLang()); }, 1400);
     var root = ROOT_SEL ? $(ROOT_SEL) : ($all('body > div[data-pencil-name]')[0]||document.body);

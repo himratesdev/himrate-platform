@@ -3,7 +3,7 @@
 
 <div
       data-pencil-name="Методология"
-      class="box-border w-[1440px] h-fit flex flex-col gap-0 justify-start items-start bg-[#07070C] overflow-hidden"
+      class="box-border w-full max-w-[1440px] mx-auto h-fit flex flex-col gap-0 justify-start items-start bg-[#07070C]"
     >
       <div
         data-pencil-name="Методология Top"
@@ -11,7 +11,7 @@
       >
         <div
           data-pencil-name="Header"
-          class="box-border w-full h-fit shrink-0 flex flex-row gap-0 p-[20px_56px] justify-between items-center bg-[#09090FD9] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF14]"
+          class="box-border w-full h-fit shrink-0 flex flex-row gap-0 p-[16px_20px] lg:p-[20px_56px] justify-between items-center bg-[#09090FD9] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF14] relative"
         >
           <div
             data-pencil-name="Logo"
@@ -19,7 +19,7 @@
           ><div data-pencil-name="Wordmark" class="box-border flex items-center cursor-pointer" style="height:30px"><svg viewBox="0 -9 176.3 53.9" fill="#FFFFFF" xmlns="http://www.w3.org/2000/svg" style="display:block;height:100%;width:auto" role="img" aria-label="HimRate"><path fill="#FFFFFF" d="m64.4 2.8h-6.7v31.8h6.7v-12.7h3.6v12.8l6.4-0.1v-31.8h-6.4v13.5h-3.6v-13.5z"/><path fill="#FFFFFF" d="m77.1 2.8h6.3v31.8h-6.3v-31.8z"/><path fill="#FFFFFF" d="m86.2 2.8h6.2l3.6 13.7 3.9-13.7h6.6v31.8h-6.1v-15.5l-4.4 12.9-4-12.8v15.4h-5.8v-31.8z"/><path fill="#FFFFFF" d="m122.7 2.8h-13.4v31.8h6.3v-10.1h0.9l3.1 10.1h6.5l-3.4-10c2.1 0.3 3-1.1 3-3v-15.2c0-2.9-2.1-3.6-3-3.6zm-3.3 16.8h-3.7v-11.3h3.1c0.7 0 0.7 0.5 0.7 1.2v9.3c0 0.5 0 0.8-0.1 0.8z"/><path fill="#FFFFFF" d="m140 2.8h-6.3l-6.3 31.8h6.6l0.6-4h4.3l0.6 4h6.3l-5.8-31.8zm-4.7 23.1 1.5-11.2 1.5 11.2h-3z"/><path fill="#FFFFFF" d="m146 2.8-1.8 5.9h4.4v26h6.9v-26h4l-1.5-5.9h-12z"/><path fill="#FFFFFF" d="m161.4 2.8h11.5l1.2 5.9h-6.7v7.6h5.1v5.6h-5.1v6.8h6.5l-1.2 5.9h-11.3l-0.1-0.1 0.1-31.7z"/><rect fill="#22D3EE" x="2.3" y="39.7" width="171.8" height="3.1"/><path fill="#22D3EE" d="m48.8 35-1.5-4.1c-1-2.4-4.5-7.9-7.6-10.3-1.8-1.5-3.6-1.9-5.8-1.7-6.2 0.6-7.6 8.5-8.2 16h23.1v0.1z"/><path fill="#22D3EE" d="m29.3 4.1-0.4-2.5-2.5 0.4 0.4 2.4c-3 0.6-5.4 3.3-5.4 6.8 0 4 3.1 7.6 7.2 7.6s7.1-3.2 7.1-7.5c0-3.5-2.8-7.1-6.4-7.2zm0 9.9c-1.4 0-3-1.4-3-3.1 0-1 0.6-2 1.5-2.5l-0.9-4 2.4-0.2 0.5 4.1c1.4 0.1 2.6 1.3 2.6 2.6 0 1.5-1.4 3.1-3.1 3.1z"/><path fill="#22D3EE" d="m17.8 29.8c-2.1 0-4.1 1.4-4.9 3.4h-8c-1.9 0.2-1.3-1.6-1-2.5l4-10.7c0.5-1.4 1.3-2.4 1.6-1.2 1 3.8 3 9.8 3.1 9.9l2-0.5-4.6-23.7-2 0.5c-0.1 0-0.1 6.8 0.8 11.4-1.4 0.7-2.2 2.1-2.9 3.9l-3 7.9c-0.6 2-1.9 5-0.3 6.2 0.5 0.4 1 0.6 2 0.6h18.1c0-2.7-2-5.2-4.9-5.2z"/><circle cx="80.25" cy="-2.8" r="3.6" fill="#22D3EE"/></svg></div></div>
           <div
             data-pencil-name="Menu"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-[14px] justify-start items-center"
+            class="box-border w-fit shrink-0 h-fit hidden lg:flex flex-row gap-[14px] justify-start items-center"
           >
             <div
               data-pencil-name="СТРИМЕРАМ"
@@ -76,9 +76,37 @@
               ЦЕНЫ
             </div>
           </div>
+          <button
+          data-hr-burger
+          type="button"
+          aria-label="Меню"
+          class="flex lg:hidden flex-col gap-[5px] w-[42px] h-[42px] shrink-0 items-center justify-center bg-[#FFFFFF0F] [border:1px_solid_#FFFFFF24] rounded-[8px] cursor-pointer"
+        >
+          <span class="block w-[18px] h-[2px] bg-[#F5F2EC] rounded-full"></span>
+          <span class="block w-[18px] h-[2px] bg-[#F5F2EC] rounded-full"></span>
+          <span class="block w-[18px] h-[2px] bg-[#F5F2EC] rounded-full"></span>
+        </button>
+        <div
+          data-hr-menu
+          class="hidden lg:hidden absolute top-full left-0 right-0 z-50 flex-col gap-0 p-[8px_20px_22px_20px] bg-[#0B0B12F7] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF14] [backdrop-filter:blur(14px)]"
+        >
+          <div data-hr-mlink class="text-[14px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left p-[14px_0px] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF0F] cursor-pointer">СТРИМЕРАМ</div>
+          <div data-hr-mlink class="text-[14px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left p-[14px_0px] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF0F] cursor-pointer">БРЕНДАМ</div>
+          <div data-hr-mlink class="text-[14px]/[normal] box-border text-[#D6D2E0] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left p-[14px_0px] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF0F] cursor-pointer">ЗРИТЕЛЯМ</div>
+          <div data-hr-mlink class="text-[14px]/[normal] box-border text-[#FFFFFF] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1.5px] text-left p-[14px_0px] [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#FFFFFF14] cursor-pointer">МЕТОДОЛОГИЯ И ЦЕНЫ</div>
+          <div class="box-border flex flex-row gap-[10px] items-center p-[18px_0px_6px_0px]">
+            <div data-hr-lang-btn="ru" class="text-[12.5px]/[normal] box-border text-[#F5F2EC] font-['Geist_Mono',system-ui,sans-serif] font-semibold tracking-[1px] p-[8px_12px] bg-[#FFFFFF1A] rounded-[6px] cursor-pointer">RU</div>
+            <div data-hr-lang-btn="en" class="text-[12.5px]/[normal] box-border text-[#8E8A9A] font-['Geist_Mono',system-ui,sans-serif] font-semibold tracking-[1px] p-[8px_12px] rounded-[6px] cursor-pointer">EN</div>
+          </div>
+          <div class="box-border flex flex-col gap-[10px] p-[10px_0px_0px_0px]">
+            <div data-pencil-name="Открыть сервис" class="box-border w-full h-fit flex flex-row gap-0 p-[12px_15px] justify-center items-center bg-[#FFFFFF12] [border:1px_solid_#FFFFFF3D] rounded-[6px] cursor-pointer"><div class="text-[12.5px]/[normal] box-border text-[#F5F2EC] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1px] [white-space:normal] lg:[white-space:nowrap]">Открыть сервис</div></div>
+            <div data-pencil-name="Открыть расширение" class="box-border w-full h-fit flex flex-row gap-0 p-[12px_15px] justify-center items-center bg-[#FFFFFF12] [border:1px_solid_#FFFFFF3D] rounded-[6px] cursor-pointer"><div class="text-[12.5px]/[normal] box-border text-[#F5F2EC] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[1px] [white-space:normal] lg:[white-space:nowrap]">Открыть расширение</div></div>
+            <div data-pencil-name="Подключить канал" class="box-border w-full h-fit flex flex-row gap-0 p-[12px_15px] justify-center items-center bg-[#7C3AED] rounded-[6px] cursor-pointer"><div class="text-[12.5px]/[normal] box-border text-[#FFFFFF] font-['Geist_Mono',system-ui,sans-serif] font-semibold tracking-[1px] [white-space:nowrap]">Подключить канал</div></div>
+          </div>
+        </div>
           <div
             data-pencil-name="Actions"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-[14px] justify-start items-center"
+            class="box-border w-fit shrink-0 h-fit hidden lg:flex flex-row gap-[14px] justify-start items-center"
           >
             <div
               data-pencil-name="Войти"
@@ -106,7 +134,7 @@
           
           <div
             data-pencil-name="Eyebrow"
-            class="box-border w-fit h-fit shrink-0 flex flex-row gap-[10px] justify-start items-center relative [z-index:1]"
+            class="box-border w-fit h-fit shrink-0 flex flex-row flex-wrap gap-[10px] justify-start items-center relative [z-index:1]"
           >
             <div
               data-pencil-name="sq"
@@ -114,7 +142,7 @@
             ></div>
             <div
               data-pencil-name="t"
-              class="text-[13px]/[normal] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#B9C6CE] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[2.5px] text-left [white-space:nowrap]"
+              class="text-[13px]/[normal] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#B9C6CE] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[2.5px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               ОТКРЫТАЯ МЕТОДОЛОГИЯ · НЕ ЧЁРНЫЙ ЯЩИК
             </div>
@@ -125,20 +153,20 @@
           >
             <div
               data-pencil-name="L1"
-              class="text-[64px]/[67px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#F7F4EE] font-['Playfair_Display',system-ui,sans-serif] font-black tracking-[-1px] text-left [white-space:nowrap]"
+              class="text-[34px]/[38px] lg:text-[64px]/[67px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#F7F4EE] font-['Playfair_Display',system-ui,sans-serif] font-black tracking-[-1px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Как мы считаем
             </div>
             <div
               data-pencil-name="L2"
-              class="text-[64px]/[68px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#67E8F9] font-['Playfair_Display',system-ui,sans-serif] font-black italic tracking-[-1px] text-left [white-space:nowrap]"
+              class="text-[34px]/[38px] lg:text-[64px]/[68px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#67E8F9] font-['Playfair_Display',system-ui,sans-serif] font-black italic tracking-[-1px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               реальную аудиторию.
             </div>
           </div>
           <div
             data-pencil-name="Sub"
-            class="text-[18px]/[28px] box-border w-[720px] [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#D4D0DE] font-[Inter,system-ui,sans-serif] font-normal text-left relative [z-index:3]"
+            class="text-[18px]/[28px] box-border w-full max-w-[720px] [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#D4D0DE] font-[Inter,system-ui,sans-serif] font-normal text-left relative [z-index:3]"
           >
             Что и зачем мы проверяем — рассказываем полностью. Точные веса держим в секрете, чтобы
             их не скопировали. Считаем по живым, пишущим в чат зрителям — из публичных данных
@@ -146,7 +174,7 @@
           </div>
           <div
             data-pencil-name="Chips"
-            class="box-border w-fit h-fit shrink-0 flex flex-row gap-[10px] p-[6px_0px_0px_0px] justify-start items-start relative [z-index:4]"
+            class="box-border w-fit h-fit shrink-0 flex flex-row flex-wrap gap-[10px] p-[6px_0px_0px_0px] justify-start items-start relative [z-index:4]"
           >
             <div
               data-pencil-name="chip"
@@ -241,7 +269,7 @@
             </div>
             <div
               data-pencil-name="h"
-              class="text-[44px]/[44px] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[-0.5px] text-left [white-space:nowrap]"
+              class="text-[27px]/[31px] lg:text-[44px]/[44px] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[-0.5px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               На чём построена оценка реальности
             </div>
@@ -252,11 +280,11 @@
           >
             <div
               data-pencil-name="R1"
-              class="box-border w-full h-[200px] shrink-0 flex flex-row gap-[16px] justify-start items-start"
+              class="box-border w-full h-auto lg:h-[200px] shrink-0 flex flex-col lg:flex-row gap-[16px] justify-start items-stretch lg:items-start"
             >
               <div
                 data-pencil-name="Доля залогиненных"
-                class="box-border [flex:1_1_0] h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+                class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
               >
                 <div
                   data-pencil-name="top"
@@ -290,7 +318,7 @@
               </div>
               <div
                 data-pencil-name="Кто пишет, а кто молчит"
-                class="box-border [flex:1_1_0] h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+                class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
               >
                 <div
                   data-pencil-name="top"
@@ -324,7 +352,7 @@
               </div>
               <div
                 data-pencil-name="Как пишут пишущие"
-                class="box-border [flex:1_1_0] h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+                class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
               >
                 <div
                   data-pencil-name="top"
@@ -359,11 +387,11 @@
             </div>
             <div
               data-pencil-name="R2"
-              class="box-border w-full h-[200px] shrink-0 flex flex-row gap-[16px] justify-start items-start"
+              class="box-border w-full h-auto lg:h-[200px] shrink-0 flex flex-col lg:flex-row gap-[16px] justify-start items-stretch lg:items-start"
             >
               <div
                 data-pencil-name="Мультиканальность"
-                class="box-border [flex:1_1_0] h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+                class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
               >
                 <div
                   data-pencil-name="top"
@@ -397,7 +425,7 @@
               </div>
               <div
                 data-pencil-name="Базы известных аккаунтов"
-                class="box-border [flex:1_1_0] h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+                class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
               >
                 <div
                   data-pencil-name="top"
@@ -430,7 +458,7 @@
               </div>
               <div
                 data-pencil-name="Возраст аккаунтов"
-                class="box-border [flex:1_1_0] h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+                class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[11px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
               >
                 <div
                   data-pencil-name="top"
@@ -465,11 +493,11 @@
             </div>
             <div
               data-pencil-name="R3"
-              class="box-border w-full h-[130px] shrink-0 flex flex-row gap-[16px] justify-start items-start"
+              class="box-border w-full h-auto lg:h-[130px] shrink-0 flex flex-col lg:flex-row gap-[16px] justify-start items-stretch lg:items-start"
             >
               <div
                 data-pencil-name="c7"
-                class="box-border [flex:1_1_0] h-full flex flex-row gap-[14px] p-[22px] justify-start items-center bg-[#0D0B14] [border:1px_solid_#22D3EE2E] rounded-[16px]"
+                class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-row gap-[14px] p-[22px] justify-start items-center bg-[#0D0B14] [border:1px_solid_#22D3EE2E] rounded-[16px]"
               >
                 <div
                   data-pencil-name="n"
@@ -484,7 +512,7 @@
                 </div>
                 <div
                   data-pencil-name="c"
-                  class="box-border [flex:1_1_0] h-fit flex flex-col gap-[5px] justify-start items-start"
+                  class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-col gap-[5px] justify-start items-start"
                 >
                   <div
                     data-pencil-name="t"
@@ -511,7 +539,7 @@
       >
         <div
           data-pencil-name="S1 Как читать оценку"
-          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[72px_56px] justify-start items-start bg-[#07070C]"
+          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[56px_20px] lg:p-[72px_56px] justify-start items-start bg-[#07070C]"
         >
           <div
             data-pencil-name="Header"
@@ -525,18 +553,18 @@
             </div>
             <div
               data-pencil-name="Title"
-              class="text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+              class="text-[27px]/[normal] lg:text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Как читать оценку
             </div>
           </div>
           <div
             data-pencil-name="Bento"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-[24px] justify-start items-start"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[24px] justify-start items-stretch lg:items-start"
           >
             <div
               data-pencil-name="Группа А · Метки"
-              class="box-border [flex:1_1_0] h-fit flex flex-col gap-[16px] p-[24px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-col gap-[16px] p-[24px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="A Label"
@@ -558,7 +586,7 @@
                   ></div>
                   <div
                     data-pencil-name="Text"
-                    class="box-border [flex:1_1_0] h-fit flex flex-col gap-[3px] justify-start items-start"
+                    class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-col gap-[3px] justify-start items-start"
                   >
                     <div
                       data-pencil-name="T"
@@ -584,7 +612,7 @@
                   ></div>
                   <div
                     data-pencil-name="Text"
-                    class="box-border [flex:1_1_0] h-fit flex flex-col gap-[3px] justify-start items-start"
+                    class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-col gap-[3px] justify-start items-start"
                   >
                     <div
                       data-pencil-name="T"
@@ -610,7 +638,7 @@
                   ></div>
                   <div
                     data-pencil-name="Text"
-                    class="box-border [flex:1_1_0] h-fit flex flex-col gap-[3px] justify-start items-start"
+                    class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-col gap-[3px] justify-start items-start"
                   >
                     <div
                       data-pencil-name="T"
@@ -636,11 +664,11 @@
             </div>
             <div
               data-pencil-name="Группа Б · Надёжность"
-              class="box-border [flex:1_1_0] h-fit flex flex-col gap-[14px] p-[24px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-col gap-[14px] p-[24px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="B Label"
-                class="text-[12px]/[normal] box-border text-[#8E8A9A] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[0.8px] text-left [white-space:nowrap]"
+                class="text-[12px]/[normal] box-border text-[#8E8A9A] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[0.8px] text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 НАДЁЖНОСТЬ КАНАЛА · ОКНО 30 СТРИМОВ
               </div>
@@ -695,7 +723,7 @@
                       </div>
                       <div
                         data-pencil-name="Desc"
-                        class="text-[12px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                        class="text-[12px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                       >
                         почти не меняется от стрима к стриму
                       </div>
@@ -743,7 +771,7 @@
                       </div>
                       <div
                         data-pencil-name="Desc"
-                        class="text-[12px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                        class="text-[12px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                       >
                         держится уверенно, редкие отклонения
                       </div>
@@ -797,7 +825,7 @@
                       </div>
                       <div
                         data-pencil-name="Desc"
-                        class="text-[12px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                        class="text-[12px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                       >
                         заметно скачет между стримами
                       </div>
@@ -845,7 +873,7 @@
                       </div>
                       <div
                         data-pencil-name="Desc"
-                        class="text-[12px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                        class="text-[12px]/[normal] box-border text-[#8E8A9A] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                       >
                         сильно прыгает — доверять сложно
                       </div>
@@ -858,7 +886,7 @@
         </div>
         <div
           data-pencil-name="S2 Оспорить"
-          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[72px_56px] justify-start items-start bg-[#07070C]"
+          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[56px_20px] lg:p-[72px_56px] justify-start items-start bg-[#07070C]"
         >
           <div
             data-pencil-name="H"
@@ -872,18 +900,18 @@
             </div>
             <div
               data-pencil-name="h"
-              class="text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[-0.5px] text-left [white-space:nowrap]"
+              class="text-[27px]/[normal] lg:text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[-0.5px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Не согласен с оценкой — оспорь
             </div>
           </div>
           <div
             data-pencil-name="Steps"
-            class="box-border w-full h-[170px] shrink-0 flex flex-row gap-[16px] justify-start items-start"
+            class="box-border w-full h-auto lg:h-[170px] shrink-0 flex flex-col lg:flex-row gap-[16px] justify-start items-stretch lg:items-start"
           >
             <div
               data-pencil-name="st1"
-              class="box-border [flex:1_1_0] h-full flex flex-col gap-[14px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[14px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="n"
@@ -905,7 +933,7 @@
             </div>
             <div
               data-pencil-name="st2"
-              class="box-border [flex:1_1_0] h-full flex flex-col gap-[14px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[14px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="n"
@@ -927,7 +955,7 @@
             </div>
             <div
               data-pencil-name="st3"
-              class="box-border [flex:1_1_0] h-full flex flex-col gap-[14px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[14px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="n"
@@ -949,7 +977,7 @@
             </div>
             <div
               data-pencil-name="st4"
-              class="box-border [flex:1_1_0] h-full flex flex-col gap-[14px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[14px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="n"
@@ -972,7 +1000,7 @@
           </div>
           <div
             data-pencil-name="cap"
-            class="text-[15px]/[normal] box-border text-[#A7A3B0] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+            class="text-[15px]/[normal] box-border text-[#A7A3B0] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Завышали бы — стримеры завалили бы нас спорами. Право оспорить = доказательство
             честности.
@@ -980,7 +1008,7 @@
         </div>
         <div
           data-pencil-name="S3 Ограничения"
-          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[72px_56px] justify-start items-start bg-[#07070C]"
+          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[56px_20px] lg:p-[72px_56px] justify-start items-start bg-[#07070C]"
         >
           <div
             data-pencil-name="H"
@@ -994,18 +1022,18 @@
             </div>
             <div
               data-pencil-name="h"
-              class="text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[-0.5px] text-left [white-space:nowrap]"
+              class="text-[27px]/[normal] lg:text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[-0.5px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Честные ограничения
             </div>
           </div>
           <div
             data-pencil-name="Lim"
-            class="box-border w-full h-[190px] shrink-0 flex flex-row gap-[16px] justify-start items-start"
+            class="box-border w-full h-auto lg:h-[190px] shrink-0 flex flex-col lg:flex-row gap-[16px] justify-start items-stretch lg:items-start"
           >
             <div
               data-pencil-name="Видим пишущую часть"
-              class="box-border [flex:1_1_0] h-full flex flex-col gap-[12px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[12px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="ic"
@@ -1041,7 +1069,7 @@
             </div>
             <div
               data-pencil-name="Связь, не доказательство"
-              class="box-border [flex:1_1_0] h-full flex flex-col gap-[12px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[12px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="ic"
@@ -1077,7 +1105,7 @@
             </div>
             <div
               data-pencil-name="Веса — в секрете"
-              class="box-border [flex:1_1_0] h-full flex flex-col gap-[12px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-[12px] p-[22px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="ic"
@@ -1122,11 +1150,11 @@
             <div class="text-[12.5px]/[normal] box-border text-[#67E8F9] font-['Geist_Mono',system-ui,sans-serif] font-medium tracking-[2.5px] text-left [white-space:nowrap]">ЦЕНЫ · ОПЛАТА ЗА РЕЗУЛЬТАТ</div>
           </div>
           <div data-pencil-name="t" class="text-[52px]/[54px] box-border w-full text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[-0.5px] text-left">Прозрачные цены — без trial-ловушек</div>
-          <div data-pencil-name="s" class="text-[16px]/[25px] box-border w-[860px] text-[#A7A3B0] font-[Inter,system-ui,sans-serif] font-normal text-left">Онлайн любого канала — бесплатно всем. Платишь только за глубокую аналитику и биржу: понятные тарифы для зрителей, стримеров и брендов.</div>
+          <div data-pencil-name="s" class="text-[16px]/[25px] box-border w-full max-w-[860px] text-[#A7A3B0] font-[Inter,system-ui,sans-serif] font-normal text-left">Онлайн любого канала — бесплатно всем. Платишь только за глубокую аналитику и биржу: понятные тарифы для зрителей, стримеров и брендов.</div>
         </div>
         <div
           data-pencil-name="Sec · Принцип доступа"
-          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[72px_56px] justify-start items-start bg-[#07070C]"
+          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[56px_20px] lg:p-[72px_56px] justify-start items-start bg-[#07070C]"
         >
           <div
             data-pencil-name="Header"
@@ -1149,18 +1177,18 @@
             </div>
             <div
               data-pencil-name="title"
-              class="text-[44px]/[46px] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[0.2px] text-left [white-space:nowrap]"
+              class="text-[27px]/[31px] lg:text-[44px]/[46px] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[0.2px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Один принцип для всего продукта
             </div>
           </div>
           <div
             data-pencil-name="Tiles"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-[24px] justify-start items-start"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[24px] justify-start items-stretch lg:items-start"
           >
             <div
               data-pencil-name="Tile · Онлайн бесплатно"
-              class="box-border [flex:1_1_0] h-fit flex flex-col gap-[18px] p-[28px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-col gap-[18px] p-[28px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="Top"
@@ -1360,7 +1388,7 @@
             </div>
             <div
               data-pencil-name="Tile · История платно"
-              class="box-border [flex:1_1_0] h-fit flex flex-col gap-[18px] p-[28px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
+              class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-col gap-[18px] p-[28px] justify-start items-start bg-[#0D0B14] [border:1px_solid_#FFFFFF14] rounded-[16px]"
             >
               <div
                 data-pencil-name="Top"
@@ -1562,7 +1590,7 @@
         </div>
         <div
           data-pencil-name="Sec · Зрителям и стримерам"
-          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[72px_56px] justify-start items-start bg-[#07070C]"
+          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] p-[56px_20px] lg:p-[72px_56px] justify-start items-start bg-[#07070C]"
         >
           <div
             data-pencil-name="Header"
@@ -1585,14 +1613,14 @@
             </div>
             <div
               data-pencil-name="title"
-              class="text-[44px]/[46px] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[0.2px] text-left [white-space:nowrap]"
+              class="text-[27px]/[31px] lg:text-[44px]/[46px] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal tracking-[0.2px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Зрителям и стримерам
             </div>
           </div>
           <div
             data-pencil-name="Cards"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-[24px] justify-start items-start"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[24px] justify-start items-stretch lg:items-start"
           >
             <div
               data-pencil-name="Card · Зритель"
@@ -2148,14 +2176,14 @@
             </div>
             <div
               data-pencil-name="Title"
-              class="text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+              class="text-[27px]/[normal] lg:text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Тарифы для брендов
             </div>
           </div>
           <div
             data-pencil-name="Cards"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-[20px] justify-start items-start"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[20px] justify-start items-stretch lg:items-start"
           >
             <div
               data-pencil-name="Card Business"
@@ -2757,11 +2785,11 @@
           >
             <div
               data-pencil-name="BannerLeft"
-              class="box-border [flex:1_1_0] h-fit flex flex-col gap-[8px] justify-start items-start"
+              class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-col gap-[8px] justify-start items-start"
             >
               <div
                 data-pencil-name="BannerTitleRow"
-                class="box-border w-fit h-fit shrink-0 flex flex-row gap-[12px] justify-start items-center"
+                class="box-border w-fit h-fit shrink-0 flex flex-row flex-wrap gap-[12px] justify-start items-center"
               >
                 <div
                   data-pencil-name="BannerTitle"
@@ -2817,7 +2845,7 @@
             </div>
             <div
               data-pencil-name="Title"
-              class="text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+              class="text-[27px]/[normal] lg:text-[44px]/[normal] box-border text-[#F5F2EC] font-[Anton,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Частые вопросы о ценах
             </div>
@@ -2828,7 +2856,7 @@
           >
             <div
               data-pencil-name="FAQ Row"
-              class="box-border w-full h-fit shrink-0 flex flex-row gap-[20px] justify-start items-start"
+              class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[20px] justify-start items-stretch lg:items-start"
             >
               <div
                 data-pencil-name="FAQ Tile"
@@ -2890,7 +2918,7 @@
             </div>
             <div
               data-pencil-name="FAQ Row"
-              class="box-border w-full h-fit shrink-0 flex flex-row gap-[20px] justify-start items-start"
+              class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[20px] justify-start items-stretch lg:items-start"
             >
               <div
                 data-pencil-name="FAQ Tile"
@@ -2967,13 +2995,13 @@
             >
               <div
                 data-pencil-name="a"
-                class="text-[58px]/[58px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#F7F4EE] font-['Playfair_Display',system-ui,sans-serif] font-black tracking-[-1px] text-left [white-space:nowrap]"
+                class="text-[34px]/[38px] lg:text-[58px]/[58px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#F7F4EE] font-['Playfair_Display',system-ui,sans-serif] font-black tracking-[-1px] text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Прозрачность
               </div>
               <div
                 data-pencil-name="b"
-                class="text-[58px]/[60px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#67E8F9] font-['Playfair_Display',system-ui,sans-serif] font-black italic tracking-[-1px] text-left [white-space:nowrap]"
+                class="text-[34px]/[38px] lg:text-[58px]/[60px] box-border [filter:drop-shadow(0px_2px_10px_#000000C2)] text-[#67E8F9] font-['Playfair_Display',system-ui,sans-serif] font-black italic tracking-[-1px] text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 вместо чёрного ящика
               </div>
@@ -3009,11 +3037,11 @@
         </div>
         <div
           data-pencil-name="Footer"
-          class="box-border w-full h-fit shrink-0 flex flex-row gap-0 p-[40px_56px] justify-between items-start bg-[#08070C] [border-width:1px_0px_0px_0px] [border-style:solid] [border-color:#FFFFFF14]"
+          class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[32px] lg:gap-0 p-[40px_20px] lg:p-[40px_56px] justify-start lg:justify-between items-start bg-[#08070C] [border-width:1px_0px_0px_0px] [border-style:solid] [border-color:#FFFFFF14]"
         >
           <div
             data-pencil-name="Left"
-            class="box-border w-[360px] shrink-0 h-fit flex flex-col gap-[14px] justify-start items-start"
+            class="box-border w-full lg:w-[360px] shrink-0 h-fit flex flex-col gap-[14px] justify-start items-start"
           >
             <div
               data-pencil-name="Logo"
@@ -3021,20 +3049,20 @@
             ><div data-pencil-name="Wordmark" class="box-border flex items-center cursor-pointer" style="height:24px"><svg viewBox="0 -9 176.3 53.9" fill="#FFFFFF" xmlns="http://www.w3.org/2000/svg" style="display:block;height:100%;width:auto" role="img" aria-label="HimRate"><path fill="#FFFFFF" d="m64.4 2.8h-6.7v31.8h6.7v-12.7h3.6v12.8l6.4-0.1v-31.8h-6.4v13.5h-3.6v-13.5z"/><path fill="#FFFFFF" d="m77.1 2.8h6.3v31.8h-6.3v-31.8z"/><path fill="#FFFFFF" d="m86.2 2.8h6.2l3.6 13.7 3.9-13.7h6.6v31.8h-6.1v-15.5l-4.4 12.9-4-12.8v15.4h-5.8v-31.8z"/><path fill="#FFFFFF" d="m122.7 2.8h-13.4v31.8h6.3v-10.1h0.9l3.1 10.1h6.5l-3.4-10c2.1 0.3 3-1.1 3-3v-15.2c0-2.9-2.1-3.6-3-3.6zm-3.3 16.8h-3.7v-11.3h3.1c0.7 0 0.7 0.5 0.7 1.2v9.3c0 0.5 0 0.8-0.1 0.8z"/><path fill="#FFFFFF" d="m140 2.8h-6.3l-6.3 31.8h6.6l0.6-4h4.3l0.6 4h6.3l-5.8-31.8zm-4.7 23.1 1.5-11.2 1.5 11.2h-3z"/><path fill="#FFFFFF" d="m146 2.8-1.8 5.9h4.4v26h6.9v-26h4l-1.5-5.9h-12z"/><path fill="#FFFFFF" d="m161.4 2.8h11.5l1.2 5.9h-6.7v7.6h5.1v5.6h-5.1v6.8h6.5l-1.2 5.9h-11.3l-0.1-0.1 0.1-31.7z"/><rect fill="#22D3EE" x="2.3" y="39.7" width="171.8" height="3.1"/><path fill="#22D3EE" d="m48.8 35-1.5-4.1c-1-2.4-4.5-7.9-7.6-10.3-1.8-1.5-3.6-1.9-5.8-1.7-6.2 0.6-7.6 8.5-8.2 16h23.1v0.1z"/><path fill="#22D3EE" d="m29.3 4.1-0.4-2.5-2.5 0.4 0.4 2.4c-3 0.6-5.4 3.3-5.4 6.8 0 4 3.1 7.6 7.2 7.6s7.1-3.2 7.1-7.5c0-3.5-2.8-7.1-6.4-7.2zm0 9.9c-1.4 0-3-1.4-3-3.1 0-1 0.6-2 1.5-2.5l-0.9-4 2.4-0.2 0.5 4.1c1.4 0.1 2.6 1.3 2.6 2.6 0 1.5-1.4 3.1-3.1 3.1z"/><path fill="#22D3EE" d="m17.8 29.8c-2.1 0-4.1 1.4-4.9 3.4h-8c-1.9 0.2-1.3-1.6-1-2.5l4-10.7c0.5-1.4 1.3-2.4 1.6-1.2 1 3.8 3 9.8 3.1 9.9l2-0.5-4.6-23.7-2 0.5c-0.1 0-0.1 6.8 0.8 11.4-1.4 0.7-2.2 2.1-2.9 3.9l-3 7.9c-0.6 2-1.9 5-0.3 6.2 0.5 0.4 1 0.6 2 0.6h18.1c0-2.7-2-5.2-4.9-5.2z"/><circle cx="80.25" cy="-2.8" r="3.6" fill="#22D3EE"/></svg></div></div>
             <div
               data-pencil-name="c"
-              class="text-[12px]/[normal] box-border text-[#8E8A9A] font-['Geist_Mono',system-ui,sans-serif] font-normal tracking-[0.3px] text-left [white-space:nowrap]"
+              class="text-[12px]/[normal] box-border text-[#8E8A9A] font-['Geist_Mono',system-ui,sans-serif] font-normal tracking-[0.3px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               © 2026 HimRate · Аналитика Twitch
             </div>
             <div
               data-pencil-name="g"
-              class="text-[12px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal tracking-[0.3px] text-left [white-space:nowrap]"
+              class="text-[12px]/[normal] box-border text-[#5B5B68] font-['Geist_Mono',system-ui,sans-serif] font-normal tracking-[0.3px] text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Серверы в Европе. Соответствие GDPR.
             </div>
           </div>
           <div
             data-pencil-name="Cols"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-[56px] justify-start items-start"
+            class="box-border w-fit shrink-0 h-fit grid grid-cols-2 sm:grid-cols-4 lg:flex lg:flex-row gap-[28px] sm:gap-[40px] lg:gap-[56px] justify-start items-start"
           >
             <div
               data-pencil-name="ПРОДУКТ"

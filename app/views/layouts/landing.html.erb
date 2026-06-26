@@ -36,5 +36,7 @@
     <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
     <%= javascript_include_tag "landing/hr-i18n" %>
     <% unless @page == "index" %><%= javascript_include_tag "landing/hr-shared" %><% end %>
+    <%# Responsive header burger — every page, including the self-contained index. %>
+    <%= javascript_include_tag "landing/mobile-nav" %>
   </body>
 </html>
