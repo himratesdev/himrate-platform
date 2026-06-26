@@ -95,11 +95,22 @@ RSpec.describe CrossChannelIntelligenceWorker do
       allow(Flipper).to receive(:enabled?).with(:cross_channel_edges).and_return(true)
     end
 
+    # Flaky-fix (post-#323): compute_edges! prunes source='live' edges with last_seen_at < now-25h
+    # IN THE SAME perform. The previous hardcoded absolute timestamps (2026-06-25 ...) went stale
+    # relative to that rolling 25h window as wall-clock advanced → the just-upserted edge was pruned
+    # the same cycle → count changed by 0 (deterministically red ~25h after merge, any seed). Relative
+    # timestamps keep the edge inside the window at any wall-clock + any seed. UTC to match CH output.
+    def fresh_edge(channel_login: "melharucos", username: "viewer1", msgs: "42")
+      {
+        "username" => username, "channel_login" => channel_login,
+        "first_seen" => 3.hours.ago.utc.strftime("%Y-%m-%d %H:%M:%S"),
+        "last_seen" => 1.hour.ago.utc.strftime("%Y-%m-%d %H:%M:%S"),
+        "message_count" => msgs
+      }
+    end
+
     it "upserts edges resolved to channel_id with source='live'" do
-      allow(Clickhouse::ChatQueries).to receive(:cross_channel_edges).and_return([
-        { "username" => "viewer1", "channel_login" => "melharucos",
-          "first_seen" => "2026-06-25 02:00:00", "last_seen" => "2026-06-25 10:00:00", "message_count" => "42" }
-      ])
+      allow(Clickhouse::ChatQueries).to receive(:cross_channel_edges).and_return([ fresh_edge(msgs: "42") ])
 
       expect { worker.perform }.to change(CrossChannelPresence, :count).by(1)
       edge = CrossChannelPresence.find_by(username: "viewer1", channel_id: channel.id)
@@ -110,19 +121,13 @@ RSpec.describe CrossChannelIntelligenceWorker do
 
     it "resolves channel_login case-insensitively (downcase guard)" do
       channel.update!(login: "MelHaRucos") # mixed-case PG login
-      allow(Clickhouse::ChatQueries).to receive(:cross_channel_edges).and_return([
-        { "username" => "viewer1", "channel_login" => "melharucos",
-          "first_seen" => "2026-06-25 02:00:00", "last_seen" => "2026-06-25 10:00:00", "message_count" => "5" }
-      ])
+      allow(Clickhouse::ChatQueries).to receive(:cross_channel_edges).and_return([ fresh_edge(msgs: "5") ])
 
       expect { worker.perform }.to change(CrossChannelPresence, :count).by(1)
     end
 
     it "skips edges for unmonitored/unresolved channels" do
-      allow(Clickhouse::ChatQueries).to receive(:cross_channel_edges).and_return([
-        { "username" => "viewer1", "channel_login" => "ghost_channel",
-          "first_seen" => "2026-06-25 02:00:00", "last_seen" => "2026-06-25 10:00:00", "message_count" => "5" }
-      ])
+      allow(Clickhouse::ChatQueries).to receive(:cross_channel_edges).and_return([ fresh_edge(channel_login: "ghost_channel", msgs: "5") ])
 
       expect { worker.perform }.not_to change(CrossChannelPresence, :count)
     end
