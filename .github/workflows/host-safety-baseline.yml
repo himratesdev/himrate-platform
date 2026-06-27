@@ -1,0 +1,122 @@
+name: host-safety-baseline
+
+# Fail-loud watchdog for the shared HOSTKEY VPS (82.21.7.48).
+#
+# Born from the 2026-06-26 incident: the co-tenant bft-* Playwright/Chrome service
+# ran a memcg OOM-kill storm for 22+ minutes with ZERO alerting until the whole host
+# wedged (no ping/SSH/HTTP ~6h). This job runs read-only every 15 min and turns RED
+# (→ GitHub notifies) the moment a host-safety invariant is violated.
+#
+# It is READ-ONLY by construction — no docker update / no host writes. Remediation lives
+# in hostkey-probe.yml (gated apply_bft_caps / add_swap manual steps).
+#
+# KEY invariant it guards: `docker update` CPU/mem caps do NOT survive container
+# recreation. When the bft developer redeploys, the emergency caps vanish and the host
+# is exposed again — this watchdog catches a bft/xray container reverting to cpus=0.
+
+on:
+  schedule:
+    - cron: '*/15 * * * *'   # every 15 min (GitHub cron is best-effort, may lag 5-15m)
+  workflow_dispatch: {}
+
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Host-safety invariants (fail-loud)
+        run: |
+          ssh hostkey 'bash -s' <<'REMOTE'
+          set -u
+          FAIL=0
+          echo "### HOST SAFETY BASELINE — $(date -u +%FT%TZ) ###"
+          echo ""
+
+          # ---- 1. swap cushion (swap=0 amplified the storm into a host wedge) ----
+          SWAP_KB=$(awk '/SwapTotal/{print $2}' /proc/meminfo)
+          if [ "${SWAP_KB:-0}" -eq 0 ]; then
+            echo "FAIL  swap=0 — no OOM cushion; a memory spike detonates OOM instead of paging."
+            echo "      Fix (one-click): gh workflow run hostkey-probe.yml --ref probe/vps-cpu -f add_swap=true"
+            FAIL=1
+          else
+            echo "ok    swap = $((SWAP_KB/1024)) MB"
+          fi
+
+          # ---- 2. active OOM-kill storm in the last 20 min (THE missing alert) ----
+          OOM_CT=$(journalctl -k --since "20 min ago" --no-pager 2>/dev/null | grep -c "Killed process" || true)
+          if [ "${OOM_CT:-0}" -gt 0 ]; then
+            echo "FAIL  ${OOM_CT} OOM-kill(s) in the last 20 min — a storm may be active NOW:"
+            journalctl -k --since "20 min ago" --no-pager 2>/dev/null | grep "Killed process" | tail -6 | sed 's/^/        /'
+            FAIL=1
+          else
+            echo "ok    no OOM-kills in the last 20 min"
+          fi
+
+          # ---- 3. MemAvailable floor (host near OOM) ----
+          MEMAVAIL_KB=$(awk '/MemAvailable/{print $2}' /proc/meminfo)
+          if [ "${MEMAVAIL_KB:-0}" -lt 1572864 ]; then
+            echo "FAIL  MemAvailable $((MEMAVAIL_KB/1024)) MB < 1536 MB — host near OOM"
+            FAIL=1
+          else
+            echo "ok    MemAvailable = $((MEMAVAIL_KB/1024)) MB"
+          fi
+
+          # ---- 4. untrusted-container cap regression (caps lost on recreation) ----
+          # cpus=0 (unlimited CPU) is forbidden for ANY co-tenant container.
+          UNTRUSTED=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(bft-|xray)' || true)
+          if [ -z "$UNTRUSTED" ]; then
+            echo "ok    no bft-/xray co-tenant containers running"
+          else
+            for c in $UNTRUSTED; do
+              NANO=$(docker inspect "$c" --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo 0)
+              MEM=$(docker inspect "$c" --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
+              if [ "${NANO:-0}" -eq 0 ]; then
+                echo "FAIL  $c has cpus=0 (UNLIMITED CPU) — caps lost (redeploy?). Re-apply: hostkey-probe.yml -f apply_bft_caps=true"
+                FAIL=1
+              fi
+              if [ "${MEM:-0}" -eq 0 ]; then
+                echo "FAIL  $c has NO memory limit"
+                FAIL=1
+              fi
+            done
+            # Chrome containers must keep a >=1.5GB floor (700MB was the OOM-storm bug)
+            for c in bft-collector bft-placer bft-betboom-placer; do
+              echo "$UNTRUSTED" | grep -qx "$c" || continue
+              MEM=$(docker inspect "$c" --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
+              if [ "${MEM:-0}" -ne 0 ] && [ "${MEM:-0}" -lt 1610612736 ]; then
+                echo "FAIL  $c mem limit $((MEM/1024/1024)) MB < 1536 MB Chrome floor — re-apply caps"
+                FAIL=1
+              fi
+            done
+            [ "$FAIL" -eq 0 ] && echo "ok    all bft-/xray containers have cpus>0 + mem limits within floor"
+          fi
+
+          # ---- 5. context (logged, non-failing) ----
+          COMMIT_KB=$(awk '/Committed_AS/{print $2}' /proc/meminfo)
+          MEMTOTAL_KB=$(awk '/MemTotal/{print $2}' /proc/meminfo)
+          echo ""
+          echo "ctx   Committed_AS = $(( COMMIT_KB * 100 / MEMTOTAL_KB ))% of MemTotal | $(uptime)"
+
+          echo ""
+          if [ "$FAIL" -eq 0 ]; then
+            echo "### VERDICT: HEALTHY ###"
+          else
+            echo "### VERDICT: DANGER — host-safety invariant violated (see FAIL lines) ###"
+          fi
+          exit $FAIL
+          REMOTE
