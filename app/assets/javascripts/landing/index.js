@@ -8,7 +8,7 @@
   var CUR = location.pathname;
   var NAV = {
     'СТРИМЕРАМ':'/streamers','БРЕНДАМ':'/brands','ЗРИТЕЛЯМ':'/viewers',
-    'МЕТОДОЛОГИЯ':'/methodology','ЦЕНЫ':'/methodology',
+    'МЕТОДОЛОГИЯ':'/methodology','ЦЕНЫ':'/methodology','МЕТОДОЛОГИЯ И ЦЕНЫ':'/methodology',
     'Стримерам':'/streamers','Брендам':'/brands','Зрителям':'/viewers',
     'Цены':'/methodology','Методология':'/methodology','Главная':'/'
   };
@@ -283,6 +283,8 @@
   var __hrBgInit=false;
   function bg(){
     try{
+      /* Desktop layer only — mobile .app has its own #bgfx canvas (no double-paint). */
+      if((window.innerWidth||document.documentElement.clientWidth||0) < 1024) return true;
       var root=$('[data-pencil-name="Главная"]'); if(!root) return true;
       var fx=document.getElementById('hr-bgfx');
       if(!fx){ fx=document.createElement('div'); fx.id='hr-bgfx'; document.body.insertBefore(fx, document.body.firstChild); }
