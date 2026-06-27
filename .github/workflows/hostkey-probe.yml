@@ -11,6 +11,11 @@ on:
         required: false
         type: boolean
         default: false
+      add_swap:
+        description: 'Provision 8GB swapfile + vm.swappiness=10 (idempotent, persistent via fstab+sysctl.d) — the OOM cushion the host lacked (swap=0 amplified the storm)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   probe:
@@ -108,6 +113,45 @@ jobs:
           for c in bft-collector bft-placer bft-betboom-placer xray-ru bft-orchestrator bft-dota-live bft-dota-live-steam bft-smurf-monitor; do
             ssh hostkey "docker inspect $c --format '  $c: NanoCpus={{.HostConfig.NanoCpus}} mem_limit={{.HostConfig.Memory}}' 2>/dev/null || echo '  $c: not found'"
           done
+
+      - name: PROVISION 8GB swap + swappiness (gated — idempotent, persistent)
+        if: ${{ inputs.add_swap }}
+        run: |
+          echo "=== provisioning swap (host had swap=0 — the OOM cushion that was missing) ==="
+          ssh hostkey '
+            set -e
+            if swapon --show=NAME --noheadings 2>/dev/null | grep -q "/swapfile"; then
+              echo "  /swapfile already active — skipping creation"
+            else
+              if [ ! -f /swapfile ]; then
+                echo "  allocating /swapfile (8G)..."
+                fallocate -l 8G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=8192 status=none
+              fi
+              chmod 600 /swapfile
+              mkswap /swapfile >/dev/null 2>&1 || true
+              # swapon can reject fallocate files with holes → fall back to dd-rewrite then retry
+              if ! swapon /swapfile 2>/dev/null; then
+                echo "  swapon rejected fallocate file (holes) — rewriting with dd..."
+                swapoff /swapfile 2>/dev/null || true
+                rm -f /swapfile
+                dd if=/dev/zero of=/swapfile bs=1M count=8192 status=none
+                chmod 600 /swapfile
+                mkswap /swapfile >/dev/null
+                swapon /swapfile
+              fi
+            fi
+            grep -q "^/swapfile " /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
+            echo "vm.swappiness=10" > /etc/sysctl.d/99-himrate-swap.conf
+            sysctl -w vm.swappiness=10 >/dev/null
+            echo "=== verify ==="
+            swapon --show
+            echo "--- free -m ---"
+            free -m | head -2
+            echo "--- swappiness ---"
+            cat /proc/sys/vm/swappiness
+            echo "--- fstab entry ---"
+            grep swapfile /etc/fstab || echo "(fstab entry missing!)"
+          '
 
       - name: PG counts
         run: |
