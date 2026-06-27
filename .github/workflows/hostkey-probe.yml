@@ -195,3 +195,68 @@ jobs:
             Sidekiq::Queue.all.sort_by(&:name).each { |q| puts \"  :#{q.name.ljust(25)} #{q.size} jobs (latency #{q.latency.round(1)}s)\" }
             puts \"  --- retry: #{Sidekiq::RetrySet.new.size} | dead: #{Sidekiq::DeadSet.new.size} | scheduled: #{Sidekiq::ScheduledSet.new.size}\"
           ' 2>&1 | grep -v 'Flipper audit\\|Sidekiq 7\\|connecting to Redis\\|stackprof'"
+
+      - name: TEMP — validate host-safety-baseline logic (non-failing dry-run)
+        run: |
+          echo "=== dry-run of host-safety-baseline invariant script against live host ==="
+          ssh hostkey 'bash -s' <<'REMOTE'
+          set -u
+          FAIL=0
+          echo "### HOST SAFETY BASELINE — $(date -u +%FT%TZ) ###"
+          echo ""
+          SWAP_KB=$(awk '/SwapTotal/{print $2}' /proc/meminfo)
+          if [ "${SWAP_KB:-0}" -eq 0 ]; then
+            echo "FAIL  swap=0 — no OOM cushion"
+            FAIL=1
+          else
+            echo "ok    swap = $((SWAP_KB/1024)) MB"
+          fi
+          OOM_CT=$(journalctl -k --since "20 min ago" --no-pager 2>/dev/null | grep -c "Killed process" || true)
+          if [ "${OOM_CT:-0}" -gt 0 ]; then
+            echo "FAIL  ${OOM_CT} OOM-kill(s) in the last 20 min"
+            FAIL=1
+          else
+            echo "ok    no OOM-kills in the last 20 min"
+          fi
+          MEMAVAIL_KB=$(awk '/MemAvailable/{print $2}' /proc/meminfo)
+          if [ "${MEMAVAIL_KB:-0}" -lt 1572864 ]; then
+            echo "FAIL  MemAvailable $((MEMAVAIL_KB/1024)) MB < 1536 MB"
+            FAIL=1
+          else
+            echo "ok    MemAvailable = $((MEMAVAIL_KB/1024)) MB"
+          fi
+          UNTRUSTED=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(bft-|xray)' || true)
+          if [ -z "$UNTRUSTED" ]; then
+            echo "ok    no bft-/xray co-tenant containers running"
+          else
+            for c in $UNTRUSTED; do
+              NANO=$(docker inspect "$c" --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo 0)
+              MEM=$(docker inspect "$c" --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
+              if [ "${NANO:-0}" -eq 0 ]; then
+                echo "FAIL  $c has cpus=0 (UNLIMITED CPU)"
+                FAIL=1
+              fi
+              if [ "${MEM:-0}" -eq 0 ]; then
+                echo "FAIL  $c has NO memory limit"
+                FAIL=1
+              fi
+            done
+            for c in bft-collector bft-placer bft-betboom-placer; do
+              echo "$UNTRUSTED" | grep -qx "$c" || continue
+              MEM=$(docker inspect "$c" --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
+              if [ "${MEM:-0}" -ne 0 ] && [ "${MEM:-0}" -lt 1610612736 ]; then
+                echo "FAIL  $c mem $((MEM/1024/1024)) MB < 1536 MB Chrome floor"
+                FAIL=1
+              fi
+            done
+            [ "$FAIL" -eq 0 ] && echo "ok    all bft-/xray containers cpus>0 + mem within floor"
+            echo "      (untrusted containers seen: $(echo $UNTRUSTED | tr '\n' ' '))"
+          fi
+          COMMIT_KB=$(awk '/Committed_AS/{print $2}' /proc/meminfo)
+          MEMTOTAL_KB=$(awk '/MemTotal/{print $2}' /proc/meminfo)
+          echo ""
+          echo "ctx   Committed_AS = $(( COMMIT_KB * 100 / MEMTOTAL_KB ))% of MemTotal | $(uptime)"
+          echo ""
+          echo "### MONITOR-WOULD-EXIT = $FAIL  (1 = would alert RED, 0 = green) ###"
+          exit 0
+          REMOTE
