@@ -5,6 +5,17 @@ name: hostkey-probe
 
 on:
   workflow_dispatch:
+    inputs:
+      apply_bft_caps:
+        description: 'Apply hard CPU limits to the bft-* + xray containers (live docker update, reversible) so the side-service can never starve the host'
+        required: false
+        type: boolean
+        default: false
+      add_swap:
+        description: 'Provision 8GB swapfile + vm.swappiness=10 (idempotent, persistent via fstab+sysctl.d) — the OOM cushion the host lacked (swap=0 amplified the storm)'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   probe:
@@ -35,7 +46,112 @@ jobs:
       - name: Container roster
         run: |
           echo "=== Containers (target: 11 healthy) ==="
-          ssh hostkey 'docker ps --format "table {{.Names}}\t{{.Status}}" 2>&1' | head -20
+          ssh hostkey 'docker ps --format "table {{.Names}}\t{{.Status}}" 2>&1' | head -30
+
+      - name: Per-container CPU/MEM (himrate-* vs bft-* attribution)
+        run: |
+          echo "=== docker stats --no-stream (sorted by CPU) ==="
+          ssh hostkey "docker stats --no-stream --format '{{.CPUPerc}}\t{{.MemPerc}}\t{{.MemUsage}}\t{{.Name}}' 2>&1 | sort -rh | head -40"
+
+      - name: Disk I/O + top processes (the known bottleneck)
+        run: |
+          echo "=== iostat (disk %util / await = the bottleneck) ==="
+          ssh hostkey "command -v iostat >/dev/null && iostat -x 1 2 | awk 'NR>3' | tail -20 || echo 'iostat not installed (apt-get install sysstat)'"
+          echo ""
+          echo "=== top 12 processes by CPU ==="
+          ssh hostkey "top -bn1 | head -19 | tail -13"
+          echo ""
+          echo "=== meminfo (creep watch) ==="
+          ssh hostkey "grep -iE 'MemTotal|MemAvailable|Dirty|Writeback|Committed_AS' /proc/meminfo"
+
+      - name: FORENSICS — pre-reboot kernel log (OOM/panic smoking gun)
+        run: |
+          echo "=== boots logged ==="
+          ssh hostkey "journalctl --list-boots 2>/dev/null | tail -6 || echo 'no persistent journal'"
+          echo ""
+          echo "=== PRE-REBOOT kernel events (boot -1): OOM / panic / hung-task ==="
+          ssh hostkey "journalctl -k -b -1 --no-pager 2>/dev/null | grep -iE 'out of memory|oom-kill|killed process|invoked oom|panic|hung_task|blocked for more than|general protection|watchdog' | tail -40 || echo '(no boot -1 journal — not persistent)'"
+          echo ""
+          echo "=== PRE-REBOOT last 40 log lines before freeze (boot -1 tail) ==="
+          ssh hostkey "journalctl -b -1 --no-pager 2>/dev/null | tail -40 || echo '(no boot -1)'"
+          echo ""
+          echo "=== CURRENT boot OOM/kill since reboot ==="
+          ssh hostkey "dmesg -T 2>/dev/null | grep -iE 'oom|killed process|panic|hung' | tail -15 || echo 'none'"
+
+      - name: FORENSICS — swap, vmstat, disk I/O delta (manual, no sysstat)
+        run: |
+          echo "=== swap config ==="
+          ssh hostkey "swapon --show 2>/dev/null || echo 'NO SWAP configured'; echo '--- vm.swappiness ---'; cat /proc/sys/vm/swappiness; echo '--- overcommit ---'; cat /proc/sys/vm/overcommit_memory /proc/sys/vm/overcommit_ratio"
+          echo ""
+          echo "=== vmstat (r=runnable b=blocked si/so=swap wa=iowait) ==="
+          ssh hostkey "command -v vmstat >/dev/null && vmstat 1 3 || echo 'vmstat absent'"
+          echo ""
+          echo "=== diskstats delta over 2s (manual %util proxy) ==="
+          ssh hostkey "grep -E ' (sda|vda|dm-0|nvme0n1) ' /proc/diskstats; sleep 2; echo '--- +2s ---'; grep -E ' (sda|vda|dm-0|nvme0n1) ' /proc/diskstats"
+
+      - name: FORENSICS — bft-* cluster limits + images
+        run: |
+          echo "=== bft-* + xray resource limits (HostConfig) ==="
+          for c in bft-collector bft-placer bft-betboom-placer bft-orchestrator bft-dota-live bft-dota-live-steam bft-smurf-monitor xray-ru; do
+            ssh hostkey "docker inspect $c --format '$c: mem_limit={{.HostConfig.Memory}} memswap={{.HostConfig.MemorySwap}} cpus={{.HostConfig.NanoCpus}} cpu_shares={{.HostConfig.CpuShares}} restart={{.HostConfig.RestartPolicy.Name}} image={{.Config.Image}}' 2>/dev/null || echo '$c: not found'"
+          done
+
+      - name: APPLY hard CPU caps to bft-* + xray (gated — live docker update, reversible)
+        if: ${{ inputs.apply_bft_caps }}
+        run: |
+          echo "=== applying CPU caps (was cpus=0 unlimited → bounded so the side-service can never starve the host) ==="
+          ssh hostkey "docker update --cpus=2.0 bft-collector && echo '  bft-collector -> 2.0 cpu'"
+          ssh hostkey "docker update --cpus=1.0 bft-placer && echo '  bft-placer -> 1.0 cpu'"
+          ssh hostkey "docker update --cpus=1.0 bft-betboom-placer && echo '  bft-betboom-placer -> 1.0 cpu'"
+          ssh hostkey "docker update --cpus=0.5 xray-ru && echo '  xray-ru -> 0.5 cpu'"
+          echo ""
+          echo "=== raise Chrome-container memory floor (700MB too small for Playwright Chrome → stops the OOM-kill storm) ==="
+          ssh hostkey "docker update --memory=1536m --memory-swap=3072m bft-placer && echo '  bft-placer mem 700MB -> 1.5GB'"
+          ssh hostkey "docker update --memory=1536m --memory-swap=3072m bft-betboom-placer && echo '  bft-betboom-placer mem 700MB -> 1.5GB'"
+          echo ""
+          echo "=== verify NanoCpus + mem after (0 = unlimited; want bounded) ==="
+          for c in bft-collector bft-placer bft-betboom-placer xray-ru bft-orchestrator bft-dota-live bft-dota-live-steam bft-smurf-monitor; do
+            ssh hostkey "docker inspect $c --format '  $c: NanoCpus={{.HostConfig.NanoCpus}} mem_limit={{.HostConfig.Memory}}' 2>/dev/null || echo '  $c: not found'"
+          done
+
+      - name: PROVISION 8GB swap + swappiness (gated — idempotent, persistent)
+        if: ${{ inputs.add_swap }}
+        run: |
+          echo "=== provisioning swap (host had swap=0 — the OOM cushion that was missing) ==="
+          ssh hostkey '
+            set -e
+            if swapon --show=NAME --noheadings 2>/dev/null | grep -q "/swapfile"; then
+              echo "  /swapfile already active — skipping creation"
+            else
+              if [ ! -f /swapfile ]; then
+                echo "  allocating /swapfile (8G)..."
+                fallocate -l 8G /swapfile 2>/dev/null || dd if=/dev/zero of=/swapfile bs=1M count=8192 status=none
+              fi
+              chmod 600 /swapfile
+              mkswap /swapfile >/dev/null 2>&1 || true
+              # swapon can reject fallocate files with holes → fall back to dd-rewrite then retry
+              if ! swapon /swapfile 2>/dev/null; then
+                echo "  swapon rejected fallocate file (holes) — rewriting with dd..."
+                swapoff /swapfile 2>/dev/null || true
+                rm -f /swapfile
+                dd if=/dev/zero of=/swapfile bs=1M count=8192 status=none
+                chmod 600 /swapfile
+                mkswap /swapfile >/dev/null
+                swapon /swapfile
+              fi
+            fi
+            grep -q "^/swapfile " /etc/fstab || echo "/swapfile none swap sw 0 0" >> /etc/fstab
+            echo "vm.swappiness=10" > /etc/sysctl.d/99-himrate-swap.conf
+            sysctl -w vm.swappiness=10 >/dev/null
+            echo "=== verify ==="
+            swapon --show
+            echo "--- free -m ---"
+            free -m | head -2
+            echo "--- swappiness ---"
+            cat /proc/sys/vm/swappiness
+            echo "--- fstab entry ---"
+            grep swapfile /etc/fstab || echo "(fstab entry missing!)"
+          '
 
       - name: PG counts
         run: |
