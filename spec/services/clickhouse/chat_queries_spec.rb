@@ -618,6 +618,19 @@ RSpec.describe Clickhouse::ChatQueries do
       expect(rows.first["channel_login"]).to eq("c1")
     end
 
+    # BUG-OVERLAP-DOUBLESCAN: the cohort filter is a single-pass window over the grouped result,
+    # NOT a correlated subquery that re-scans the 24h slice a second time.
+    it "is single-pass — a window over the grouped rows, no inner re-scan subquery" do
+      sql = nil
+      allow(ch).to receive(:select) { |q| sql = q; [] }
+      described_class.cross_channel_edges(30, 500_000)
+
+      expect(sql).to match(/count\(\) OVER \(PARTITION BY username\) AS distinct_channels/)
+      expect(sql).to match(/distinct_channels BETWEEN 2 AND 30/)
+      expect(sql).not_to match(/username IN \(/)        # no correlated re-scan
+      expect(sql.scan(/FROM chat_messages/).size).to eq(1) # the 24h slice is scanned exactly once
+    end
+
     it "lets Clickhouse::Error propagate (no internal rescue)" do
       allow(ch).to receive(:select).and_raise(Clickhouse::Error.new("ch down"))
       expect { described_class.cross_channel_edges(30, 500_000) }.to raise_error(Clickhouse::Error)
