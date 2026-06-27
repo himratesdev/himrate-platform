@@ -5,6 +5,12 @@ name: hostkey-probe
 
 on:
   workflow_dispatch:
+    inputs:
+      apply_bft_caps:
+        description: 'Apply hard CPU limits to the bft-* + xray containers (live docker update, reversible) so the side-service can never starve the host'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   probe:
@@ -83,6 +89,20 @@ jobs:
           echo "=== bft-* + xray resource limits (HostConfig) ==="
           for c in bft-collector bft-placer bft-betboom-placer bft-orchestrator bft-dota-live bft-dota-live-steam bft-smurf-monitor xray-ru; do
             ssh hostkey "docker inspect $c --format '$c: mem_limit={{.HostConfig.Memory}} memswap={{.HostConfig.MemorySwap}} cpus={{.HostConfig.NanoCpus}} cpu_shares={{.HostConfig.CpuShares}} restart={{.HostConfig.RestartPolicy.Name}} image={{.Config.Image}}' 2>/dev/null || echo '$c: not found'"
+          done
+
+      - name: APPLY hard CPU caps to bft-* + xray (gated — live docker update, reversible)
+        if: ${{ inputs.apply_bft_caps }}
+        run: |
+          echo "=== applying CPU caps (was cpus=0 unlimited → bounded so the side-service can never starve the host) ==="
+          ssh hostkey "docker update --cpus=2.0 bft-collector && echo '  bft-collector -> 2.0 cpu'"
+          ssh hostkey "docker update --cpus=1.0 bft-placer && echo '  bft-placer -> 1.0 cpu'"
+          ssh hostkey "docker update --cpus=1.0 bft-betboom-placer && echo '  bft-betboom-placer -> 1.0 cpu'"
+          ssh hostkey "docker update --cpus=0.5 xray-ru && echo '  xray-ru -> 0.5 cpu'"
+          echo ""
+          echo "=== verify NanoCpus after (0 = unlimited; want bounded) ==="
+          for c in bft-collector bft-placer bft-betboom-placer xray-ru bft-orchestrator bft-dota-live bft-dota-live-steam bft-smurf-monitor; do
+            ssh hostkey "docker inspect $c --format '  $c: NanoCpus={{.HostConfig.NanoCpus}} mem_limit={{.HostConfig.Memory}}' 2>/dev/null || echo '  $c: not found'"
           done
 
       - name: PG counts
