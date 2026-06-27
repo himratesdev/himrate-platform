@@ -100,7 +100,11 @@ jobs:
           ssh hostkey "docker update --cpus=1.0 bft-betboom-placer && echo '  bft-betboom-placer -> 1.0 cpu'"
           ssh hostkey "docker update --cpus=0.5 xray-ru && echo '  xray-ru -> 0.5 cpu'"
           echo ""
-          echo "=== verify NanoCpus after (0 = unlimited; want bounded) ==="
+          echo "=== raise Chrome-container memory floor (700MB too small for Playwright Chrome → stops the OOM-kill storm) ==="
+          ssh hostkey "docker update --memory=1536m --memory-swap=3072m bft-placer && echo '  bft-placer mem 700MB -> 1.5GB'"
+          ssh hostkey "docker update --memory=1536m --memory-swap=3072m bft-betboom-placer && echo '  bft-betboom-placer mem 700MB -> 1.5GB'"
+          echo ""
+          echo "=== verify NanoCpus + mem after (0 = unlimited; want bounded) ==="
           for c in bft-collector bft-placer bft-betboom-placer xray-ru bft-orchestrator bft-dota-live bft-dota-live-steam bft-smurf-monitor; do
             ssh hostkey "docker inspect $c --format '  $c: NanoCpus={{.HostConfig.NanoCpus}} mem_limit={{.HostConfig.Memory}}' 2>/dev/null || echo '  $c: not found'"
           done
