@@ -35,7 +35,23 @@ jobs:
       - name: Container roster
         run: |
           echo "=== Containers (target: 11 healthy) ==="
-          ssh hostkey 'docker ps --format "table {{.Names}}\t{{.Status}}" 2>&1' | head -20
+          ssh hostkey 'docker ps --format "table {{.Names}}\t{{.Status}}" 2>&1' | head -30
+
+      - name: Per-container CPU/MEM (himrate-* vs bft-* attribution)
+        run: |
+          echo "=== docker stats --no-stream (sorted by CPU) ==="
+          ssh hostkey "docker stats --no-stream --format '{{.CPUPerc}}\t{{.MemPerc}}\t{{.MemUsage}}\t{{.Name}}' 2>&1 | sort -rh | head -40"
+
+      - name: Disk I/O + top processes (the known bottleneck)
+        run: |
+          echo "=== iostat (disk %util / await = the bottleneck) ==="
+          ssh hostkey "command -v iostat >/dev/null && iostat -x 1 2 | awk 'NR>3' | tail -20 || echo 'iostat not installed (apt-get install sysstat)'"
+          echo ""
+          echo "=== top 12 processes by CPU ==="
+          ssh hostkey "top -bn1 | head -19 | tail -13"
+          echo ""
+          echo "=== meminfo (creep watch) ==="
+          ssh hostkey "grep -iE 'MemTotal|MemAvailable|Dirty|Writeback|Committed_AS' /proc/meminfo"
 
       - name: PG counts
         run: |
