@@ -138,9 +138,9 @@ module Clickhouse
     # `count() OVER (PARTITION BY username)` — after `GROUP BY username, channel_login` each row is a
     # distinct channel for that user, so the partition count == uniqExact(channel_login). This replaces
     # the previous `username IN (SELECT ... GROUP BY username HAVING uniqExact ...)` correlated subquery,
-    # which re-scanned the full 12M-row 24h slice a SECOND time. Output is identical; one table scan
-    # instead of two (the window sorts only the already-reduced grouped set). Single `now()` cutoff now,
-    # so there is no inner/outer drift consideration at all.
+    # which re-scanned the full multi-million-row 24h slice a SECOND time. Output is identical (A/B-verified
+    # on live staging CH over a pinned window — same row count + same content-hash); one table scan instead
+    # of two. Single `now()` cutoff now, so there is no inner/outer drift consideration at all.
     def cross_channel_edges(max_channels, row_cap)
       Clickhouse.client.select(<<~SQL)
         SELECT username, channel_login, first_seen, last_seen, message_count
