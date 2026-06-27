@@ -132,18 +132,27 @@ module Clickhouse
     # message_count. Does NOT rescue — lets Clickhouse::Error propagate so the worker can distinguish
     # a CH failure (leave prior edges intact, skip prune) from a legitimately empty result (FR-A
     # failure-isolation / prune-last contract, §5).
+    #
+    # BUG-OVERLAP-DOUBLESCAN (2026-06-27): SINGLE-PASS. The cohort filter (users in 2..cap distinct
+    # channels) is computed from the SAME per-(username, channel_login) aggregation via a window
+    # `count() OVER (PARTITION BY username)` — after `GROUP BY username, channel_login` each row is a
+    # distinct channel for that user, so the partition count == uniqExact(channel_login). This replaces
+    # the previous `username IN (SELECT ... GROUP BY username HAVING uniqExact ...)` correlated subquery,
+    # which re-scanned the full multi-million-row 24h slice a SECOND time. Output is identical (A/B-verified
+    # on live staging CH over a pinned window — same row count + same content-hash); one table scan instead
+    # of two. Single `now()` cutoff now, so there is no inner/outer drift consideration at all.
     def cross_channel_edges(max_channels, row_cap)
       Clickhouse.client.select(<<~SQL)
-        SELECT username, channel_login,
-               min(timestamp) AS first_seen, max(timestamp) AS last_seen, count() AS message_count
-        FROM chat_messages
-        WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR
-          AND username IN (
-            SELECT username FROM chat_messages
-            WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR
-            GROUP BY username HAVING uniqExact(channel_login) BETWEEN 2 AND #{max_channels.to_i}
-          )
-        GROUP BY username, channel_login
+        SELECT username, channel_login, first_seen, last_seen, message_count
+        FROM (
+          SELECT username, channel_login,
+                 min(timestamp) AS first_seen, max(timestamp) AS last_seen, count() AS message_count,
+                 count() OVER (PARTITION BY username) AS distinct_channels
+          FROM chat_messages
+          WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR
+          GROUP BY username, channel_login
+        )
+        WHERE distinct_channels BETWEEN 2 AND #{max_channels.to_i}
         LIMIT #{row_cap.to_i}
       SQL
     end

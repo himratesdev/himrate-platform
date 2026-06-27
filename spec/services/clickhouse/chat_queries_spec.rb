@@ -174,6 +174,47 @@ RSpec.describe Clickhouse::ChatQueries do
              ])
       expect(described_class.unique_chatters(stream, since)).to eq(2)
     end
+
+    # BUG-OVERLAP-DOUBLESCAN — re-runnable real-CH guard for the single-pass cohort semantics.
+    # The mocked specs only assert query SHAPE; this proves the `count() OVER (PARTITION BY username)`
+    # cohort filter actually behaves like the old `HAVING uniqExact(channel_login) BETWEEN 2 AND cap`:
+    # single-channel users excluded, 2..cap users returned one-row-per-channel with correct counts,
+    # over-cap users excluded, cap boundary inclusive. Usernames are randomised so the all-channel
+    # 24h scan does not collide with rows other examples insert into the shared table.
+    it "cross_channel_edges returns exactly the 2..cap overlap cohort, one row per (username, channel)" do
+      sfx    = SecureRandom.hex(4)
+      single = "edge_single_#{sfx}" # 1 channel  → excluded
+      pair   = "edge_pair_#{sfx}"   # 2 channels → included
+      capped = "edge_cap_#{sfx}"    # 3 channels (== cap) → included (inclusive boundary)
+      omni   = "edge_omni_#{sfx}"   # 4 channels (> cap)  → excluded
+      base   = t - 30.minutes
+
+      insert([
+               { username: single, channel_login: "c1_#{sfx}", timestamp: base + 1.second },
+               { username: pair,   channel_login: "c1_#{sfx}", timestamp: base + 2.seconds },
+               { username: pair,   channel_login: "c1_#{sfx}", timestamp: base + 3.seconds }, # 2 msgs in c1
+               { username: pair,   channel_login: "c2_#{sfx}", timestamp: base + 4.seconds }, # 1 msg in c2
+               { username: capped, channel_login: "c1_#{sfx}", timestamp: base + 5.seconds },
+               { username: capped, channel_login: "c2_#{sfx}", timestamp: base + 6.seconds },
+               { username: capped, channel_login: "c3_#{sfx}", timestamp: base + 7.seconds },
+               { username: omni,   channel_login: "c1_#{sfx}", timestamp: base + 8.seconds },
+               { username: omni,   channel_login: "c2_#{sfx}", timestamp: base + 9.seconds },
+               { username: omni,   channel_login: "c3_#{sfx}", timestamp: base + 10.seconds },
+               { username: omni,   channel_login: "c4_#{sfx}", timestamp: base + 11.seconds }
+             ])
+
+      rows    = described_class.cross_channel_edges(3, 1_000_000)
+      by_user = rows.select { |r| [ single, pair, capped, omni ].include?(r["username"]) }.group_by { |r| r["username"] }
+
+      expect(by_user).not_to have_key(single) # single-channel → no overlap edge
+      expect(by_user).not_to have_key(omni)   # over-cap → omnipresent, kept out of the graph
+
+      pair_rows = (by_user[pair] || []).to_h { |r| [ r["channel_login"], r["message_count"].to_i ] }
+      expect(pair_rows).to eq("c1_#{sfx}" => 2, "c2_#{sfx}" => 1) # one row per channel, correct counts
+
+      expect((by_user[capped] || []).map { |r| r["channel_login"] })
+        .to contain_exactly("c1_#{sfx}", "c2_#{sfx}", "c3_#{sfx}") # cap boundary inclusive
+    end
   end
 
   # PR 1e-A (CR-231 N2) — direct unit specs for the 6 new methods added in the cutover.
@@ -616,6 +657,19 @@ RSpec.describe Clickhouse::ChatQueries do
 
       rows = described_class.cross_channel_edges(30, 500_000)
       expect(rows.first["channel_login"]).to eq("c1")
+    end
+
+    # BUG-OVERLAP-DOUBLESCAN: the cohort filter is a single-pass window over the grouped result,
+    # NOT a correlated subquery that re-scans the 24h slice a second time.
+    it "is single-pass — a window over the grouped rows, no inner re-scan subquery" do
+      sql = nil
+      allow(ch).to receive(:select) { |q| sql = q; [] }
+      described_class.cross_channel_edges(30, 500_000)
+
+      expect(sql).to match(/count\(\) OVER \(PARTITION BY username\) AS distinct_channels/)
+      expect(sql).to match(/distinct_channels BETWEEN 2 AND 30/)
+      expect(sql).not_to match(/username IN \(/)        # no correlated re-scan
+      expect(sql.scan(/FROM chat_messages/).size).to eq(1) # the 24h slice is scanned exactly once
     end
 
     it "lets Clickhouse::Error propagate (no internal rescue)" do
