@@ -168,6 +168,17 @@ jobs:
             ORDER BY t;
           "'
 
+      - name: Overlap edge freshness (cross_channel_presences — single-pass query live-verify)
+        run: |
+          echo "=== cross_channel_presences freshness (worker runs every 5min; staleness <10min = healthy) ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -c "
+            SELECT count(*) AS total_edges,
+                   count(*) FILTER (WHERE source = '\''live'\'') AS live_edges,
+                   max(last_seen_at) AS newest_edge,
+                   round(extract(epoch FROM (now() - max(last_seen_at)))/60.0, 1) AS staleness_min
+            FROM cross_channel_presences;
+          "'
+
       - name: TIH count via Rails (correct table name)
         run: |
           echo "=== TIH (TrustIndexHistory) ==="
