@@ -43,14 +43,20 @@ module Trust
     DEFAULT_BASELINE_MIN = 65
     DEFAULT_BASELINE_MAX = 80
 
-    def initialize(channel:)
+    # `stream` nil → the channel's current live stream (Trust card / live alerts, default).
+    #   an explicit stream → per-stream breakdown (StreamBreakdown), any live/past stream.
+    # `window` WINDOW → recent anomalies only (live alerts); nil → all anomalies for the stream
+    #   (breakdown — the whole stream's history, not just the last 5 minutes).
+    def initialize(channel:, stream: nil, window: WINDOW)
       @channel = channel
+      @stream_override = stream
+      @window = window
     end
 
     # Returns Array<Hash> of presented alerts sorted by severity (red → yellow → info).
-    # Empty Array если канал не live OR no recent anomalies/raids.
+    # Empty Array если нет target stream OR no anomalies/raids in scope.
     def call
-      return [] unless live_stream
+      return [] unless target_stream
 
       alerts = build_anomaly_alerts + build_raid_alerts
       alerts = suppress_ccv_spike_if_recent_raid(alerts)
@@ -61,16 +67,14 @@ module Trust
 
     attr_reader :channel
 
-    def live_stream
-      @live_stream ||= channel.streams.where(ended_at: nil).order(started_at: :desc).first
+    def target_stream
+      @target_stream ||= @stream_override || channel.streams.where(ended_at: nil).order(started_at: :desc).first
     end
 
     def build_anomaly_alerts
-      Anomaly.where(stream: live_stream)
-             .where("timestamp > ?", WINDOW.ago)
-             .where(anomaly_type: PRESENTABLE_ANOMALY_TYPES)
-             .order(timestamp: :desc)
-             .filter_map { |anomaly| map_anomaly(anomaly) }
+      scope = Anomaly.where(stream: target_stream).where(anomaly_type: PRESENTABLE_ANOMALY_TYPES)
+      scope = scope.where("timestamp > ?", @window.ago) if @window
+      scope.order(timestamp: :desc).filter_map { |anomaly| map_anomaly(anomaly) }
     end
 
     def map_anomaly(anomaly)
@@ -137,7 +141,7 @@ module Trust
 
     def build_chatter_to_ccv_anomaly(anomaly)
       signal_value = anomaly.details["signal_value"].to_f
-      category = (live_stream.game_name.presence || "default")
+      category = (target_stream.game_name.presence || "default")
       category = CATEGORY_ALIASES[category] || category
 
       baseline_min = lookup_baseline(category, "baseline_min")
@@ -207,10 +211,9 @@ module Trust
     end
 
     def build_raid_alerts
-      RaidAttribution.where(stream: live_stream)
-                     .where(is_bot_raid: false)
-                     .where("timestamp > ?", RAID_LOOKBACK.ago)
-                     .includes(:source_channel)
+      scope = RaidAttribution.where(stream: target_stream).where(is_bot_raid: false)
+      scope = scope.where("timestamp > ?", RAID_LOOKBACK.ago) if @window
+      scope.includes(:source_channel)
                      .order(timestamp: :desc)
                      .map { |raid| build_confirmed_raid(raid) }
     end
