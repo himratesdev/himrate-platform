@@ -66,6 +66,8 @@ Rails.application.routes.draw do
         resources :streams, only: %i[index] do
           # TASK-032 FR-003: Post-stream report
           get "report", on: :member, to: "streams#report"
+          # T2-020 StreamBreakdown INC-1: per-stream «Разбор эфира» drill-down
+          get "breakdown", on: :member, to: "streams#breakdown"
           # TASK-085 FR-001: Latest stream summary (collection-level)
           get "latest/summary", on: :collection, to: "streams#latest_summary"
         end

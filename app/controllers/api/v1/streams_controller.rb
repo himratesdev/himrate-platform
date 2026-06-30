@@ -9,7 +9,7 @@ module Api
       include Channelable
 
       before_action :set_channel
-      before_action :authenticate_user!, only: %i[index report latest_summary]
+      before_action :authenticate_user!, only: %i[index report latest_summary breakdown]
 
       # FR-002: GET /api/v1/channels/:id/streams — stream history
       def index
@@ -44,6 +44,18 @@ module Api
         authorize @channel, :view_report?
 
         payload = Streams::ReportService.new(stream: stream, channel: @channel).call
+
+        render json: { data: payload }
+      end
+
+      # T2-020 StreamBreakdown INC-1: GET /api/v1/channels/:id/streams/:stream_id/breakdown
+      # The per-stream «Разбор эфира» drill-down (free layer-2 for the viewer, access-model v2).
+      # Pundit view_breakdown? = registered + (live OR 18h window) — no paywall (mirrors card_live_drill?).
+      def breakdown
+        stream = @channel.streams.find(params[:stream_id] || params[:id])
+        authorize @channel, :view_breakdown?
+
+        payload = StreamBreakdown::BreakdownService.new(stream: stream, channel: @channel).call
 
         render json: { data: payload }
       end

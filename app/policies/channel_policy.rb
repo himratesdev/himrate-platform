@@ -110,6 +110,13 @@ class ChannelPolicy < ApplicationPolicy
     PostStreamWindowService.open?(record)
   end
 
+  # T2-020 StreamBreakdown INC-1: per-stream «Разбор эфира» drill-down. Free layer-2 for the viewer
+  # (access-model v2) — registered + (live OR post-stream window), NO paywall. Mirrors card_live_drill?
+  # (the same layer-2 live-drill access the unified card grants); no premium/role gate.
+  def view_breakdown?
+    card_live_drill?
+  end
+
   # T1-060 FR-6: 7d trust-history depth requires premium-level access. Replaces the inline
   # SUBSCRIPTION_REQUIRED render in TrustController#history so the denial flows through Pundit
   # and resolve_error_code makes it surface-aware (extension honest-empty vs dashboard paywall).
