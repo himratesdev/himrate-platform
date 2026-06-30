@@ -21,26 +21,29 @@
       *, ::before, ::after { box-sizing: border-box; }
       body { margin: 0; }
       html, body { background: #07070C; }
-      /* Safety net: the fluid layout fits the viewport at every width, but the
-         animated marquee / canvas background paint beyond it by design — clip any
-         horizontal bleed so phones never get a stray sideways scroll. */
-      html, body { overflow-x: hidden; max-width: 100%; }
     </style>
 
     <%= stylesheet_link_tag "landing_fonts" %>
     <%= stylesheet_link_tag "tailwind" %>
+    <%# Mobile layer framework (designer's export-1-mobile). Class/`.app`-scoped, so
+        it never touches the desktop layer; only the `.app` mobile block uses it. %>
+    <%= stylesheet_link_tag "m-shared" %>
   </head>
   <body>
     <%= yield %>
 
-    <%# The export's vanilla JS, served as CSP-safe external assets. index.html was
-        self-contained in the export (its own canvas bg + nav live in index.js), so
-        it does NOT also load hr-shared.js — that would double the canvas/nav. The
-        other pages share hr-shared.js. hr-i18n.js (client RU/EN) loads on all. %>
+    <%# Two responsive layers, gated by viewport so only one runs:
+        • Desktop (≥lg): per-page JS + hr-shared (index is self-contained → its own JS).
+          Their #hr-bgfx canvas is gated to ≥1024 so it never double-paints on phones.
+        • Mobile (<lg): m-shared.js drives the designer's .app layer (own #bgfx canvas,
+          burger, reveals). m-i18n extends HR_TRANS with mobile copy.
+        hr-i18n (base RU↔EN map) + mobile-nav (window.__hrSetLang fallback for pages
+        without hr-shared, e.g. index) load on all. %>
     <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
     <%= javascript_include_tag "landing/hr-i18n" %>
+    <%= javascript_include_tag "landing/m-i18n" %>
     <% unless @page == "index" %><%= javascript_include_tag "landing/hr-shared" %><% end %>
-    <%# Responsive header burger — every page, including the self-contained index. %>
+    <%= javascript_include_tag "landing/m-shared" %>
     <%= javascript_include_tag "landing/mobile-nav" %>
   </body>
 </html>

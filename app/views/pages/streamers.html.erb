@@ -1,6 +1,7 @@
 <% content_for :title, "HimRate для стримеров" %>
 <% content_for :description, "Покажи брендам реальную аудиторию своего канала — Trust Index и репутация без накрутки." %>
 
+<div class="hidden lg:block">
 <div
       data-pencil-name="Стримерам"
       class="box-border w-full max-w-[1440px] mx-auto h-fit flex flex-col gap-0 justify-start items-start bg-[#07070C]"
@@ -4240,3 +4241,153 @@
         </div>
       </div>
     </div>
+</div>
+
+<div class="app lg:hidden" style="--accent:#F9A8D4; --accent2:#EC4899; --mqrgb:236,72,153;">
+  <div id="bgfx"><canvas></canvas></div>
+
+  <header>
+    <a class="logo" href="/" aria-label="HimRate"></a>
+    <div class="hgroup">
+      <div class="lang" id="lang"><button data-l="ru" class="on">RU</button><button data-l="en">EN</button></div>
+      <div class="burger" id="burger" aria-label="Меню"><span></span><span></span><span></span></div>
+    </div>
+  </header>
+
+  <nav class="nav" id="nav">
+    <a class="link" href="/">Главная <span>→</span></a>
+    <a class="link" href="/streamers">Стримерам <span>→</span></a>
+    <a class="link" href="/brands">Брендам <span>→</span></a>
+    <a class="link" href="/viewers">Зрителям <span>→</span></a>
+    <a class="link" href="/methodology">Методология и цены <span>→</span></a>
+    <a class="link" href="/methodology">Войти <span>→</span></a>
+    <div class="acts">
+      <a class="btn btn-ghost" href="/methodology">Открыть сервис</a>
+      <a class="btn btn-ghost" href="/">Открыть расширение</a>
+      <a class="btn btn-primary" href="/methodology">Подключить канал</a>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <div class="hero">
+    <div class="eyebrow"><span class="dot"></span><span class="t">ДЛЯ СТРИМЕРОВ</span></div>
+    <h1><span class="a">Мы видим, куда уходит твоя аудитория</span><span class="b">— и почему.</span></h1>
+    <p class="sub">Не дублируем кабинет Twitch. Показываем то, чего в нём нет: сколько из онлайна — живые люди, в какой момент стрима ты их теряешь и в какую игру играть, чтобы расти.</p>
+
+    <div class="erv" id="erv">
+      <div class="cap">ИЗ 4 200 ЖИВЫХ ЗА ВЕЧЕР</div>
+      <div class="big" data-count="595" style="color:var(--accent)">0</div>
+      <div class="of">ушли за 2 часа после эфира — и видно, к кому именно</div>
+      <div class="track"><div class="fill" data-fill="62" style="background:linear-gradient(90deg,var(--accent2),var(--accent))"></div></div>
+      <div class="verdict" style="background:rgba(236,72,153,.12)"><span class="vd" style="background:var(--accent2)"></span><span class="vt" style="color:var(--accent)">Растекание после эфира · 14%</span></div>
+    </div>
+
+    <a class="btn btn-primary" href="/methodology">Подключить канал — бесплатно</a>
+    <div class="secondary">
+      <a href="/brands">Я бренд →</a>
+      <a href="/viewers">Я зритель →</a>
+    </div>
+  </div>
+
+  <!-- COMPARE -->
+  <section class="reveal">
+    <div class="eyebrow"><span class="dot"></span><span class="t">ЧЕГО НЕТ В КАБИНЕТЕ TWITCH</span></div>
+    <h2 class="title">Twitch показывает онлайн. Мы — что за ним</h2>
+    <div class="compare" style="margin-top:20px">
+      <div class="cmp tw"><div class="lbl">TWITCH ПОКАЗЫВАЕТ</div><ul>
+        <li><span class="m">—</span><span>Общий онлайн — одно число</span></li>
+        <li><span class="m">—</span><span>Вчерашнюю статистику</span></li>
+        <li><span class="m">—</span><span>Ничего про то, куда ушла аудитория</span></li>
+      </ul></div>
+      <div class="cmp us"><div class="lbl">МЫ ПОКАЗЫВАЕМ</div><ul>
+        <li><span class="m">✓</span><span>Сколько из онлайна — живые люди</span></li>
+        <li><span class="m">✓</span><span>В какой момент и почему зрители ушли</span></li>
+        <li><span class="m">✓</span><span>В какую игру играть, чтобы тебя заметили</span></li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- WHY LEFT / WHERE -->
+  <section class="reveal">
+    <div class="eyebrow"><span class="dot"></span><span class="t">ДВИЖЕНИЕ АУДИТОРИИ</span></div>
+    <h2 class="title">Куда и когда утекает аудитория</h2>
+    <p class="lede">Привязываем отток к тому, что было на стриме в эту секунду: сменил игру, встал, подключился конкурент, реклама.</p>
+    <div class="card" style="margin-top:18px">
+      <div class="cap" style="font:600 10.5px/1 var(--mono);letter-spacing:1.6px;color:var(--mut);margin-bottom:14px">РАСТЕКАНИЕ ПО ЧАСАМ ПОСЛЕ ЭФИРА</div>
+      <div class="barlist">
+        <div class="brow"><div class="bl"><span class="bn">+1 ч · сменил игру</span><span class="bv">−38%</span></div><div class="bt"><div class="bf" data-fill="38"></div></div></div>
+        <div class="brow"><div class="bl"><span class="bn">+2 ч · конкурент в эфире</span><span class="bv">−27%</span></div><div class="bt"><div class="bf" data-fill="27"></div></div></div>
+        <div class="brow"><div class="bl"><span class="bn">+3 ч · реклама</span><span class="bv">−14%</span></div><div class="bt"><div class="bf" data-fill="14"></div></div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- GAME CHOICE -->
+  <section class="reveal">
+    <div class="eyebrow"><span class="dot"></span><span class="t">ВЫБОР КАТЕГОРИИ</span></div>
+    <h2 class="title">В какую игру играть, чтобы тебя заметили</h2>
+    <div class="flist" style="margin-top:20px">
+      <div class="fcard"><div class="role">НИЗКАЯ КОНКУРЕНЦИЯ</div><div class="h">Не топ-игры — там тебя не видно</div><div class="d">Ищи категории, где зрители хотят зрелища, но вещают единицы: новинка набирает обороты, а стримеров всего 7–12.</div></div>
+      <div class="fcard"><div class="role">РОСТ ↑</div><div class="h">Вырасти с 10 до 100 онлайн</div><div class="d">Выбирай категорию по реальным цифрам, а не надейся на удачу.</div></div>
+    </div>
+  </section>
+
+  <!-- MARKETPLACE -->
+  <section class="reveal">
+    <div class="eyebrow"><span class="dot"></span><span class="t">БИРЖА · СДЕЛКИ С БРЕНДАМИ</span></div>
+    <h2 class="title">Бренды находят тебя по реальным цифрам</h2>
+    <p class="lede">Маркетплейс: бренды публикуют предложения, а сделка считается по живой аудитории — не по CCV из кабинета Twitch.</p>
+    <div class="card" style="margin-top:18px">
+      <div class="cap" style="font:600 10.5px/1 var(--mono);letter-spacing:1.6px;color:var(--mut)">ТВОЙ ПРОФИЛЬ НА БИРЖЕ</div>
+      <div style="display:flex;align-items:flex-end;gap:10px;margin:8px 0 4px"><div style="font-family:var(--disp);font-size:44px;color:#fff;letter-spacing:-1px">4 200</div><div style="font:600 13px var(--ui);color:var(--sub);padding-bottom:8px">живых зрителей</div></div>
+      <div class="verdict" style="background:rgba(16,185,129,.13);margin-top:6px"><span class="vd"></span><span class="vt">Подтверждено · надёжность A</span></div>
+    </div>
+    <div class="flist" style="margin-top:12px">
+      <div class="fcard" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><div class="h" style="margin:0">RedBull</div><div class="d">Энергетики · интеграция в эфире</div></div><div style="text-align:right"><div style="font:600 15px var(--ui);color:var(--ink)">до $1 500</div><div class="d">бюджет</div></div></div>
+      <div class="fcard" style="display:flex;justify-content:space-between;align-items:center;gap:12px"><div><div class="h" style="margin:0">HyperX</div><div class="d">Девайсы · обзор + промокод</div></div><div style="text-align:right"><div style="font:600 15px var(--ui);color:var(--ink)">до $900</div><div class="d">бюджет</div></div></div>
+    </div>
+    <a class="btn btn-ghost" style="margin-top:14px" href="/methodology">Открыть биржу →</a>
+  </section>
+
+  <!-- CONTENT -->
+  <section class="reveal">
+    <div class="eyebrow"><span class="dot"></span><span class="t">КОНТЕНТ ИЗ СТРИМА</span></div>
+    <h2 class="title">Стрим → контент автоматически</h2>
+    <div class="flist" style="margin-top:20px">
+      <div class="fcard"><div class="role">ТРАНСКРИПЦИЯ</div><div class="h">Поиск по тексту стрима</div><div class="d">Полный текст с таймкодами — найди и процитируй любой момент, клик переносит к секунде.</div></div>
+      <div class="fcard"><div class="role">АВТО-КЛИПЫ</div><div class="h">Лучшие моменты → нарезки</div><div class="d">ИИ находит пики чата и всплески эмоций и собирает вертикальные клипы без ручного монтажа.</div></div>
+    </div>
+  </section>
+
+  <!-- PRICING -->
+  <section class="reveal">
+    <div class="eyebrow"><span class="dot"></span><span class="t">ТАРИФЫ</span></div>
+    <h2 class="title">Базовое — бесплатно. Платишь за глубину</h2>
+    <div class="tiers" style="margin-top:20px">
+      <div class="tier"><div class="for">БАЗОВО</div><div class="price">Бесплатно <small>· навсегда</small></div><div class="pd">Подключение канала, оценка реальных зрителей, базовые метрики.</div></div>
+      <div class="tier pop"><div class="badge">ПОПУЛЯРНЫЙ</div><div class="for">PRO</div><div class="price">$9.99<small>/мес</small></div><div class="pd">Куда уходит аудитория, почему уходит, история, движение между каналами и биржа.</div></div>
+    </div>
+    <a class="btn btn-ghost" style="margin-top:14px" href="/methodology">Все тарифы и опции →</a>
+  </section>
+
+  <!-- FINAL -->
+  <div class="final reveal">
+    <div class="eyebrow" style="justify-content:center"><span class="dot"></span><span class="t">ГОТОВ НАЧАТЬ?</span></div>
+    <h2>Узнай, куда уходит твоя аудитория</h2>
+    <div class="btns">
+      <a class="btn btn-primary" href="/methodology">Подключить канал — бесплатно</a>
+      <a class="btn btn-ghost" href="/">Установить расширение</a>
+    </div>
+  </div>
+
+  <footer>
+    <a class="logo" href="/" style="height:24px" aria-label="HimRate"></a>
+    <div class="frow">
+      <a href="/streamers">Стримерам</a>
+      <a href="/brands">Брендам</a>
+      <a href="/viewers">Зрителям</a>
+      <a href="/methodology">Методология и цены</a>
+    </div>
+    <div class="cp">© 2026 HimRate · Аналитика Twitch</div>
+  </footer>
+</div>

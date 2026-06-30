@@ -285,6 +285,9 @@
   /* ---------------- animated dot background ---------------- */
   var __bgInit=false;
   function bg(){
+    /* Desktop layer only — on mobile the responsive mobile .app has its own #bgfx
+       canvas; skip so the body-level #hr-bgfx never double-paints on phones. */
+    if((window.innerWidth||document.documentElement.clientWidth||0) < 1024) return true;
     var root = ROOT_SEL ? $(ROOT_SEL) : null;
     if(!root){ root = $all('body > div[data-pencil-name]')[0] || document.body; }
     var fx=document.getElementById('hr-bgfx');
