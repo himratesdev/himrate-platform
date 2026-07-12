@@ -197,6 +197,19 @@ jobs:
           echo "=== overlap cohort as stored in PG (cross_channel_presences, rolling 24h) ==="
           ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -c "SELECT count(DISTINCT username) AS overlap_users, count(*) AS edges FROM cross_channel_presences;"'
 
+      - name: Temporal co-occurrence by window (2+/3+ channels within 30s/1m/5m/15m)
+        run: |
+          echo "=== are we PERSISTING this? cross_channel_temporal_flags (production signal = 5s / >=3ch) ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -c "SELECT count(*) AS flagged_users, max(refreshed_at) AS last_refresh, round(extract(epoch FROM (now()-max(refreshed_at)))/60.0,1) AS staleness_min FROM cross_channel_temporal_flags;"'
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -c "SELECT bot_flag_tier, bot_type, count(*) FROM cross_channel_temporal_flags GROUP BY 1,2 ORDER BY 3 DESC LIMIT 12;"'
+          echo ""
+          echo "=== users writing in N distinct channels WITHIN a window (24h, two-phase boundary-robust grid) ==="
+          for W in 30 60 300 900; do
+            HALF=$((W/2))
+            printf "window %4ss: " "$W"
+            ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT concat('2+ch=', toString(countIf(mx>=2)), '  3+ch=', toString(countIf(mx>=3)), '  5+ch=', toString(countIf(mx>=5))) FROM (SELECT username, max(ch) AS mx FROM (SELECT username, phase, toStartOfInterval(subtractSeconds(timestamp, phase), INTERVAL ${W} SECOND) AS bucket, uniqExact(channel_login) AS ch FROM himrate_staging.chat_messages ARRAY JOIN [0, ${HALF}] AS phase WHERE msg_type='privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR GROUP BY username, phase, bucket) GROUP BY username) SETTINGS max_bytes_before_external_group_by=4000000000, max_memory_usage=12000000000\""
+          done
+
       - name: TIH count via Rails (correct table name)
         run: |
           echo "=== TIH (TrustIndexHistory) ==="
