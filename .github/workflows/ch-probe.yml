@@ -31,28 +31,18 @@ jobs:
           SSH_CONFIG
           chmod 600 ~/.ssh/config
 
-      - name: Probe ClickHouse
+      - name: Persisted temporal flags (PG)
         run: |
-          LOGIN="${{ inputs.login }}"
-          echo "=== ClickHouse total rows ==="
-          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query 'SELECT count() FROM himrate_staging.chat_messages'"
-          echo ""
-          echo "=== Last 1 hour rows ==="
-          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query 'SELECT count() FROM himrate_staging.chat_messages WHERE timestamp > now() - INTERVAL 1 HOUR'"
-          echo ""
-          echo "=== Distinct channels last hour ==="
-          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query 'SELECT count(DISTINCT channel_id) FROM himrate_staging.chat_messages WHERE timestamp > now() - INTERVAL 1 HOUR'"
-          echo ""
-          echo "=== Sample channel ID for ${LOGIN} ==="
-          CHANNEL_ID=$(ssh hostkey "docker exec himrate-db psql -U himrate -d himrate_staging -tAc \"SELECT id FROM channels WHERE login='${LOGIN}'\"" | tr -d ' \n')
-          echo "channel_id: ${CHANNEL_ID}"
-          echo ""
-          echo "=== Messages for ${LOGIN} (last hour) ==="
-          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT count() FROM himrate_staging.chat_messages WHERE channel_id='${CHANNEL_ID}' AND timestamp > now() - INTERVAL 1 HOUR\""
-          echo ""
-          echo "=== Latest 5 messages for ${LOGIN} ==="
-          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT timestamp, username, substr(text, 1, 50) FROM himrate_staging.chat_messages WHERE channel_id='${CHANNEL_ID}' ORDER BY timestamp DESC LIMIT 5\""
-          echo ""
-          echo "=== Sidekiq queue :chat depth ==="
-          CONTAINER=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
-          ssh hostkey "docker exec ${CONTAINER} bin/rails runner 'require \"sidekiq/api\"; puts \":chat queue = #{Sidekiq::Queue.new(:chat).size} jobs\"' 2>&1 | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof'"
+          echo "=== cross_channel_temporal_flags (production signal 5s / >=3ch) ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -c "SELECT count(*) AS flagged, max(refreshed_at) AS last_refresh, round(extract(epoch FROM (now()-max(refreshed_at)))/60.0,1) AS staleness_min FROM cross_channel_temporal_flags;"'
+
+      - name: Temporal recurrence + per-message breakdown (single SSH, memory-capped multiquery)
+        run: |
+          echo "=== R = # of separate cross-channel events per user (24h, two-phase). once vs 2+ vs 3+ TIMES. + per-msg split ==="
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --format PrettyCompact --max_memory_usage=12000000000 --max_bytes_before_external_group_by=4000000000 --multiquery --query \"
+          SELECT '30s' AS win, countIf(R2>=1) AS two_once, countIf(R2>=2) AS two_2x, countIf(R3>=1) AS three_once, countIf(R3>=2) AS three_2x, countIf(R3>=3) AS three_3x FROM (SELECT username, max(r2) AS R2, max(r3) AS R3 FROM (SELECT username, phase, countIf(ch>=2) AS r2, countIf(ch>=3) AS r3 FROM (SELECT username, phase, toStartOfInterval(subtractSeconds(timestamp,phase), INTERVAL 30 SECOND) AS b, uniqExact(channel_login) AS ch FROM himrate_staging.chat_messages ARRAY JOIN [0,15] AS phase WHERE msg_type='privmsg' AND username!='' AND timestamp>now()-INTERVAL 24 HOUR GROUP BY username,phase,b) GROUP BY username,phase) GROUP BY username);
+          SELECT '60s' AS win, countIf(R2>=1) AS two_once, countIf(R2>=2) AS two_2x, countIf(R3>=1) AS three_once, countIf(R3>=2) AS three_2x, countIf(R3>=3) AS three_3x FROM (SELECT username, max(r2) AS R2, max(r3) AS R3 FROM (SELECT username, phase, countIf(ch>=2) AS r2, countIf(ch>=3) AS r3 FROM (SELECT username, phase, toStartOfInterval(subtractSeconds(timestamp,phase), INTERVAL 60 SECOND) AS b, uniqExact(channel_login) AS ch FROM himrate_staging.chat_messages ARRAY JOIN [0,30] AS phase WHERE msg_type='privmsg' AND username!='' AND timestamp>now()-INTERVAL 24 HOUR GROUP BY username,phase,b) GROUP BY username,phase) GROUP BY username);
+          SELECT '300s' AS win, countIf(R2>=1) AS two_once, countIf(R2>=2) AS two_2x, countIf(R3>=1) AS three_once, countIf(R3>=2) AS three_2x, countIf(R3>=3) AS three_3x FROM (SELECT username, max(r2) AS R2, max(r3) AS R3 FROM (SELECT username, phase, countIf(ch>=2) AS r2, countIf(ch>=3) AS r3 FROM (SELECT username, phase, toStartOfInterval(subtractSeconds(timestamp,phase), INTERVAL 300 SECOND) AS b, uniqExact(channel_login) AS ch FROM himrate_staging.chat_messages ARRAY JOIN [0,150] AS phase WHERE msg_type='privmsg' AND username!='' AND timestamp>now()-INTERVAL 24 HOUR GROUP BY username,phase,b) GROUP BY username,phase) GROUP BY username);
+          SELECT '900s' AS win, countIf(R2>=1) AS two_once, countIf(R2>=2) AS two_2x, countIf(R3>=1) AS three_once, countIf(R3>=2) AS three_2x, countIf(R3>=3) AS three_3x FROM (SELECT username, max(r2) AS R2, max(r3) AS R3 FROM (SELECT username, phase, countIf(ch>=2) AS r2, countIf(ch>=3) AS r3 FROM (SELECT username, phase, toStartOfInterval(subtractSeconds(timestamp,phase), INTERVAL 900 SECOND) AS b, uniqExact(channel_login) AS ch FROM himrate_staging.chat_messages ARRAY JOIN [0,450] AS phase WHERE msg_type='privmsg' AND username!='' AND timestamp>now()-INTERVAL 24 HOUR GROUP BY username,phase,b) GROUP BY username,phase) GROUP BY username);
+          SELECT 'MSG_60s_recurrent_bots' AS k, count() AS bots, sum(total) AS total_msgs, sum(c2) AS msgs_in_2plus, sum(c3) AS msgs_in_3plus, round(100.0*sum(c3)/sum(total),1) AS pct_in_3plus, round(100.0*sum(c2)/sum(total),1) AS pct_in_2plus FROM (SELECT username, sum(msgs) AS total, sumIf(msgs,ch>=2) AS c2, sumIf(msgs,ch>=3) AS c3, countIf(ch>=3) AS R3 FROM (SELECT username, toStartOfInterval(timestamp, INTERVAL 60 SECOND) AS b, uniqExact(channel_login) AS ch, count() AS msgs FROM himrate_staging.chat_messages WHERE msg_type='privmsg' AND username!='' AND timestamp>now()-INTERVAL 24 HOUR GROUP BY username,b) GROUP BY username HAVING R3>=2)
+          \""
