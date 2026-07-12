@@ -179,6 +179,24 @@ jobs:
             FROM cross_channel_presences;
           "'
 
+      - name: User + overlap-cohort stats (action-map universe + 2+ channel/day cohort)
+        run: |
+          echo "=== distinct chatters = users whose action-map we track ==="
+          echo "--- last 24h (daily active tracked users) ---"
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT uniqExact(username) FROM himrate_staging.chat_messages WHERE msg_type='privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR\""
+          echo "--- last 7 days ---"
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT uniqExact(username) FROM himrate_staging.chat_messages WHERE msg_type='privmsg' AND username != '' AND timestamp > now() - INTERVAL 7 DAY\""
+          echo "--- ALL-TIME distinct chatters (total tracked universe) ---"
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT uniqExact(username) FROM himrate_staging.chat_messages WHERE msg_type='privmsg' AND username != ''\""
+          echo ""
+          echo "=== cohort: users writing in 2+ DISTINCT channels in 24h (overlap) — direct from CH ==="
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT count() FROM (SELECT username FROM himrate_staging.chat_messages WHERE msg_type='privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR GROUP BY username HAVING uniqExact(channel_login) >= 2)\""
+          echo "--- distribution: how many in exactly 2, 3-5, 6-10, 11-30, 30+ channels (24h) ---"
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT multiIf(c=1,'1',c=2,'2',c<=5,'3-5',c<=10,'6-10',c<=30,'11-30','30+') AS band, count() AS users FROM (SELECT username, uniqExact(channel_login) AS c FROM himrate_staging.chat_messages WHERE msg_type='privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR GROUP BY username) GROUP BY band ORDER BY band\""
+          echo ""
+          echo "=== overlap cohort as stored in PG (cross_channel_presences, rolling 24h) ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -c "SELECT count(DISTINCT username) AS overlap_users, count(*) AS edges FROM cross_channel_presences;"'
+
       - name: TIH count via Rails (correct table name)
         run: |
           echo "=== TIH (TrustIndexHistory) ==="
