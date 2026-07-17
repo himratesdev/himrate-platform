@@ -46,6 +46,10 @@ Rails.application.routes.draw do
       post "auth/refresh", to: "auth#refresh"
       delete "auth/logout", to: "auth#logout"
 
+      # LK-BACKEND Wave 1a — SaaS ЛК shell (auth optional): visibility gate + launch-notify.
+      get "lk/status", to: "lk#status"
+      post "lk/notify", to: "lk#notify"
+
       # TASK-031: User profile
       get "user/me", to: "users#me"
       patch "user/me", to: "users#update"
