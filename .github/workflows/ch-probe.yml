@@ -52,9 +52,9 @@ jobs:
               WHERE msg_type='privmsg' AND username!='' AND timestamp > now()-INTERVAL 24 HOUR
               GROUP BY channel_login
               HAVING bot_chatters >= 5
-              ORDER BY bot_pct DESC
-              LIMIT 30
             )
+            ORDER BY bot_pct DESC
+            LIMIT 30
             SETTINGS max_bytes_before_external_group_by=4000000000, max_memory_usage=12000000000
           SQL
           rows = Clickhouse.client.select(sql)
