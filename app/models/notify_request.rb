@@ -11,6 +11,7 @@ class NotifyRequest < ApplicationRecord
   normalizes :email, with: ->(value) { value.to_s.strip.downcase }
 
   validates :email, presence: true,
+                    length: { maximum: 255 },
                     format: { with: URI::MailTo::EMAIL_REGEXP },
                     uniqueness: { case_sensitive: false }
   validates :source, inclusion: { in: SOURCES }
@@ -19,10 +20,18 @@ class NotifyRequest < ApplicationRecord
 
   # Idempotent capture: one row per normalized email. Re-submitting the same address is a no-op
   # (keeps the first user/source). Returns the persisted record.
+  #
+  # Race-safe on this public, unauthenticated endpoint (BUG-012 class): find_by short-circuits the
+  # common sequential re-submit; a genuine concurrent duplicate loses at either the DB unique index
+  # (RecordNotUnique) or the uniqueness validation seeing the just-committed row (RecordInvalid
+  # :taken) — both mean "already exists", so we re-find. A real format/length failure re-raises so
+  # the controller returns 422 rather than swallowing it.
   def self.capture(email:, user: nil)
-    record = find_or_initialize_by(email: email.to_s.strip.downcase)
-    record.user ||= user
-    record.save!
-    record
+    normalized = email.to_s.strip.downcase
+    find_by(email: normalized) || create!(email: normalized, user: user)
+  rescue ActiveRecord::RecordNotUnique, ActiveRecord::RecordInvalid => e
+    raise if e.is_a?(ActiveRecord::RecordInvalid) && !e.record.errors.of_kind?(:email, :taken)
+
+    find_by!(email: normalized)
   end
 end

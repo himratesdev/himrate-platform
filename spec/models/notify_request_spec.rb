@@ -23,6 +23,11 @@ RSpec.describe NotifyRequest, type: :model do
     expect(described_class.new(email: "nope")).not_to be_valid
   end
 
+  it "rejects an email over 255 characters (DB column limit)" do
+    long = "#{"a" * 250}@example.com"
+    expect(described_class.new(email: long)).not_to be_valid
+  end
+
   it "rejects an unknown source" do
     expect(described_class.new(email: "a@b.com", source: "spam")).not_to be_valid
   end
@@ -40,6 +45,12 @@ RSpec.describe NotifyRequest, type: :model do
       described_class.capture(email: "a@b.com", user: user)
       described_class.capture(email: "a@b.com", user: nil)
       expect(described_class.find_by(email: "a@b.com").user).to eq(user)
+    end
+
+    it "returns the existing row on a pre-existing email without raising (conflict branch)" do
+      described_class.create!(email: "dup@example.com")
+      expect { described_class.capture(email: "DUP@example.com") }
+        .not_to change(described_class, :count)
     end
   end
 end
