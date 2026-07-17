@@ -163,10 +163,12 @@ module FlipperDefaults
     cross_channel_edges: "T1-057", # CrossChannelIntelligenceWorker edge-ledger section → cross_channel
     # _presences (audience-overlap graph data source). OFF by default — enable per-env after DSV
     # confirms the edge query populates sensible rows. Independent of digest/temporal.
-    temporal_cross_channel: "T1-057" # CrossChannelIntelligenceWorker temporal bot section +
+    temporal_cross_channel: "T1-057", # CrossChannelIntelligenceWorker temporal bot section +
     # ContextBuilder read + TemporalCrossChannel TI signal. OFF by default — zero TI impact while OFF
     # (ContextBuilder returns {} → signal insufficient → excluded from the weighted score). Enable
     # per-env after the worker has populated cross_channel_temporal_flags and weighting is calibrated.
+    saas_lk_live: "LK-BACKEND" # SaaS ЛК visibility gate (screen 71 flag-off). OFF by default —
+    # enable per-env when the personal cabinet launches. GET /api/v1/lk/status reads it per-user actor.
   }.freeze
 end
 
