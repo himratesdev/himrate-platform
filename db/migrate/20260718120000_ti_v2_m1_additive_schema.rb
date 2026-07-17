@@ -86,7 +86,7 @@ class TiV2M1AdditiveSchema < ActiveRecord::Migration[8.0]
     # ── named_bot_evidence: immutable dispute-safe P5 evidence (SRS §5.1, EC-13, DEC-9) ──
     # Written only on C_hard=true; reproducible on a 40-day dispute (raw may rotate / GATE 0 may
     # recalibrate τ_hard). Retention = dispute window (FK score_dispute_id, N-3).
-    create_table :named_bot_evidence, id: :uuid, if_not_exists: true do |t|
+    create_table :named_bot_evidences, id: :uuid, if_not_exists: true do |t|
       t.references :stream, type: :uuid, null: false, foreign_key: true, index: false
       t.string :username, null: false
       t.decimal :p_u, precision: 5, scale: 4, null: false       # per-identity bot posterior at flag time
@@ -94,12 +94,12 @@ class TiV2M1AdditiveSchema < ActiveRecord::Migration[8.0]
       t.references :score_dispute, type: :uuid, foreign_key: true, index: false # dispute-grace retention
       t.datetime :calculated_at, null: false
     end
-    add_index :named_bot_evidence, %i[stream_id username], unique: true,
+    add_index :named_bot_evidences, %i[stream_id username], unique: true,
       name: "idx_named_bot_evidence_stream_user", algorithm: :concurrently, if_not_exists: true
   end
 
   def down
-    drop_table :named_bot_evidence, if_exists: true
+    drop_table :named_bot_evidences, if_exists: true
     drop_table :calibration_cell_baselines, if_exists: true
     drop_table :calibration_constants, if_exists: true
 
