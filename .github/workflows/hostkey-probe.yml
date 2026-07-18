@@ -153,6 +153,18 @@ jobs:
             grep swapfile /etc/fstab || echo "(fstab entry missing!)"
           '
 
+      - name: PG recovery diagnostic (crash-loop root cause — read-only)
+        if: always()
+        run: |
+          echo "=== himrate-db status / restart count / last exit / OOM flag ==="
+          ssh hostkey 'docker inspect himrate-db --format "State={{.State.Status}} Restarts={{.RestartCount}} ExitCode={{.State.ExitCode}} OOMKilled={{.State.OOMKilled}} Error={{.State.Error}} StartedAt={{.State.StartedAt}}"' || true
+          echo ""
+          echo "=== docker logs himrate-db --tail 90 (PG startup / recovery / PANIC reason) ==="
+          ssh hostkey 'docker logs himrate-db --tail 90 2>&1' || true
+          echo ""
+          echo "=== disk free (WAL replay / write needs space) ==="
+          ssh hostkey 'df -h / /var/lib/docker 2>/dev/null | tail -4' || true
+
       - name: PG counts
         run: |
           echo "=== DB row counts ==="
