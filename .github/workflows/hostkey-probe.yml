@@ -174,6 +174,18 @@ jobs:
           echo "=== top disk hogs on / ==="
           ssh hostkey 'du -sh /var/* /opt 2>/dev/null | sort -rh | head -10' || true
 
+      - name: Storage breakdown (CH table sizes + bind mounts + /root)
+        if: always()
+        run: |
+          echo "=== ClickHouse table sizes (system.parts — instant, no du) ==="
+          ssh hostkey 'docker exec himrate-clickhouse clickhouse-client --query "SELECT table, formatReadableSize(sum(bytes_on_disk)) AS disk, sum(rows) AS rows, min(min_date) AS oldest, max(max_date) AS newest FROM system.parts WHERE active GROUP BY table ORDER BY sum(bytes_on_disk) DESC LIMIT 15" 2>&1' || true
+          echo "=== CH total on-disk ==="
+          ssh hostkey 'docker exec himrate-clickhouse clickhouse-client --query "SELECT formatReadableSize(sum(bytes_on_disk)) FROM system.parts WHERE active" 2>&1' || true
+          echo "=== bind-mount sources (clickhouse + db) ==="
+          ssh hostkey 'docker inspect himrate-clickhouse himrate-db --format "{{.Name}}:{{range .Mounts}} {{.Source}}->{{.Destination}}({{.Type}});{{end}}" 2>&1' || true
+          echo "=== /root top-level dirs (bounded) ==="
+          ssh hostkey 'ls -la /root 2>/dev/null; echo "--- du /root/* ---"; timeout 90 du -shx /root/* 2>/dev/null | sort -rh | head -12' || true
+
       - name: PG counts
         run: |
           echo "=== DB row counts ==="
