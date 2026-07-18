@@ -110,10 +110,13 @@ class TiV2M1AdditiveSchema < ActiveRecord::Migration[8.0]
     add_index :calibration_cell_baselines, %i[category v_bucket chat_mode language], unique: true,
       name: "idx_calibration_cell_baselines_key", if_not_exists: true
 
-    # ── named_bot_evidence: immutable dispute-safe P5 evidence (SRS §5.1, FR-009, EC-13, AC-6) ──
+    # ── named_bot_evidence: immutable dispute-safe P5 evidence (ADR DEC-5 / SRS §5.1, FR-009, EC-13, AC-6) ──
     # Written only on C_hard. Linked to its emitting snapshot (trust_index_history_id) so a 40-day
     # dispute is reproducible even after raw rotates / GATE 0 recalibrates τ_hard. stream_id nullable
-    # (live-aggregate evidence has no per-broadcast stream). Retention ≥ Rolling Window.
+    # (live-aggregate evidence has no per-broadcast stream). Retention = Rolling Window (30/90) +
+    # dispute-grace (N-3): a dispute filed near the 90-day edge could rotate evidence out mid-dispute,
+    # so rows tied to an open score_dispute (FK score_dispute_id) are retention-exempt until it closes
+    # (TASK-133 cleanup excludes `WHERE score_dispute_id IS NOT NULL AND dispute.status = open`).
     create_table :named_bot_evidences, id: :uuid, if_not_exists: true do |t|
       t.references :channel, type: :uuid, null: false, foreign_key: true, index: false
       t.references :stream, type: :uuid, null: true, foreign_key: true, index: false
@@ -121,12 +124,15 @@ class TiV2M1AdditiveSchema < ActiveRecord::Migration[8.0]
       t.string :username, null: false, limit: 64                 # public Twitch login (∈ B_hard∩chatters)
       t.decimal :p_u, precision: 5, scale: 4, null: false        # per-identity posterior at flag time
       t.string :evidence_reason, null: false, limit: 48          # temporal_cross_channel / known_bot / per_user_scorer
-      t.datetime :calculated_at, null: false
+      t.datetime :calculated_at, null: false, default: -> { "now()" }
+      t.references :score_dispute, type: :uuid, null: true, foreign_key: true, index: false # retention-exempt while dispute open (N-3)
     end
     add_index :named_bot_evidences, %i[channel_id calculated_at],
       name: "idx_named_bot_evidence_channel_time", if_not_exists: true
     add_index :named_bot_evidences, :trust_index_history_id,
       name: "idx_named_bot_evidence_tih", if_not_exists: true
+    add_index :named_bot_evidences, :score_dispute_id,
+      name: "idx_named_bot_evidence_dispute", if_not_exists: true
   end
 
   def down

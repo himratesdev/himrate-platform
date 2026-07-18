@@ -6,13 +6,16 @@
 # (`trust_index_history_id`), so a 40-day-old Score Correction dispute is reproducible even after the
 # raw chat rotates or GATE 0 recalibrates τ_hard (recompute-from-raw is not bit-identical). The
 # plashka MUST NOT render without backing rows (EC-13 assertion). `stream_id` is nullable — a
-# live-aggregate flag has no single per-broadcast stream. Retention ≥ Rolling Window (covers the
-# dispute window). Exposed ONLY to Brand-tier (paid) via `confirmed_anomaly.provenance.accounts[]`.
+# live-aggregate flag has no single per-broadcast stream. Retention = Rolling Window (30/90) +
+# dispute-grace: a row tied to an open score_dispute is retention-exempt until it closes (N-3), so a
+# dispute filed near the 90-day edge can't rotate the evidence out mid-dispute. Exposed ONLY to
+# Brand-tier (paid) via `confirmed_anomaly.provenance.accounts[]`.
 # Append-only — never mutated; never logged to plain app-logs (§10.3).
 class NamedBotEvidence < ApplicationRecord
   belongs_to :channel
   belongs_to :stream, optional: true
   belongs_to :trust_index_history
+  belongs_to :score_dispute, optional: true # set on dispute-filing → retention-exempt until closed (N-3)
 
   validates :username, presence: true
   validates :p_u, presence: true, numericality: { in: 0..1 }

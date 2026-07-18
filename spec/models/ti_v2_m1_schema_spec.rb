@@ -50,6 +50,15 @@ RSpec.describe "TI v2 M1 additive schema", type: :model do
                               %i[category v_bucket chat_mode language], unique: true)).to be(true)
   end
 
+  it "named_bot_evidences carries the ADR DEC-5 FK columns incl. dispute-grace score_dispute_id" do
+    by_name = conn.columns(:named_bot_evidences).index_by(&:name)
+    expect(by_name["channel_id"].null).to be(false)               # NOT NULL FK
+    expect(by_name["trust_index_history_id"].null).to be(false)   # snapshot linkage NOT NULL
+    expect(by_name["stream_id"].null).to be(true)                 # nullable (live aggregate)
+    expect(by_name).to have_key("score_dispute_id")               # retention-exempt (N-3)
+    expect(conn.index_exists?(:named_bot_evidences, :score_dispute_id)).to be(true)
+  end
+
   it "adds the PARTIAL v2 backfill-progress index (WHERE engine_version='v2')" do
     idx = conn.indexes(:trust_index_histories).find { |i| i.name == "idx_tih_v2_backfill_progress" }
     expect(idx).to be_present
