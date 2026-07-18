@@ -16,6 +16,11 @@ on:
         required: false
         type: boolean
         default: false
+      truncate_ch_syslogs:
+        description: 'TRUNCATE ClickHouse system-log tables (text_log/processors_profile_log/query_log/trace_log/…) — frees the ~139 GiB that filled the disk on 2026-07-18. Safe: CH internal diagnostics, NOT product data (chat_messages/MVs untouched).'
+        required: false
+        type: boolean
+        default: false
 
 jobs:
   probe:
@@ -36,6 +41,23 @@ jobs:
             ConnectTimeout 30
           SSH_CONFIG
           chmod 600 ~/.ssh/config
+
+      - name: TRUNCATE ClickHouse system-log tables (gated — frees ~139 GiB, BUG-DISK-FULL 2026-07-18)
+        if: ${{ inputs.truncate_ch_syslogs }}
+        run: |
+          echo "=== BEFORE ==="; ssh hostkey 'df -h / | tail -1'
+          echo "=== TRUNCATE CH system-log tables (internal diagnostics — chat_messages/MVs untouched) ==="
+          ssh hostkey 'docker exec himrate-clickhouse clickhouse-client --multiquery --query "
+            TRUNCATE TABLE IF EXISTS system.text_log;
+            TRUNCATE TABLE IF EXISTS system.processors_profile_log;
+            TRUNCATE TABLE IF EXISTS system.query_log;
+            TRUNCATE TABLE IF EXISTS system.trace_log;
+            TRUNCATE TABLE IF EXISTS system.metric_log;
+            TRUNCATE TABLE IF EXISTS system.asynchronous_metric_log;
+            TRUNCATE TABLE IF EXISTS system.part_log;
+            TRUNCATE TABLE IF EXISTS system.query_views_log;
+          " 2>&1' || true
+          echo "=== AFTER ==="; ssh hostkey 'df -h / | tail -1'
 
       - name: VPS load + memory + disk
         run: |
