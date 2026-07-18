@@ -1,0 +1,52 @@
+name: disk-cleanup
+
+# Reclaim disk on the HOSTKEY VPS via CI runner SSH. Root cause 2026-07-18: root fs hit 100%
+# (228/236G) → PG "No space left on device" on postmaster.pid → crash-loop → staging down.
+# SAFE: prunes unused images + build cache + stopped containers only. NEVER --volumes (would delete
+# PG/CH data). Then restarts himrate-db so PG retries with free space.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Disk BEFORE + what uses it
+        run: |
+          echo "=== df BEFORE ==="; ssh hostkey "df -h /" || true
+          echo "=== docker system df ==="; ssh hostkey "docker system df" || true
+          echo "=== top dirs in / (du) ==="; ssh hostkey "du -xh --max-depth=1 / 2>/dev/null | sort -rh | head -12" || true
+
+      - name: Prune unused docker images + build cache + stopped containers (SAFE — no volumes)
+        run: |
+          echo "=== docker container prune (stopped) ==="; ssh hostkey "docker container prune -f" || true
+          echo "=== docker image prune -a (unused images) ==="; ssh hostkey "docker image prune -a -f" || true
+          echo "=== docker builder prune -a (build cache) ==="; ssh hostkey "docker builder prune -a -f" || true
+
+      - name: Disk AFTER
+        run: |
+          echo "=== df AFTER ==="; ssh hostkey "df -h /" || true
+
+      - name: Restart himrate-db + verify PG
+        run: |
+          echo "=== restart himrate-db ==="; ssh hostkey "docker restart himrate-db" || true
+          sleep 20
+          echo "=== himrate-db status ==="; ssh hostkey "docker ps --filter name=himrate-db --format '{{.Names}} {{.Status}}'" || true
+          echo "=== pg_isready ==="; ssh hostkey "docker exec himrate-db pg_isready 2>&1" || true
