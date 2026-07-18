@@ -24,12 +24,13 @@ module Brand
 
     private
 
-    # Distinct chatter-username set per channel (within the selected set only).
+    # Distinct chatter-username set per channel (within the selected set only). source: "live" keeps
+    # the "chat_presence" basis honest — excludes future VOD-backfill edges (T1-058) that would
+    # otherwise silently blend into live-stream chatters without a label distinction (CR nit-2).
     def channel_sets(channel_ids)
       sets = channel_ids.index_with { Set.new }
-      CrossChannelPresence.where(channel_id: channel_ids).distinct.pluck(:channel_id, :username).each do |cid, user|
-        sets[cid] << user
-      end
+      CrossChannelPresence.where(channel_id: channel_ids, source: "live").distinct
+                          .pluck(:channel_id, :username).each { |cid, user| sets[cid] << user }
       sets
     end
 
