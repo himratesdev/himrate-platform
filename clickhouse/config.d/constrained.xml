@@ -38,4 +38,23 @@
         <log remove="remove"/>
         <errorlog remove="remove"/>
     </logger>
+
+    <!-- ═══ System-log table retention (BUG-DISK-FULL, incident 2026-07-18) ═══
+         CH's built-in observability tables are unbounded MergeTree by default. With no TTL they
+         grew to ~139 GiB since the 2026-06-12 HOSTKEY migration (text_log 67 GiB +
+         processors_profile_log 47 GiB + query_log 19 GiB + trace_log 4.6 GiB) and filled the
+         236 GiB disk → Postgres could not write postmaster.pid ("No space left on device") →
+         crash-loop → staging down ~6h. Our actual data (chat_messages 18 GiB, MVs ~1 GiB) was tiny.
+         The <logger> block above disables CH's FILE logs, but those are the system LOG TABLES —
+         a separate MergeTree store. We do not profile CH internals, so: disable the two largest
+         pure-noise tables outright, and cap the rest at a short TTL. Applies to newly-created
+         tables on CH restart; the existing 139 GiB was TRUNCATEd during incident remediation. -->
+    <text_log remove="remove"/>              <!-- was 67 GiB — CH-internal text log, never queried -->
+    <processors_profile_log remove="remove"/> <!-- was 47 GiB — query-processor profiling, never queried -->
+    <query_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></query_log>
+    <trace_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></trace_log>
+    <metric_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></metric_log>
+    <asynchronous_metric_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></asynchronous_metric_log>
+    <part_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></part_log>
+    <query_views_log><ttl>event_date + INTERVAL 3 DAY DELETE</ttl></query_views_log>
 </clickhouse>
