@@ -7,6 +7,7 @@ class User < ApplicationRecord
   has_many :tracked_channels, dependent: :destroy
   has_many :channels, through: :tracked_channels
   has_many :watchlists, dependent: :destroy
+  has_many :recent_channels, dependent: :destroy
   has_many :sessions, dependent: :destroy
   has_many :notifications, dependent: :destroy
   has_many :score_disputes, dependent: :destroy
