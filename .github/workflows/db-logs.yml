@@ -1,0 +1,43 @@
+name: db-logs
+
+# Ad-hoc: dump himrate-db (PostgreSQL) container crash logs + state via CI runner SSH.
+# Trigger via `gh workflow run db-logs.yml`. Read-only diagnostics for the PG crash-loop incident
+# (2026-07-18): PG exits 1 on startup even on a freshly-rebooted idle host → data/WAL-level failure.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  db-logs:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: PG container state (exit code / restart count / OOM)
+        run: |
+          echo "=== docker inspect himrate-db .State ==="
+          ssh hostkey "docker inspect himrate-db --format '{{json .State}}' 2>&1" || true
+
+      - name: PG container logs (why exit 1)
+        run: |
+          echo "=== docker logs himrate-db --tail 120 ==="
+          ssh hostkey "docker logs himrate-db --tail 120 2>&1 | tail -90" || true
+
+      - name: Disk + PG data dir + host mem
+        run: |
+          echo "=== disk / mem ==="
+          ssh hostkey "df -h /; echo '--- inodes ---'; df -i / | tail -1; echo '--- mem ---'; free -m | head -2" || true
