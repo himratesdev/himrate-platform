@@ -145,6 +145,10 @@ Rails.application.routes.draw do
         get "analytics/cold_start/state", to: "analytics/cold_start#state"
         post "analytics/cold_start/subs_payload", to: "analytics/cold_start#subs_payload"
         post "analytics/cold_start/retry", to: "analytics/cold_start#retry_source"
+        # LK-BACKEND Wave 1b (screen 01 Home): recent-opened channels + live-from-watchlists.
+        get "home/recent_channels", to: "home#recent"
+        post "home/recent_channels", to: "home#track_recent"
+        get "home/live_channels", to: "home#live_channels"
       end
       # BE-5 M13 minimal soft-delete (PO directive 2026-05-28) — out-of-namespace для чистого DELETE /me
       delete "me", to: "me/privacy#destroy_account"
