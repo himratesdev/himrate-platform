@@ -164,6 +164,15 @@ jobs:
           echo ""
           echo "=== disk free (WAL replay / write needs space) ==="
           ssh hostkey 'df -h / /var/lib/docker 2>/dev/null | tail -4' || true
+          echo ""
+          echo "=== DISK-FULL culprit — top /var/lib/docker consumers ==="
+          ssh hostkey 'du -sh /var/lib/docker/* 2>/dev/null | sort -rh | head -8' || true
+          echo "=== docker system df ==="
+          ssh hostkey 'docker system df 2>/dev/null' || true
+          echo "=== biggest container json-file logs (crash-loop spam) ==="
+          ssh hostkey 'du -sh /var/lib/docker/containers/*/*-json.log 2>/dev/null | sort -rh | head -8' || true
+          echo "=== top disk hogs on / ==="
+          ssh hostkey 'du -sh /var/* /opt 2>/dev/null | sort -rh | head -10' || true
 
       - name: PG counts
         run: |
