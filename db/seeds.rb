@@ -151,3 +151,33 @@ if defined?(SignalConfiguration)
                                              param_name: %w[baseline_min baseline_max]).count
   puts "Seed complete: #{baseline_count} chatter_ccv_ratio baselines (PG W-2)"
 end
+
+# T1-074 (TI v2) — illustrative calibration constants (SRS §5.3 step 1 / FR-016). Seeded HERE (not
+# in the migration) per CLAUDE.md "Нет данных в миграциях", matching the PG W-2 pattern above.
+# find_or_create_by! is idempotent AND non-clobbering: once GATE 0 (`Calibration::IngestHoldoutJob`)
+# rewrites a value with source='gate0_holdout'/calibrated=true, a re-seed leaves it untouched (the
+# block only runs on create). Global scalars only — per-cell ρ* baselines are seeded by the backfill
+# worker (DEC-4 step 3), not here. Values ILLUSTRATIVE until GATE 0.
+if defined?(CalibrationConstant)
+  illustrative_constants = {
+    "phi_yellow" => 0.10, "phi_red" => 0.35,              # named-fraction label thresholds (§D band table)
+    "q_mid" => 0.50, "q_hi" => 0.80,                      # chatter-quality green-gate cutpoints
+    "tau_hard" => 0.90, "tau_delta" => 0.05,              # per-identity hard-bot posterior threshold + margin
+    "pi0" => 0.02,                                        # base-rate prior π0 (L0 log-odds)
+    "f_self_yellow" => 0.10, "f_self_red" => 0.35,        # self-history inflation-event thresholds (L3 F_self)
+    "z_star" => 1.645, "g_star" => 0.50,                  # interval z* (P95) + shrinkage floor
+    "llr_temporal_r2" => 1.10, "llr_temporal_r3" => 2.20, # cross-channel temporal-recurrence LLRs
+    "llr_temporal_r4" => 2.90, "llr_temporal_r7" => 4.60,
+    "llr_per_user_bot_score" => 3.90,                     # per-user scorer=1.0 LLR
+    "llr_known_bot" => 3.40                               # known-bot denylist LLR
+  }
+  illustrative_constants.each do |k, v|
+    CalibrationConstant.find_or_create_by!(key: k) do |c|
+      c.value = v
+      c.source = "illustrative"
+      c.calibrated = false
+    end
+  end
+  puts "Seed complete: #{CalibrationConstant.where(source: 'illustrative').count} illustrative " \
+       "calibration constants (T1-074 TI v2)"
+end

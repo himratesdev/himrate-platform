@@ -2,28 +2,28 @@
 
 require "rails_helper"
 
-# T1-074 (TI v2) — CalibrationConstant: configurable engine thresholds (illustrative until GATE 0).
+# T1-074 (TI v2) — CalibrationConstant: flat configurable engine thresholds (illustrative until GATE 0).
 RSpec.describe CalibrationConstant do
-  it "validates presence + uniqueness of param_name scoped to category, and numeric value" do
-    CalibrationConstant.create!(param_name: "phi_yellow", category: "default", param_value: 0.10)
-    dup = CalibrationConstant.new(param_name: "phi_yellow", category: "default", param_value: 0.11)
-    expect(dup).not_to be_valid
-    # same name, different category = allowed
-    expect(CalibrationConstant.new(param_name: "phi_yellow", category: "esports", param_value: 0.08)).to be_valid
-    expect(CalibrationConstant.new(param_name: "phi_yellow", category: "x", param_value: "nope")).not_to be_valid
+  it "validates presence + uniqueness of key, numeric value, and presence of source" do
+    CalibrationConstant.create!(key: "phi_yellow", value: 0.10)
+    expect(CalibrationConstant.new(key: "phi_yellow", value: 0.11)).not_to be_valid # dup key
+    expect(CalibrationConstant.new(key: "phi_red", value: "nope")).not_to be_valid   # non-numeric
+    expect(CalibrationConstant.new(value: 0.1)).not_to be_valid                       # missing key
+  end
+
+  it "defaults source to 'illustrative' and calibrated to false (pre-GATE 0)" do
+    c = CalibrationConstant.create!(key: "tau_hard", value: 0.9)
+    expect(c.source).to eq("illustrative")
+    expect(c.calibrated).to be(false)
   end
 
   describe ".value_for" do
-    before do
-      CalibrationConstant.create!(param_name: "phi_red", category: "default", param_value: 0.35)
-      CalibrationConstant.create!(param_name: "phi_red", category: "esports", param_value: 0.50)
-    end
+    before { CalibrationConstant.create!(key: "phi_red", value: 0.35) }
 
-    it "prefers the exact category, falls back to default, then to the supplied fallback" do
-      expect(CalibrationConstant.value_for("phi_red", category: "esports")).to eq(0.50)
-      expect(CalibrationConstant.value_for("phi_red", category: "music")).to eq(0.35)         # → default
-      expect(CalibrationConstant.value_for("tau_hard", category: "x", fallback: 0.99)).to eq(0.99) # missing → fallback
-      expect(CalibrationConstant.value_for("tau_hard")).to be_nil                             # missing, no fallback
+    it "returns the value by key, else the supplied fallback, else nil" do
+      expect(CalibrationConstant.value_for("phi_red")).to eq(0.35)
+      expect(CalibrationConstant.value_for("q_mid", fallback: 0.5)).to eq(0.5)
+      expect(CalibrationConstant.value_for("q_mid")).to be_nil
     end
   end
 end
