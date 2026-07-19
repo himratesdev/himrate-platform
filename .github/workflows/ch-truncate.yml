@@ -35,6 +35,20 @@ jobs:
           echo "=== top CH tables by disk ==="
           ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT database, table, formatReadableSize(sum(bytes_on_disk)) sz FROM system.parts WHERE active GROUP BY database, table ORDER BY sum(bytes_on_disk) DESC LIMIT 12\" 2>&1" || true
 
+      - name: Free host room first (docker json-logs + journald) — NON-DATA, unblocks CH TRUNCATE
+        run: |
+          # Disk is at 0 bytes free → CH can't reserve even 1 MiB to run TRUNCATE (Code 243
+          # NOT_ENOUGH_SPACE). Reclaim a few GB from container stderr logs + journald (pure logs,
+          # zero DB/app data) so CH has room to self-truncate. A day of PG/CH crash-loop produced
+          # large *-json.log files.
+          echo "=== container json-log sizes (top) ==="
+          ssh hostkey "du -sh /var/lib/docker/containers/*/*-json.log 2>/dev/null | sort -rh | head -8" || true
+          echo "=== truncate all container json-logs (stderr only, safe) ==="
+          ssh hostkey "find /var/lib/docker/containers -name '*-json.log' -exec truncate -s 0 {} + 2>&1" || true
+          echo "=== journald vacuum to 200M ==="
+          ssh hostkey "journalctl --vacuum-size=200M 2>&1 | tail -2" || true
+          echo "=== df after log cleanup ==="; ssh hostkey "df -h /" || true
+
       - name: TRUNCATE CH system-log tables (force_drop bypasses max_table_size_to_drop 50G guard)
         run: |
           for t in text_log processors_profile_log query_log query_thread_log trace_log metric_log \
