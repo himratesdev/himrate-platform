@@ -146,7 +146,7 @@ RSpec.describe TrustIndex::ContextBuilder do
       allow(KnownBotService).to receive(:new).and_return(fake_known)
       flagged = { "megabot" => { bot_type: "spam", event_count: 9 } }
       chatters = %w[megabot] + Array.new(20) { |i| "h#{i}" }
-      c = described_class.build_v2(stream, ctx_hash(chatters: chatters, ccv: 500))
+      c = described_class.build_v2(stream, ctx_hash(chatters: chatters, flagged: flagged, ccv: 500))
 
       # Wiring proven at the Context level (deterministic, no engine).
       megabot = c.raw_chatters.find { |ch| ch.username == "megabot" }
