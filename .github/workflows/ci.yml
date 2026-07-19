@@ -126,7 +126,10 @@ jobs:
   # === Deploy to Staging — on merge to main ===
   deploy-staging:
     needs: [lint, security, test]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Also deploy on manual workflow_dispatch — GitHub sometimes drops the push-triggered run for a
+    # squash merge (2026-07-19: #355/#356 landed on main with no CI/CD run), leaving main HEAD
+    # undeployed. `gh workflow run ci.yml --ref main` then force-deploys main HEAD without a hack.
+    if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     # BUG-251.17b: 15m was too tight once deploy_timeout went to 120s (BUG-251.17; now 240s — deploy-fix). Under live VPS
     # load each role's boot can take several minutes, and kamal rolls every role (web/irc/job/
