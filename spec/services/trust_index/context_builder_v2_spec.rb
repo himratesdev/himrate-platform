@@ -42,15 +42,17 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(c.reputation).to eq({ band: "stable", tier: "full", stream_count: 20 })
     end
 
-    it "wires temporal_recurrence R from spam-tier flags only (utility allowlist excluded)" do
+    it "wires temporal_recurrence R for fraud tiers (spam AND unknown); only the utility allowlist is excluded" do
       flagged = {
         "botspam" => { bot_flag_tier: "confirmed", bot_type: "spam", event_count: 9, max_concurrent_channels: 12 },
+        "unknownbot" => { bot_flag_tier: "flag", bot_type: "unknown", event_count: 4, max_concurrent_channels: 6 },
         "utilitybot" => { bot_flag_tier: "flag", bot_type: "utility", event_count: 5, max_concurrent_channels: 8 }
       }
-      c = described_class.build_v2(stream, ctx_hash(chatters: %w[botspam utilitybot clean], flagged: flagged))
+      c = described_class.build_v2(stream, ctx_hash(chatters: %w[botspam unknownbot utilitybot clean], flagged: flagged))
       chatters = by_name(c)
       expect(chatters["botspam"].temporal_recurrence).to eq(9)
-      expect(chatters["utilitybot"].temporal_recurrence).to be_nil # utility ≠ fraud
+      expect(chatters["unknownbot"].temporal_recurrence).to eq(4)   # unknown = fraud (mirrors v1/model, CR should-fix #1)
+      expect(chatters["utilitybot"].temporal_recurrence).to be_nil  # utility allowlist ≠ fraud
       expect(chatters["clean"].temporal_recurrence).to be_nil
     end
 

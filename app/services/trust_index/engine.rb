@@ -19,8 +19,10 @@ module TrustIndex
     Result = Data.define(:ti_score, :classification, :erv, :cold_start, :signal_breakdown,
                          :confidence) do
       # DEC-7 MF-1 — symmetric publish adapter so SignalComputeWorker#publish_update stays
-      # engine-agnostic (reads neither v1 nor v2 fields directly). Returns the CURRENT legacy
-      # headline shape (unchanged wire contract) — the extension keeps working during shadow.
+      # engine-agnostic (reads neither v1 nor v2 fields directly). Returns the legacy headline shape
+      # PLUS an additive `engine_version` discriminator (no key removed/renamed → values identical, so
+      # the extension keeps working during shadow); the discriminator only lets a consumer tell the
+      # engines apart at cutover.
       def engine_version
         "v1"
       end
@@ -222,9 +224,10 @@ module TrustIndex
         cold_start_status: cold_start[:status],
         erv_percent: erv[:erv_percent],
         ccv: ccv,
-        # MF-4 (ADR DEC-7) — MUST be explicit. The M1 column default is 'v2'; without this a v1 row
-        # masquerades as v2 and poisons both the shadow-diff and the Reputation basis filter
-        # (WHERE engine_version='v2'). This is a data-integrity guard, not cosmetic.
+        # MF-4 (ADR DEC-7) — write engine_version explicitly. The M1 column default is ALREADY 'v1'
+        # (fail-safe, migration 20260718120000), so this is defense-in-depth: v1 rows stay correctly
+        # labelled independent of the column default, guarding the shadow-diff + Reputation basis filter
+        # (WHERE engine_version='v2') against any future default change.
         engine_version: "v1"
       )
 

@@ -68,6 +68,9 @@ module TrustIndex
       v = context_hash[:latest_ccv]
       cold = TrustIndex::ColdStartGuard.assess(channel)
       q = v2_chatter_quality(chatters, context_hash)
+      # Track the calibrated q_mid rather than a literal so the descriptive "high quality" reason-code
+      # stays consistent with the band gate (band_classifier uses k.q_mid) after GATE-0 recalibration.
+      q_mid = CalibrationConstant.value_for("q_mid", fallback: 0.5).to_f
 
       TrustIndex::V2::Engine::Context.new(
         v: v,
@@ -79,7 +82,7 @@ module TrustIndex
         n_chat_eff: chatters.size,
         q: q,
         cold_start_tier: v2_cold_start_tier(cold[:status]),
-        chatter_quality_high: q >= 0.5, # descriptive reason-code flag (band gate uses k.q_mid on q itself)
+        chatter_quality_high: q >= q_mid, # descriptive reason-code flag (tracks calibrated q_mid)
         stream_count: cold[:stream_count],
         unattributed_surge: false, # paired with I-event provenance branch = follow-up
         thin_sample: chatters.size < THIN_SAMPLE_MIN,
@@ -256,9 +259,11 @@ module TrustIndex
       # === T1-074 (TI v2) build_v2 private assembly ===
 
       # Per-chatter L0 identity signals. Only the two SRS-illustrative-LLR sources are wired
-      # (temporal_recurrence R spam-tier, known_bot_hit); the rest stay neutral (L_k=0 designed,
-      # FR-001 п.2) until their GATE-0 calibration lands. utility (allowlisted platform) temporal
-      # rows are NOT counted as fraud (bot_type != "spam" → recurrence nil), mirroring the model scope.
+      # (temporal_recurrence, known_bot_hit); the rest stay neutral (L_k=0 designed, FR-001 п.2) until
+      # their GATE-0 calibration lands. Fraud = any flagged tier EXCEPT the "utility" allowlist (i.e.
+      # spam OR unknown), mirroring the v1 signal (temporal_cross_channel rejects bot_type=="utility")
+      # + the model's BOT_TYPES %w[utility spam unknown]. Counting only "spam" would let an "unknown"
+      # tier read clean → nil recurrence AND clean-Q → inflate the GREEN gate: the exact miss TI v2 closes.
       def v2_chatter_signals(chatters, context_hash)
         return [] if chatters.empty?
 
@@ -266,10 +271,10 @@ module TrustIndex
         known = v2_known_bot_map(chatters)
         chatters.map do |username|
           tf = flagged[username]
-          spam = tf && tf[:bot_type] == "spam"
+          fraud = tf && tf[:bot_type] != "utility"
           TrustIndex::V2::Engine::ChatterSignals.new(
             username: username,
-            temporal_recurrence: spam ? tf[:event_count] : nil,
+            temporal_recurrence: fraud ? tf[:event_count] : nil,
             known_bot_hit: known[username.to_s.downcase]&.dig(:bot) || false,
             per_user_bot_score: nil,  # old scorer PURGED (SRS §4A.4 #8); new narrow-behavioral L0 = follow-up
             account_profile_llr: 0.0, # GATE-0-calibration-pending (no SRS-specified illustrative LLR yet)
@@ -321,13 +326,14 @@ module TrustIndex
         "open"
       end
 
-      # Q = fraction of present chatters NOT spam-temporal-flagged (temporal_clean). graph_diversity
-      # factor deferred (=1.0) → follow-up. Bot-heavy chat → low Q → GREEN band blocked (correct).
+      # Q = fraction of present chatters that are temporal-clean = NOT flagged, OR flagged only as the
+      # "utility" allowlist (spam/unknown = fraud, mirroring v2_chatter_signals). graph_diversity factor
+      # deferred (=1.0) → follow-up. Bot-heavy chat → low Q → GREEN band blocked (correct).
       def v2_chatter_quality(chatters, context_hash)
         return 0.0 if chatters.empty?
 
         flagged = context_hash.dig(:temporal_cross_channel_flags, :flagged) || {}
-        clean = chatters.count { |u| flagged[u].nil? || flagged[u][:bot_type] != "spam" }
+        clean = chatters.count { |u| flagged[u].nil? || flagged[u][:bot_type] == "utility" }
         clean.to_f / chatters.size
       end
 

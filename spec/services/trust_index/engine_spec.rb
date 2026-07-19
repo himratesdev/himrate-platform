@@ -196,7 +196,7 @@ RSpec.describe TrustIndex::Engine do
       expect(payload[:engine_version]).to eq("v1")
     end
 
-    it "MF-4: persisted v1 TIH row is explicitly tagged engine_version='v1' (M1 default is 'v2')" do
+    it "MF-4: persisted v1 TIH row is explicitly tagged engine_version='v1' (defense-in-depth; M1 default already 'v1')" do
       result
       expect(TrustIndexHistory.where(stream: stream).last.engine_version).to eq("v1")
     end

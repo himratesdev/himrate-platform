@@ -119,7 +119,24 @@ RSpec.describe SignalComputeWorker do
       expect(TrustIndexHistory.where(engine_version: "v2").count).to eq(0)
     end
 
-    it "MF-4: legacy v1 persist tags engine_version='v1' (never masquerades as v2)" do
+    it "shadow never touches the wire — publish_update ships the v1 legacy payload only, not v2" do
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_shadow).and_return(true)
+      published = []
+      fake_redis = instance_double(Redis)
+      allow(fake_redis).to receive(:set).and_return(true) # throttle acquire + signal-health
+      allow(fake_redis).to receive(:publish) { |_ch, payload| published << payload }
+      allow(worker).to receive(:redis).and_return(fake_redis)
+
+      worker.perform(stream.id)
+
+      expect(published.size).to eq(1)
+      parsed = JSON.parse(published.first)
+      expect(parsed).to include("ti_score", "timestamp")
+      expect(parsed).to include("engine_version" => "v1")
+      expect(parsed.keys).not_to include("erv", "band", "axes", "authenticity") # no v2 headline leak
+    end
+
+    it "MF-4: legacy v1 persist tags engine_version='v1' explicitly (defense-in-depth over the 'v1' default)" do
       worker.perform(stream.id)
       expect(TrustIndexHistory.last.engine_version).to eq("v1")
     end
