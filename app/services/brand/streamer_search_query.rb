@@ -45,7 +45,7 @@ module Brand
       rows = scope
              .select("channel_id, #{REAL_EXPR} AS real_avg, #{SHOWN_EXPR} AS shown_avg, " \
                      "#{REAL_PCT_EXPR} AS real_pct, AVG(ti_avg) AS ti_avg, #{SPW_EXPR} AS spw")
-             .order(Arel.sql("#{sort_expr} DESC NULLS LAST"))
+             .order(Arel.sql("#{sort_expr} DESC NULLS LAST, channel_id ASC")) # channel_id = stable tiebreaker (deterministic pagination on ties)
              .limit(@per_page).offset((@page - 1) * @per_page)
              .to_a
 
@@ -117,14 +117,17 @@ module Brand
         real_avg = r.real_avg.round
         shown_avg = r.shown_avg.round
         ti_avg = r.ti_avg&.to_f&.round(1)
+        real_pct = r.real_pct&.to_f&.round(1)
         {
           login: channel.login,
           display_name: channel.display_name,
           url: "https://twitch.tv/#{channel.login}",
           real_avg_viewers: real_avg,
           shown_avg_viewers: shown_avg,
-          real_pct: r.real_pct&.to_f&.round(1),
-          bot_correction_pct: shown_avg.positive? ? -(100 - real_avg.to_f / shown_avg * 100).round(1) : nil,
+          real_pct: real_pct,
+          # single source of truth: derive from the SQL real_pct (not the rounded avgs) so
+          # real_pct + |bot_correction_pct| == 100 exactly (CR nit).
+          bot_correction_pct: real_pct && shown_avg.positive? ? -(100 - real_pct).round(1) : nil,
           classification: classifications[r.channel_id],
           classification_label: ti_avg ? TrustIndex::ErvCalculator.resolve_label(ti_avg)[:ru] : nil,
           category: stream&.game_name,

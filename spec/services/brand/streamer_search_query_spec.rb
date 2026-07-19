@@ -89,6 +89,19 @@ RSpec.describe Brand::StreamerSearchQuery do
     expect(logins(page1) & logins(page2)).to be_empty # disjoint pages
   end
 
+  it "paginates deterministically even when the sort metric ties (stable channel_id tiebreaker)" do
+    4.times { |i| make_channel(login: "tie#{i}", ccv: 5_000, erv: 80.0) } # all real_avg = 4000 (pure ties)
+
+    orderings = Array.new(3) do
+      p1 = described_class.new(per_page: "2", page: "1").call
+      p2 = described_class.new(per_page: "2", page: "2").call
+      all = logins(p1) + logins(p2)
+      expect(all.uniq.size).to eq(4) # complete + disjoint across pages despite ties
+      all
+    end
+    expect(orderings.uniq.size).to eq(1) # identical ordering across repeated requests
+  end
+
   it "returns an empty result (not an error) when nothing matches" do
     make_channel(login: "only", ccv: 5_000, erv: 80.0)
     result = described_class.new(min_real: "99999999").call
