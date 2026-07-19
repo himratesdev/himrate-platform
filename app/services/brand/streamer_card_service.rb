@@ -1,0 +1,250 @@
+# frozen_string_literal: true
+
+module Brand
+  # Screen 21 — Brand Streamer Card. Independent 30-day track-record verification of a streamer
+  # before a deal ("то же, что видит зритель, но за окно 30 дней, а не live-снимок"). Composes
+  # EXISTING production engine — never mocks. Every block is real or derived-from-real; anything the
+  # engine cannot back is listed in `deferred` (frontend hides those design blocks) rather than
+  # faked. Bounded per-channel reads (≤30 daily rows / 1 TIH / 6h-cached reputation / ≤50 anomalies)
+  # → scale-safe. Compute-on-read, no schema.
+  #
+  # Grounded on live DSV (lk-dsv-probe, 2026-07-19):
+  #   - TrendsDailyAggregate.botted_fraction is NULL → bot-correction derived from ccv_avg × erv% only.
+  #   - Anomaly is keyed by stream_id (no channel_id) → join through streams.
+  #   - signal_breakdown has 11-12 keys, varies per channel → expose only present signals.
+  #   - per-signal value semantics are non-uniform (auth_ratio high=good, known_bot_match low=good) →
+  #     no server-side norm/attention verdict here; expose raw + real overall classification (ADR DEC-3).
+  class StreamerCardService
+    WINDOW_DAYS = 30
+    ANOMALY_LIMIT = 50
+    OPEN_DISPUTE_STATUSES = %w[pending reviewing].freeze
+    Result = Struct.new(:ok, :error, :payload, keyword_init: true)
+
+    # Canonical reputation band → RU label (first-time-user-clarity: every term spelled out).
+    BAND_LABELS_RU = {
+      "impeccable" => "Безупречная",
+      "stable" => "Стабильная",
+      "variable" => "Изменчивая",
+      "unstable" => "Нестабильная"
+    }.freeze
+
+    # RU labels for the 12 canonical TI signals (design 21 layer-2 names). Only present signals render.
+    SIGNAL_LABELS_RU = {
+      "auth_ratio" => "Соотношение подлинных аккаунтов",
+      "chatter_ccv_ratio" => "Соотношение чат / зрители",
+      "chat_behavior" => "Поведение чата",
+      "ccv_step_function" => "Ступенчатые скачки онлайна",
+      "ccv_tier_clustering" => "Кластеризация онлайна",
+      "ccv_chat_correlation" => "Корреляция чата и онлайна",
+      "cross_channel_presence" => "Пересечение аудитории каналов",
+      "temporal_cross_channel" => "Синхронные всплески",
+      "known_bot_match" => "Совпадение с известными ботами",
+      "raid_attribution" => "Атрибуция рейдов",
+      "account_profile_scoring" => "Профили аккаунтов",
+      "channel_protection_score" => "Защита канала"
+    }.freeze
+
+    # Design blocks with NO real engine source — surfaced honestly so frontend hides them, never mocked.
+    DEFERRED = %w[
+      traffic_source_split audience_geography repeat_viewer_pct median_chat_ratio_30d
+      session_retention social_platforms pdf_export add_to_campaign dispute_write
+      overlap_in_card period_depth_history layer2_per_signal_verdict
+    ].freeze
+
+    def initialize(login:)
+      @login = login.to_s.strip.downcase
+    end
+
+    def call
+      return Result.new(ok: false, error: "CHANNEL_NOT_FOUND") if @login.blank?
+
+      channel = Channel.active.find_by("lower(login) = ?", @login)
+      return Result.new(ok: false, error: "CHANNEL_NOT_FOUND") unless channel
+
+      Result.new(ok: true, payload: build(channel))
+    end
+
+    private
+
+    def build(channel)
+      # Single 30-day trends load feeds both the (always-present) window block and layer1 — the
+      # observation window is defined even for a cold-start channel (0 streams in it), so it lives
+      # at top-level data.window per SRS §4A (frontend binds data.window.*), not inside layer1.
+      trends = TrendsDailyAggregate.where(channel_id: channel.id, date: window_from..Date.current).to_a
+      {
+        channel: channel_block(channel),
+        window: window_block(trends),
+        layer1_real_audience: layer1(trends),
+        layer2_authenticity: layer2(channel),
+        layer3_reputation: layer3(channel),
+        layer5_anomalies: layer5(channel),
+        deferred: DEFERRED
+      }
+    end
+
+    def window_block(trends)
+      {
+        days: WINDOW_DAYS,
+        streams_count: trends.sum { |r| r.streams_count.to_i },
+        days_covered: trends.count { |r| r.streams_count.to_i.positive? },
+        from: window_from.iso8601,
+        to: Date.current.iso8601
+      }
+    end
+
+    def channel_block(channel)
+      stream = channel.streams.order(started_at: :desc).first
+      {
+        login: channel.login,
+        display_name: channel.display_name,
+        avatar_url: channel.profile_image_url,
+        broadcaster_type: channel.broadcaster_type,
+        followers_count: channel.followers_total,
+        category: stream&.game_name,
+        language: stream&.language
+      }
+    end
+
+    # Layer 1 — 30-day real-audience track record from TrendsDailyAggregate (daily rollups, loaded
+    # once in #build). botted_fraction is NULL in production (DSV) → bot-correction derived from
+    # ccv_avg × erv% only. Window metadata lives at top-level data.window (see #window_block).
+    def layer1(rows)
+      return { available: false, reason: "insufficient_window" } if rows.empty?
+
+      ccv_avgs = rows.filter_map(&:ccv_avg)
+      reals = rows.filter_map { |r| r.ccv_avg && r.erv_avg_percent ? r.ccv_avg * r.erv_avg_percent.to_f / 100 : nil }
+      return { available: false, reason: "insufficient_window" } if ccv_avgs.empty? || reals.empty?
+
+      shown_avg = ccv_avgs.sum.to_f / ccv_avgs.size
+      real_avg = reals.sum / reals.size
+      return { available: false, reason: "insufficient_window" } if shown_avg.zero?
+
+      real_pct = (real_avg / shown_avg * 100).round(1)
+      peak_reals = rows.filter_map { |r| r.ccv_peak && r.erv_avg_percent ? (r.ccv_peak * r.erv_avg_percent.to_f / 100).round : nil }
+      ti_avgs = rows.filter_map(&:ti_avg)
+      ti_stds = rows.filter_map(&:ti_std)
+      erv_mins = rows.filter_map(&:erv_min_percent)
+      erv_maxes = rows.filter_map(&:erv_max_percent)
+
+      {
+        available: true,
+        real_avg_viewers: real_avg.round,
+        shown_avg_viewers: shown_avg.round,
+        real_pct: real_pct,
+        bot_correction_pct: (real_pct - 100).round(1),
+        filtered_est: (shown_avg - real_avg).round,
+        peak_real: peak_reals.max,
+        peak_shown: rows.filter_map(&:ccv_peak).max,
+        ti_avg: avg(ti_avgs),
+        ti_std: avg(ti_stds),
+        erv_pct_range: { min: erv_mins.min, max: erv_maxes.max },
+        basis: "trends_daily_aggregate_30d"
+      }
+    end
+
+    # Layer 2 — authenticity signals from the latest Trust Index. Raw per-signal breakdown + the real
+    # overall classification (the engine's actual verdict). Per-signal norm/attention verdict deferred
+    # (non-uniform value semantics — ADR DEC-3). Only signals actually present render.
+    def layer2(channel)
+      tih = TrustIndexHistory.where(channel_id: channel.id).order(calculated_at: :desc).first
+      return { available: false } if tih.nil? || tih.signal_breakdown.blank?
+
+      checks = tih.signal_breakdown.filter_map do |key, v|
+        next unless v.is_a?(Hash)
+        value = fetch(v, "value")
+        next if value.nil?
+
+        {
+          signal: key,
+          label_ru: SIGNAL_LABELS_RU[key] || key,
+          value: value.to_f,
+          confidence: fetch(v, "confidence")&.to_f,
+          weight: fetch(v, "weight")&.to_f,
+          contribution: fetch(v, "contribution")&.to_f
+        }
+      end
+
+      {
+        available: true,
+        classification: tih.classification,
+        ti_score: tih.trust_index_score&.to_f,
+        checks_total: checks.size,
+        checks: checks,
+        calculated_at: tih.calculated_at&.iso8601,
+        basis: "trust_index_history.signal_breakdown"
+      }
+    end
+
+    # Layer 3 — reputation band + trend + trajectory (the free trust-summary, T1-065) + read-only
+    # dispute status. HistoryService returns honest-empty (band nil) for cold-start.
+    def layer3(channel)
+      rep = Reputation::HistoryService.cached_for(channel)
+      current = rep[:current] || {}
+      {
+        band: current[:band],
+        band_label_ru: BAND_LABELS_RU[current[:band]],
+        tier: current[:tier],
+        stream_count: current[:stream_count],
+        trend: rep[:trend],
+        trajectory: rep[:real_audience_trajectory],
+        components: components_block(rep),
+        dispute: latest_open_dispute(channel)
+      }
+    end
+
+    # SRS §4A shape: the 3 public reputation components; follower_quality carries the honest stub flag.
+    def components_block(rep)
+      latest = rep[:components_history]&.last || {}
+      {
+        growth_pattern: latest[:growth_pattern],
+        engagement_consistency: latest[:engagement_consistency],
+        follower_quality: { score: latest[:follower_quality], stubbed: rep[:follower_quality_stubbed] }
+      }
+    end
+
+    def latest_open_dispute(channel)
+      dispute = ScoreDispute
+                .where(channel_id: channel.id, resolution_status: OPEN_DISPUTE_STATUSES)
+                .order(submitted_at: :desc)
+                .first
+      return nil unless dispute
+
+      { status: dispute.resolution_status, dispute_id: dispute.id, submitted_at: dispute.submitted_at&.iso8601 }
+    end
+
+    # Layer 5 — anomalies over the window. Anomaly is keyed by stream_id (DSV) → join through streams.
+    def layer5(channel)
+      Anomaly
+        .joins(:stream)
+        .where(streams: { channel_id: channel.id })
+        .where("anomalies.timestamp > ?", window_from)
+        .includes(:anomaly_attributions)
+        .order("anomalies.timestamp DESC")
+        .limit(ANOMALY_LIMIT)
+        .map do |a|
+          top = a.anomaly_attributions.max_by { |att| att.confidence.to_f }
+          {
+            at: a.timestamp&.iso8601,
+            type: a.anomaly_type,
+            cause: a.cause,
+            ccv_impact: a.ccv_impact,
+            attribution: top && { source: top.source, confidence: top.confidence&.to_f }
+          }
+        end
+    end
+
+    def window_from
+      @window_from ||= WINDOW_DAYS.days.ago.to_date
+    end
+
+    def fetch(hash, key)
+      hash[key].nil? ? hash[key.to_sym] : hash[key]
+    end
+
+    def avg(values)
+      return nil if values.empty?
+
+      (values.sum.to_f / values.size).round(1)
+    end
+  end
+end

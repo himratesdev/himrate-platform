@@ -154,8 +154,10 @@ Rails.application.routes.draw do
       delete "me", to: "me/privacy#destroy_account"
 
       # LK-BACKEND Wave 2 (screen 24): brand-side audience overlap (brand-gated, chat-presence graph).
+      # LK-BACKEND Wave 2 (screen 21): brand streamer card — 30-day track-record verification.
       namespace :brand do
         get "overlap", to: "overlap#index"
+        get "streamers/:login/card", to: "streamer_cards#show"
       end
     end
   end
