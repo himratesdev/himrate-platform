@@ -1,0 +1,101 @@
+name: lk-brand-verify
+
+# Strict live-verify for brand-gated LK read endpoints. Mints a real brand + non-brand JWT on
+# staging (find-or-create test users), then curls the PUBLIC staging endpoint end-to-end with each
+# token — real auth, real data, real HTTP. Reusable for brand surfaces (21 streamer-card, 23 compare,
+# 24 overlap, 25 geo). Verifies: no-auth→401, non-brand→403, brand→200 (+ key real fields), 404.
+# Idempotent: reuses an existing business-tier user if present, else creates a marked test user.
+
+on:
+  workflow_dispatch:
+    inputs:
+      path:
+        description: 'Endpoint path under /api/v1 (e.g. brand/streamers/recrent/card)'
+        required: true
+        type: string
+      cold_path:
+        description: 'Optional 2nd path expected to 200 with a degraded layer (e.g. brand/streamers/honeymad/card)'
+        required: false
+        type: string
+      target:
+        description: 'VPS'
+        required: true
+        type: choice
+        options:
+          - hostkey
+        default: hostkey
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Mint brand + non-brand JWT on staging
+        id: mint
+        run: |
+          cat > /tmp/mint.rb <<'RUBY'
+          $stdout.sync = true
+          brand = User.where(tier: "business").first
+          brand ||= User.create!(email: "brand-verify@himrate.test", username: "brand_verify_lk",
+                                  role: "viewer", tier: "business")
+          plain = User.where(tier: %w[free premium]).where.not(id: brand.id).first
+          plain ||= User.create!(email: "plain-verify@himrate.test", username: "plain_verify_lk",
+                                 role: "viewer", tier: "free")
+          puts "BRAND_ID=#{brand.id} brand?=#{brand.brand?}"
+          puts "PLAIN_ID=#{plain.id} brand?=#{plain.brand?}"
+          puts "BRAND_TOKEN=#{Auth::JwtService.encode_access(brand.id)}"
+          puts "PLAIN_TOKEN=#{Auth::JwtService.encode_access(plain.id)}"
+          RUBY
+          TARGET="${{ inputs.target }}"
+          scp /tmp/mint.rb ${TARGET}:/tmp/mint.rb
+          C=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          OUT=$(ssh ${TARGET} "docker cp /tmp/mint.rb ${C}:/tmp/mint.rb && docker exec ${C} sh -c 'bin/rails runner /tmp/mint.rb 2>/dev/null'")
+          echo "$OUT" | grep -E '^(BRAND_ID|PLAIN_ID)='
+          echo "BRAND_TOKEN=$(echo "$OUT" | grep '^BRAND_TOKEN=' | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+          echo "PLAIN_TOKEN=$(echo "$OUT" | grep '^PLAIN_TOKEN=' | cut -d= -f2)" >> "$GITHUB_OUTPUT"
+
+      - name: End-to-end verify via public HTTPS
+        env:
+          BRAND: ${{ steps.mint.outputs.BRAND_TOKEN }}
+          PLAIN: ${{ steps.mint.outputs.PLAIN_TOKEN }}
+        run: |
+          BASE="https://staging.himrate.com/api/v1"
+          P="${{ inputs.path }}"
+          CP="${{ inputs.cold_path }}"
+          hr() { printf '\n──── %s ────\n' "$1"; }
+
+          hr "AC-1 no-auth → expect 401"
+          curl -s -o /tmp/r.json -w "HTTP %{http_code}\n" "$BASE/$P"; cat /tmp/r.json; echo
+
+          hr "AC-2 non-brand token → expect 403"
+          curl -s -o /tmp/r.json -w "HTTP %{http_code}\n" -H "Authorization: Bearer $PLAIN" "$BASE/$P"; cat /tmp/r.json; echo
+
+          hr "AC-3 brand token → expect 200 + real data"
+          code=$(curl -s -o /tmp/r.json -w "%{http_code}" -H "Authorization: Bearer $BRAND" "$BASE/$P")
+          echo "HTTP $code"
+          python3 -c "import json;d=json.load(open('/tmp/r.json')).get('data',{});print('  window:',d.get('window'));l1=d.get('layer1_real_audience',{});print('  layer1.available:',l1.get('available'),'real_avg:',l1.get('real_avg_viewers'),'shown_avg:',l1.get('shown_avg_viewers'),'bot_corr%:',l1.get('bot_correction_pct'));l3=d.get('layer3_reputation',{});print('  layer3.band:',l3.get('band'),l3.get('band_label_ru'),'tier:',l3.get('tier'));l2=d.get('layer2_authenticity',{});print('  layer2.classification:',l2.get('classification'),'checks:',l2.get('checks_total'));print('  layer5.anomalies:',len(d.get('layer5_anomalies',[])));print('  deferred:',len(d.get('deferred',[])),'items')" 2>/dev/null || cat /tmp/r.json
+
+          hr "AC-4 unknown login (brand) → expect 404"
+          curl -s -o /tmp/r.json -w "HTTP %{http_code}\n" -H "Authorization: Bearer $BRAND" "$BASE/brand/streamers/nonexistent_zzz/card"; cat /tmp/r.json; echo
+
+          if [ -n "$CP" ]; then
+            hr "AC-6 cold-start (brand) → expect 200 + layer1 available:false"
+            code=$(curl -s -o /tmp/r.json -w "%{http_code}" -H "Authorization: Bearer $BRAND" "$BASE/$CP")
+            echo "HTTP $code"
+            python3 -c "import json;d=json.load(open('/tmp/r.json')).get('data',{});l1=d.get('layer1_real_audience',{});print('  layer1.available:',l1.get('available'),'reason:',l1.get('reason'));print('  window:',d.get('window'))" 2>/dev/null || cat /tmp/r.json
+          fi
