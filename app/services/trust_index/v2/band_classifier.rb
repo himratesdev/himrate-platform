@@ -12,6 +12,9 @@ module TrustIndex
     # k — calibration thresholds: phi_yellow, phi_red, q_mid, q_hi.
     class BandClassifier
       Band = Data.define(:row, :color, :label_key, :sub)
+      # Canonical driver contract (L4 builds this; the class stays duck-typed for isolated tests).
+      Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
+                            :c_hard, :c_self, :raid_window, :cold_start_tier)
 
       def self.call(drivers:, k:)
         new(drivers, k).call
