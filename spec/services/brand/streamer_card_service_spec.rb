@@ -22,7 +22,8 @@ RSpec.describe Brand::StreamerCardService do
 
   describe "layer1 real-audience (30-day track record)" do
     it "derives real viewers from ccv_avg × erv% (botted_fraction is NULL in prod)" do
-      2.times { create(:trends_daily_aggregate, channel: channel, ccv_avg: 10_000, erv_avg_percent: 80.0, ccv_peak: 14_000, streams_count: 2) }
+      # Explicit in-window dates — factory sequence(:date) is a leaky global counter.
+      2.times { |i| create(:trends_daily_aggregate, channel: channel, date: (i + 1).days.ago.to_date, ccv_avg: 10_000, erv_avg_percent: 80.0, ccv_peak: 14_000, streams_count: 2) }
       l1 = payload_for("streamer").payload[:layer1_real_audience]
 
       expect(l1[:available]).to be(true)

@@ -8,7 +8,9 @@ RSpec.describe "Api::V1::Brand::StreamerCards", type: :request do
 
   before do
     create(:stream, channel: channel, game_name: "Dota 2", language: "ru")
-    3.times { create(:trends_daily_aggregate, channel: channel, ccv_avg: 12_400, erv_avg_percent: 72.0, ccv_peak: 18_100, streams_count: 1) }
+    # Explicit in-window dates — the factory's sequence(:date) is a leaky global counter that
+    # drifts outside the 30-day window in the full suite.
+    3.times { |i| create(:trends_daily_aggregate, channel: channel, date: (i + 1).days.ago.to_date, ccv_avg: 12_400, erv_avg_percent: 72.0, ccv_peak: 18_100, streams_count: 1) }
     create(:trust_index_history, channel: channel, classification: "trusted",
                                  signal_breakdown: {
                                    "auth_ratio" => { "value" => 1.0, "weight" => 0.14, "confidence" => 1.0, "contribution" => 0.14 },
