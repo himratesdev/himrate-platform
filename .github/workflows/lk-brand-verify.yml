@@ -88,7 +88,11 @@ jobs:
           hr "AC-3 brand token → expect 200 + real data"
           code=$(curl -s -o /tmp/r.json -w "%{http_code}" -H "Authorization: Bearer $BRAND" "$BASE/$P")
           echo "HTTP $code"
-          python3 -c "import json;d=json.load(open('/tmp/r.json')).get('data',{});print('  window:',d.get('window'));l1=d.get('layer1_real_audience',{});print('  layer1.available:',l1.get('available'),'real_avg:',l1.get('real_avg_viewers'),'shown_avg:',l1.get('shown_avg_viewers'),'bot_corr%:',l1.get('bot_correction_pct'));l3=d.get('layer3_reputation',{});print('  layer3.band:',l3.get('band'),l3.get('band_label_ru'),'tier:',l3.get('tier'));l2=d.get('layer2_authenticity',{});print('  layer2.classification:',l2.get('classification'),'checks:',l2.get('checks_total'));print('  layer5.anomalies:',len(d.get('layer5_anomalies',[])));print('  deferred:',len(d.get('deferred',[])),'items')" 2>/dev/null || cat /tmp/r.json
+          # card-shaped summary (data envelope) when applicable — best-effort
+          python3 -c "import json;d=json.load(open('/tmp/r.json')).get('data',{});l1=d.get('layer1_real_audience',{}) if isinstance(d,dict) else {};(l1 and print('  card window:',d.get('window'),'| layer1 real_avg:',l1.get('real_avg_viewers'),'shown:',l1.get('shown_avg_viewers'),'| band:',d.get('layer3_reputation',{}).get('band')))" 2>/dev/null || true
+          # generic raw body dump — works for ANY brand endpoint shape (card / compare / overlap / ...)
+          echo "  --- raw 200 body ---"
+          python3 -m json.tool /tmp/r.json 2>/dev/null | head -120 || cat /tmp/r.json
 
           hr "AC-4 unknown login (brand) → expect 404"
           curl -s -o /tmp/r.json -w "HTTP %{http_code}\n" -H "Authorization: Bearer $BRAND" "$BASE/brand/streamers/nonexistent_zzz/card"; cat /tmp/r.json; echo
