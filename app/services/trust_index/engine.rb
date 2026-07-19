@@ -17,7 +17,23 @@ module TrustIndex
     }.freeze
 
     Result = Data.define(:ti_score, :classification, :erv, :cold_start, :signal_breakdown,
-                         :confidence)
+                         :confidence) do
+      # DEC-7 MF-1 — symmetric publish adapter so SignalComputeWorker#publish_update stays
+      # engine-agnostic (reads neither v1 nor v2 fields directly). Returns the legacy headline shape
+      # PLUS an additive `engine_version` discriminator (no key removed/renamed → values identical, so
+      # the extension keeps working during shadow); the discriminator only lets a consumer tell the
+      # engines apart at cutover.
+      def engine_version
+        "v1"
+      end
+
+      def to_headline_payload
+        { ti_score: ti_score, classification: classification,
+          erv_percent: erv[:erv_percent], erv_count: erv[:erv_count],
+          label: erv[:label], label_color: erv[:label_color],
+          cold_start_status: cold_start[:status], engine_version: "v1" }
+      end
+    end
 
     # Main entry point. Computes TI + ERV for a stream.
     # signal_results: Hash{signal_type => BaseSignal::Result} from Registry.compute_all
@@ -207,7 +223,12 @@ module TrustIndex
         classification: classification,
         cold_start_status: cold_start[:status],
         erv_percent: erv[:erv_percent],
-        ccv: ccv
+        ccv: ccv,
+        # MF-4 (ADR DEC-7) — write engine_version explicitly. The M1 column default is ALREADY 'v1'
+        # (fail-safe, migration 20260718120000), so this is defense-in-depth: v1 rows stay correctly
+        # labelled independent of the column default, guarding the shadow-diff + Reputation basis filter
+        # (WHERE engine_version='v2') against any future default change.
+        engine_version: "v1"
       )
 
       ErvEstimate.create!(
