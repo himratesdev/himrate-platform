@@ -20,14 +20,6 @@ module Brand
     OPEN_DISPUTE_STATUSES = %w[pending reviewing].freeze
     Result = Struct.new(:ok, :error, :payload, keyword_init: true)
 
-    # Canonical reputation band → RU label (first-time-user-clarity: every term spelled out).
-    BAND_LABELS_RU = {
-      "impeccable" => "Безупречная",
-      "stable" => "Стабильная",
-      "variable" => "Изменчивая",
-      "unstable" => "Нестабильная"
-    }.freeze
-
     # RU labels for the 12 canonical TI signals (design 21 layer-2 names). Only present signals render.
     SIGNAL_LABELS_RU = {
       "auth_ratio" => "Соотношение подлинных аккаунтов",
@@ -67,28 +59,18 @@ module Brand
     private
 
     def build(channel)
-      # Single 30-day trends load feeds both the (always-present) window block and layer1 — the
-      # observation window is defined even for a cold-start channel (0 streams in it), so it lives
-      # at top-level data.window per SRS §4A (frontend binds data.window.*), not inside layer1.
-      trends = TrendsDailyAggregate.where(channel_id: channel.id, date: window_from..Date.current).to_a
+      # Window metadata + layer1 both come from the shared Brand::AudienceWindow — the same 30-day
+      # aggregate Brand Compare (#23) uses, so "real viewers" can never diverge between surfaces.
+      # Window lives at top-level data.window per SRS §4A (present even for a cold-start channel).
+      win = Brand::AudienceWindow.new(channel, days: WINDOW_DAYS)
       {
         channel: channel_block(channel),
-        window: window_block(trends),
-        layer1_real_audience: layer1(trends),
+        window: win.window_meta,
+        layer1_real_audience: win.audience,
         layer2_authenticity: layer2(channel),
         layer3_reputation: layer3(channel),
         layer5_anomalies: layer5(channel),
         deferred: DEFERRED
-      }
-    end
-
-    def window_block(trends)
-      {
-        days: WINDOW_DAYS,
-        streams_count: trends.sum { |r| r.streams_count.to_i },
-        days_covered: trends.count { |r| r.streams_count.to_i.positive? },
-        from: window_from.iso8601,
-        to: Date.current.iso8601
       }
     end
 
@@ -102,43 +84,6 @@ module Brand
         followers_count: channel.followers_total,
         category: stream&.game_name,
         language: stream&.language
-      }
-    end
-
-    # Layer 1 — 30-day real-audience track record from TrendsDailyAggregate (daily rollups, loaded
-    # once in #build). botted_fraction is NULL in production (DSV) → bot-correction derived from
-    # ccv_avg × erv% only. Window metadata lives at top-level data.window (see #window_block).
-    def layer1(rows)
-      return { available: false, reason: "insufficient_window" } if rows.empty?
-
-      ccv_avgs = rows.filter_map(&:ccv_avg)
-      reals = rows.filter_map { |r| r.ccv_avg && r.erv_avg_percent ? r.ccv_avg * r.erv_avg_percent.to_f / 100 : nil }
-      return { available: false, reason: "insufficient_window" } if ccv_avgs.empty? || reals.empty?
-
-      shown_avg = ccv_avgs.sum.to_f / ccv_avgs.size
-      real_avg = reals.sum / reals.size
-      return { available: false, reason: "insufficient_window" } if shown_avg.zero?
-
-      real_pct = (real_avg / shown_avg * 100).round(1)
-      peak_reals = rows.filter_map { |r| r.ccv_peak && r.erv_avg_percent ? (r.ccv_peak * r.erv_avg_percent.to_f / 100).round : nil }
-      ti_avgs = rows.filter_map(&:ti_avg)
-      ti_stds = rows.filter_map(&:ti_std)
-      erv_mins = rows.filter_map(&:erv_min_percent)
-      erv_maxes = rows.filter_map(&:erv_max_percent)
-
-      {
-        available: true,
-        real_avg_viewers: real_avg.round,
-        shown_avg_viewers: shown_avg.round,
-        real_pct: real_pct,
-        bot_correction_pct: (real_pct - 100).round(1),
-        filtered_est: (shown_avg - real_avg).round,
-        peak_real: peak_reals.max,
-        peak_shown: rows.filter_map(&:ccv_peak).max,
-        ti_avg: avg(ti_avgs),
-        ti_std: avg(ti_stds),
-        erv_pct_range: { min: erv_mins.min, max: erv_maxes.max },
-        basis: "trends_daily_aggregate_30d"
       }
     end
 
@@ -182,7 +127,7 @@ module Brand
       current = rep[:current] || {}
       {
         band: current[:band],
-        band_label_ru: BAND_LABELS_RU[current[:band]],
+        band_label_ru: Brand::ReputationBands.label_ru(current[:band]),
         tier: current[:tier],
         stream_count: current[:stream_count],
         trend: rep[:trend],
@@ -239,12 +184,6 @@ module Brand
 
     def fetch(hash, key)
       hash[key].nil? ? hash[key.to_sym] : hash[key]
-    end
-
-    def avg(values)
-      return nil if values.empty?
-
-      (values.sum.to_f / values.size).round(1)
     end
   end
 end
