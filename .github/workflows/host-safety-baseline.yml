@@ -76,6 +76,22 @@ jobs:
             echo "ok    MemAvailable = $((MEMAVAIL_KB/1024)) MB"
           fi
 
+          # ---- 3b. root disk usage (BUG-DISK-FULL 2026-07-18: CH system logs filled / to 100%
+          #          → PG "No space left on device" → postmaster.pid crash-loop → staging down ~6h.
+          #          The gate caught swap/OOM but NOT disk — this incident walked past it.) ----
+          DISK_PCT=$(df --output=pcent / 2>/dev/null | tail -1 | tr -dc '0-9')
+          DISK_AVAIL=$(df -h / 2>/dev/null | awk 'NR==2{print $4}')
+          if [ "${DISK_PCT:-0}" -ge 90 ]; then
+            echo "FAIL  root disk ${DISK_PCT}% full (avail ${DISK_AVAIL}) — a full disk stops PG writing postmaster.pid → crash-loop."
+            echo "      Top consumers: docker exec himrate-clickhouse clickhouse-client --query \"SELECT table, formatReadableSize(sum(bytes_on_disk)) FROM system.parts WHERE active GROUP BY table ORDER BY 2 DESC LIMIT 10\""
+            echo "      CH system-log runaway → TRUNCATE system.{text_log,processors_profile_log,query_log,trace_log}; permanent = clickhouse/config.d/constrained.xml TTL."
+            FAIL=1
+          elif [ "${DISK_PCT:-0}" -ge 80 ]; then
+            echo "WARN  root disk ${DISK_PCT}% full (avail ${DISK_AVAIL}) — approaching the crash-loop threshold; investigate top consumers now."
+          else
+            echo "ok    root disk ${DISK_PCT}% used (avail ${DISK_AVAIL})"
+          fi
+
           # ---- 4. untrusted-container cap regression (caps lost on recreation) ----
           # cpus=0 (unlimited CPU) is forbidden for ANY co-tenant container.
           UNTRUSTED=$(docker ps --format '{{.Names}}' 2>/dev/null | grep -E '^(bft-|xray)' || true)
