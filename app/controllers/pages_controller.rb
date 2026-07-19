@@ -15,6 +15,14 @@ class PagesController < ApplicationController
     define_method(page) { @page = page }
   end
 
+  # Public channel card (screen 02) — faithful export host. Real data is wired client-side by
+  # landing/channel_card.js against the public GET /api/v1/channels/:login/card (headline +
+  # reputation are free on any channel per access-model v2). No auth.
+  def channel_card
+    @page = "channel_card"
+    @login = params[:login]
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the
