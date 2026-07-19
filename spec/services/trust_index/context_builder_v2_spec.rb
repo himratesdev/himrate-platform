@@ -139,12 +139,28 @@ RSpec.describe TrustIndex::ContextBuilder do
     end
 
     it "wired temporal+known_bot signals reach the engine's hard set end-to-end (recall path proven)" do
+      # Clean stub via KnownBotService.new (instance_double) — bypasses the allow_any_instance_of
+      # re-stub ambiguity so known_bot_hit is deterministically wired.
+      fake_known = instance_double(KnownBotService,
+        check_batch: { "megabot" => { bot: true, confidence: 0.95, sources: %w[a b] } })
+      allow(KnownBotService).to receive(:new).and_return(fake_known)
       flagged = { "megabot" => { bot_type: "spam", event_count: 9 } }
-      allow_any_instance_of(KnownBotService).to receive(:check_batch)
-        .and_return({ "megabot" => { bot: true, confidence: 0.95, sources: %w[a b] } })
       chatters = %w[megabot] + Array.new(20) { |i| "h#{i}" }
       c = described_class.build_v2(stream, ctx_hash(chatters: chatters, ccv: 500))
-      r = TrustIndex::V2::Engine.compute(context: c, k: Calibration::Registry.load)
+
+      # Wiring proven at the Context level (deterministic, no engine).
+      megabot = c.raw_chatters.find { |ch| ch.username == "megabot" }
+      expect(megabot.temporal_recurrence).to eq(9)
+      expect(megabot.known_bot_hit).to be(true)
+
+      # And the two wired signals cross τ_hard end-to-end under a controlled illustrative k
+      # (logit(0.02)+4.6+3.4 = 4.11 → p_u ≈ 0.98 ≥ 0.90). Not Registry.load, to stay threshold-stable.
+      k = Calibration::Registry::K.new(
+        pi0: 0.02, tau_hard: 0.90, tau_delta: 0.05, phi_yellow: 0.10, phi_red: 0.35,
+        q_mid: 0.50, q_hi: 0.80, llr_temporal_r2: 1.10, llr_temporal_r3: 2.20,
+        llr_temporal_r4: 2.90, llr_temporal_r7: 4.60, llr_per_user_bot_score: 3.90, llr_known_bot: 3.40
+      )
+      r = TrustIndex::V2::Engine.compute(context: c, k: k)
       expect(r.b_hard.map(&:username)).to include("megabot")
       expect(r.engine_version).to eq("v2")
     end

@@ -59,7 +59,7 @@ module TrustIndex
     # T1-074 (TI v2, ADR DEC-6): assemble the V2::Engine input Context from the ALREADY-built v1
     # context Hash (reuse — no second CH stream_chatters scan) + a few v2-only reads (known-bot batch,
     # account-profile-less L0 for now, Rolling-Window self-history, cold-start, reputation). Returns
-    # a TrustIndex::V2::Context. Silent sources contribute L_k=0 by design (FR-001 п.2) — only the
+    # a TrustIndex::V2::Engine::Context. Silent sources contribute L_k=0 by design (FR-001 п.2) — only the
     # two SRS-illustrative-LLR sources (temporal_recurrence, known_bot_hit) are wired here; the
     # GATE-0-calibration-pending inputs stay neutral (see PR2b-integration-progress.md source-map).
     def self.build_v2(stream, context_hash)

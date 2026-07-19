@@ -15,7 +15,7 @@ RSpec.describe TrustIndex::ContextBuilder do
     context = described_class.build(stream)
 
     expected_keys = %i[
-      latest_ccv ccv_series_15min ccv_series_30min ccv_series_10min
+      latest_ccv stream_chatters ccv_series_15min ccv_series_30min ccv_series_10min
       chat_rate_10min chat_username_counts_5min unique_chatters_60min
       chatters_present_total bot_scores
       channel_protection_config cross_channel_counts temporal_cross_channel_flags
