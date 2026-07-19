@@ -49,6 +49,34 @@ RSpec.describe Brand::CompareService do
     end
   end
 
+  it "picks the most dependable band as the reliability winner and omits ti_avg" do
+    a = create(:channel, login: "aaa")
+    b = create(:channel, login: "bbb")
+    window_for(a, ccv: 5_000, erv: 80.0, peak: 8_000)
+    window_for(b, ccv: 5_000, erv: 80.0, peak: 8_000)
+    allow(Reputation::HistoryService).to receive(:cached_for).with(a).and_return(current: { band: "stable", tier: "full" })
+    allow(Reputation::HistoryService).to receive(:cached_for).with(b).and_return(current: { band: "impeccable", tier: "full" })
+
+    best = described_class.new(logins: %w[aaa bbb]).call.payload[:best_in_row]
+    expect(best[:band]).to eq("bbb")          # impeccable(4) > stable(3)
+    expect(best).not_to have_key(:ti_avg)     # TI is filter-only, no design row
+    expect(best).to have_key(:streams_per_week)
+  end
+
+  it "keeps prices aligned when a login is duplicated (first occurrence wins, no shift)" do
+    a = create(:channel, login: "aaa")
+    b = create(:channel, login: "bbb")
+    window_for(a, ccv: 10_000, erv: 80.0, peak: 14_000)
+    window_for(b, ccv: 10_000, erv: 80.0, peak: 14_000)
+
+    # leading duplicate would shift positional prices without login-keyed dedup
+    payload = described_class.new(logins: %w[aaa aaa bbb], prices: %w[100000 200000 240000]).call.payload
+    cols = payload[:channels]
+    expect(cols.map { |c| c[:login] }).to eq(%w[aaa bbb])
+    expect(cols[0][:price][:per_integration]).to eq(100_000) # first aaa
+    expect(cols[1][:price][:per_integration]).to eq(240_000) # bbb keeps ITS price, not 200000
+  end
+
   it "recommends the cheapest price-per-real-viewer among recommendable bands (isolated)" do
     a = create(:channel, login: "aaa")
     b = create(:channel, login: "bbb")

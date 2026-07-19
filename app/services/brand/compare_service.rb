@@ -12,12 +12,24 @@ module Brand
     MAX_CHANNELS = 4
     # Bands a brand can safely recommend against (audience reality is dependable).
     RECOMMENDABLE_BANDS = %w[impeccable stable].freeze
+    # Ordinal for best-reliability highlighting (higher = more dependable). nil band → excluded.
+    BAND_RANK = { "impeccable" => 4, "stable" => 3, "variable" => 2, "unstable" => 1 }.freeze
     DEFERRED = %w[unique_reach engagement_rate export].freeze
     Result = Struct.new(:ok, :error, :payload, keyword_init: true)
 
     def initialize(logins:, prices: [])
-      @logins = Array(logins).map { |l| l.to_s.strip.downcase }.reject(&:blank?).uniq
-      @prices = Array(prices)
+      # Pair each login with its POSITIONAL price BEFORE de-duplicating, then key prices by login —
+      # so a duplicate login can't shift subsequent prices out of alignment (CR SHOULD-FIX). First
+      # occurrence of a login wins.
+      raw_prices = Array(prices)
+      @price_by_login = {}
+      Array(logins).each_with_index do |login, i|
+        key = login.to_s.strip.downcase
+        next if key.blank? || @price_by_login.key?(key)
+
+        @price_by_login[key] = parse_price(raw_prices[i])
+      end
+      @logins = @price_by_login.keys
     end
 
     def call
@@ -32,7 +44,7 @@ module Brand
     private
 
     def build(channels)
-      columns = channels.each_with_index.map { |channel, i| column(channel, price_at(i)) }
+      columns = channels.map { |channel| column(channel) }
       {
         window: { days: AudienceWindow::DEFAULT_DAYS },
         channels: columns,
@@ -42,7 +54,7 @@ module Brand
       }
     end
 
-    def column(channel, price)
+    def column(channel)
       win = AudienceWindow.new(channel)
       audience = win.audience.merge(streams_per_week: win.streams_per_week)
       current = (Reputation::HistoryService.cached_for(channel)[:current] || {})
@@ -57,7 +69,7 @@ module Brand
           band_label_ru: Brand::ReputationBands.label_ru(current[:band]),
           tier: current[:tier]
         },
-        price: price_block(price, audience[:real_avg_viewers])
+        price: price_block(@price_by_login[channel.login], audience[:real_avg_viewers])
       }
     end
 
@@ -68,22 +80,24 @@ module Brand
       { per_integration: price, per_real_viewer: per_real }
     end
 
-    # nil for a blank/invalid/non-positive slot → that channel simply has no price row.
-    def price_at(index)
-      raw = @prices[index]
+    # Positive integer RUB, or nil for a blank/invalid slot (→ that channel has no price row).
+    # Integer(exception:false) rejects decimals cleanly instead of silently truncating (CR nit).
+    def parse_price(raw)
       return nil if raw.nil? || raw.to_s.strip.blank?
 
-      value = raw.to_i
-      value.positive? ? value : nil
+      value = Integer(raw.to_s.strip, exception: false)
+      value&.positive? ? value : nil
     end
 
-    # login of the winning channel per metric (frontend greens that cell). Columns missing a value
-    # (cold-start audience / no price) are ignored, not treated as zero.
+    # login of the winning channel per RENDERED design row (frontend greens that cell). Columns
+    # missing a value (cold-start audience / no price) are ignored, not treated as zero. Keys match
+    # the design's highlighted comparison rows (SRS §4A): Реальные зрители / Доля реальных /
+    # Надёжность (band, ordinal) / Частота эфиров / Цена за реального. TI is filter-only (no row).
     def best_in_row(columns)
       {
         real_avg_viewers: argmax(columns) { |c| c[:audience][:real_avg_viewers] },
         real_pct: argmax(columns) { |c| c[:audience][:real_pct] },
-        ti_avg: argmax(columns) { |c| c[:audience][:ti_avg] },
+        band: argmax(columns) { |c| BAND_RANK[c[:reputation][:band]] },
         streams_per_week: argmax(columns) { |c| c[:audience][:streams_per_week] },
         price_per_real_viewer: argmin(columns) { |c| c.dig(:price, :per_real_viewer) }
       }
