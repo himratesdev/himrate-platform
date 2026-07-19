@@ -208,6 +208,20 @@ jobs:
           echo "=== /root top-level dirs (bounded) ==="
           ssh hostkey 'ls -la /root 2>/dev/null; echo "--- du /root/* ---"; timeout 90 du -shx /root/* 2>/dev/null | sort -rh | head -12' || true
 
+      - name: TI v2 M1 schema verify (DV — T1-074 PR #336)
+        if: always()
+        run: |
+          echo "=== migration applied? ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -t -c "SELECT version FROM schema_migrations WHERE version = '\''20260718120000'\''"' 2>&1 || true
+          echo "=== v2 columns on trust_index_histories (expect 34) ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -t -c "SELECT count(*) FROM information_schema.columns WHERE table_name='\''trust_index_histories'\'' AND column_name IN ('\''erv'\'','\''f_hat'\'','\''authenticity'\'','\''n_frac'\'','\''band_row'\'','\''c_hard'\'','\''confirmed_anomaly'\'','\''cold_start_tier'\'','\''engine_version'\'','\''cps'\'','\''band_sub'\'','\''reason_codes'\'')"' 2>&1 || true
+          echo "=== engine_version default = v1? + trust_index_score nullable? ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -t -c "SELECT column_name, column_default, is_nullable FROM information_schema.columns WHERE table_name='\''trust_index_histories'\'' AND column_name IN ('\''engine_version'\'','\''trust_index_score'\'')"' 2>&1 || true
+          echo "=== 3 new tables exist? ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -t -c "SELECT tablename FROM pg_tables WHERE tablename IN ('\''calibration_constants'\'','\''calibration_cell_baselines'\'','\''named_bot_evidences'\'') ORDER BY 1"' 2>&1 || true
+          echo "=== partial v2 index present? ==="
+          ssh hostkey 'docker exec himrate-db psql -U himrate -d himrate_staging -t -c "SELECT indexname FROM pg_indexes WHERE indexname = '\''idx_tih_v2_backfill_progress'\''"' 2>&1 || true
+
       - name: PG counts
         run: |
           echo "=== DB row counts ==="
