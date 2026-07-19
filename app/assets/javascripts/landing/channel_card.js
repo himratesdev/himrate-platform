@@ -46,10 +46,15 @@
     var liveNode = el("H Live T");
     if (liveNode && !hl.is_live) liveNode.style.display = "none";
 
-    // Layer 1 — real vs shown (headline). erv_count = real estimated viewers; ccv = shown.
+    // Layer 1 — real vs shown (headline). ccv = shown (current snapshot). Derive `real` from the
+    // DISPLAYED ccv × erv% so the figures reconcile (real + bots = shown, bot% = bots/shown): the
+    // API's erv_count is computed from the TIH's stored ccv, which can drift from the live ccv and
+    // make the numbers fail to add up (CR SHOULD-FIX). erv% (= TI) is the real reliability signal;
+    // applying it to the shown ccv is the honest "real viewers now". Falls back to erv_count when
+    // erv% is unavailable (cold-start).
     var ccv = hl.ccv;
-    var real = hl.erv_count;
     var ervPct = hl.erv_percent;
+    var real = ervPct != null && ccv != null ? Math.round(ccv * ervPct / 100) : hl.erv_count;
     var bots = ccv != null && real != null ? ccv - real : null;
     var botPct = ervPct != null ? Math.round(100 - ervPct) : null;
     var realPct = ervPct != null ? Math.round(ervPct) : null;
