@@ -1,0 +1,130 @@
+name: lk-dsv-probe
+
+# Read-only Data-Source-Verification probe for LK-BACKEND surfaces. Given a Twitch login, dumps
+# row counts + samples for the internal PG tables an LK surface composes — so the SA/DSV gate can
+# confirm "production data, no mocks" reality BEFORE Dev builds on a table. Reusable across surfaces
+# (21 streamer-card, 23 compare, 25 geo, ...). Mirrors signal-check.yml's SSH→docker exec→rails runner.
+# Read-only: only .count / .limit / .pluck — never writes.
+
+on:
+  workflow_dispatch:
+    inputs:
+      login:
+        description: 'Twitch login (channel to probe)'
+        required: true
+        type: string
+      target:
+        description: 'VPS to probe'
+        required: true
+        type: choice
+        options:
+          - hostkey
+        default: hostkey
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          LOGIN="${{ inputs.login }}"
+          cat > /tmp/lk-dsv.rb <<RUBY_EOF
+          login = "${LOGIN}"
+          RUBY_EOF
+          cat >> /tmp/lk-dsv.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          def section(title); puts "\n## #{title}"; yield; rescue => e; puts "  ERROR: #{e.class}: #{e.message[0..200]}"; end
+
+          c = Channel.find_by("lower(login) = ?", login.downcase)
+          if c.nil?
+            puts "Channel not found: #{login}"; exit 0
+          end
+          puts "===== LK DSV PROBE: #{c.login} (#{c.id}) ====="
+          from = 30.days.ago.to_date
+
+          section("TrendsDailyAggregate (30d) — surface-21 layer1 CORE") do
+            scope = TrendsDailyAggregate.where(channel_id: c.id, date: from..Date.current)
+            n = scope.count
+            puts "  rows(30d): #{n}"
+            if n.positive?
+              puts "  cols: #{TrendsDailyAggregate.column_names.join(', ')}"
+              puts "  avg ccv_avg: #{scope.average(:ccv_avg)&.round(1)} | max ccv_peak: #{scope.maximum(:ccv_peak)}"
+              puts "  avg erv_avg_percent: #{scope.average(:erv_avg_percent)&.round(1)} | avg botted_fraction: #{scope.average(:botted_fraction)&.round(4)}"
+              puts "  sum streams_count: #{scope.sum(:streams_count)} | days_covered: #{scope.where('streams_count > 0').count}"
+              r = scope.order(date: :desc).first
+              puts "  latest row: date=#{r.date} ccv_avg=#{r.ccv_avg} ccv_peak=#{r.ccv_peak} erv%=#{r.erv_avg_percent} streams=#{r.streams_count}"
+            else
+              puts "  EMPTY — layer1 would return available:false for this channel"
+            end
+          end
+
+          section("TrustIndexHistory.signal_breakdown — surface-21 layer2") do
+            t = TrustIndexHistory.where(channel_id: c.id).order(calculated_at: :desc).first
+            if t
+              sb = t.signal_breakdown || {}
+              puts "  latest TIH: #{t.calculated_at} ti=#{t.trust_index_score} erv%=#{t.erv_percent} class=#{t.classification} cold=#{t.cold_start_status}"
+              puts "  signal_breakdown keys (#{sb.size}): #{sb.keys.join(', ')}"
+              sb.first(3).each { |k,v| puts "    #{k} => #{v.inspect[0..160]}" }
+            else
+              puts "  no TIH rows"
+            end
+          end
+
+          section("Reputation — StreamerReputation + BandService (layer3)") do
+            sr = StreamerReputation.where(channel_id: c.id)
+            puts "  StreamerReputation rows: #{sr.count}"
+            if sr.any?
+              r = sr.order(calculated_at: :desc).first
+              puts "  latest: growth=#{r.growth_pattern_score} follower_q=#{r.follower_quality_score} engagement=#{r.engagement_consistency_score}"
+            end
+            begin
+              h = Reputation::HistoryService.new(c).call rescue Reputation::HistoryService.cached_for(c)
+              cur = h[:current] || {}
+              puts "  HistoryService current: band=#{cur[:band]} tier=#{cur[:tier]} stream_count=#{cur[:stream_count]} trajectory_pts=#{(h[:real_audience_trajectory]||[]).size}"
+            rescue => e
+              puts "  HistoryService err: #{e.class}: #{e.message[0..120]}"
+            end
+          end
+
+          section("ScoreDispute (layer3 dispute read-only)") do
+            puts "  table exists: #{ActiveRecord::Base.connection.table_exists?('score_disputes')}"
+            sd = ScoreDispute.where(channel_id: c.id) rescue nil
+            puts "  disputes for channel: #{sd&.count}" if sd
+          end
+
+          section("Anomaly (30d, layer5)") do
+            an = Anomaly.where(channel_id: c.id).where("timestamp > ?", from) rescue Anomaly.joins(:stream).where(streams: { channel_id: c.id }).where("anomalies.timestamp > ?", from)
+            n = an.count
+            puts "  anomalies(30d): #{n}"
+            an.limit(3).each { |a| puts "    #{a.timestamp} #{a.anomaly_type} impact=#{a.ccv_impact}" } if n.positive?
+          end
+
+          puts "\n===== LK DSV PROBE COMPLETE for #{c.login} ====="
+          RUBY_EOF
+          echo "Script built ($(wc -l < /tmp/lk-dsv.rb) lines)"
+
+      - name: Run probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          echo "LK DSV probe: ${{ inputs.login }} on ${TARGET}"
+          echo "============================================================"
+          scp /tmp/lk-dsv.rb ${TARGET}:/tmp/lk-dsv.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "Container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/lk-dsv.rb ${CONTAINER}:/tmp/lk-dsv.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/lk-dsv.rb > /tmp/lk-dsv-out.txt 2>&1; cat /tmp/lk-dsv-out.txt' 2>&1" | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof|Please add the'
