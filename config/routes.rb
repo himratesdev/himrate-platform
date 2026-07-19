@@ -152,6 +152,11 @@ Rails.application.routes.draw do
       end
       # BE-5 M13 minimal soft-delete (PO directive 2026-05-28) — out-of-namespace для чистого DELETE /me
       delete "me", to: "me/privacy#destroy_account"
+
+      # LK-BACKEND Wave 2 (screen 24): brand-side audience overlap (brand-gated, chat-presence graph).
+      namespace :brand do
+        get "overlap", to: "overlap#index"
+      end
     end
   end
 
