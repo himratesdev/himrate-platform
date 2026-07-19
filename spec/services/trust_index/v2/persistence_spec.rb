@@ -39,6 +39,11 @@ RSpec.describe TrustIndex::V2::Persistence do
     expect(tih.band_row).to eq(1)
     expect(tih.band_color).to eq("red")
     expect(tih.reason_codes.first["code"]).to eq("HARD_NAMED_FRACTION")
+    expect(tih.i_event).to be(false) # mirrors c_self (false here)
+  end
+
+  it "writes the i_event column to mirror C_self (I=1) — not left at the NOT NULL default" do
+    expect(persist(result(c_self: true)).i_event).to be(true)
   end
 
   it "writes a named_bot_evidence row per B_hard account when C_hard fires (EC-13)" do

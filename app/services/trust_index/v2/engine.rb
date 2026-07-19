@@ -28,6 +28,14 @@ module TrustIndex
         end
       end
 
+      # All-null Result skeleton for the EC-15 (V≤0) short-circuit — no headline number, GREY band.
+      EMPTY_RESULT = {
+        erv: nil, erv_lo: nil, erv_hi: nil, authenticity: nil, a_hat: nil, n_frac: nil, band: nil,
+        reason_codes: [], confirmed_anomaly: false, cold_start_tier: nil, confidence_marker: "provisional",
+        c_hard: false, c_self: false, axes: nil, eihc: nil, rho_obs: nil, f_hat: nil, f_hat_lo: nil,
+        f_hat_hi: nil, f_hard: nil, f_hard_lo: nil, f_self: nil, b_hard: [], engine_version: "v2"
+      }.freeze
+
       def self.compute(context:, k:)
         new(context, k).compute
       end
@@ -38,6 +46,8 @@ module TrustIndex
       end
 
       def compute
+        return offline_result if @ctx.v.nil? || @ctx.v <= 0 # EC-15: V≤0 / null CCV → GREY, never a headline number
+
         post = L0Identity.call(@ctx.raw_chatters, k: @k)
         hard = L1Subtract.call(post)
         soft = L2Presume.call(raw: @ctx.raw_chatters, b_hard_usernames: names(post),
@@ -48,6 +58,15 @@ module TrustIndex
       end
 
       private
+
+      # EC-15 / TC-017: V≤0 or null CCV → ERV & axes null, GREY band, WIDE_INTERVAL_THIN_SAMPLE reason.
+      # Never a headline number, never GREEN/accusatory (the division A=100·(1−F̂/V) is undefined at V=0).
+      def offline_result
+        Result.new(**EMPTY_RESULT, cold_start_tier: @ctx.cold_start_tier,
+          band: BandClassifier::Band.new(row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil),
+          reason_codes: [ ReasonCodeBuilder::Code.new(code: "WIDE_INTERVAL_THIN_SAMPLE", params: {}) ],
+          axes: AxesBuilder.call(authenticity: nil, reputation: @ctx.reputation, rho_obs: nil, cps: @ctx.cps))
+      end
 
       def names(post)
         post.b_hard.map(&:username).to_set

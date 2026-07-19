@@ -62,6 +62,16 @@ RSpec.describe TrustIndex::V2::Engine do
     expect(r.reason_codes.map(&:code)).to include("HARD_NAMED_FRACTION")
   end
 
+  it "EC-15/TC-017: V≤0 (null CCV) short-circuits to GREY with null ERV — never a headline number" do
+    r = described_class.compute(context: context([ chatter("a") ], v: 0, n_chat_eff: 0), k: k)
+    expect(r.erv).to be_nil
+    expect(r.authenticity).to be_nil
+    expect(r.band.color).to eq("grey")
+    expect(r.confirmed_anomaly).to be(false)
+    expect(r.reason_codes.map(&:code)).to eq([ "WIDE_INTERVAL_THIN_SAMPLE" ])
+    expect(r.to_headline_payload[:erv]).to be_nil
+  end
+
   it "to_headline_payload emits the engine-agnostic publish contract (DEC-7)" do
     r = described_class.compute(context: context([ chatter("a") ], n_chat_eff: 1), k: k)
     payload = r.to_headline_payload

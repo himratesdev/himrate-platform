@@ -34,6 +34,7 @@ module TrustIndex
           authenticity: @r.authenticity, n_frac: @r.n_frac, eihc: @r.eihc, rho_obs: @r.rho_obs,
           band_row: @r.band.row, band_sub: @r.band.sub, band_color: @r.band.color,
           reason_codes: @r.reason_codes.map(&:to_h), c_hard: @r.c_hard, c_self: @r.c_self,
+          i_event: @r.c_self, # C_self = (I=1); the i_event column mirrors it (SRS §5.1)
           confirmed_anomaly: @r.confirmed_anomaly, cold_start_tier: @r.cold_start_tier,
           confidence_marker: @r.confidence_marker }
       end

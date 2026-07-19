@@ -66,4 +66,21 @@ RSpec.describe TrustIndex::V2::L4Emit do
     r = emit(hard: hard(0.0), soft: soft(0.0), fraud: f)
     expect([ r.erv_lo, r.erv, r.erv_hi ]).to eq([ 3800.0, 4000.0, 4200.0 ])
   end
+
+  it "confidence_marker: basic tier or thin sample → provisional, else reliable" do
+    expect(emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(50.0)).confidence_marker).to eq("reliable")
+    expect(emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(50.0), cold_start_tier: "basic")
+      .confidence_marker).to eq("provisional")
+    expect(emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(50.0), thin_sample: true)
+      .confidence_marker).to eq("provisional")
+  end
+
+  it "C_self convert-from-honest (I=1, F_self-dominant) → accusatory band + SELF_HISTORY_INFLATION_EVENT (EC-7)" do
+    f = L4EmitSpecDoubles::Fraud.new(f_hat: 3000.0, f_hat_lo: 2800.0, f_hat_hi: 3200.0, f_self: 3000.0) # F_self/V=0.6
+    r = emit(hard: hard(0.0), soft: soft(0.0), fraud: f, i_event: true)
+    expect(r.c_self).to be(true)
+    expect(r.confirmed_anomaly).to be(true)
+    expect([ 1, 2 ]).to include(r.band.row)          # accusatory (RED/YELLOW), not AMBER
+    expect(r.reason_codes.map(&:code)).to include("SELF_HISTORY_INFLATION_EVENT")
+  end
 end
