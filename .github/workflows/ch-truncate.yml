@@ -1,0 +1,56 @@
+name: ch-truncate
+
+# Reclaim disk by TRUNCATE'ing ClickHouse's unbounded system-log tables (BUG-DISK-FULL). These are
+# CH-internal observability tables (text_log/processors_profile_log/query_log/trace_log/...), never
+# queried by the app — safe to truncate. #340's constrained.xml caps FUTURE growth but only on CH
+# restart, and does not touch the EXISTING ~139 GiB. This frees it so PG can write again (staging up).
+# After this: run accessory-ops reboot clickhouse to apply the #340 cap (needs PG up first).
+
+on:
+  workflow_dispatch:
+
+jobs:
+  truncate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Disk BEFORE + CH table sizes
+        run: |
+          echo "=== df BEFORE ==="; ssh hostkey "df -h /" || true
+          echo "=== top CH tables by disk ==="
+          ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT database, table, formatReadableSize(sum(bytes_on_disk)) sz FROM system.parts WHERE active GROUP BY database, table ORDER BY sum(bytes_on_disk) DESC LIMIT 12\" 2>&1" || true
+
+      - name: TRUNCATE CH system-log tables (safe — CH-internal, never queried)
+        run: |
+          for t in text_log processors_profile_log query_log query_thread_log trace_log metric_log \
+                   asynchronous_metric_log part_log opentelemetry_span_log session_log error_log \
+                   backup_log blob_storage_log crash_log zookeeper_log latency_log; do
+            echo "--- TRUNCATE system.$t ---"
+            ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query 'TRUNCATE TABLE IF EXISTS system.$t' 2>&1" || true
+          done
+
+      - name: Disk AFTER
+        run: |
+          echo "=== df AFTER ==="; ssh hostkey "df -h /" || true
+
+      - name: Restart himrate-db + verify PG
+        run: |
+          echo "=== restart himrate-db ==="; ssh hostkey "docker restart himrate-db" || true
+          sleep 20
+          echo "=== himrate-db status ==="; ssh hostkey "docker ps --filter name=himrate-db --format '{{.Names}} {{.Status}}'" || true
+          echo "=== pg_isready ==="; ssh hostkey "docker exec himrate-db pg_isready 2>&1" || true
