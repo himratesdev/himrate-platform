@@ -156,10 +156,13 @@ Rails.application.routes.draw do
       # LK-BACKEND Wave 2 (screen 24): brand-side audience overlap (brand-gated, chat-presence graph).
       # LK-BACKEND Wave 2 (screen 21): brand streamer card — 30-day track-record verification.
       # LK-BACKEND Wave 2 (screen 23): brand compare — 2-4 streamers by real 30-day audience.
+      # LK-BACKEND Wave 2 (screen 20): brand streamer search — ranked by real 30-day audience.
       namespace :brand do
         get "overlap", to: "overlap#index"
-        get "streamers/:login/card", to: "streamer_cards#show"
         get "compare", to: "compare#index"
+        # search MUST precede streamers/:login/card so "search" isn't captured as :login
+        get "streamers/search", to: "streamer_search#index"
+        get "streamers/:login/card", to: "streamer_cards#show"
       end
     end
   end
