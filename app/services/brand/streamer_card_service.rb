@@ -20,6 +20,14 @@ module Brand
     OPEN_DISPUTE_STATUSES = %w[pending reviewing].freeze
     Result = Struct.new(:ok, :error, :payload, keyword_init: true)
 
+    # Canonical reputation band → RU label (first-time-user-clarity: every term spelled out).
+    BAND_LABELS_RU = {
+      "impeccable" => "Безупречная",
+      "stable" => "Стабильная",
+      "variable" => "Изменчивая",
+      "unstable" => "Нестабильная"
+    }.freeze
+
     # RU labels for the 12 canonical TI signals (design 21 layer-2 names). Only present signals render.
     SIGNAL_LABELS_RU = {
       "auth_ratio" => "Соотношение подлинных аккаунтов",
@@ -59,14 +67,28 @@ module Brand
     private
 
     def build(channel)
+      # Single 30-day trends load feeds both the (always-present) window block and layer1 — the
+      # observation window is defined even for a cold-start channel (0 streams in it), so it lives
+      # at top-level data.window per SRS §4A (frontend binds data.window.*), not inside layer1.
+      trends = TrendsDailyAggregate.where(channel_id: channel.id, date: window_from..Date.current).to_a
       {
         channel: channel_block(channel),
-        window: { days: WINDOW_DAYS },
-        layer1_real_audience: layer1(channel),
+        window: window_block(trends),
+        layer1_real_audience: layer1(trends),
         layer2_authenticity: layer2(channel),
         layer3_reputation: layer3(channel),
         layer5_anomalies: layer5(channel),
         deferred: DEFERRED
+      }
+    end
+
+    def window_block(trends)
+      {
+        days: WINDOW_DAYS,
+        streams_count: trends.sum { |r| r.streams_count.to_i },
+        days_covered: trends.count { |r| r.streams_count.to_i.positive? },
+        from: window_from.iso8601,
+        to: Date.current.iso8601
       }
     end
 
@@ -83,12 +105,10 @@ module Brand
       }
     end
 
-    # Layer 1 — 30-day real-audience track record from TrendsDailyAggregate (daily rollups).
-    # botted_fraction is NULL in production (DSV) → bot-correction = derived from ccv_avg × erv% only.
-    def layer1(channel)
-      rows = TrendsDailyAggregate
-             .where(channel_id: channel.id, date: window_from..Date.current)
-             .to_a
+    # Layer 1 — 30-day real-audience track record from TrendsDailyAggregate (daily rollups, loaded
+    # once in #build). botted_fraction is NULL in production (DSV) → bot-correction derived from
+    # ccv_avg × erv% only. Window metadata lives at top-level data.window (see #window_block).
+    def layer1(rows)
       return { available: false, reason: "insufficient_window" } if rows.empty?
 
       ccv_avgs = rows.filter_map(&:ccv_avg)
@@ -118,13 +138,6 @@ module Brand
         ti_avg: avg(ti_avgs),
         ti_std: avg(ti_stds),
         erv_pct_range: { min: erv_mins.min, max: erv_maxes.max },
-        window: {
-          days: WINDOW_DAYS,
-          streams_count: rows.sum { |r| r.streams_count.to_i },
-          days_covered: rows.count { |r| r.streams_count.to_i.positive? },
-          from: window_from.iso8601,
-          to: Date.current.iso8601
-        },
         basis: "trends_daily_aggregate_30d"
       }
     end
@@ -169,13 +182,23 @@ module Brand
       current = rep[:current] || {}
       {
         band: current[:band],
+        band_label_ru: BAND_LABELS_RU[current[:band]],
         tier: current[:tier],
         stream_count: current[:stream_count],
         trend: rep[:trend],
         trajectory: rep[:real_audience_trajectory],
-        components: rep[:components_history]&.last,
-        follower_quality_stubbed: rep[:follower_quality_stubbed],
+        components: components_block(rep),
         dispute: latest_open_dispute(channel)
+      }
+    end
+
+    # SRS §4A shape: the 3 public reputation components; follower_quality carries the honest stub flag.
+    def components_block(rep)
+      latest = rep[:components_history]&.last || {}
+      {
+        growth_pattern: latest[:growth_pattern],
+        engagement_consistency: latest[:engagement_consistency],
+        follower_quality: { score: latest[:follower_quality], stubbed: rep[:follower_quality_stubbed] }
       }
     end
 

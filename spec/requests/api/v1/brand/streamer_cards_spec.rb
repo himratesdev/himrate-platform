@@ -26,6 +26,9 @@ RSpec.describe "Api::V1::Brand::StreamerCards", type: :request do
     expect(data["channel"]["login"]).to eq("teststreamer")
     expect(data["channel"]["category"]).to eq("Dota 2")
 
+    expect(data["window"]["streams_count"]).to be > 0 # top-level per SRS §4A / AC-3
+    expect(data["window"]["days"]).to eq(30)
+
     l1 = data["layer1_real_audience"]
     expect(l1["available"]).to be(true)
     expect(l1["shown_avg_viewers"]).to eq(12_400)

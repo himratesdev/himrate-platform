@@ -24,7 +24,8 @@ RSpec.describe Brand::StreamerCardService do
     it "derives real viewers from ccv_avg × erv% (botted_fraction is NULL in prod)" do
       # Explicit in-window dates — factory sequence(:date) is a leaky global counter.
       2.times { |i| create(:trends_daily_aggregate, channel: channel, date: (i + 1).days.ago.to_date, ccv_avg: 10_000, erv_avg_percent: 80.0, ccv_peak: 14_000, streams_count: 2) }
-      l1 = payload_for("streamer").payload[:layer1_real_audience]
+      payload = payload_for("streamer").payload
+      l1 = payload[:layer1_real_audience]
 
       expect(l1[:available]).to be(true)
       expect(l1[:shown_avg_viewers]).to eq(10_000)
@@ -33,8 +34,17 @@ RSpec.describe Brand::StreamerCardService do
       expect(l1[:bot_correction_pct]).to eq(-20.0)
       expect(l1[:filtered_est]).to eq(2_000)
       expect(l1[:peak_real]).to eq(11_200) # 14000 * 0.80
-      expect(l1[:window][:streams_count]).to eq(4)
       expect(l1[:basis]).to eq("trends_daily_aggregate_30d")
+      # window is top-level (SRS §4A), present even when layer1 is unavailable
+      expect(payload[:window][:streams_count]).to eq(4)
+      expect(payload[:window][:days_covered]).to eq(2)
+      expect(payload[:window][:days]).to eq(30)
+    end
+
+    it "keeps top-level window defined even for a cold-start channel (0 streams)" do
+      payload = payload_for("streamer").payload
+      expect(payload[:layer1_real_audience][:available]).to be(false)
+      expect(payload[:window]).to include(days: 30, streams_count: 0, days_covered: 0)
     end
 
     it "returns available:false (never zero-as-data) for an empty window" do
@@ -81,6 +91,9 @@ RSpec.describe Brand::StreamerCardService do
       l3 = payload_for("streamer").payload[:layer3_reputation]
       expect(l3[:dispute][:status]).to eq("reviewing")
       expect(l3[:dispute][:dispute_id]).to eq(open.id)
+      # components match SRS §4A shape; follower_quality carries the honest stub flag
+      expect(l3[:components][:follower_quality]).to include(:score, :stubbed)
+      expect(l3[:components]).to have_key(:growth_pattern)
     end
 
     it "returns nil dispute when none are open" do
