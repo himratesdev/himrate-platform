@@ -96,12 +96,7 @@ class SignalComputeWorker
     anomaly_ids.each { |id| Trends::AnomalyAttributionWorker.perform_async(id) }
 
     result = instrument_stage("engine_compute", stream_id) do
-      TrustIndex::Engine.new.compute(
-        signal_results: interaction_output[:results],
-        stream: stream,
-        ccv: context[:latest_ccv] || 0,
-        category: context[:category] || "default"
-      )
+      compute_engine(stream, context, interaction_output[:results])
     end
 
     # TASK-085 FR-014/015 (ADR-085 D-6 + D-8b): NEW detectors extend AnomalyAlerter pattern.
@@ -130,13 +125,58 @@ class SignalComputeWorker
 
     duration_ms = ((Time.current - started_at) * 1000).to_i
     Rails.logger.info(
-      "SignalComputeWorker: stream #{stream_id} — TI=#{result.ti_score} ERV=#{result.erv[:erv_percent]}% " \
-      "classification=#{result.classification} cold_start=#{result.cold_start[:status]} " \
+      "SignalComputeWorker: stream #{stream_id} — engine=#{result&.engine_version} " \
       "duration=#{duration_ms}ms force=#{force}"
     )
   end
 
   private
+
+  # T1-074 PR2b (ADR DEC-2/DEC-7) — dual-run wiring, SHADOW phase only. v1 stays authoritative:
+  # its result is computed, persisted and published exactly as before. When ti_v2_shadow is ON the
+  # v2 engine ALSO runs on the same live stream, but only to LOG the v1-vs-v2 headline diff — it does
+  # NOT persist (zero trust_index_histories pollution → every v1 reader stays correct) and does NOT
+  # publish (v1 remains the wire contract). Persistence + the cutover branch (publish v2) + the
+  # downstream reader ports (engine_version filters) land together in PR3, where they are made safe.
+  def compute_engine(stream, context, signal_results)
+    v1 = TrustIndex::Engine.new.compute(
+      signal_results: signal_results, stream: stream,
+      ccv: context[:latest_ccv] || 0, category: context[:category] || "default"
+    )
+    shadow_compute_v2(stream, context, v1) if ti_v2_shadow?
+    v1
+  end
+
+  def ti_v2_shadow?
+    Flipper.enabled?(:ti_v2_shadow)
+  rescue StandardError
+    false
+  end
+
+  # Run the v2 engine on the live stream (Context reused from the v1 build — no second CH scan) and
+  # log the v1↔v2 headline diff for offline validation across the bot-channel cohort before the flip.
+  # A v2 defect is swallowed here — shadow must NEVER perturb the live v1 path.
+  def shadow_compute_v2(stream, context, v1)
+    v2_context = TrustIndex::ContextBuilder.build_v2(stream, context)
+    v2 = TrustIndex::V2::Engine.compute(context: v2_context, k: Calibration::Registry.load)
+    log_shadow(stream, v1, v2)
+  rescue StandardError => e
+    Rails.logger.error("SignalComputeWorker: v2 shadow failed (stream #{stream.id}) — #{e.message}")
+    Sentry.capture_exception(e) if defined?(Sentry)
+  end
+
+  # Structured (parseable) shadow-diff line — v1 headline vs v2 headline. Log-only; aggregated across
+  # the cohort to validate the v2 engine (does the botter now read RED/AMBER where v1 read "trusted"?).
+  def log_shadow(stream, v1, v2)
+    diff = {
+      stream_id: stream.id, channel_id: stream.channel_id,
+      v1_ti: v1.ti_score, v1_erv_percent: v1.erv[:erv_percent],
+      v2_erv: v2.erv, v2_authenticity: v2.authenticity,
+      v2_band: "#{v2.band&.color}/#{v2.band&.row}", v2_f_hat: v2.f_hat,
+      v2_n_frac: v2.n_frac, v2_confirmed_anomaly: v2.confirmed_anomaly
+    }
+    Rails.logger.info("SCW shadow #{diff.to_json}")
+  end
 
   # Wraps a stage with AS::N instrumentation + Sentry breadcrumb + error capture.
   # AS::N event name = "scw.<stage>" so subscribers (Sentry sidekiq integration,
@@ -189,20 +229,13 @@ class SignalComputeWorker
     DEFAULT_THROTTLE_SECONDS
   end
 
+  # DEC-7 MF-1: engine-agnostic publish — the Result maps its OWN fields to the wire payload
+  # (#to_headline_payload). Default/shadow → v1 legacy shape (unchanged); cutover → v2 NEW contract.
   def publish_update(stream, result)
-    channel_id = stream.channel_id
-    payload = {
-      ti_score: result.ti_score,
-      classification: result.classification,
-      erv_percent: result.erv[:erv_percent],
-      erv_count: result.erv[:erv_count],
-      label: result.erv[:label],
-      label_color: result.erv[:label_color],
-      cold_start_status: result.cold_start[:status],
-      timestamp: Time.current.iso8601
-    }.to_json
+    return unless result
 
-    redis.publish("#{PUBLISH_CHANNEL_PREFIX}#{channel_id}", payload)
+    payload = result.to_headline_payload.merge(timestamp: Time.current.iso8601).to_json
+    redis.publish("#{PUBLISH_CHANNEL_PREFIX}#{stream.channel_id}", payload)
   rescue Redis::BaseError => e
     Rails.logger.warn("SignalComputeWorker: Redis publish failed (#{e.message})")
   end

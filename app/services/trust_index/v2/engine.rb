@@ -10,6 +10,24 @@ module TrustIndex
     # orchestration, testable without CH/PG. Emits V2::Engine::Result; #to_headline_payload adapts it
     # to the engine-agnostic publish contract (DEC-7) so SignalComputeWorker never reads fields directly.
     class Engine
+      # The engine's INPUT contract (assembled by TrustIndex::ContextBuilder#build_v2, ADR DEC-6 — no
+      # new context_builder.rb; we extend the existing one). Nested under Engine (not module V2) so
+      # Zeitwerk resolves it from engine.rb — the file's expected constant. Every field the L0→L4 layers
+      # read is named here so the contract is one grep; unit tests build these directly (no CH/PG).
+      # A "silent" source contributes L_k=0 (FR-001 п.2) — the DESIGNED neutral, not a stub: ContextBuilder
+      # wires the two SRS-illustrative-LLR sources (temporal_recurrence, known_bot_hit) and leaves the
+      # GATE-0-calibration-pending ones neutral until their calibration lands (additive, not a rewrite).
+      ChatterSignals = Data.define(
+        :username, :temporal_recurrence, :known_bot_hit, :per_user_bot_score,
+        :account_profile_llr, :anti_bot_llr, :cluster_delta_k, :cluster_size, :age_gate, :recurrence_gate
+      )
+
+      Context = Data.define(
+        :v, :raw_chatters, :cell, :rho_self_lo, :clean_self_history, :self_history_stable,
+        :i_event, :raid_window, :n_chat_eff, :q, :cold_start_tier, :chatter_quality_high,
+        :stream_count, :unattributed_surge, :thin_sample, :reputation, :cps
+      )
+
       SelfCtx = Data.define(:eligible, :v, :eihc, :rho_self_lo)
       EmitCtx = Data.define(:v, :n_chat_eff, :q, :i_event, :raid_window, :cold_start_tier,
                             :named_count, :self_history_stable, :chatter_quality_high,

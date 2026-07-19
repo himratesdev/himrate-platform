@@ -9,6 +9,17 @@ module TrustIndex
   class ContextBuilder
     CCV_SERIES_LIMIT = 30 # max snapshots for 30min window
 
+    # T1-074 (TI v2) build_v2 constants.
+    THIN_SAMPLE_MIN = 30 # < this many present chatters → thin_sample (wider interval, provisional)
+    SELF_HISTORY_WINDOW_DAYS = 90 # Rolling Window horizon (30 streams OR 90 days, whichever shorter)
+    SELF_HISTORY_WINDOW_STREAMS = 30
+    SELF_HISTORY_MIN_CLEAN = 3 # basic tier — ρ_self available once ≥3 clean v2 streams exist
+    SELF_HISTORY_STABLE_MIN = 10 # full tier — self-history considered stable
+    # EC-18 coarsest fallback: illustrative honest chat-share baseline when no calibration_cell_baseline
+    # row resolves (pre-GATE-0 / novel cell). Values from SRS FR-003 example — refined per-cell at GATE 0.
+    DEFAULT_CELL_BASELINE = TrustIndex::V2::CellResolver::Baseline.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05)
+    V_BUCKETS = [ [ 1_000, "0-1k" ], [ 5_000, "1k-5k" ], [ 20_000, "5k-20k" ] ].freeze
+
     # Build context Hash for Registry.compute_all
     def self.build(stream)
       channel = stream.channel
@@ -21,6 +32,10 @@ module TrustIndex
 
       {
         latest_ccv: fetch_latest_ccv(stream),
+        # T1-074 (TI v2, DEC-6): expose the shared present-chatter set so ContextBuilder.build_v2
+        # assembles the L0 per-chatter signals from the SAME CH scan — no second stream_chatters
+        # round-trip on the shadow/cutover hot path (BUG-SCW-CROSS-CHANNEL discipline).
+        stream_chatters: chatters,
         ccv_series_15min: fetch_ccv_series(stream, 15.minutes.ago),
         ccv_series_30min: fetch_ccv_series(stream, 30.minutes.ago),
         ccv_series_10min: fetch_ccv_series(stream, 10.minutes.ago),
@@ -39,6 +54,38 @@ module TrustIndex
         category: resolve_category(stream),
         stream_duration_min: stream_duration(stream)
       }
+    end
+
+    # T1-074 (TI v2, ADR DEC-6): assemble the V2::Engine input Context from the ALREADY-built v1
+    # context Hash (reuse — no second CH stream_chatters scan) + a few v2-only reads (known-bot batch,
+    # account-profile-less L0 for now, Rolling-Window self-history, cold-start, reputation). Returns
+    # a TrustIndex::V2::Context. Silent sources contribute L_k=0 by design (FR-001 п.2) — only the
+    # two SRS-illustrative-LLR sources (temporal_recurrence, known_bot_hit) are wired here; the
+    # GATE-0-calibration-pending inputs stay neutral (see PR2b-integration-progress.md source-map).
+    def self.build_v2(stream, context_hash)
+      channel = stream.channel
+      chatters = context_hash[:stream_chatters] || []
+      v = context_hash[:latest_ccv]
+      cold = TrustIndex::ColdStartGuard.assess(channel)
+      q = v2_chatter_quality(chatters, context_hash)
+
+      TrustIndex::V2::Engine::Context.new(
+        v: v,
+        raw_chatters: v2_chatter_signals(chatters, context_hash),
+        cell: v2_cell(stream, context_hash, v),
+        **v2_self_history(channel),
+        i_event: false, # FR-013 fail-safe (ambiguous ⇒ I=0); full 6-condition conjunction = follow-up
+        raid_window: (context_hash[:recent_raids] || []).any?,
+        n_chat_eff: chatters.size,
+        q: q,
+        cold_start_tier: v2_cold_start_tier(cold[:status]),
+        chatter_quality_high: q >= 0.5, # descriptive reason-code flag (band gate uses k.q_mid on q itself)
+        stream_count: cold[:stream_count],
+        unattributed_surge: false, # paired with I-event provenance branch = follow-up
+        thin_sample: chatters.size < THIN_SAMPLE_MIN,
+        reputation: v2_reputation(channel),
+        cps: context_hash[:channel_protection_config]&.channel_protection_score&.to_f
+      )
     end
 
     class << self
@@ -204,6 +251,130 @@ module TrustIndex
         ((Time.current - stream.started_at) / 60).to_i
       rescue StandardError
         0
+      end
+
+      # === T1-074 (TI v2) build_v2 private assembly ===
+
+      # Per-chatter L0 identity signals. Only the two SRS-illustrative-LLR sources are wired
+      # (temporal_recurrence R spam-tier, known_bot_hit); the rest stay neutral (L_k=0 designed,
+      # FR-001 п.2) until their GATE-0 calibration lands. utility (allowlisted platform) temporal
+      # rows are NOT counted as fraud (bot_type != "spam" → recurrence nil), mirroring the model scope.
+      def v2_chatter_signals(chatters, context_hash)
+        return [] if chatters.empty?
+
+        flagged = context_hash.dig(:temporal_cross_channel_flags, :flagged) || {}
+        known = v2_known_bot_map(chatters)
+        chatters.map do |username|
+          tf = flagged[username]
+          spam = tf && tf[:bot_type] == "spam"
+          TrustIndex::V2::Engine::ChatterSignals.new(
+            username: username,
+            temporal_recurrence: spam ? tf[:event_count] : nil,
+            known_bot_hit: known[username.to_s.downcase]&.dig(:bot) || false,
+            per_user_bot_score: nil,  # old scorer PURGED (SRS §4A.4 #8); new narrow-behavioral L0 = follow-up
+            account_profile_llr: 0.0, # GATE-0-calibration-pending (no SRS-specified illustrative LLR yet)
+            anti_bot_llr: 0.0,        # no cheap per-chatter roles source; recall-safe neutral
+            cluster_delta_k: 0.0,     # community-detection δ_K = follow-up → no density collapse
+            cluster_size: 1,
+            age_gate: 1.0,            # account-age downweight = follow-up (paired with account_profile)
+            recurrence_gate: 1.0
+          )
+        end
+      end
+
+      def v2_known_bot_map(chatters)
+        KnownBotService.new.check_batch(chatters)
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 known_bot batch failed (#{e.message})")
+        {}
+      end
+
+      # cell = category × V-bucket × chat-mode × language → per-cell ρ* baseline, EC-18 coarsest fallback.
+      def v2_cell(stream, context_hash, v)
+        TrustIndex::V2::CellResolver.call(
+          category: context_hash[:category] || "default",
+          v_bucket: v2_v_bucket(v),
+          chat_mode: v2_chat_mode(context_hash[:channel_protection_config]),
+          language: stream.language.presence || "default"
+        ) || DEFAULT_CELL_BASELINE
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 cell resolve failed (#{e.message})")
+        DEFAULT_CELL_BASELINE
+      end
+
+      def v2_v_bucket(v)
+        return "0" if v.nil? || v <= 0
+
+        V_BUCKETS.each { |ceil, label| return label if v < ceil }
+        "20k+"
+      end
+
+      def v2_chat_mode(config)
+        return "open" unless config
+        return "sub-only" if config.subs_only_enabled
+
+        fol = config.followers_only_duration_min
+        return "followers-only" if fol && fol >= 0
+        return "slow" if config.slow_mode_seconds.to_i.positive?
+        return "emote-only" if config.emote_only_enabled
+
+        "open"
+      end
+
+      # Q = fraction of present chatters NOT spam-temporal-flagged (temporal_clean). graph_diversity
+      # factor deferred (=1.0) → follow-up. Bot-heavy chat → low Q → GREEN band blocked (correct).
+      def v2_chatter_quality(chatters, context_hash)
+        return 0.0 if chatters.empty?
+
+        flagged = context_hash.dig(:temporal_cross_channel_flags, :flagged) || {}
+        clean = chatters.count { |u| flagged[u].nil? || flagged[u][:bot_type] != "spam" }
+        clean.to_f / chatters.size
+      end
+
+      # Rolling-Window self-baseline ρ_self_lo (own-P10 of clean-stream ρ_obs, engine_version='v2').
+      # Empty pre-backfill ⇒ dormant (clean_self_history false) — F_self never fires. One PG read
+      # (DEC-2-sanctioned). F_self also requires I=1 (fail-safe 0 in PR2b) so this is dormant regardless,
+      # but the query is the real one for when the I-event computation lands.
+      def v2_self_history(channel)
+        rows = TrustIndexHistory
+          .where(channel_id: channel.id, engine_version: "v2", c_hard: false)
+          .where("calculated_at > ?", SELF_HISTORY_WINDOW_DAYS.days.ago)
+          .order(calculated_at: :desc)
+          .limit(SELF_HISTORY_WINDOW_STREAMS)
+          .pluck(:rho_obs)
+          .compact
+          .map(&:to_f)
+        return { rho_self_lo: nil, clean_self_history: false, self_history_stable: false } if rows.size < SELF_HISTORY_MIN_CLEAN
+
+        { rho_self_lo: percentile(rows.sort, 0.10),
+          clean_self_history: true,
+          self_history_stable: rows.size >= SELF_HISTORY_STABLE_MIN }
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 self-history failed (#{e.message})")
+        { rho_self_lo: nil, clean_self_history: false, self_history_stable: false }
+      end
+
+      # Nearest-rank percentile on a pre-sorted ascending array (p ∈ [0,1]).
+      def percentile(sorted, p)
+        return nil if sorted.empty?
+
+        idx = (p * (sorted.size - 1)).round
+        sorted[idx]
+      end
+
+      def v2_cold_start_tier(status)
+        case status
+        when "insufficient" then "insufficient"
+        when "provisional_low", "provisional" then "basic"
+        else "full"
+        end
+      end
+
+      def v2_reputation(channel)
+        Reputation::BandService.cached_for(channel)
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 reputation failed (#{e.message})")
+        nil
       end
     end
   end

@@ -179,4 +179,26 @@ RSpec.describe TrustIndex::Engine do
       expect { RehabilitationPenaltyEvent }.to raise_error(NameError)
     end
   end
+
+  # T1-074 PR2b — DEC-7 MF-1 symmetric publish adapter + MF-4 engine_version guard.
+  describe "TI v2 dual-run adapters (DEC-7)" do
+    let(:result) { engine.compute(signal_results: all_signals(value: 0.1), stream: stream, ccv: 1000) }
+
+    it "#engine_version is 'v1'" do
+      expect(result.engine_version).to eq("v1")
+    end
+
+    it "#to_headline_payload emits the CURRENT legacy wire shape (extension unchanged during shadow)" do
+      payload = result.to_headline_payload
+      expect(payload.keys).to contain_exactly(:ti_score, :classification, :erv_percent, :erv_count,
+                                              :label, :label_color, :cold_start_status, :engine_version)
+      expect(payload[:ti_score]).to eq(result.ti_score)
+      expect(payload[:engine_version]).to eq("v1")
+    end
+
+    it "MF-4: persisted v1 TIH row is explicitly tagged engine_version='v1' (M1 default is 'v2')" do
+      result
+      expect(TrustIndexHistory.where(stream: stream).last.engine_version).to eq("v1")
+    end
+  end
 end
