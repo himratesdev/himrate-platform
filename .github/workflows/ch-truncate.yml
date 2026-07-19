@@ -35,12 +35,15 @@ jobs:
           echo "=== top CH tables by disk ==="
           ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query \"SELECT database, table, formatReadableSize(sum(bytes_on_disk)) sz FROM system.parts WHERE active GROUP BY database, table ORDER BY sum(bytes_on_disk) DESC LIMIT 12\" 2>&1" || true
 
-      - name: TRUNCATE CH system-log tables (safe — CH-internal, never queried)
+      - name: TRUNCATE CH system-log tables (force_drop bypasses max_table_size_to_drop 50G guard)
         run: |
           for t in text_log processors_profile_log query_log query_thread_log trace_log metric_log \
                    asynchronous_metric_log part_log opentelemetry_span_log session_log error_log \
                    backup_log blob_storage_log crash_log zookeeper_log latency_log; do
-            echo "--- TRUNCATE system.$t ---"
+            echo "--- TRUNCATE system.$t (with force_drop_table flag) ---"
+            # CH refuses TRUNCATE/DROP on tables > max_table_size_to_drop (50G default). The
+            # force_drop_table flag file bypasses it for ONE op, then CH auto-removes it → re-create per table.
+            ssh hostkey "docker exec himrate-clickhouse bash -c 'mkdir -p /var/lib/clickhouse/flags && touch /var/lib/clickhouse/flags/force_drop_table && chmod 666 /var/lib/clickhouse/flags/force_drop_table' 2>&1" || true
             ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query 'TRUNCATE TABLE IF EXISTS system.$t' 2>&1" || true
           done
 
