@@ -47,9 +47,16 @@ jobs:
             ssh hostkey "docker exec himrate-clickhouse clickhouse-client --query 'TRUNCATE TABLE IF EXISTS system.$t' 2>&1" || true
           done
 
+      - name: Restart ClickHouse (force physical part cleanup + apply #340 constrained.xml cap)
+        run: |
+          echo "=== restart himrate-clickhouse (forces reclaim of truncated parts + applies cap) ==="
+          ssh hostkey "docker restart himrate-clickhouse" || true
+          sleep 30
+          ssh hostkey "docker ps --filter name=himrate-clickhouse --format '{{.Names}} {{.Status}}'" || true
+
       - name: Disk AFTER
         run: |
-          echo "=== df AFTER ==="; ssh hostkey "df -h /" || true
+          echo "=== df AFTER (post CH restart) ==="; ssh hostkey "df -h /" || true
 
       - name: Restart himrate-db + verify PG
         run: |
