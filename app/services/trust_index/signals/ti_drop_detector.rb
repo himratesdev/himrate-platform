@@ -17,12 +17,27 @@ module TrustIndex
       DEDUP_WINDOW = 5.minutes
 
       # Check TrustIndexHistory для drop > 15 pts. Returns array of created anomaly IDs.
+      # PR3b (T1-074): engine-aware. Under ti_v2_engine the basis is `authenticity` (0-100, same
+      # scale/semantics as TI for drop purposes) on engine_version='v2' rows; EC-15 GREY rows carry
+      # authenticity NULL and are excluded (nil→0.0 would fake a 90-pt drop). The v1 branch now
+      # filters engine_version='v1' explicitly — harmless pre-flip, prevents cross-engine mixing.
+      # Cold-start skip string is identical on both branches ("insufficient").
       def self.check(stream)
-        history = TrustIndexHistory
-          .where(channel_id: stream.channel_id)
-          .where("calculated_at > ?", WINDOW.ago)
-          .order(calculated_at: :desc)
-          .pluck(:trust_index_score, :cold_start_status)
+        history =
+          if v2_engine?
+            TrustIndexHistory
+              .where(channel_id: stream.channel_id, engine_version: "v2")
+              .where("calculated_at > ?", WINDOW.ago)
+              .where.not(authenticity: nil)
+              .order(calculated_at: :desc)
+              .pluck(:authenticity, :cold_start_tier)
+          else
+            TrustIndexHistory
+              .where(channel_id: stream.channel_id, engine_version: "v1")
+              .where("calculated_at > ?", WINDOW.ago)
+              .order(calculated_at: :desc)
+              .pluck(:trust_index_score, :cold_start_status)
+          end
 
         return [] if history.size < 2
 
@@ -59,7 +74,14 @@ module TrustIndex
                .where("timestamp > ?", DEDUP_WINDOW.ago).exists?
       end
 
-      private_class_method :recent_anomaly_exists?
+      # Flag-store hiccup must not take SCW down → false = v1 branch (engine_version-filtered, safe).
+      def self.v2_engine?
+        Flipper.enabled?(:ti_v2_engine)
+      rescue StandardError
+        false
+      end
+
+      private_class_method :recent_anomaly_exists?, :v2_engine?
     end
   end
 end

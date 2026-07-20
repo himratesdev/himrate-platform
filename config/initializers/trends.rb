@@ -8,7 +8,7 @@
 # в API или DB schema). Bump вместе с миграцией изменяющей schema_version default.
 # Single source of truth для cache key format: trends:{channel_id}:{endpoint}:{period}:v{N}.
 
-Rails.application.config.x.trends_cache_version = 2
+Rails.application.config.x.trends_cache_version = 4 # PR3b: TI v2 TDA columns + endpoint shapes (invalidates old-shape cached payloads)
 
 # TASK-039 Phase C1 CR M-1: Dedicated Redis connection pool для cache metadata
 # (invalidation epoch). Избегает ::Redis.new per request — file descriptor exhaustion

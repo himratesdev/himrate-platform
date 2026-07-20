@@ -12,6 +12,14 @@ module TrustIndex
     # k — calibration thresholds: phi_yellow, phi_red, q_mid, q_hi.
     class BandClassifier
       Band = Data.define(:row, :color, :label_key, :sub)
+
+      # PR3b: canonical row→label_key map for consumers re-deriving the key from a PERSISTED TIH row
+      # (the table stores row/sub/color, not label_key). Single source — mirrors #call below.
+      LABEL_KEYS_BY_ROW = {
+        1 => "band.red_significant", 2 => "band.yellow_anomaly", 3 => "band.green_real",
+        4 => "band.green_no_anomaly", 5 => "band.grey_insufficient", 6 => "band.amber_exceeds"
+      }.freeze
+
       # Canonical driver contract (L4 builds this; the class stays duck-typed for isolated tests).
       Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
                             :c_hard, :c_self, :raid_window, :cold_start_tier)

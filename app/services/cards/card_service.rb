@@ -78,17 +78,31 @@ module Cards
       end
     end
 
+    # PR3b (T1-074, B4): the slice auto-flows from Trust::ShowService — v2 keys when ti_v2_engine
+    # is ON (build_headline_v2), v1 keys otherwise. Landing channel_card.js ports in the same PR.
     def headline_data
-      trust_payload.slice(
-        :ti_score, :classification, :erv_percent, :erv_count, :erv_label, :erv_label_color,
-        :cold_start_status, :confidence, :is_live, :ccv, :calculated_at
-      )
+      if v2_engine?
+        trust_payload.slice(
+          :erv, :erv_interval, :authenticity, :band, :erv_label, :reason_codes, :confirmed_anomaly,
+          :cold_start_tier, :confidence_marker, :engine_version, :is_live, :ccv, :calculated_at
+        )
+      else
+        trust_payload.slice(
+          :ti_score, :classification, :erv_percent, :erv_count, :erv_label, :erv_label_color,
+          :cold_start_status, :confidence, :is_live, :ccv, :calculated_at
+        )
+      end
     end
 
     # Layer 2: free, but registered + (live OR post-stream window). Guest on a live/window channel
     # gets a register CTA (funnel); a registered viewer on an offline channel just gets unavailable.
+    # v2: signal_breakdown retired (reason_codes live in the headline layer).
     def live_drill_layer(granted)
-      return { available: true, data: trust_payload.slice(:signal_breakdown, :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired) } if granted
+      if granted
+        keys = v2_engine? ? [ :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired ] :
+                            [ :signal_breakdown, :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired ]
+        return { available: true, data: trust_payload.slice(*keys) }
+      end
 
       layer = { available: false }
       layer[:cta] = { action: "register" } if @user.nil? && live_or_window?
@@ -161,7 +175,7 @@ module Cards
       (total.to_f / weeks).round(1)
     end
 
-    # Single query for all recent streams' TI records (no N+1).
+    # Single query for all recent streams' TI records (no N+1). PR3b: engine-filtered per branch.
     def prefetch_ti_for_streams(streams, channel_id)
       return {} if streams.empty?
 
@@ -169,7 +183,7 @@ module Cards
       max_end = streams.map { |s| s.ended_at || Time.current }.max
 
       all_ti = TrustIndexHistory
-        .where(channel_id: channel_id)
+        .where(channel_id: channel_id, engine_version: v2_engine? ? "v2" : "v1")
         .where(calculated_at: min_start..max_end)
         .order(calculated_at: :desc)
 
@@ -181,14 +195,28 @@ module Cards
 
     def format_stream(stream, ti = nil)
       duration_ms = stream.current_duration_ms
-      {
+      base = {
         date: stream.started_at.iso8601,
         duration_hours: duration_ms ? (duration_ms / 3_600_000.0).round(1) : nil,
         peak_ccv: stream.current_peak_ccv,
-        avg_ccv: stream.current_avg_ccv,
-        ti_score: ti&.trust_index_score&.to_f&.round(1),
-        erv_percent: ti&.erv_percent&.to_f&.round(1)
+        avg_ccv: stream.current_avg_ccv
       }
+      if v2_engine?
+        base.merge(erv: ti&.erv, authenticity: ti&.authenticity&.to_f&.round(1), band_color: ti&.band_color)
+      else
+        base.merge(ti_score: ti&.trust_index_score&.to_f&.round(1), erv_percent: ti&.erv_percent&.to_f&.round(1))
+      end
+    end
+
+    def v2_engine?
+      return @v2_engine if defined?(@v2_engine)
+
+      @v2_engine =
+        begin
+          Flipper.enabled?(:ti_v2_engine)
+        rescue StandardError
+          false
+        end
     end
   end
 end

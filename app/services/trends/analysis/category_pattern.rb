@@ -60,8 +60,10 @@ module Trends
       def channel_category_breakdown
         rows = TrendsDailyAggregate
           .where(channel_id: @channel.id, date: @from..@to)
-          .where.not(ti_avg: nil)
-          .pluck(:categories, :ti_avg, :erv_avg_percent)
+          .where("authenticity_avg IS NOT NULL OR ti_avg IS NOT NULL")
+          .pluck(:categories,
+                 Arel.sql("COALESCE(authenticity_avg, ti_avg)"),
+                 Arel.sql("COALESCE(authenticity_avg, erv_avg_percent)"))
 
         by_category = Hash.new { |h, k| h[k] = { streams: 0, ti_sum: 0.0, ti_weight: 0, erv_sum: 0.0, erv_weight: 0 } }
 
@@ -111,10 +113,10 @@ module Trends
             .where.not(channel_id: @channel.id)
             .where("date >= ?", since)
             .where("jsonb_exists(categories, ?)", name)
-            .where.not(ti_avg: nil)
+            .where("authenticity_avg IS NOT NULL OR ti_avg IS NOT NULL")
           stats = scope.pick(
-            Arel.sql("AVG(ti_avg)"),
-            Arel.sql("AVG(erv_avg_percent)")
+            Arel.sql("AVG(COALESCE(authenticity_avg, ti_avg))"),
+            Arel.sql("AVG(COALESCE(authenticity_avg, erv_avg_percent))")
           )
           {
             ti_avg: stats&.first&.to_f&.round(2),

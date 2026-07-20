@@ -53,30 +53,51 @@ module Trends
 
       def daily_points
         from_ts, to_ts = range
+        # PR3b: COALESCE — v2 days carry authenticity_avg (the "% real" heir) + erv_avg_count
         TrendsDailyAggregate
           .where(channel_id: channel.id, date: from_ts.to_date..to_ts.to_date)
-          .where.not(erv_avg_percent: nil)
+          .where("erv_avg_percent IS NOT NULL OR authenticity_avg IS NOT NULL")
           .order(:date)
-          .pluck(:date, :erv_avg_percent, :erv_min_percent, :erv_max_percent, :ccv_avg)
-          .map { |date, avg, min, max, ccv| point_for(date, avg, min, max, ccv) }
+          .pluck(:date,
+                 Arel.sql("COALESCE(erv_avg_percent, authenticity_avg)"),
+                 :erv_min_percent, :erv_max_percent, :ccv_avg, :erv_avg_count, :band_color_at_end)
+          .map { |date, avg, min, max, ccv, cnt, bcolor| point_for(date, avg, min, max, ccv, erv_count: cnt, band_color: bcolor) }
       end
 
+      # PR3b: per-row engine discrimination. v2 rows emit the NATIVE count (erv) + interval +
+      # engine band color; erv_percent for v2 = authenticity (same "% real" meaning). The 3-color
+      # reader-side erv_color fn only ever sees v1 rows.
       def per_stream_points
         from_ts, to_ts = range
         TrustIndexHistory
           .for_channel(channel.id)
           .where(calculated_at: from_ts..to_ts)
-          .where.not(erv_percent: nil)
+          .where("(engine_version = 'v1' AND erv_percent IS NOT NULL) OR (engine_version = 'v2' AND erv IS NOT NULL)")
           .order(:calculated_at)
-          .pluck(:calculated_at, :erv_percent, :ccv, :stream_id)
-          .map do |ts, erv, ccv, stream_id|
-            {
-              date: ts.iso8601,
-              erv_percent: erv.to_f.round(2),
-              erv_absolute: erv_absolute(erv, ccv),
-              ccv: ccv.to_i,
-              stream_id: stream_id
-            }
+          .pluck(:calculated_at, :erv_percent, :ccv, :stream_id, :engine_version, :erv, :erv_lo, :erv_hi, :authenticity, :band_color)
+          .map do |ts, erv_pct, ccv, stream_id, engine, erv, erv_lo, erv_hi, auth, band_color|
+            if engine == "v2"
+              {
+                date: ts.iso8601,
+                erv: erv,
+                erv_interval: { lo: erv_lo, hi: erv_hi },
+                erv_percent: auth&.to_f&.round(2),
+                erv_absolute: erv,
+                ccv: ccv.to_i,
+                stream_id: stream_id,
+                color: band_color,
+                engine_version: "v2"
+              }
+            else
+              {
+                date: ts.iso8601,
+                erv_percent: erv_pct.to_f.round(2),
+                erv_absolute: erv_absolute(erv_pct, ccv),
+                ccv: ccv.to_i,
+                stream_id: stream_id,
+                engine_version: "v1"
+              }
+            end
           end
       end
 
@@ -84,28 +105,31 @@ module Trends
         from_ts, to_ts = range
         TrendsDailyAggregate
           .where(channel_id: channel.id, date: from_ts.to_date..to_ts.to_date)
-          .where.not(erv_avg_percent: nil)
+          .where("erv_avg_percent IS NOT NULL OR authenticity_avg IS NOT NULL")
           .group(Arel.sql("DATE_TRUNC('week', date)"))
           .pluck(
             Arel.sql("DATE_TRUNC('week', date) AS week"),
-            Arel.sql("AVG(erv_avg_percent)"),
+            Arel.sql("AVG(COALESCE(erv_avg_percent, authenticity_avg))"),
             Arel.sql("MIN(erv_min_percent)"),
             Arel.sql("MAX(erv_max_percent)"),
-            Arel.sql("AVG(ccv_avg)")
+            Arel.sql("AVG(ccv_avg)"),
+            Arel.sql("AVG(erv_avg_count)")
           )
           .sort_by(&:first)
-          .map { |week, avg, min, max, ccv| point_for(week.to_date, avg, min, max, ccv) }
+          .map { |week, avg, min, max, ccv, cnt| point_for(week.to_date, avg, min, max, ccv, erv_count: cnt) }
       end
 
-      def point_for(date, avg, min, max, ccv)
+      def point_for(date, avg, min, max, ccv, erv_count: nil, band_color: nil)
         {
           date: date.to_s,
           erv_percent: avg&.to_f&.round(2),
           erv_min_percent: min&.to_f&.round(2),
           erv_max_percent: max&.to_f&.round(2),
-          erv_absolute: erv_absolute(avg, ccv),
+          # v2 days: native count; v1 days: ccv×% derivation
+          erv_absolute: erv_count ? erv_count.to_f.round : erv_absolute(avg, ccv),
           ccv_avg: ccv&.to_i,
-          color: erv_color(avg)
+          # engine band color when persisted (5 values incl. amber/grey); 3-color threshold fn = v1-only
+          color: band_color || erv_color(avg)
         }
       end
 

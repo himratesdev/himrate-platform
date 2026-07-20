@@ -8,7 +8,7 @@
 (function () {
   "use strict";
 
-  var LABEL_COLOR = { green: "#25D9A4", yellow: "#F5C451", red: "#F0616D" };
+  var LABEL_COLOR = { green: "#25D9A4", yellow: "#F5C451", red: "#F0616D", grey: "#9A9AA9", amber: "#F6A823" };
   var DOT_PALETTE = ["#7B5CFA", "#4FA9FF", "#25D9A4", "#F6A823", "#FB4E55"];
 
   function q(root, name) { return (root || document).querySelector('[data-pencil-name="' + name + '"]'); }
@@ -20,10 +20,15 @@
     return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
   }
   function initials(s) { s = (s || "").replace(/[^A-Za-zА-Яа-я0-9]/g, ""); return (s.slice(0, 1) || "?").toUpperCase(); }
-  // The watchlist channels endpoint returns a FLAT shape: {channel_id, login, display_name, avatar_url,
-  // erv_percent, erv_label_color (green|yellow|red|grey), ti_score, ccv, is_live, tags[], notes, ...}.
-  function colorOf(c) { return (c && LABEL_COLOR[c.erv_label_color]) || "#9A9AA9"; }
-  function realOf(c) { return (c && c.ccv != null && c.erv_percent != null) ? Math.round(c.ccv * c.erv_percent / 100) : null; }
+  // Flat shape, dual-contract (PR3b TI v2): v2 rows carry {erv (count), authenticity, band_color
+  // (green|yellow|red|grey|amber)}; v1 rows {erv_percent, erv_label_color, ti_score}.
+  function colorOf(c) { return (c && LABEL_COLOR[c.band_color || c.erv_label_color]) || "#9A9AA9"; }
+  function pctOf(c) { return c == null ? null : (c.authenticity != null ? c.authenticity : c.erv_percent); }
+  function realOf(c) {
+    if (!c) return null;
+    if (c.erv != null) return c.erv; // v2: native engine count
+    return (c.ccv != null && c.erv_percent != null) ? Math.round(c.ccv * c.erv_percent / 100) : null;
+  }
   // Legal-safe ERV label derived from erv% (the endpoint gives only the colour) — matches ErvCalculator bands.
   function ervLabel(p) {
     if (p == null) return "—";
@@ -134,7 +139,7 @@
 
     // trust badge (derived ERV label + colour); dot is the badge's first small child
     var label = q(row, "Label");
-    if (label) { label.textContent = ervLabel(c.erv_percent); label.style.color = col; }
+    if (label) { label.textContent = ervLabel(pctOf(c)); label.style.color = col; }
     var badge = qp(row, "WC Badge");
     if (badge) { var bdot = badge.querySelector("div"); if (bdot) bdot.style.backgroundColor = col; }
 

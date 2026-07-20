@@ -73,6 +73,12 @@ class StreamOnlineWorker
 
   private
 
+  def ti_v2_engine?
+    Flipper.enabled?(:ti_v2_engine)
+  rescue StandardError
+    false
+  end
+
   def find_or_create_channel(twitch_id, login)
     Channel.find_or_create_by!(twitch_id: twitch_id) do |c|
       c.login = login
@@ -161,15 +167,29 @@ class StreamOnlineWorker
     last_stream = allow_merge ? channel.streams.where.not(ended_at: nil).order(ended_at: :desc).first : nil
     if last_stream && last_stream.ended_at > MERGE_GAP_MINUTES.minutes.ago && merge_game_match?(game_name, last_stream.game_name)
       # TASK-033 FR-004: Track part boundaries for TI Divergence detection
-      last_ti = TrustIndexHistory.where(stream_id: last_stream.id)
-                                 .order(calculated_at: :desc)
-                                 .first
-      boundary = {
-        ended_at: last_stream.ended_at.iso8601,
-        ti_score: last_ti&.trust_index_score&.to_f,
-        erv_percent: last_ti&.erv_percent&.to_f,
-        part_number: last_stream.merged_parts_count
-      }
+      # PR3b: boundary carries the ACTIVE engine's trust scalar (v2 → authenticity + erv count;
+      # TiDivergenceAlerter reads authenticity with a ti_score fallback for pre-cutover rows).
+      if ti_v2_engine?
+        last_ti = TrustIndexHistory.where(stream_id: last_stream.id, engine_version: "v2")
+                                   .order(calculated_at: :desc)
+                                   .first
+        boundary = {
+          ended_at: last_stream.ended_at.iso8601,
+          authenticity: last_ti&.authenticity&.to_f,
+          erv: last_ti&.erv,
+          part_number: last_stream.merged_parts_count
+        }
+      else
+        last_ti = TrustIndexHistory.where(stream_id: last_stream.id, engine_version: "v1")
+                                   .order(calculated_at: :desc)
+                                   .first
+        boundary = {
+          ended_at: last_stream.ended_at.iso8601,
+          ti_score: last_ti&.trust_index_score&.to_f,
+          erv_percent: last_ti&.erv_percent&.to_f,
+          part_number: last_stream.merged_parts_count
+        }
+      end
       merge_existing_idempotent(last_stream, new_twitch_stream_id, boundary, channel)
     else
       create_stream_idempotent(channel, event_data, new_twitch_stream_id, title, game_name, language)

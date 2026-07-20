@@ -7,7 +7,10 @@
 class PostStreamNotificationService
   # FR-006: Broadcast stream_ended via Action Cable (TrustChannel).
   # Includes mini-summary so Extension can show notification without extra API call.
-  def self.broadcast_stream_ended(stream, report = nil)
+  # PR3b (T1-074, C1): under ti_v2_engine the summary is {erv, erv_interval, band} — ti_score /
+  # erv_percent retired (T2 handler reads message.erv / message.erv_interval with cache fallbacks).
+  # `tih:` = the stream's FINAL v2 TIH row (PSR has no interval columns); nil-safe.
+  def self.broadcast_stream_ended(stream, report = nil, tih: nil)
     channel = stream.channel
 
     payload = {
@@ -17,18 +20,37 @@ class PostStreamNotificationService
       stream_id: stream.id,
       expires_at: (stream.ended_at + 18.hours).iso8601,
       merged_parts_count: stream.merged_parts_count,
-      ti_score: report&.trust_index_final&.to_f,
-      erv_percent: report&.erv_percent_final&.to_f,
       # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): stream.duration_ms column dropped —
       # derive via Stream#current_duration_ms (PSR.duration_ms для ended streams).
       duration_ms: stream.current_duration_ms,
       timestamp: Time.current.iso8601
     }
 
+    if ti_v2_engine?
+      payload.merge!(
+        erv: report&.erv_final,
+        erv_interval: tih&.erv_lo ? { lo: tih.erv_lo, hi: tih.erv_hi } : nil,
+        band: tih&.band_row ? { row: tih.band_row, color: tih.band_color, sub: tih.band_sub } : nil,
+        engine_version: "v2"
+      )
+    else
+      payload.merge!(
+        ti_score: report&.trust_index_final&.to_f,
+        erv_percent: report&.erv_percent_final&.to_f
+      )
+    end
+
     TrustChannel.broadcast_to(channel, payload)
   rescue StandardError => e
     Rails.logger.warn("PostStreamNotificationService: broadcast_stream_ended failed — #{e.message}")
   end
+
+  def self.ti_v2_engine?
+    Flipper.enabled?(:ti_v2_engine)
+  rescue StandardError
+    false
+  end
+  private_class_method :ti_v2_engine?
 
   # FR-009: Broadcast stream_expiring warning (1h before 18h window closes).
   def self.broadcast_stream_expiring(stream)

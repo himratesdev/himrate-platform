@@ -21,7 +21,10 @@ module Brand
     SORTS = { "real_avg" => "real_avg", "real_pct" => "real_pct", "streams_per_week" => "spw" }.freeze
     DEFERRED = %w[band_filter price platforms format saved_search].freeze
 
-    REAL_EXPR  = "AVG(ccv_avg * erv_avg_percent / 100.0)"
+    # PR3b (T1-074, M11b): COALESCE = transition-safe mixed-window aggregation — v2 TDA rows carry
+    # the native real-viewer count (erv_avg_count) and authenticity_avg; pre-cutover rows fall back
+    # to the v1 derivation. Data-driven (no flag branch), same pattern as the reputation CASE-port.
+    REAL_EXPR  = "AVG(COALESCE(erv_avg_count, ccv_avg * erv_avg_percent / 100.0))"
     SHOWN_EXPR = "AVG(ccv_avg)"
     SPW_EXPR   = "SUM(streams_count) * 7.0 / #{WINDOW_DAYS}"
     # real as % of shown (audience-reality %), guarded against 0 shown
@@ -44,7 +47,7 @@ module Brand
 
       rows = scope
              .select("channel_id, #{REAL_EXPR} AS real_avg, #{SHOWN_EXPR} AS shown_avg, " \
-                     "#{REAL_PCT_EXPR} AS real_pct, AVG(ti_avg) AS ti_avg, #{SPW_EXPR} AS spw")
+                     "#{REAL_PCT_EXPR} AS real_pct, AVG(COALESCE(authenticity_avg, ti_avg)) AS ti_avg, #{SPW_EXPR} AS spw")
              .order(Arel.sql("#{sort_expr} DESC NULLS LAST, channel_id ASC")) # channel_id = stable tiebreaker (deterministic pagination on ties)
              .limit(@per_page).offset((@page - 1) * @per_page)
              .to_a
@@ -92,12 +95,24 @@ module Brand
       Stream.from(latest, :s).where(s: { language: @language }).select(:channel_id)
     end
 
-    # channel_ids whose LATEST in-window classification is one of the wanted set.
+    # channel_ids whose LATEST in-window verdict is one of the wanted set. PR3b: v2 TDA rows carry
+    # band_color_at_end instead of classification_at_end — map the legacy classification params onto
+    # band colors so the filter spans mixed windows (trusted→green, needs_review→yellow+amber,
+    # suspicious→amber+yellow, fraudulent→red; grey = insufficient, excluded by any filter).
+    CLASSIFICATION_TO_BANDS = {
+      "trusted" => %w[green], "needs_review" => %w[yellow amber],
+      "suspicious" => %w[amber yellow], "fraudulent" => %w[red]
+    }.freeze
+
     def classification_channel_ids
+      bands = @classification.flat_map { |c| CLASSIFICATION_TO_BANDS.fetch(c, []) }.uniq
       latest = TrendsDailyAggregate.where(date: window)
-                                   .select("DISTINCT ON (channel_id) channel_id, classification_at_end")
+                                   .select("DISTINCT ON (channel_id) channel_id, classification_at_end, band_color_at_end")
                                    .order("channel_id, date DESC")
-      TrendsDailyAggregate.from(latest, :t).where(t: { classification_at_end: @classification }).select(:channel_id)
+      TrendsDailyAggregate.from(latest, :t)
+                          .where("t.classification_at_end IN (:cls) OR t.band_color_at_end IN (:bands)",
+                                 cls: @classification, bands: bands)
+                          .select(:channel_id)
     end
 
     # Phase 2 — batch-enrich the page (<= per_page channels), preserving aggregate order. No N+1.
@@ -129,7 +144,9 @@ module Brand
           # real_pct + |bot_correction_pct| == 100 exactly (CR nit).
           bot_correction_pct: real_pct && shown_avg.positive? ? -(100 - real_pct).round(1) : nil,
           classification: classifications[r.channel_id],
-          classification_label: ti_avg ? TrustIndex::ErvCalculator.resolve_label(ti_avg)[:ru] : nil,
+          # PR3b: label from the persisted band when present (5-color, legal-safe i18n); the
+          # ErvCalculator TI-scale resolver serves only pre-cutover rows.
+          classification_label: classification_label_for(r.channel_id, ti_avg),
           category: stream&.game_name,
           language: stream&.language,
           streams_per_week: r.spw&.to_f&.round(1),
@@ -147,10 +164,23 @@ module Brand
 
     # Bounded to the page's channel_ids (not the whole population).
     def latest_classification_by_channel(ids)
+      @latest_bands = {}
       TrendsDailyAggregate.where(date: window, channel_id: ids)
-                          .select("DISTINCT ON (channel_id) channel_id, classification_at_end")
+                          .select("DISTINCT ON (channel_id) channel_id, classification_at_end, band_row_at_end, band_color_at_end")
                           .order("channel_id, date DESC")
-                          .each_with_object({}) { |r, h| h[r.channel_id] = r.classification_at_end }
+                          .each_with_object({}) do |r, h|
+                            h[r.channel_id] = r.classification_at_end
+                            @latest_bands[r.channel_id] = r[:band_row_at_end]
+                          end
+    end
+
+    def classification_label_for(channel_id, ti_avg)
+      band_row = @latest_bands&.[](channel_id)
+      if band_row
+        I18n.t(TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[band_row], locale: :ru, default: nil)
+      elsif ti_avg
+        TrustIndex::ErvCalculator.resolve_label(ti_avg)[:ru]
+      end
     end
   end
 end

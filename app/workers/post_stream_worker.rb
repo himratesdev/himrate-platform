@@ -48,8 +48,9 @@ class PostStreamWorker
       # FR-007: TI Divergence check (merged streams only)
       TiDivergenceAlerter.check(stream) if stream.merged_parts_count > 1
 
-      # FR-006: Broadcast stream_ended via Action Cable
-      PostStreamNotificationService.broadcast_stream_ended(stream, report)
+      # FR-006: Broadcast stream_ended via Action Cable (PR3b: tih feeds the v2 erv_interval —
+      # PSR has no interval columns; nil pre-flip / on the v1 path).
+      PostStreamNotificationService.broadcast_stream_ended(stream, report, tih: final_tih(stream))
 
       # FR-009: Schedule expiring warning (17h after offline)
       schedule_expiring_warning(stream)
@@ -87,9 +88,13 @@ class PostStreamWorker
       Trends::Cache::Invalidator.call(stream.channel_id)
 
       duration_ms = ((Time.current - started_at) * 1000).to_i
+      headline = if ti_v2_engine?
+        "ERV=#{report&.erv_final} band=#{final_tih(stream)&.band_color}"
+      else
+        "TI=#{report&.trust_index_final} ERV=#{report&.erv_percent_final}%"
+      end
       Rails.logger.info(
-        "PostStreamWorker: stream #{stream_id} — " \
-        "TI=#{report&.trust_index_final} ERV=#{report&.erv_percent_final}% " \
+        "PostStreamWorker: stream #{stream_id} — #{headline} " \
         "merged=#{stream.merged_parts_count > 1} parts=#{stream.merged_parts_count} " \
         "duration=#{duration_ms}ms"
       )
@@ -169,23 +174,18 @@ class PostStreamWorker
     Rails.logger.error("PostStreamWorker: band refresh failed for channel #{channel.id} — #{e.message}")
   end
 
+  # PR3b (T1-074, PSR Option 1): under ti_v2_engine the retired v1 scalars (trust_index_final /
+  # erv_percent_final) are STOP-WRITTEN (nil); `erv_final` keeps its column+unit and carries the v2
+  # subtracted COUNT directly (no ErvCalculator rescale). authenticity/band/interval for an ended
+  # stream stay losslessly readable off the append-only TIH v2 row (PSR = denormalized cache, not
+  # SoT) — an authenticity_final column can be added additively when a real consumer appears.
   def generate_report(stream)
-    ti_history = TrustIndexHistory.where(stream_id: stream.id)
-                                  .order(calculated_at: :desc)
-                                  .first
+    ti_history = final_tih(stream)
 
     signals_summary = build_signals_summary(stream)
     anomalies_data = Anomaly.where(stream_id: stream.id)
                             .select(:anomaly_type, :cause, :ccv_impact, :confidence, :timestamp)
                             .map { |a| a.attributes.except("id") }
-
-    erv_data = if ti_history
-                  TrustIndex::ErvCalculator.compute(
-                    ti_score: ti_history.trust_index_score.to_f,
-                    ccv: ti_history.ccv.to_i,
-                    confidence: ti_history.confidence.to_f
-                  )
-    end
 
     # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv / duration_ms columns dropped
     # from streams. Source of truth for these stats moves into PSR itself, computed from
@@ -197,17 +197,35 @@ class PostStreamWorker
       ((stream.ended_at - stream.started_at) * 1000).to_i
     end
 
-    attrs = {
-      trust_index_final: ti_history&.trust_index_score,
-      erv_percent_final: ti_history&.erv_percent,
-      erv_final: erv_data&.dig(:erv_count),
+    attrs = if ti_v2_engine?
+      {
+        trust_index_final: nil,
+        erv_percent_final: nil,
+        erv_final: ti_history&.erv
+      }
+    else
+      erv_data = if ti_history
+                    TrustIndex::ErvCalculator.compute(
+                      ti_score: ti_history.trust_index_score.to_f,
+                      ccv: ti_history.ccv.to_i,
+                      confidence: ti_history.confidence.to_f
+                    )
+      end
+      {
+        trust_index_final: ti_history&.trust_index_score,
+        erv_percent_final: ti_history&.erv_percent,
+        erv_final: erv_data&.dig(:erv_count)
+      }
+    end
+
+    attrs.merge!(
       ccv_peak: peak,
       ccv_avg: avg,
       duration_ms: duration,
       signals_summary: signals_summary,
       anomalies: anomalies_data,
       generated_at: Time.current
-    }
+    )
 
     # UPSERT: update if already exists (merged stream re-finalization)
     report = PostStreamReport.find_or_initialize_by(stream_id: stream.id)
@@ -215,13 +233,35 @@ class PostStreamWorker
     report
   end
 
+  # Engine-aware FINAL TIH for this stream (memoized — also feeds the C1 broadcast interval).
+  # Explicit engine_version filter on BOTH branches: pre-flip protective, post-flip mandatory
+  # (an unfiltered latest read would pick whichever engine wrote last).
+  def final_tih(stream)
+    return @final_tih if defined?(@final_tih)
+
+    @final_tih = TrustIndexHistory
+      .where(stream_id: stream.id, engine_version: ti_v2_engine? ? "v2" : "v1")
+      .order(calculated_at: :desc)
+      .first
+  end
+
+  def ti_v2_engine?
+    Flipper.enabled?(:ti_v2_engine)
+  rescue StandardError
+    false
+  end
+
   # BUG-TI-SIGNAL-BREAKDOWN (2026-06-01): read signals from latest TIH.signal_breakdown
   # JSON column. The `signals` PG table is dead-write since TrustIndex::Engine refactor;
   # TiSignal.where lookups returned 0 rows → post-stream reports stored an empty summary.
   # Same fix pattern as Trust::ShowService#signal_breakdown_for_stream.
   def build_signals_summary(stream)
-    tih = TrustIndexHistory.where(stream_id: stream.id).order(calculated_at: :desc).first
+    tih = final_tih(stream)
     return {} unless tih
+
+    # PR3b: v2 rows carry no signal_breakdown (14-signal taxonomy retired) — the v2 explainability
+    # is reason_codes (already on the row). The $4.99 report reads them from here.
+    return { "reason_codes" => tih.reason_codes || [] } if ti_v2_engine?
 
     breakdown = tih.signal_breakdown
     return {} unless breakdown.is_a?(Hash)

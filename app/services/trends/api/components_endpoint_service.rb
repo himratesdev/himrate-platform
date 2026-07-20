@@ -63,16 +63,46 @@ module Trends
       end
 
       def build_points(from_ts, to_ts)
+        return build_points_v2(from_ts, to_ts) if v2_engine?
+
         # CR S-2: explicit jsonb filter. Rails `where.not(jsonb_col: [nil, {}])` может
         # сгенерировать AR casting inconsistencies (Hash → jsonb literal); для empty
         # jsonb объектов надёжный тест через PG operator != '{}'::jsonb.
         TrustIndexHistory
           .for_channel(channel.id)
-          .where(calculated_at: from_ts..to_ts)
+          .where(calculated_at: from_ts..to_ts, engine_version: "v1")
           .where("signal_breakdown IS NOT NULL AND signal_breakdown <> '{}'::jsonb")
           .order(:calculated_at)
           .pluck(:calculated_at, :trust_index_score, :signal_breakdown)
           .map { |ts, ti, breakdown| point_for(ts, ti, breakdown) }
+      end
+
+      # PR3b (T1-074): minimal v2 series — the 14-signal component taxonomy has no v2 equivalent;
+      # the engine's explainability = fraud-arm breakdown + reason_codes + band. A full v2
+      # component-taxonomy redesign is a separate Design/SRS pass (Change Request), not this port.
+      def build_points_v2(from_ts, to_ts)
+        TrustIndexHistory
+          .for_channel(channel.id)
+          .where(calculated_at: from_ts..to_ts, engine_version: "v2")
+          .where.not(authenticity: nil)
+          .order(:calculated_at)
+          .pluck(:calculated_at, :authenticity, :f_hard, :f_soft, :f_hat, :reason_codes, :band_row, :band_color)
+          .map do |ts, auth, f_hard, f_soft, f_hat, reason_codes, band_row, band_color|
+            {
+              date: ts.iso8601,
+              ti: auth&.to_f&.round(2),
+              erv_breakdown: { f_hard: f_hard&.to_f, f_soft: f_soft&.to_f, f_hat: f_hat&.to_f },
+              reason_codes: reason_codes || [],
+              band: { row: band_row, color: band_color },
+              engine_version: "v2"
+            }
+          end
+      end
+
+      def v2_engine?
+        Flipper.enabled?(:ti_v2_engine)
+      rescue StandardError
+        false
       end
 
       def point_for(ts, ti, breakdown)

@@ -20,23 +20,30 @@ module Watchlists
       channels
     end
 
-    # FR-023: Aggregate stats for the watchlist
+    # FR-023: Aggregate stats for the watchlist.
+    # PR3b: under ti_v2_engine the aggregate is avg_authenticity (0-100, scale-safe to average —
+    # raw erv COUNTS across channels of different V are not); avg_erv retired on the v2 branch
+    # (T2 reads avg_authenticity).
     def stats
       wc_ids = @watchlist.watchlist_channels.pluck(:channel_id)
-      return { avg_erv: nil, live_count: 0, tracked_count: 0, total: 0 } if wc_ids.empty?
+      if wc_ids.empty?
+        return v2_engine? ? { avg_authenticity: nil, live_count: 0, tracked_count: 0, total: 0 } :
+                            { avg_erv: nil, live_count: 0, tracked_count: 0, total: 0 }
+      end
 
       latest_ti = latest_ti_for_channels(wc_ids)
       live_ids = live_channel_ids(wc_ids)
       tracked_ids = tracked_channel_ids(wc_ids)
 
-      erv_values = latest_ti.filter_map { |_id, ti| ti&.erv_percent&.to_f }
+      base = { live_count: live_ids.size, tracked_count: tracked_ids.size, total: wc_ids.size }
 
-      {
-        avg_erv: erv_values.any? ? (erv_values.sum / erv_values.size).round(1) : nil,
-        live_count: live_ids.size,
-        tracked_count: tracked_ids.size,
-        total: wc_ids.size
-      }
+      if v2_engine?
+        a_values = latest_ti.filter_map { |_id, ti| ti&.authenticity&.to_f }
+        base.merge(avg_authenticity: a_values.any? ? (a_values.sum / a_values.size).round(1) : nil)
+      else
+        erv_values = latest_ti.filter_map { |_id, ti| ti&.erv_percent&.to_f }
+        base.merge(avg_erv: erv_values.any? ? (erv_values.sum / erv_values.size).round(1) : nil)
+      end
     end
 
     private
@@ -63,19 +70,14 @@ module Watchlists
     end
 
     def build_enriched(channel, ti, wc, tags_note, live_ids, tracked_ids, last_stream_at)
-      erv_pct = ti&.erv_percent&.to_f
-      {
+      base = {
         channel_id: channel.id,
         login: channel.login,
         display_name: channel.display_name,
         avatar_url: channel.profile_image_url,
-        erv_percent: erv_pct&.round(1),
-        erv_label_color: erv_color(erv_pct),
-        ti_score: ti&.trust_index_score&.to_f&.round(0)&.to_i,
         ccv: ti&.ccv&.to_i,
         is_live: live_ids.include?(channel.id),
         is_tracked: tracked_ids.include?(channel.id),
-        last_ti_at: ti&.calculated_at&.iso8601,
         last_stream_at: last_stream_at&.iso8601,
         inactive: inactive?(last_stream_at),
         tags: tags_note&.tags || [],
@@ -83,6 +85,26 @@ module Watchlists
         added_at: wc.added_at.iso8601,
         position: wc.position
       }
+
+      if v2_engine?
+        # PR3b (T2 contract, api.ts WatchlistChannel): erv COUNT + authenticity + engine-emitted
+        # band_color (5 values red/yellow/amber/green/grey — reader-side thresholds retired).
+        # last_ti_at → last_calculated_at (T2 rename).
+        base.merge(
+          erv: ti&.erv,
+          authenticity: ti&.authenticity&.to_f&.round(1),
+          band_color: ti&.band_color || "grey",
+          last_calculated_at: ti&.calculated_at&.iso8601
+        )
+      else
+        erv_pct = ti&.erv_percent&.to_f
+        base.merge(
+          erv_percent: erv_pct&.round(1),
+          erv_label_color: erv_color(erv_pct),
+          ti_score: ti&.trust_index_score&.to_f&.round(0)&.to_i,
+          last_ti_at: ti&.calculated_at&.iso8601
+        )
+      end
     end
 
     # FR-026: Freshness — computed client-side from last_ti_at
@@ -102,13 +124,22 @@ module Watchlists
       end
     end
 
-    # Single query: DISTINCT ON per channel, latest TI record
+    # Single query: DISTINCT ON per channel, latest TI record (engine-filtered on both branches —
+    # v2 uses the M1 partial index idx_tih_v2_backfill_progress).
     def latest_ti_for_channels(channel_ids)
-      TrustIndexHistory
-        .where(channel_id: channel_ids)
-        .select("DISTINCT ON (channel_id) channel_id, trust_index_score, erv_percent, ccv, calculated_at")
-        .order(:channel_id, calculated_at: :desc)
-        .index_by(&:channel_id)
+      if v2_engine?
+        TrustIndexHistory
+          .where(channel_id: channel_ids, engine_version: "v2")
+          .select("DISTINCT ON (channel_id) channel_id, erv, authenticity, band_color, ccv, calculated_at")
+          .order(:channel_id, calculated_at: :desc)
+          .index_by(&:channel_id)
+      else
+        TrustIndexHistory
+          .where(channel_id: channel_ids, engine_version: "v1")
+          .select("DISTINCT ON (channel_id) channel_id, trust_index_score, erv_percent, ccv, calculated_at")
+          .order(:channel_id, calculated_at: :desc)
+          .index_by(&:channel_id)
+      end
     end
 
     def live_channel_ids(channel_ids)
@@ -136,27 +167,47 @@ module Watchlists
         .maximum(:ended_at)
     end
 
-    # FR-010: Server-side filters (Premium/Business only — enforced by policy)
+    # FR-010: Server-side filters (Premium/Business only — enforced by policy).
+    # PR3b: param NAMES survive (no active client sends filters); under v2 erv_min/erv_max/ti_min
+    # all reinterpret on the authenticity 0-100 scale (scale continuity — raw erv counts are
+    # V-dependent and unusable as a threshold).
     def apply_filters(channels)
-      channels = channels.select { |c| c[:erv_percent].to_f >= @filters[:erv_min].to_f } if @filters[:erv_min].present?
-      channels = channels.select { |c| c[:erv_percent].to_f <= @filters[:erv_max].to_f } if @filters[:erv_max].present?
-      channels = channels.select { |c| c[:ti_score].to_i >= @filters[:ti_min].to_i } if @filters[:ti_min].present?
+      metric = v2_engine? ? :authenticity : :erv_percent
+      ti_metric = v2_engine? ? :authenticity : :ti_score
+      channels = channels.select { |c| c[metric].to_f >= @filters[:erv_min].to_f } if @filters[:erv_min].present?
+      channels = channels.select { |c| c[metric].to_f <= @filters[:erv_max].to_f } if @filters[:erv_max].present?
+      channels = channels.select { |c| c[ti_metric].to_f >= @filters[:ti_min].to_f } if @filters[:ti_min].present?
       channels = channels.select { |c| c[:is_live] == true } if @filters[:is_live] == "true"
       channels = channels.reject { |c| c[:is_live] } if @filters[:is_live] == "false"
       channels
     end
 
-    # FR-010: Sort options
+    # FR-010: Sort options. PR3b: erv sorts use the v2 count when flagged; ti_desc aliases to
+    # authenticity (graceful for stale senders — T2 retired it); "added_desc" added as an alias —
+    # the live T2 build sends it while the backend only knew "added_at_desc" (silent no-sort bug).
     def apply_sort(channels)
+      erv_key = v2_engine? ? :erv : :erv_percent
+      ti_key = v2_engine? ? :authenticity : :ti_score
       case @sort
-      when "erv_desc" then channels.sort_by { |c| -(c[:erv_percent] || 0) }
-      when "erv_asc" then channels.sort_by { |c| c[:erv_percent] || 0 }
-      when "ti_desc" then channels.sort_by { |c| -(c[:ti_score] || 0) }
+      when "erv_desc" then channels.sort_by { |c| -(c[erv_key] || 0) }
+      when "erv_asc" then channels.sort_by { |c| c[erv_key] || 0 }
+      when "ti_desc" then channels.sort_by { |c| -(c[ti_key] || 0) }
       when "ccv_desc" then channels.sort_by { |c| -(c[:ccv] || 0) }
       when "name_asc" then channels.sort_by { |c| c[:display_name].to_s.downcase }
-      when "added_at_desc" then channels.sort_by { |c| c[:added_at] }.reverse
+      when "added_at_desc", "added_desc" then channels.sort_by { |c| c[:added_at] }.reverse
       else channels
       end
+    end
+
+    def v2_engine?
+      return @v2_engine if defined?(@v2_engine)
+
+      @v2_engine =
+        begin
+          Flipper.enabled?(:ti_v2_engine)
+        rescue StandardError
+          false
+        end
     end
   end
 end

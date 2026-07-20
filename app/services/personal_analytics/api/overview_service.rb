@@ -72,17 +72,39 @@ module PersonalAnalytics
         { twitch_channel_id: row[:twitch_channel_id],
           login: channel&.login || row[:twitch_login], display_name: channel&.display_name || row[:twitch_login],
           avatar_url: channel&.profile_image_url, seconds: row[:seconds], sessions: row[:sessions],
-          last_seen: row[:last_seen_at]&.iso8601, ti_score: channel && ti_scores[channel.id]&.to_f }
+          last_seen: row[:last_seen_at]&.iso8601,
+          # PR3b: ti_score kept for the current PVA frontend (nil under v2 — additive transition);
+          # authenticity = the v2 scalar (same 0-100). Frontend migrates to authenticity in its own PR.
+          ti_score: channel && !v2_engine? ? ti_scores[channel.id]&.to_f : nil,
+          authenticity: channel && v2_engine? ? ti_scores[channel.id]&.to_f : nil }
       end
 
-      # Latest TI per channel одним запросом (DISTINCT ON), без N+1.
+      # Latest trust scalar per channel одним запросом (DISTINCT ON), без N+1. Engine-aware (PR3b).
       def ti_scores_for(channel_ids)
         return {} if channel_ids.empty?
 
-        TrustIndexHistory.where(channel_id: channel_ids)
-                         .order(:channel_id, calculated_at: :desc)
-                         .select("DISTINCT ON (channel_id) channel_id, trust_index_score")
-                         .to_h { |tih| [ tih.channel_id, tih.trust_index_score ] }
+        if v2_engine?
+          TrustIndexHistory.where(channel_id: channel_ids, engine_version: "v2")
+                           .order(:channel_id, calculated_at: :desc)
+                           .select("DISTINCT ON (channel_id) channel_id, authenticity")
+                           .to_h { |tih| [ tih.channel_id, tih.authenticity ] }
+        else
+          TrustIndexHistory.where(channel_id: channel_ids, engine_version: "v1")
+                           .order(:channel_id, calculated_at: :desc)
+                           .select("DISTINCT ON (channel_id) channel_id, trust_index_score")
+                           .to_h { |tih| [ tih.channel_id, tih.trust_index_score ] }
+        end
+      end
+
+      def v2_engine?
+        return @v2_engine if defined?(@v2_engine)
+
+        @v2_engine =
+          begin
+            Flipper.enabled?(:ti_v2_engine)
+          rescue StandardError
+            false
+          end
       end
 
       def categories(total)

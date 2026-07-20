@@ -43,27 +43,40 @@ module Trends
 
       def daily_points
         from_ts, to_ts = range
+        # PR3b: COALESCE — v2 days carry authenticity_*, pre-cutover days ti_* (same 0-100 scale)
         TrendsDailyAggregate
           .where(channel_id: channel.id, date: from_ts.to_date..to_ts.to_date)
-          .where.not(ti_avg: nil)
+          .where("authenticity_avg IS NOT NULL OR ti_avg IS NOT NULL")
           .order(:date)
-          .pluck(:date, :ti_avg, :ti_std, :ti_min, :ti_max, :classification_at_end)
-          .map { |date, avg, std, min, max, cls| point_for(date, avg, std, min, max, cls) }
+          .pluck(:date,
+                 Arel.sql("COALESCE(authenticity_avg, ti_avg)"),
+                 Arel.sql("COALESCE(authenticity_std, ti_std)"),
+                 Arel.sql("COALESCE(authenticity_min, ti_min)"),
+                 Arel.sql("COALESCE(authenticity_max, ti_max)"),
+                 :classification_at_end, :band_row_at_end, :band_color_at_end)
+          .map { |date, avg, std, min, max, cls, brow, bcolor| point_for(date, avg, std, min, max, cls, band_row: brow, band_color: bcolor) }
       end
 
+      # PR3b: per-row engine discrimination — each row emits its own engine's scalar (mixed series
+      # across the cutover stays continuous; ti key carries authenticity for v2 rows — same scale).
       def per_stream_points
         from_ts, to_ts = range
         TrustIndexHistory
           .for_channel(channel.id)
           .where(calculated_at: from_ts..to_ts)
-          .where.not(trust_index_score: nil)
+          .where("(engine_version = 'v1' AND trust_index_score IS NOT NULL) OR (engine_version = 'v2' AND authenticity IS NOT NULL)")
           .order(:calculated_at)
-          .pluck(:calculated_at, :trust_index_score, :classification, :stream_id, :confidence)
-          .map do |ts, ti, cls, stream_id, confidence|
-            {
+          .pluck(:calculated_at,
+                 Arel.sql("CASE WHEN engine_version = 'v2' THEN authenticity ELSE trust_index_score END"),
+                 :classification, :stream_id, :confidence, :engine_version, :band_row, :band_color)
+          .map do |ts, ti, cls, stream_id, confidence, engine, brow, bcolor|
+            point = {
               date: ts.iso8601, ti: ti.to_f.round(2),
-              classification: cls, stream_id: stream_id, confidence: confidence&.to_f&.round(3)
+              classification: cls, stream_id: stream_id, confidence: confidence&.to_f&.round(3),
+              engine_version: engine
             }
+            point[:band] = { row: brow, color: bcolor } if engine == "v2" && brow
+            point
           end
       end
 
@@ -71,21 +84,21 @@ module Trends
         from_ts, to_ts = range
         TrendsDailyAggregate
           .where(channel_id: channel.id, date: from_ts.to_date..to_ts.to_date)
-          .where.not(ti_avg: nil)
+          .where("authenticity_avg IS NOT NULL OR ti_avg IS NOT NULL")
           .group(Arel.sql("DATE_TRUNC('week', date)"))
           .pluck(
             Arel.sql("DATE_TRUNC('week', date) AS week"),
-            Arel.sql("AVG(ti_avg)"),
-            Arel.sql("AVG(ti_std)"),
-            Arel.sql("MIN(ti_min)"),
-            Arel.sql("MAX(ti_max)")
+            Arel.sql("AVG(COALESCE(authenticity_avg, ti_avg))"),
+            Arel.sql("AVG(COALESCE(authenticity_std, ti_std))"),
+            Arel.sql("MIN(COALESCE(authenticity_min, ti_min))"),
+            Arel.sql("MAX(COALESCE(authenticity_max, ti_max))")
           )
           .sort_by(&:first)
           .map { |week, avg, std, min, max| point_for(week.to_date, avg, std, min, max, nil) }
       end
 
-      def point_for(date, avg, std, min, max, cls)
-        {
+      def point_for(date, avg, std, min, max, cls, band_row: nil, band_color: nil)
+        point = {
           date: date.to_s,
           ti: avg&.to_f&.round(2),
           ti_std: std&.to_f&.round(2),
@@ -93,6 +106,8 @@ module Trends
           ti_max: max&.to_f&.round(2),
           classification: cls
         }
+        point[:band] = { row: band_row, color: band_color } if band_row
+        point
       end
 
       def build_summary(points)

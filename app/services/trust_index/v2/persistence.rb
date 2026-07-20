@@ -8,15 +8,19 @@ module TrustIndex
     # history (create!, never update). The retired trust_index_score stays null on v2 rows (the model
     # only requires it for engine_version='v1').
     class Persistence
-      def self.call(result:, channel:, stream:, calculated_at:)
-        new(result, channel, stream, calculated_at).call
+      # ccv: the engine input V (shown viewers) — the Result does not carry it, the SCW call site
+      # does (v2_context.v). Persisted so consumers (erv_breakdown{v}, watchlist ccv display/sort,
+      # landing shown/real math, /erv derived %) read V off the same row (PR3b gap D-5/w1).
+      def self.call(result:, channel:, stream:, calculated_at:, ccv: nil)
+        new(result, channel, stream, calculated_at, ccv).call
       end
 
-      def initialize(result, channel, stream, calculated_at)
+      def initialize(result, channel, stream, calculated_at, ccv = nil)
         @r = result
         @channel = channel
         @stream = stream
         @at = calculated_at
+        @ccv = ccv
       end
 
       def call
@@ -29,6 +33,7 @@ module TrustIndex
 
       def tih_attrs
         { channel: @channel, stream: @stream, calculated_at: @at, engine_version: "v2",
+          ccv: @ccv, # V (engine input) — PR3b D-5: consumers read V off the row (nil-safe column)
           erv: round_or_nil(@r.erv), erv_lo: round_or_nil(@r.erv_lo), erv_hi: round_or_nil(@r.erv_hi),
           f_hat: @r.f_hat, f_hat_lo: @r.f_hat_lo, f_hat_hi: @r.f_hat_hi,
           f_hard: @r.f_hard, f_hard_lo: @r.f_hard_lo, f_self: @r.f_self,

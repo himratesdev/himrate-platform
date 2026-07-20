@@ -31,8 +31,13 @@ RSpec.describe TrustIndex::V2::Persistence do
     PersistenceSpecDoubles::Result.new(**base.merge(over))
   end
 
-  def persist(res)
-    described_class.call(result: res, channel: channel, stream: stream, calculated_at: Time.current)
+  def persist(res, ccv: nil)
+    described_class.call(result: res, channel: channel, stream: stream, calculated_at: Time.current, ccv: ccv)
+  end
+
+  it "persists ccv (the engine input V) when provided — PR3b gap D-5" do
+    expect(persist(result, ccv: 4200).ccv).to eq(4200)
+    expect(persist(result).ccv).to be_nil
   end
 
   it "persists a v2 row (engine_version='v2', NO trust_index_score) — validation passes" do

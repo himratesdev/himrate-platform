@@ -15,23 +15,123 @@ module Trust
       latest_ti = latest_trust_index
       cold_start = cold_start_data
 
-      payload = build_headline(latest_ti, cold_start)
+      payload = v2_engine? ? build_headline_v2(latest_v2_ti) : build_headline(latest_ti, cold_start)
 
       if @view == :drill_down || @view == :full
-        payload.merge!(build_drill_down(latest_ti))
+        payload.merge!(v2_engine? ? build_drill_down_v2 : build_drill_down(latest_ti))
         # TASK-085 FR-008 (ADR-085 D-4 OVERRIDE): anomaly_alerts gated за :drill_down/:full —
         # NOT :headline (Pundit contract preserved, no anonymous data leak).
         payload[:anomaly_alerts] = AnomalyAlertsPresenter.new(channel: @channel).call
       end
 
       if @view == :full
-        payload.merge!(build_full)
+        payload.merge!(v2_engine? ? build_full_v2 : build_full)
       end
 
       payload
     end
 
     private
+
+    def v2_engine?
+      return @v2_engine if defined?(@v2_engine)
+
+      @v2_engine =
+        begin
+          Flipper.enabled?(:ti_v2_engine)
+        rescue StandardError
+          false
+        end
+    end
+
+    # PR3b (T1-074, B1): the v2 wire contract — ERV (subtracted count) + interval + authenticity +
+    # 6-row band + reason_codes + plashka + cold_start_tier. NO ErvCalculator rescale. A channel
+    # not recomputed since the flip → explicit "no v2 data" grey/insufficient shape (never renders
+    # a stale v1 row as v2 — honest-empty doctrine).
+    def build_headline_v2(tih)
+      band = band_payload(tih)
+      {
+        channel_id: @channel.id,
+        channel_login: @channel.login,
+        erv: tih&.erv,
+        erv_interval: { lo: tih&.erv_lo, hi: tih&.erv_hi },
+        authenticity: tih&.authenticity&.to_f,
+        band: band,
+        # Server-resolved band label (RU/EN via I18n) — serves landing JS / server-rendered
+        # surfaces; the extension translates label_key itself.
+        erv_label: I18n.t(band[:label_key], default: nil),
+        reason_codes: tih&.reason_codes || [],
+        confirmed_anomaly: { shown: tih&.confirmed_anomaly || false },
+        cold_start_tier: tih&.cold_start_tier,
+        confidence_marker: tih&.confidence_marker || "provisional",
+        engine_version: "v2",
+        is_live: @channel.live?,
+        ccv: latest_ccv,
+        calculated_at: tih&.calculated_at&.iso8601
+      }
+    end
+
+    # v2 drill: reason_codes replace the retired 14-signal breakdown (already in headline);
+    # the post-stream window fields are engine-agnostic.
+    def build_drill_down_v2
+      {
+        post_stream_expires_at: PostStreamWindowService.expires_at(@channel)&.iso8601,
+        post_stream_window_expired: !@channel.live? && !PostStreamWindowService.open?(@channel) && @user&.tier == "free"
+      }
+    end
+
+    def build_full_v2
+      tih = latest_v2_ti
+      reputation = @channel.streamer_reputation
+      band = Reputation::BandService.cached_for(@channel)
+
+      {
+        streamer_reputation: reputation ? {
+          growth_pattern_score: reputation.growth_pattern_score&.to_f,
+          follower_quality_score: reputation.follower_quality_score&.to_f,
+          engagement_consistency_score: reputation.engagement_consistency_score&.to_f
+        } : nil,
+        reputation_band: band[:band],
+        reputation_tier: band[:tier],
+        reputation_stream_count: band[:stream_count],
+        erv_breakdown: erv_breakdown_v2(tih),
+        bot_raid_victim: bot_raid_victim?,
+        ti_protected: bot_raid_victim?,
+        top_countries: top_countries_data,
+        top_countries_status: top_countries_status
+      }
+    end
+
+    # v2 breakdown: V and the fraud-arm decomposition off the same row ({v, f_hard, f_soft, f_hat} —
+    # replaces real_viewers/bots_estimated; the subtraction is native, no derived "bots" framing).
+    def erv_breakdown_v2(tih)
+      return nil unless tih
+
+      {
+        v: tih.ccv&.to_i,
+        f_hard: tih.f_hard&.to_f,
+        f_soft: tih.f_soft&.to_f,
+        f_hat: tih.f_hat&.to_f
+      }
+    end
+
+    def band_payload(tih)
+      return { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil } unless tih&.band_row
+
+      {
+        row: tih.band_row,
+        color: tih.band_color,
+        label_key: TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[tih.band_row],
+        sub: tih.band_sub
+      }
+    end
+
+    def latest_v2_ti
+      @latest_v2_ti ||= @channel.trust_index_histories
+                                .where(engine_version: "v2")
+                                .order(calculated_at: :desc)
+                                .first
+    end
 
     def build_headline(latest_ti, cold_start)
       erv_data = erv_from_ti(latest_ti)
@@ -94,7 +194,10 @@ module Trust
     end
 
     def latest_trust_index
+      # PR3b: explicit v1 filter — flag-flap safety (an unfiltered latest could pick a v2 row
+      # whose v1 columns are NULL). Pre-flip behavior identical (only v1 rows exist).
       @latest_ti ||= @channel.trust_index_histories
+                              .where(engine_version: "v1")
                               .order(calculated_at: :desc)
                               .first
     end

@@ -37,7 +37,9 @@ module Trends
           classification = classify(ti)
 
           # Idempotent via stream_id — seeder creates ровно одну TIH per stream.
-          TrustIndexHistory.find_or_create_by!(channel_id: @channel.id, stream_id: stream.id) do |tih|
+          # PR3b: seeds BOTH engine shapes so Visual QA covers whichever engine is flagged —
+          # v1 row (legacy fields) + v2 row (authenticity/erv/band derived from the same curve).
+          TrustIndexHistory.find_or_create_by!(channel_id: @channel.id, stream_id: stream.id, engine_version: "v1") do |tih|
             tih.trust_index_score = ti.round(2)
             tih.confidence = 0.85
             tih.classification = classification
@@ -48,6 +50,22 @@ module Trends
             # StreamHistorySeeder creates the PSR row in the same seeding flow).
             tih.ccv = stream.current_avg_ccv
             tih.signal_breakdown = build_signal_breakdown(idx, total)
+            tih.calculated_at = stream.ended_at
+          end
+          ccv = stream.current_avg_ccv
+          band_row = ti >= 90 ? 3 : (ti >= 80 ? 4 : (ti >= 50 ? 2 : 1))
+          band_color = { 3 => "green", 4 => "green", 2 => "yellow", 1 => "red" }[band_row]
+          TrustIndexHistory.find_or_create_by!(channel_id: @channel.id, stream_id: stream.id, engine_version: "v2") do |tih|
+            tih.authenticity = ti.round(2)
+            tih.erv = ccv ? (ccv * ti / 100.0).round : nil
+            tih.erv_lo = ccv ? (ccv * [ ti - 5, 0 ].max / 100.0).round : nil
+            tih.erv_hi = ccv ? (ccv * [ ti + 5, 100 ].min / 100.0).round : nil
+            tih.band_row = band_row
+            tih.band_color = band_color
+            tih.cold_start_tier = "full"
+            tih.confidence_marker = "reliable"
+            tih.reason_codes = []
+            tih.ccv = ccv
             tih.calculated_at = stream.ended_at
           end
         end

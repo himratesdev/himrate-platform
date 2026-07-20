@@ -46,23 +46,35 @@ module Trust
         .order(:timestamp)
         .pluck(:timestamp, :ccv_count)
 
-      # TI histories for the same period
-      ti_points = TrustIndexHistory
-        .where(channel_id: @channel.id)
-        .where("calculated_at > ?", cutoff)
-        .order(:calculated_at)
-        .pluck(:calculated_at, :trust_index_score, :erv_percent)
+      # TI histories for the same period (PR3b: engine-aware — v2 plucks the native contract)
+      ti_points = if v2_engine?
+        TrustIndexHistory
+          .where(channel_id: @channel.id, engine_version: "v2")
+          .where("calculated_at > ?", cutoff)
+          .order(:calculated_at)
+          .pluck(:calculated_at, :erv, :authenticity, :band_color)
+      else
+        TrustIndexHistory
+          .where(channel_id: @channel.id, engine_version: "v1")
+          .where("calculated_at > ?", cutoff)
+          .order(:calculated_at)
+          .pluck(:calculated_at, :trust_index_score, :erv_percent)
+      end
 
       # Merge by nearest timestamp (CCV as base, TI interpolated)
-      merge_timeseries(ccv_points, ti_points)
+      v2_engine? ? merge_timeseries_v2(ccv_points, ti_points) : merge_timeseries(ccv_points, ti_points)
     end
 
     # 7d: daily aggregates (last record per day)
+    # PR3b: v2 branch aggregates authenticity (%, scale-safe across days) — averaging raw erv
+    # COUNTS across days with different V baselines is meaningless; erv arrives per-point in 30m.
     def points_7d
       cutoff = 7.days.ago
 
+      return points_7d_v2(cutoff) if v2_engine?
+
       TrustIndexHistory
-        .where(channel_id: @channel.id)
+        .where(channel_id: @channel.id, engine_version: "v1")
         .where("calculated_at > ?", cutoff)
         .select(
           "DATE(calculated_at) as day",
@@ -104,6 +116,62 @@ module Trust
             confidence: a.confidence&.to_f,
             details: a.details
           }
+        end
+    end
+
+    def points_7d_v2(cutoff)
+      TrustIndexHistory
+        .where(channel_id: @channel.id, engine_version: "v2")
+        .where("calculated_at > ?", cutoff)
+        .select(
+          "DATE(calculated_at) as day",
+          "AVG(authenticity) as avg_auth",
+          "MAX(ccv) as max_ccv",
+          "COUNT(*) as sample_count"
+        )
+        .group("DATE(calculated_at)")
+        .order("day")
+        .map do |row|
+          {
+            timestamp: row.day.to_s,
+            ccv: row.max_ccv&.to_i,
+            erv: nil, # daily aggregate — counts are V-scale-dependent, no single value
+            authenticity: row.avg_auth&.to_f&.round(1)
+          }
+        end
+    end
+
+    # v2 point shape: {timestamp, ccv, erv (native count), authenticity, band_color} — the
+    # ccv×ti/100 derivation is retired (erv is the engine's subtracted count).
+    def merge_timeseries_v2(ccv_points, ti_points)
+      return [] if ccv_points.empty?
+
+      ti_index = 0
+      ccv_points.map do |ts, ccv|
+        while ti_index < ti_points.size - 1 &&
+              ti_points[ti_index + 1][0] <= ts
+          ti_index += 1
+        end
+
+        ti_row = ti_points[ti_index]
+        {
+          timestamp: ts.iso8601,
+          ccv: ccv&.to_i,
+          erv: ti_row&.[](1),
+          authenticity: ti_row&.[](2)&.to_f&.round(1),
+          band_color: ti_row&.[](3)
+        }
+      end
+    end
+
+    def v2_engine?
+      return @v2_engine if defined?(@v2_engine)
+
+      @v2_engine =
+        begin
+          Flipper.enabled?(:ti_v2_engine)
+        rescue StandardError
+          false
         end
     end
 

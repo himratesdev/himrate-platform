@@ -112,16 +112,25 @@ module Reputation
       self.class.classify(scores, severe_anomaly_rate)
     end
 
-    # ADR DEC-3: final TI snapshot per completed stream (settled value), last 30 sessions.
+    # ADR DEC-3: final trust snapshot per completed stream (settled value), last 30 sessions.
+    # PR3b (T1-074): per-row engine discrimination — each stream's FINAL row is the authoritative
+    # output of whichever engine wrote it: v2 rows contribute `authenticity` (0-100, A=100·(1−F̂/V)),
+    # v1 rows contribute `trust_index_score` (same scale). This keeps the 30-stream rolling window
+    # populated across the cutover (a strict v2-only filter would empty every band for weeks) while
+    # never reading `authenticity` off a v1 row or `trust_index_score` off a v2 row (iron rule,
+    # satisfied per-row). Flag-free: data-driven, correct with ti_v2_engine OFF, ON, or flapped.
     def window_ti_scores
       ids = window_stream_ids
       return [] if ids.empty?
 
       TrustIndexHistory
         .where(stream_id: ids)
-        .select("DISTINCT ON (stream_id) stream_id, trust_index_score")
+        .select(<<~SQL.squish)
+          DISTINCT ON (stream_id) stream_id, engine_version,
+          CASE WHEN engine_version = 'v2' THEN authenticity ELSE trust_index_score END AS window_score
+        SQL
         .order(Arel.sql("stream_id, calculated_at DESC"))
-        .filter_map { |t| t.trust_index_score&.to_f }
+        .filter_map { |t| t[:window_score]&.to_f }
     end
 
     def window_stream_ids

@@ -93,7 +93,8 @@
     } else {
       setText(document, "Big", fmt(l1.real_avg_viewers));
       var big = q(document, "Big");
-      var ti = (d.layer2_authenticity || {}).ti_score;
+      var l2h = d.layer2_authenticity || {};
+      var ti = l2h.authenticity != null ? l2h.authenticity : l2h.ti_score;
       if (big) big.style.color = tiColor(ti);
       setText(document, "HL2", "из " + fmt(l1.shown_avg_viewers) + " на витрине Twitch");
       var corr = l1.bot_correction_pct == null ? null : Math.abs(l1.bot_correction_pct);
@@ -124,17 +125,24 @@
       hide(document, "Checks Sum");
       return;
     }
-    setText(document, "CHH S", "Проанализировано " + (l2.checks_total != null ? l2.checks_total : "—") +
-      " сигналов подлинности · Индекс доверия (TI) " + (l2.ti_score != null ? Math.round(l2.ti_score) : "—"));
+    // Dual-contract (PR3b TI v2): v2 layer2 carries {authenticity, band{color}, reason_codes};
+    // v1 carries {ti_score, classification, checks}.
+    var isV2 = l2.basis === "trust_index_history.v2" || l2.authenticity != null;
+    var scalar = isV2 ? l2.authenticity : l2.ti_score;
+    var checksCount = isV2 ? (l2.reason_codes || []).length : l2.checks_total;
+    setText(document, "CHH S", isV2
+      ? ("Подлинность " + (scalar != null ? Math.round(scalar) + "%" : "—") + " · " + ((l2.reason_codes || []).length) + " факторов")
+      : ("Проанализировано " + (l2.checks_total != null ? l2.checks_total : "—") +
+        " сигналов подлинности · Индекс доверия (TI) " + (l2.ti_score != null ? Math.round(l2.ti_score) : "—")));
 
-    // Summary pills → REAL overall verdict (legal-safe classification + TI). No fake "6 в норме / 1 внимание".
-    var label = classificationLabel(l2.classification);
-    var color = tiColor(l2.ti_score);
+    // Summary pills → REAL overall verdict. v2: engine band colour + i18n'd band verdict.
+    var label = isV2 ? bandLabel(l2.band) : classificationLabel(l2.classification);
+    var color = isV2 ? bandHex(l2.band) : tiColor(l2.ti_score);
     var p1 = q(document, "MP · 6 в норме");
     if (p1) { setText(p1, "MP T", label); var d1 = q(p1, "MP D"); if (d1) d1.style.backgroundColor = color; var t1 = q(p1, "MP T"); if (t1) t1.style.color = color; }
     var p2 = q(document, "MP · 1 внимание");
     if (p2) {
-      setText(p2, "MP T", (l2.checks_total != null ? l2.checks_total : "—") + " сигналов");
+      setText(p2, "MP T", (checksCount != null ? checksCount : "—") + (isV2 ? " факторов" : " сигналов"));
       var d2 = q(p2, "MP D"); if (d2) d2.style.backgroundColor = "#5E5E6B";
       var t2 = q(p2, "MP T"); if (t2) t2.style.color = "#9A9AA9";
     }
@@ -156,6 +164,21 @@
         setText(rowEl, "CK D", "Учтено в Индексе доверия");
       }
     });
+  }
+
+  var BAND_HEX = { green: "#25D9A4", yellow: "#F5C451", red: "#F0616D", grey: "#9A9AA9", amber: "#F6A823" };
+  function bandHex(band) { return (band && BAND_HEX[band.color]) || "#9A9AA9"; }
+  function bandLabel(band) {
+    // Mirrors config/locales/band.ru.yml (legal-safe 6-row verdicts).
+    var map = {
+      "band.red_significant": "Значительная аномалия онлайна",
+      "band.yellow_anomaly": "Аномалия онлайна",
+      "band.green_real": "Аудитория реальная",
+      "band.green_no_anomaly": "Аномалий не замечено",
+      "band.grey_insufficient": "Недостаточно данных",
+      "band.amber_exceeds": "Онлайн выше наблюдаемой активности",
+    };
+    return (band && map[band.label_key]) || "—";
   }
 
   function classificationLabel(c) {
