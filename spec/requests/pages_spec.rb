@@ -92,6 +92,14 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).to include('<meta property="og:url" content="https://himrate.com/streamers">')
     end
 
+    it "falls back to the brand mark for og:image + mirrors it to twitter:image (no page override yet)" do
+      get "/"
+
+      expect(response.body).to match(%r{<meta property="og:image" content="https://himrate.com/assets/brand/logo-square-gradient[-\w]*\.svg">})
+      expect(response.body).to match(%r{<meta name="twitter:image" content="https://himrate.com/assets/brand/logo-square-gradient[-\w]*\.svg">})
+      expect(response.body).not_to include('property="og:image:width"') # dims only for custom PNGs
+    end
+
     it "keeps indexable marketing pages out of noindex" do
       get "/"
 

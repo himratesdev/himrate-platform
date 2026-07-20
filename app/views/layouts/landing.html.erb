@@ -21,11 +21,20 @@
     <meta property="og:title" content="<%= content_for(:title) || "HimRate" %>">
     <meta property="og:description" content="<%= content_for(:description) %>">
     <meta property="og:url" content="<%= canonical_url %>">
-    <meta property="og:image" content="<%= canonical_asset_url("brand/logo-square-gradient.svg") %>">
+    <%# Per-page share image: a page sets content_for(:og_image) with an absolute URL
+        (static PNG per page, or the dynamic /og/c/:login.png channel card). Falls back
+        to the brand mark. Only custom PNGs get the 1200x630 dimension hints. %>
+    <% og_image = content_for(:og_image) || canonical_asset_url("brand/logo-square-gradient.svg") %>
+    <meta property="og:image" content="<%= og_image %>">
+    <% if content_for?(:og_image) %>
+      <meta property="og:image:width" content="1200">
+      <meta property="og:image:height" content="630">
+    <% end %>
     <meta property="og:locale" content="ru_RU">
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="<%= content_for(:title) || "HimRate" %>">
     <meta name="twitter:description" content="<%= content_for(:description) %>">
+    <meta name="twitter:image" content="<%= og_image %>">
 
     <%# Export reset + FOUC guard. The export's static decorative dot field
         ([data-pencil-name="Dot BG"]) is stripped from the markup at render time, so
