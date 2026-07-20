@@ -67,9 +67,9 @@ module Og
           <rect width="#{WIDTH}" height="8" fill="#FF5C8A"/>
           <text x="150" y="90" font-family="#{FONT}" font-size="34" font-weight="700" fill="#FF5C8A">HimRate</text>
           #{avatar_fragment}
-          <text x="#{text_x}" y="#{HEIGHT / 2 - 30}" font-family="#{FONT}" font-size="66" font-weight="700" fill="#FFFFFF">#{xml_escape(truncate(name, 18))}</text>
-          <text x="#{text_x}" y="#{HEIGHT / 2 + 28}" font-family="#{FONT}" font-size="34" fill="#A8A8B4">#{xml_escape(truncate(handle, 22))}</text>
-          <text x="#{text_x}" y="#{HEIGHT / 2 + 96}" font-family="#{FONT}" font-size="34" fill="#E7E7EE">Аналитика реальности аудитории Twitch</text>
+          <text x="#{text_x}" y="#{HEIGHT / 2 - 30}" font-family="#{FONT}" font-size="64" font-weight="700" fill="#FFFFFF">#{xml_escape(truncate(name, 15))}</text>
+          <text x="#{text_x}" y="#{HEIGHT / 2 + 26}" font-family="#{FONT}" font-size="32" fill="#A8A8B4">#{xml_escape(truncate(handle, 20))}</text>
+          <text x="#{text_x}" y="#{HEIGHT / 2 + 92}" font-family="#{FONT}" font-size="29" fill="#E7E7EE">Аналитика реальности аудитории Twitch</text>
           <text x="150" y="#{HEIGHT - 60}" font-family="#{FONT}" font-size="28" fill="#7C7C88">himrate.com</text>
         </svg>
       SVG
