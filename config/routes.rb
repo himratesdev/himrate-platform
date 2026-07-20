@@ -190,6 +190,10 @@ Rails.application.routes.draw do
   get "brands",      to: "pages#brands"
   get "viewers",     to: "pages#viewers"
   get "methodology", to: "pages#methodology"
+  # Legal pages (own minimal readable layout) — required for Chrome Web Store
+  # submission (privacy policy URL) + footer trust links. (TASK-060)
+  get "privacy", to: "pages#privacy"
+  get "terms",   to: "pages#terms"
   # Dashboard login (screen 70) + isolated web OAuth flow (session via httpOnly cookie).
   get "login", to: "pages#login"
   get "auth/web/twitch", to: "web/auth#twitch"

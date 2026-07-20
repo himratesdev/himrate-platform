@@ -92,6 +92,14 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).to include('<meta property="og:url" content="https://himrate.com/streamers">')
     end
 
+    it "falls back to the brand mark for og:image + mirrors it to twitter:image (no page override yet)" do
+      get "/"
+
+      expect(response.body).to match(%r{<meta property="og:image" content="https://himrate.com/assets/brand/logo-square-gradient[-\w]*\.svg">})
+      expect(response.body).to match(%r{<meta name="twitter:image" content="https://himrate.com/assets/brand/logo-square-gradient[-\w]*\.svg">})
+      expect(response.body).not_to include('property="og:image:width"') # dims only for custom PNGs
+    end
+
     it "keeps indexable marketing pages out of noindex" do
       get "/"
 
@@ -102,6 +110,45 @@ RSpec.describe "Public landing", type: :request do
       get "/login"
 
       expect(response.body).to match(/<meta name="robots" content="noindex, follow">/)
+    end
+  end
+
+  # TASK-060: analytics (Metrika + GA4) must load ONLY on the canonical production
+  # host so staging / localhost never pollute the stats.
+  describe "analytics gating" do
+    it "loads the analytics bundle on the canonical host (himrate.com)" do
+      host! "himrate.com"
+      get "/"
+
+      expect(response.body).to match(%r{landing/analytics[-\w]*\.js})
+      expect(response.body).to include("mc.yandex.ru/watch/110889452") # noscript pixel
+    end
+
+    it "does NOT load analytics on a non-canonical host (staging/local)" do
+      host! "staging.himrate.com"
+      get "/"
+
+      expect(response.body).not_to match(%r{landing/analytics[-\w]*\.js})
+    end
+  end
+
+  # TASK-060: legal pages — required for Chrome Web Store submission + footer trust.
+  describe "legal pages" do
+    it "GET /privacy → 200 with the policy + self-canonical + footer nav" do
+      get "/privacy"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Политика конфиденциальности")
+      expect(response.body).to include('<link rel="canonical" href="https://himrate.com/privacy">')
+      expect(response.body).to include('href="/terms"') # real crawlable footer link
+    end
+
+    it "GET /terms → 200 with the terms" do
+      get "/terms"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Условия использования")
+      expect(response.body).to include('<link rel="canonical" href="https://himrate.com/terms">')
     end
   end
 end

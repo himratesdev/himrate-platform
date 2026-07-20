@@ -94,6 +94,16 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Legal pages (Privacy Policy + Terms). Own minimal readable layout (no Pencil JS).
+  # Required for Chrome Web Store submission + footer trust links.
+  def privacy
+    render layout: "legal"
+  end
+
+  def terms
+    render layout: "legal"
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the

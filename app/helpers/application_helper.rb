@@ -19,4 +19,10 @@ module ApplicationHelper
   def canonical_asset_url(logical_path)
     "#{CANONICAL_HOST}#{asset_path(logical_path)}"
   end
+
+  # Analytics (Metrika + GA4) load ONLY on the canonical production host so staging
+  # and localhost never pollute the stats. (TASK-060)
+  def analytics_enabled?
+    request.host == URI(CANONICAL_HOST).host
+  end
 end
