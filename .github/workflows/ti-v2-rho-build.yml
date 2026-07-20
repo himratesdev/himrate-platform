@@ -1,0 +1,164 @@
+name: ti-v2-rho-build
+# T1-074 GATE-0 STEP 1b — per-cell ρ* on the BUILD_V2 runtime basis (READ-ONLY, $0).
+# STEP 1 measured ρ* on a persisted basis (cumulative unique_chatters / avg_ccv) → ~2× inflated vs
+# what the engine actually computes. This runs the EXACT runtime path on LIVE honest anchors:
+#   ContextBuilder.build(s) + stream_chatters roster + build_v2 + Engine.compute → r.rho_obs
+# so ρ* is self-consistent with production SCW (roster capped 500 / latest_ccv). LIVE only —
+# ended streams have tail latest_ccv (unrepresentative). Anchors = partner ∧ ≥10 completed ∧ TI≥88.
+# Aggregate r.rho_obs per cell (category|V-bucket|chat-mode|language) → ρ_lo(P10)/ρ*(P50)/ρ_hi(P90).
+# This table is the PROD SEED input (calibration_cell_baselines, calibrated=true) for the moat flip.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      max_streams:
+        required: false
+        type: string
+        default: "90"
+
+jobs:
+  rho:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build rho-build script
+        run: |
+          cat > /tmp/rhob.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "set"
+          CAP = (ENV["MAX_STREAMS"] || "90").to_i
+
+          def pct(a, p)
+            return nil if a.nil? || a.empty?
+            s = a.sort
+            s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
+          end
+
+          def vbucket(v)
+            return "0" if v.nil? || v <= 0
+            return "0-1k" if v < 1000
+            return "1k-5k" if v < 5000
+            return "5k-20k" if v < 20000
+            "20k+"
+          end
+
+          # faithful mirror of ContextBuilder#v2_chat_mode
+          def chat_mode(cfg)
+            return "open" unless cfg
+            return "sub-only" if cfg.subs_only_enabled
+            fol = cfg.followers_only_duration_min
+            return "followers-only" if fol && fol >= 0
+            return "slow" if cfg.slow_mode_seconds.to_i.positive?
+            return "emote-only" if cfg.emote_only_enabled
+            "open"
+          end
+
+          # ===== select LIVE honest anchors (partner ∧ ≥10 completed ∧ TI≥88), one stream / channel =====
+          live = Stream.where(ended_at: nil).where("started_at > ?", 18.hours.ago).order(started_at: :desc).pluck(:id, :channel_id)
+          puts "live streams (<=18h, ongoing): #{live.size}"
+          anchor_sids = []
+          seen = Set.new
+          live.each do |sid, cid|
+            break if anchor_sids.size >= CAP
+            next if seen.include?(cid)
+            ch = Channel.find_by(id: cid)
+            next unless ch && ch.broadcaster_type == "partner"
+            next if Stream.where(channel_id: cid).where.not(ended_at: nil).count < 10
+            ti = TrustIndexHistory.where(channel_id: cid).order(calculated_at: :desc).limit(1).pick(:trust_index_score)
+            next if ti.nil? || ti.to_f < 88
+            seen << cid
+            anchor_sids << sid
+          end
+          puts "live honest anchors selected: #{anchor_sids.size}\n"
+
+          # ===== run the EXACT runtime path, collect r.rho_obs per cell =====
+          k = Calibration::Registry.load
+          cell_rho = Hash.new { |h, kk| h[kk] = [] }
+          cat_rho  = Hash.new { |h, kk| h[kk] = [] }
+          vb_rho   = Hash.new { |h, kk| h[kk] = [] }
+          all_rho = []
+          ok = 0; skipped = 0
+          anchor_sids.each do |sid|
+            s = Stream.find_by(id: sid)
+            next unless s
+            chatters = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            if chatters.empty?
+              skipped += 1
+              next
+            end
+            flagged = CrossChannelTemporalFlag.bulk_lookup(chatters)
+            ctx = TrustIndex::ContextBuilder.build(s).merge(
+              stream_chatters: chatters,
+              temporal_cross_channel_flags: { total_chatters: chatters.size, flagged: flagged }
+            )
+            v2c = TrustIndex::ContextBuilder.build_v2(s, ctx)
+            r = TrustIndex::V2::Engine.compute(context: v2c, k: k)
+            if r.rho_obs.nil? || r.rho_obs <= 0
+              skipped += 1
+              next
+            end
+            cat = ctx[:category] || "default"
+            lang = s.language.presence || "default"
+            cm = chat_mode(s.channel.channel_protection_config)
+            cell = [ cat, vbucket(v2c.v), cm, lang ].join("|")
+            cell_rho[cell] << r.rho_obs
+            cat_rho[cat] << r.rho_obs
+            vb_rho[vbucket(v2c.v)] << r.rho_obs
+            all_rho << r.rho_obs
+            ok += 1
+          rescue => e
+            skipped += 1
+          end
+
+          puts "measured ok=#{ok}, skipped=#{skipped}\n"
+
+          def row(label, a)
+            return puts(format("  %-38s n=%-4d (thin)", label, a.size)) if a.size < 3
+            puts format("  %-38s n=%-4d ρ_lo=%.4f ρ*=%.4f ρ_hi=%.4f", label, a.size, pct(a, 0.10), pct(a, 0.50), pct(a, 0.90))
+          end
+
+          puts "===== BUILD_V2-BASIS ρ* PER CELL (n>=3) ====="
+          cell_rho.select { |_, a| a.size >= 3 }.sort_by { |_, a| -a.size }.each { |cell, a| row(cell, a) }
+          puts "\n===== PER CATEGORY ====="
+          cat_rho.sort_by { |_, a| -a.size }.each { |c, a| row(c, a) }
+          puts "\n===== PER V-BUCKET ====="
+          vb_rho.sort_by { |_, a| -a.size }.each { |b, a| row(b, a) }
+          puts "\n===== GLOBAL ====="
+          row("GLOBAL", all_rho)
+
+          puts "\n===== vs STEP 1 persisted-basis (expect build_v2 ρ* LOWER, ~0.5×) ====="
+          puts "  STEP 1 persisted GLOBAL: ρ_lo=0.077 ρ*=0.229 ρ_hi=0.549"
+          if all_rho.size >= 3
+            ratio = (pct(all_rho, 0.50) / 0.229).round(2)
+            puts "  build_v2 GLOBAL ρ* / persisted ρ* = #{ratio}× (correction factor)"
+          end
+          puts "  → seed calibration_cell_baselines with the build_v2 table above (calibrated=true)."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/rhob.rb) lines)"
+
+      - name: Run rho-build on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          scp /tmp/rhob.rb ${TARGET}:/tmp/rhob.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/rhob.rb ${CONTAINER}:/tmp/rhob.rb && docker exec -e MAX_STREAMS='${{ inputs.max_streams }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/rhob.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add' || true
