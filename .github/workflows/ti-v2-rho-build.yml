@@ -124,6 +124,9 @@ jobs:
             cat_rho[cat] << r.rho_obs
             vb_rho[vbucket(v2c.v)] << r.rho_obs
             all_rho << r.rho_obs
+            # RAW row for cross-run pooling (narrow-start Phase-A): pool raw ρ_obs values across
+            # runs (dedupe by channel), NOT percentiles — percentile-of-percentiles is wrong.
+            puts format("RAW %s %s %.5f", s.channel.login, cell, r.rho_obs)
             ok += 1
           rescue => e
             skipped += 1
