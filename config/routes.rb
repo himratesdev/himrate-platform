@@ -193,4 +193,10 @@ Rails.application.routes.draw do
   # Public channel card (screen 02) — free real-audience analysis of any channel, no account.
   # login = Twitch login (alnum/underscore); constrained so it can't shadow the pages above.
   get "c/:login", to: "pages#channel_card", as: :channel_card, constraints: { login: /[A-Za-z0-9_]+/ }
+
+  # --- Brand dashboard (LK) — faithful export host, real data wired client-side ---
+  # Pages are served as public HTML shells; each page's landing/*.js checks /api/v1/lk/status and
+  # redirects to /login when unauthenticated, then fetches the brand API with the same-origin
+  # httpOnly session cookie. Access (brand-gate) is enforced by the API, not the route.
+  get "app/search", to: "pages#brand_search"
 end
