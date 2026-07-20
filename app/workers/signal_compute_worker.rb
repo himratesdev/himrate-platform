@@ -276,9 +276,13 @@ class SignalComputeWorker
   def invalidate_api_cache(channel_id)
     %w[headline drill_down full].each do |view|
       Rails.cache.delete("trust:#{channel_id}:#{view}")
-      Rails.cache.delete("erv:#{channel_id}:#{view}")
+      # PR3b SF-5: /erv cache keys are engine-scoped (erv:<engine>:...) — invalidate both variants
+      # so the D-8b "fresh on next poll" intent survives the flip in either direction.
+      Rails.cache.delete("erv:v1:#{channel_id}:#{view}")
+      Rails.cache.delete("erv:v2:#{channel_id}:#{view}")
     end
-    Rails.cache.delete("erv:#{channel_id}:details")
+    Rails.cache.delete("erv:v1:#{channel_id}:details")
+    Rails.cache.delete("erv:v2:#{channel_id}:details")
   rescue StandardError => e
     Rails.logger.warn("SignalComputeWorker: cache invalidation failed (#{e.message})")
   end
