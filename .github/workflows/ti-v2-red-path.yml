@@ -1,0 +1,126 @@
+name: ti-v2-red-path
+# T1-074 GATE-0 RED-PATH validation — READ-ONLY, $0. BR-017 sim showed silent-view-bot channels
+# → AMBER (correct, non-accusatory). This validates the OTHER arm: does the engine produce RED
+# «Подтверждённая аномалия» (named B_hard evidence) when real R7-temporal bots are CHATTING?
+# Scans live streams for rosters overlapping the R7-temporal (yellow+confirmed spam) set, ranks by
+# overlap fraction, runs the engine WITH the llr_temporal_r7 bump on the top hits → expect that a
+# stream with ≥φ_yellow(10%) R7-chatters flips to accusatory (n_frac≥0.10 → c_hard → RED/YELLOW +
+# plashka). If NO stream has ≥10% R7-chatters, that itself is the finding (fraud is mostly silent-
+# view → AMBER; the RED apparatus is real but rarely triggered) → revise plan STEP 6 sanity gate.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      llr_r7:
+        required: false
+        type: string
+        default: "6.2"
+      scan:
+        required: false
+        type: string
+        default: "300"
+
+jobs:
+  redpath:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build red-path script
+        run: |
+          cat > /tmp/redp.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "set"
+          LLR_R7 = (ENV["LLR_R7"] || "6.2").to_f
+          SCAN = (ENV["SCAN"] || "300").to_i
+
+          # confirmed chat-bot class = R7-temporal (yellow+confirmed), spam/unknown (utility excluded)
+          r7 = CrossChannelTemporalFlag.where(bot_flag_tier: %w[yellow confirmed])
+                                       .where.not(bot_type: "utility").pluck(:username).map(&:downcase).to_set
+          puts "R7-temporal chat-bot set (yellow+confirmed, non-utility): #{r7.size}"
+
+          live = Stream.where(ended_at: nil).where("started_at > ?", 18.hours.ago).order(started_at: :desc).limit(SCAN).pluck(:id)
+          puts "scanning #{live.size} live streams for R7-chatter overlap...\n"
+
+          scored = []
+          live.each do |sid|
+            s = Stream.find_by(id: sid)
+            next unless s
+            roster = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            next if roster.size < 10
+            hits = roster.count { |u| r7.include?(u.to_s.downcase) }
+            next if hits.zero?
+            scored << [ sid, s.channel.login.to_s, roster.size, hits, hits.to_f / roster.size ]
+          rescue => e
+            nil
+          end
+          scored.sort_by! { |x| -x[4] }
+          puts "streams with ≥1 R7-chatter: #{scored.size} (top 15 by fraction):"
+          scored.first(15).each { |sid, lg, rs, h, f| puts format("  %-22s roster=%-4d r7hits=%-3d frac=%.3f", lg[0, 22], rs, h, f) }
+
+          # run the engine (WITH llr_r7 bump) on the top overlap streams → check accusatory
+          k_cal = Calibration::Registry.load.with(llr_temporal_r7: LLR_R7)
+          puts "\n===== ENGINE on top-R7 streams (llr_r7=#{LLR_R7}) ====="
+          reds = 0; yellows = 0; ambers = 0; tested = 0
+          scored.first(12).each do |sid, lg, rs, h, f|
+            s = Stream.find_by(id: sid)
+            next unless s
+            roster = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            next if roster.empty?
+            flagged = CrossChannelTemporalFlag.bulk_lookup(roster)
+            ctx = TrustIndex::ContextBuilder.build(s).merge(
+              stream_chatters: roster,
+              temporal_cross_channel_flags: { total_chatters: roster.size, flagged: flagged }
+            )
+            v2c = TrustIndex::ContextBuilder.build_v2(s, ctx)
+            r = TrustIndex::V2::Engine.compute(context: v2c, k: k_cal)
+            tested += 1
+            reds += 1 if r.band.color == "red"
+            yellows += 1 if r.band.color == "yellow"
+            ambers += 1 if r.band.color == "amber"
+            puts format("  %-20s V=%-5d r7frac=%.3f → band=%-7s nfrac=%.3f Bhard=%d plashka=%s auth=%s",
+                        lg[0, 20], v2c.v.to_i, f, r.band.color, r.n_frac || 0, r.b_hard.size, r.confirmed_anomaly ? "Y" : "-", r.authenticity&.round(0))
+          rescue => e
+            puts "  ERROR #{lg}: #{e.class}: #{e.message[0..120]}"
+          end
+
+          puts "\n===== RED-PATH VERDICT ====="
+          puts "  tested=#{tested} → red=#{reds} yellow=#{yellows} amber=#{ambers}"
+          maxfrac = scored.first ? scored.first[4] : 0.0
+          puts "  max R7-chatter fraction observed: #{maxfrac.round(3)} (φ_yellow=0.10 needed for c_hard)"
+          if reds + yellows > 0
+            puts "  ✅ RED path FIRES — accusatory «Подтверждённая аномалия» reachable on real R7-chatting streams."
+          elsif maxfrac < 0.10
+            puts "  ⓘ No stream ≥10% R7-chatters → RED rarely triggers in practice (fraud mostly SILENT-view → AMBER)."
+            puts "     → revise plan STEP 6 sanity gate: silent-view channel → AMBER; RED needs an R7-chat-bot-heavy channel."
+          else
+            puts "  ⚠️ ≥10% R7 present but no RED — check llr_r7 bump / τ_hard math."
+          end
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/redp.rb) lines)"
+
+      - name: Run red-path on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          scp /tmp/redp.rb ${TARGET}:/tmp/redp.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/redp.rb ${CONTAINER}:/tmp/redp.rb && docker exec -e LLR_R7='${{ inputs.llr_r7 }}' -e SCAN='${{ inputs.scan }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/redp.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
