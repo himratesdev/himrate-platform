@@ -9,6 +9,7 @@
   // channel-comparison flow; it highlights "Сравнение".)
   var NAV = {
     "Nav · Главная": "/app/home",
+    "Nav · Моя активность": "/app/activity",
     "Nav · Watchlists": "/app/watchlists",
     "Nav · Поиск стримеров": "/app/search",
     "Nav · Сравнение": "/app/compare",

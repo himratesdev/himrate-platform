@@ -80,6 +80,13 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Viewer personal activity (screen 03, PVA M-modules) — faithful export host. Real analytics wired
+  # client-side by landing/my_activity.js against GET /api/v1/me/analytics/* (ownership-free).
+  def my_activity
+    @page = "my_activity"
+    @brand_dashboard = true
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the
