@@ -181,6 +181,9 @@ Rails.application.routes.draw do
   # Public, unauthenticated HTML pages (Pencil-export port). API (api/v1/*) is
   # unaffected. Legal pages + responsive merge land in later phases.
   root "pages#index"
+  # XML sitemap of the indexable marketing pages (referenced from robots.txt) so
+  # Google discovers every page — the Pencil nav is JS-driven, not <a href>. (SEO)
+  get "sitemap.xml", to: "sitemaps#show", defaults: { format: "xml" }, as: :sitemap
   get "streamers",   to: "pages#streamers"
   get "brands",      to: "pages#brands"
   get "viewers",     to: "pages#viewers"

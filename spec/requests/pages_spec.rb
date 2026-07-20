@@ -73,4 +73,35 @@ RSpec.describe "Public landing", type: :request do
       end
     end
   end
+
+  # TASK-060 SEO: Google was indexing the broken www host; canonicalise every page
+  # onto the apex so it consolidates there. Keep LK shells + login out of the index.
+  describe "SEO canonicalisation" do
+    it "emits a self-referencing canonical on the apex host for each indexable page" do
+      { "/" => "https://himrate.com/", "/streamers" => "https://himrate.com/streamers",
+        "/methodology" => "https://himrate.com/methodology" }.each do |path, canonical|
+        get path
+
+        expect(response.body).to include(%(<link rel="canonical" href="#{canonical}">))
+      end
+    end
+
+    it "sets og:url to the canonical apex URL (not the request host)" do
+      get "/streamers"
+
+      expect(response.body).to include('<meta property="og:url" content="https://himrate.com/streamers">')
+    end
+
+    it "keeps indexable marketing pages out of noindex" do
+      get "/"
+
+      expect(response.body).not_to match(/<meta name="robots" content="noindex/)
+    end
+
+    it "noindexes the login page (no public search value)" do
+      get "/login"
+
+      expect(response.body).to match(/<meta name="robots" content="noindex, follow">/)
+    end
+  end
 end
