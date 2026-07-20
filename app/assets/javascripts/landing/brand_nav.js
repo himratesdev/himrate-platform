@@ -17,6 +17,7 @@
     "Nav · Сравнение": "/app/compare",
     "Nav · Настройки": "/app/settings",
     "Nav · Мой канал": "/app/channel",
+    "Nav · Рост": "/app/grow",
   };
   var ACTIVE_BG = "#19152E";
 

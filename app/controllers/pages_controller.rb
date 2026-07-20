@@ -110,6 +110,14 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Streamer grow (screen 13) — faithful export host. Real game opportunities wired client-side by
+  # landing/grow.js against GET /api/v1/discover/games (PO spec: Steam novelty × scarcity ×
+  # distribution). Own-channel goal banner from the public card headline.
+  def grow
+    @page = "grow"
+    @brand_dashboard = true
+  end
+
   # Legal pages (Privacy Policy + Terms). Own minimal readable layout (no Pencil JS).
   # Required for Chrome Web Store submission + footer trust links.
   def privacy
