@@ -201,4 +201,7 @@ Rails.application.routes.draw do
   get "app/search", to: "pages#brand_search"
   get "app/compare", to: "pages#brand_compare"
   get "app/overlap", to: "pages#brand_overlap"
+  # Brand streamer card — 30-day track-record verification of one streamer. login constrained so it
+  # can't shadow the static /app/* pages above.
+  get "app/streamers/:login", to: "pages#brand_streamer_card", constraints: { login: /[A-Za-z0-9_]+/ }
 end
