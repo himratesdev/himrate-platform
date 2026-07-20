@@ -212,4 +212,6 @@ Rails.application.routes.draw do
   get "app/home", to: "pages#viewer_home"
   # Viewer watchlists (screen 05) — saved channel lists + their channels.
   get "app/watchlists", to: "pages#watchlists"
+  # Viewer settings (screen 06) — privacy toggles + connected accounts.
+  get "app/settings", to: "pages#settings"
 end

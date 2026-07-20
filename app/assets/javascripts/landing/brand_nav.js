@@ -12,6 +12,7 @@
     "Nav · Watchlists": "/app/watchlists",
     "Nav · Поиск стримеров": "/app/search",
     "Nav · Сравнение": "/app/compare",
+    "Nav · Настройки": "/app/settings",
   };
   var ACTIVE_BG = "#19152E";
 
