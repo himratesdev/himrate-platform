@@ -50,13 +50,18 @@
     el.setAttribute('data-hr-btn','');
     el.addEventListener('click', function(e){
       var s = txt.toLowerCase();
-      var dest = null;
-      if(s.indexOf('подключить')>-1) dest='/methodology';
+      var dest;
+      // Every verb the CTA regex above matches MUST resolve to a destination — an
+      // unmapped verb was a dead click (e.g. "Установить расширение", "Начать").
+      if(s.indexOf('установить')>-1 || s.indexOf('начать')>-1) dest='/viewers';
       else if(s.indexOf('я бренд')>-1) dest='/brands';
       else if(s.indexOf('я зритель')>-1) dest='/viewers';
-      else if(s.indexOf('как мы измеряем')>-1 || s.indexOf('методолог')>-1 || s.indexOf('как это работает')>-1) dest='/methodology';
-      else if(s.indexOf('все тарифы')>-1 || s.indexOf('тариф')>-1) dest='/methodology';
-      if(dest){ e.stopPropagation(); go(dest); }
+      else if(s.indexOf('связаться')>-1) dest='/brands';
+      else if(s.indexOf('подключить')>-1) dest='/streamers';
+      else if(s.indexOf('запросить')>-1) dest='/streamers';
+      // pricing / methodology bucket + everything else → methodology (how it works + tariffs)
+      else dest='/methodology';
+      e.stopPropagation(); go(dest);
     });
   });
 
