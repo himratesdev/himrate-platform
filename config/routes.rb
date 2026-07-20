@@ -214,4 +214,6 @@ Rails.application.routes.draw do
   get "app/watchlists", to: "pages#watchlists"
   # Viewer settings (screen 06) — privacy toggles + connected accounts.
   get "app/settings", to: "pages#settings"
+  # Viewer personal activity (screen 03, PVA) — watch time / top channels / insights / feed.
+  get "app/activity", to: "pages#my_activity"
 end
