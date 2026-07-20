@@ -10,6 +10,16 @@
   var login = parts.length ? decodeURIComponent(parts[parts.length - 1]) : null;
   if (!login) return;
 
+  // Honest-data guard (PO caught «Прирост онлайна +1 200 за 35 с» as a leftover sample,
+  // 2026-07-20): the deep sections below layer 1 (L2 Drill = 7 checks + CCV/ERV charts + bot-raid,
+  // L3 Reputation = trend samples) are STILL static design samples — no wiring yet. Hide them until
+  // each is wired to real data (follow-ups); only the real layer-1 block + the registration Gate CTA
+  // stay visible. Runs immediately (script loads at end of body).
+  ["L2 Drill", "L3 Reputation"].forEach(function (name) {
+    var n = document.querySelector('[data-pencil-name="' + name + '"]');
+    if (n) n.style.display = "none";
+  });
+
   var BAND_RU = {
     impeccable: "Безупречная",
     stable: "Стабильная",
