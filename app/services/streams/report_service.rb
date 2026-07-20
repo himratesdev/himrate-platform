@@ -23,13 +23,29 @@ module Streams
     private
 
     def build_from_psr(psr)
-      {
-        stream: stream_detail,
-        trust_index: {
+      # PR3b: v2 PSRs stop-write the retired scalars (nil) — enrich from the stream's final v2 TIH
+      # (band/authenticity/interval live there, PSR = denormalized cache). v1 PSRs render as before.
+      trust_index = if v2_engine?
+        tih = final_v2_tih
+        {
+          erv: psr.erv_final,
+          erv_interval: tih&.erv_lo ? { lo: tih.erv_lo, hi: tih.erv_hi } : nil,
+          authenticity: tih&.authenticity&.to_f,
+          band: tih&.band_row ? { row: tih.band_row, color: tih.band_color, sub: tih.band_sub } : nil,
+          confirmed_anomaly: tih&.confirmed_anomaly,
+          engine_version: "v2"
+        }
+      else
+        {
           ti_score: psr.trust_index_final&.to_f,
           erv_percent: psr.erv_percent_final&.to_f&.clamp(0.0, 100.0),
           erv_count: psr.erv_final
-        },
+        }
+      end
+
+      {
+        stream: stream_detail,
+        trust_index: trust_index,
         signals_summary: psr.signals_summary,
         chat_stats: {
           ccv_peak: psr.ccv_peak,
@@ -43,7 +59,9 @@ module Streams
     end
 
     def build_assembled
-      ti = @stream.trust_index_histories.order(calculated_at: :desc).first
+      return build_assembled_v2 if v2_engine?
+
+      ti = @stream.trust_index_histories.where(engine_version: "v1").order(calculated_at: :desc).first
       erv = ErvEstimate.where(stream: @stream).order(timestamp: :desc).first
 
       {
@@ -71,6 +89,50 @@ module Streams
       }
     end
 
+    # v2 fallback (no PSR yet): read the final v2 TIH directly; ErvEstimate is retired (v2 writes
+    # none) — the erv block comes from the same row.
+    def build_assembled_v2
+      ti = final_v2_tih
+
+      {
+        stream: stream_detail,
+        trust_index: ti ? {
+          erv: ti.erv,
+          erv_interval: { lo: ti.erv_lo, hi: ti.erv_hi },
+          authenticity: ti.authenticity&.to_f,
+          band: ti.band_row ? { row: ti.band_row, color: ti.band_color, sub: ti.band_sub } : nil,
+          confirmed_anomaly: ti.confirmed_anomaly,
+          cold_start_tier: ti.cold_start_tier,
+          confidence_marker: ti.confidence_marker,
+          reason_codes: ti.reason_codes || [],
+          engine_version: "v2"
+        } : nil,
+        signals: signals,
+        chat_stats: chat_stats,
+        anomalies: anomalies,
+        ccv_timeline: ccv_timeline,
+        raids: raids
+      }
+    end
+
+    def final_v2_tih
+      @final_v2_tih ||= @stream.trust_index_histories
+                               .where(engine_version: "v2")
+                               .order(calculated_at: :desc)
+                               .first
+    end
+
+    def v2_engine?
+      return @v2_engine if defined?(@v2_engine)
+
+      @v2_engine =
+        begin
+          Flipper.enabled?(:ti_v2_engine)
+        rescue StandardError
+          false
+        end
+    end
+
     def stream_detail
       # PR-A1: peak_ccv / avg_ccv / duration_ms derived (columns dropped, single source).
       {
@@ -93,7 +155,10 @@ module Streams
     # JSON column. The `signals` PG table is dead-write since TrustIndex::Engine refactor.
     # Same fix pattern as Trust::ShowService + PostStreamWorker.
     def signals
-      tih = TrustIndexHistory.where(stream_id: @stream.id).order(calculated_at: :desc).first
+      # PR3b: v2 rows carry no signal_breakdown — reason_codes (in trust_index above) replace it.
+      return [] if v2_engine?
+
+      tih = TrustIndexHistory.where(stream_id: @stream.id, engine_version: "v1").order(calculated_at: :desc).first
       return [] unless tih
 
       breakdown = tih.signal_breakdown

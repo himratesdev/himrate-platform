@@ -8,20 +8,24 @@ module TrustIndex
     # history (create!, never update). The retired trust_index_score stays null on v2 rows (the model
     # only requires it for engine_version='v1').
     class Persistence
-      def self.call(result:, channel:, stream:, calculated_at:)
-        new(result, channel, stream, calculated_at).call
+      # ccv: the engine input V (shown viewers) — the Result does not carry it, the SCW call site
+      # does (v2_context.v). Persisted so consumers (erv_breakdown{v}, watchlist ccv display/sort,
+      # landing shown/real math, /erv derived %) read V off the same row (PR3b gap D-5/w1).
+      def self.call(result:, channel:, stream:, calculated_at:, ccv: nil)
+        new(result, channel, stream, calculated_at, ccv).call
       end
 
-      def initialize(result, channel, stream, calculated_at)
+      def initialize(result, channel, stream, calculated_at, ccv = nil)
         @r = result
         @channel = channel
         @stream = stream
         @at = calculated_at
+        @ccv = ccv
       end
 
       def call
         tih = TrustIndexHistory.create!(tih_attrs)
-        persist_evidence(tih) if @r.c_hard
+        persist_evidence(tih) if @r.c_hard && evidence_set_changed?
         tih
       end
 
@@ -29,6 +33,7 @@ module TrustIndex
 
       def tih_attrs
         { channel: @channel, stream: @stream, calculated_at: @at, engine_version: "v2",
+          ccv: @ccv, # V (engine input) — PR3b D-5: consumers read V off the row (nil-safe column)
           erv: round_or_nil(@r.erv), erv_lo: round_or_nil(@r.erv_lo), erv_hi: round_or_nil(@r.erv_hi),
           f_hat: @r.f_hat, f_hat_lo: @r.f_hat_lo, f_hat_hi: @r.f_hat_hi,
           f_hard: @r.f_hard, f_hard_lo: @r.f_hard_lo, f_self: @r.f_self,
@@ -42,6 +47,21 @@ module TrustIndex
           i_event: @r.c_self, # C_self = (I=1); the i_event column mirrors it (SRS §5.1)
           confirmed_anomaly: @r.confirmed_anomaly, cold_start_tier: @r.cold_start_tier,
           confidence_marker: @r.confidence_marker }
+      end
+
+      # PR3b MF-1 (write-amplification guard): under cutover this runs every ~30s live cycle — an
+      # unconditional write would grow named_bot_evidences by N rows per compute for a botted
+      # channel (~2880×N/day). Evidence is CHANGE-TRIGGERED: written only when the stream has no
+      # evidence yet (c_hard onset — the first plashka snapshot gets backing rows, EC-13) or the
+      # named-account set changed (new bots appear). Same-set repeat computes are skipped; a dispute
+      # over a later snapshot references the stream's evidence via for_channel/for_history of the
+      # onset snapshot (dispute-reproducibility preserved — the SET is what the plashka names).
+      def evidence_set_changed?
+        return true if @stream.nil?
+
+        existing = NamedBotEvidence.where(stream: @stream).distinct.pluck(:username).to_set
+        current = @r.b_hard.map(&:username).to_set
+        !(current - existing).empty?
       end
 
       def persist_evidence(tih)

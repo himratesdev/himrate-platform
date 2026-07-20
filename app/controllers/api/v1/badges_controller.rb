@@ -9,18 +9,33 @@ module Api
     class BadgesController < ActionController::API
       # No Pundit, no auth — fully public endpoint
 
+      # PR3b (T1-074, B6): the 5-color band hex map — amber (silent-view-bot moat) and grey
+      # (insufficient) are first-class, not fallbacks.
+      BAND_HEX = {
+        "green" => "#22c55e", "yellow" => "#eab308", "red" => "#ef4444",
+        "grey" => "#6b7280", "amber" => "#f59e0b"
+      }.freeze
+
       # GET /api/v1/channels/:channel_id/badge.svg
+      # v2: the right cell shows the ERV count (real viewers) colored by the engine-emitted band —
+      # the retired "TI N" scalar dies with v1. nil erv (grey/EC-15) → "—".
       def show
         channel = Channel.find_by(id: params[:channel_id]) || Channel.find_by!(login: params[:channel_id])
 
-        ti = channel.trust_index_histories.order(calculated_at: :desc).first
-        ti_score = ti&.trust_index_score&.to_f&.round(0) || 0
-
-        color = case ti_score
-        when 80..100 then "#22c55e"
-        when 50..79 then "#eab308"
-        when 25..49 then "#f97316"
-        else "#ef4444"
+        if v2_engine?
+          ti = channel.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
+          color = BAND_HEX.fetch(ti&.band_color, "#6b7280")
+          value = ti&.erv ? "ERV #{ti.erv}" : "—"
+        else
+          ti = channel.trust_index_histories.where(engine_version: "v1").order(calculated_at: :desc).first
+          ti_score = ti&.trust_index_score&.to_f&.round(0) || 0
+          color = case ti_score
+          when 80..100 then "#22c55e"
+          when 50..79 then "#eab308"
+          when 25..49 then "#f97316"
+          else "#ef4444"
+          end
+          value = "TI #{ti_score}"
         end
 
         svg = <<~SVG
@@ -29,7 +44,7 @@ module Api
             <rect x="100" width="100" height="40" rx="4" fill="#{color}"/>
             <rect x="96" width="8" height="40" fill="#{color}"/>
             <text x="50" y="25" font-family="sans-serif" font-size="13" fill="white" text-anchor="middle">HimRate</text>
-            <text x="150" y="25" font-family="sans-serif" font-size="13" fill="white" text-anchor="middle" font-weight="bold">TI #{ti_score}</text>
+            <text x="150" y="25" font-family="sans-serif" font-size="13" fill="white" text-anchor="middle" font-weight="bold">#{value}</text>
           </svg>
         SVG
 
@@ -37,6 +52,14 @@ module Api
         render plain: svg.strip, content_type: "image/svg+xml"
       rescue ActiveRecord::RecordNotFound
         render plain: "", status: :not_found
+      end
+
+      private
+
+      def v2_engine?
+        Flipper.enabled?(:ti_v2_engine)
+      rescue StandardError
+        false
       end
     end
   end

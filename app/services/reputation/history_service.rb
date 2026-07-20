@@ -27,7 +27,7 @@ module Reputation
     CACHE_TTL = 6.hours
 
     def self.cache_key(channel_id)
-      "reputation_history:#{channel_id}"
+      "reputation_history_v2:#{channel_id}" # PR3b: bumped — old-shape 6h cache entries must not serve post-deploy
     end
 
     # Read path (free endpoint). Lazy compute, 6h backstop; invalidated at stream-end (DEC-4).
@@ -105,12 +105,19 @@ module Reputation
 
     # Final TIH per stream (DISTINCT ON), index_by stream_id. Mirrors BandService#window_ti_scores;
     # hits idx_tih_stream_calculated_id (stream_id, calculated_at DESC).
+    # PR3b (T1-074): per-row engine discrimination, IDENTICAL to BandService#window_ti_scores
+    # (MF-1 coherence — current.band must equal BandService#call). For v2 rows
+    # real_audience_pct == authenticity EXACTLY (A = ERV/V·100) — one value serves both.
     def load_final_tih(stream_ids)
       return {} if stream_ids.empty?
 
       TrustIndexHistory
         .where(stream_id: stream_ids)
-        .select("DISTINCT ON (stream_id) stream_id, trust_index_score, erv_percent")
+        .select(<<~SQL.squish)
+          DISTINCT ON (stream_id) stream_id, engine_version,
+          CASE WHEN engine_version = 'v2' THEN authenticity ELSE trust_index_score END AS window_score,
+          CASE WHEN engine_version = 'v2' THEN authenticity ELSE erv_percent END AS audience_pct
+        SQL
         .order(Arel.sql("stream_id, calculated_at DESC"))
         .index_by(&:stream_id)
     end
@@ -136,7 +143,7 @@ module Reputation
         stream_id, ended_at = ordered[i]
         sub = ordered[[ 0, i - WINDOW + 1 ].max..i] # trailing <=30 streams incl. current
 
-        scores = sub.filter_map { |sid, _| tih_by_stream[sid]&.trust_index_score&.to_f }
+        scores = sub.filter_map { |sid, _| tih_by_stream[sid]&.[](:window_score)&.to_f }
         # Fraction of sub streams that had >=1 bot event (∈ [0,1]); denominator = ALL sub streams
         # (TIH-less still an observed session) — mirrors BandService#severe_anomaly_rate.
         severe_rate = sub.count { |sid, _| severe_streams.include?(sid) }.to_f / sub.size
@@ -146,8 +153,13 @@ module Reputation
         {
           stream_index: i - display_start,
           ended_at: ended_at.iso8601,
-          ti_score: tih&.trust_index_score&.to_f&.clamp(0.0, 100.0),
-          real_audience_pct: tih&.erv_percent&.to_f&.clamp(0.0, 100.0),
+          # PR3b MF-2: DUAL-EMIT during the transition — the SHIPPED extension still reads
+          # ti_score (T2 migration branch is unmerged); authenticity = the same value for new
+          # clients. Drop ti_score in the post-flip cleanup PR. `band` here = CATEGORICAL
+          # reputation band (impeccable/stable/…), NOT the v2 6-row band.
+          ti_score: tih&.[](:window_score)&.to_f&.clamp(0.0, 100.0),
+          authenticity: tih&.[](:window_score)&.to_f&.clamp(0.0, 100.0),
+          real_audience_pct: tih&.[](:audience_pct)&.to_f&.clamp(0.0, 100.0),
           band: band
         }
       end

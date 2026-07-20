@@ -57,19 +57,46 @@ module Trends
         TrendsDailyAggregate.upsert(attributes, unique_by: %i[channel_id date])
       end
 
+      # PR3b (T1-074): data-driven dual aggregation — v1 stats over v1 rows, v2 stats over v2 rows,
+      # every night, flag-free. Mixed cutover days populate both column families; endpoints COALESCE.
       def build_attributes(streams, tih)
-        ti_stats = ti_aggregates(tih)
-        erv_stats = erv_aggregates(tih)
+        tih_v1 = tih.where(engine_version: "v1")
+        tih_v2 = tih.where(engine_version: "v2")
+        ti_stats = ti_aggregates(tih_v1)
+        erv_stats = erv_aggregates(tih_v1)
         ccv_stats = ccv_aggregates(streams)
+        v2_stats = v2_aggregates(tih_v2)
 
         {
           channel_id: @channel_id,
           date: @date,
           streams_count: streams.count,
           categories: categories_breakdown(streams),
-          classification_at_end: latest_classification(tih),
+          classification_at_end: latest_classification(tih_v1),
           schema_version: SCHEMA_VERSION
-        }.merge(ti_stats).merge(erv_stats).merge(ccv_stats)
+        }.merge(ti_stats).merge(erv_stats).merge(ccv_stats).merge(v2_stats)
+      end
+
+      # authenticity_* (0-100, heir of ti_*) + erv_avg_count (native count) + band at end.
+      def v2_aggregates(tih_v2)
+        stats = tih_v2.where.not(authenticity: nil).pick(
+          Arel.sql("AVG(authenticity)"),
+          Arel.sql("STDDEV_POP(authenticity)"),
+          Arel.sql("MIN(authenticity)"),
+          Arel.sql("MAX(authenticity)"),
+          Arel.sql("AVG(erv)")
+        )
+        band_row, band_color = tih_v2.order(calculated_at: :desc).pick(:band_row, :band_color)
+
+        {
+          authenticity_avg: stats&.[](0)&.to_f&.round(2),
+          authenticity_std: stats&.[](1)&.to_f&.round(2),
+          authenticity_min: stats&.[](2)&.to_f&.round(2),
+          authenticity_max: stats&.[](3)&.to_f&.round(2),
+          erv_avg_count: stats&.[](4)&.to_f&.round(2),
+          band_row_at_end: band_row,
+          band_color_at_end: band_color
+        }
       end
 
       def ti_aggregates(tih)

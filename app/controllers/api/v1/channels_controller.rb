@@ -114,31 +114,43 @@ module Api
       end
 
       # TASK-035 FR-035: GET /api/v1/channels/:id/badge — SVG badge embed code
+      # PR3b (T1-074, B7): v2 emits {erv, band_color} (5 colors) — ti_score/ErvCalculator retired.
       def badge
         channel = find_channel
         authorize channel, :badge?
 
-        ti = channel.trust_index_histories.order(calculated_at: :desc).first
-        ti_score = ti&.trust_index_score&.to_f&.round(0) || 0
-        erv_data = ti ? TrustIndex::ErvCalculator.compute(
-          ti_score: ti.trust_index_score.to_f,
-          ccv: ti.ccv.to_i,
-          confidence: ti.confidence.to_f
-        ) : {}
-
-        color = erv_data[:label_color] || "grey"
         svg_url = "#{request.base_url}/api/v1/channels/#{channel.id}/badge.svg"
-
-        render json: {
-          data: {
-            html: badge_html(channel, svg_url, ti_score),
-            markdown: "[![HimRate](#{svg_url})](https://himrate.com/channel/#{channel.login})",
-            bbcode: "[url=https://himrate.com/channel/#{channel.login}][img]#{svg_url}[/img][/url]",
-            svg_url: svg_url,
-            ti_score: ti_score,
-            color: color
-          }
+        base = {
+          markdown: "[![HimRate](#{svg_url})](https://himrate.com/channel/#{channel.login})",
+          bbcode: "[url=https://himrate.com/channel/#{channel.login}][img]#{svg_url}[/img][/url]",
+          svg_url: svg_url
         }
+
+        if v2_engine?
+          ti = channel.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
+          render json: {
+            data: base.merge(
+              html: badge_html(channel, svg_url, ti&.erv),
+              erv: ti&.erv,
+              band_color: ti&.band_color || "grey"
+            )
+          }
+        else
+          ti = channel.trust_index_histories.where(engine_version: "v1").order(calculated_at: :desc).first
+          ti_score = ti&.trust_index_score&.to_f&.round(0) || 0
+          erv_data = ti ? TrustIndex::ErvCalculator.compute(
+            ti_score: ti.trust_index_score.to_f,
+            ccv: ti.ccv.to_i,
+            confidence: ti.confidence.to_f
+          ) : {}
+          render json: {
+            data: base.merge(
+              html: badge_html(channel, svg_url, ti_score),
+              ti_score: ti_score,
+              color: erv_data[:label_color] || "grey"
+            )
+          }
+        end
       end
 
       # TASK-035 FR-036: GET /api/v1/channels/:id/card — Channel Card data
@@ -191,11 +203,19 @@ module Api
         )
       end
 
-      def badge_html(channel, svg_url, ti_score)
+      def badge_html(channel, svg_url, value)
         login = ERB::Util.html_escape(channel.login)
+        # v2 alt-text: real-viewer count, no retired "Trust Index" scalar, no bot wording (legal).
+        alt = v2_engine? ? "HimRate: #{value || '—'} real viewers" : "HimRate Trust Index: #{value}"
         %(<a href="https://himrate.com/channel/#{login}" target="_blank" rel="noopener">) +
-          %(<img src="#{ERB::Util.html_escape(svg_url)}" alt="HimRate Trust Index: #{ti_score}" width="200" height="40" />) +
+          %(<img src="#{ERB::Util.html_escape(svg_url)}" alt="#{alt}" width="200" height="40" />) +
           %(</a>)
+      end
+
+      def v2_engine?
+        Flipper.enabled?(:ti_v2_engine)
+      rescue StandardError
+        false
       end
 
       # FR-007/011: Find channel by UUID, login, or twitch_id

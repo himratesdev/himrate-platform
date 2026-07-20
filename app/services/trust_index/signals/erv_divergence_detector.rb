@@ -13,13 +13,29 @@ module TrustIndex
       DELTA_THRESHOLD_PCT = 10.0
       DEDUP_WINDOW = 5.minutes
 
-      # Check ErvEstimate для divergence > 10%. Returns array of created anomaly IDs.
+      # Check real-viewer-share divergence > 10%. Returns array of created anomaly IDs.
+      # PR3b (T1-074, gap D-4): v2 writes NO ErvEstimate — under ti_v2_engine the basis is
+      # TIH.authenticity (engine_version='v2'). authenticity = 100·(1−F̂/V) is the exact semantic
+      # heir of erv_percent (both = "% of online that is real"), so the ratio thresholds carry over
+      # unchanged and the detector stays immune to organic CCV growth (a raw ERV-count basis would
+      # false-fire on raids). EC-15 GREY rows (authenticity NULL) excluded. details keys keep their
+      # names — values remain "% real viewers", the presenter contract (BR-011 delta_pct) is intact.
       def self.check(stream)
-        estimates = ErvEstimate
-          .where(stream: stream)
-          .where("timestamp > ?", WINDOW.ago)
-          .order(:timestamp)
-          .pluck(:erv_percent)
+        estimates =
+          if v2_engine?
+            TrustIndexHistory
+              .where(stream_id: stream.id, engine_version: "v2")
+              .where("calculated_at > ?", WINDOW.ago)
+              .where.not(authenticity: nil)
+              .order(:calculated_at)
+              .pluck(:authenticity)
+          else
+            ErvEstimate
+              .where(stream: stream)
+              .where("timestamp > ?", WINDOW.ago)
+              .order(:timestamp)
+              .pluck(:erv_percent)
+          end
 
         return [] if estimates.size < 2
 
@@ -55,7 +71,14 @@ module TrustIndex
                .where("timestamp > ?", DEDUP_WINDOW.ago).exists?
       end
 
-      private_class_method :recent_anomaly_exists?
+      # Flag-store hiccup must not take SCW down → false = v1 branch (ErvEstimate, safe pre-flip).
+      def self.v2_engine?
+        Flipper.enabled?(:ti_v2_engine)
+      rescue StandardError
+        false
+      end
+
+      private_class_method :recent_anomaly_exists?, :v2_engine?
     end
   end
 end

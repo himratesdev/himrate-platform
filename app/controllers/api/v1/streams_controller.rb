@@ -77,11 +77,13 @@ module Api
 
       private
 
+      # PR3b (T1-074, M1): engine-aware — Ruby-side engine pick preserves the preload (no N+1).
       def stream_summary(stream)
-        ti = stream.trust_index_histories.max_by(&:calculated_at)
+        engine = v2_engine? ? "v2" : "v1"
+        ti = stream.trust_index_histories.select { |t| t.engine_version == engine }.max_by(&:calculated_at)
 
         # PR-A1: peak_ccv / avg_ccv / duration_ms derived (columns dropped, single source).
-        {
+        base = {
           id: stream.id,
           started_at: stream.started_at.iso8601,
           ended_at: stream.ended_at&.iso8601,
@@ -90,12 +92,29 @@ module Api
           avg_ccv: stream.current_avg_ccv,
           game_name: stream.game_name,
           title: stream.title,
-          ti_score: ti&.trust_index_score&.to_f,
-          erv_percent: ti&.erv_percent&.to_f&.clamp(0.0, 100.0),
-          classification: ti&.classification,
           # CR #12: real parts count
           merged_parts_count: stream.merged_parts_count
         }
+        if v2_engine?
+          base.merge(
+            erv: ti&.erv,
+            authenticity: ti&.authenticity&.to_f,
+            band_color: ti&.band_color,
+            confirmed_anomaly: ti&.confirmed_anomaly
+          )
+        else
+          base.merge(
+            ti_score: ti&.trust_index_score&.to_f,
+            erv_percent: ti&.erv_percent&.to_f&.clamp(0.0, 100.0),
+            classification: ti&.classification
+          )
+        end
+      end
+
+      def v2_engine?
+        Flipper.enabled?(:ti_v2_engine)
+      rescue StandardError
+        false
       end
     end
   end

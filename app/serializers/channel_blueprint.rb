@@ -7,6 +7,25 @@
 class ChannelBlueprint < Blueprinter::Base
   identifier :id
 
+  # PR3b (T1-074): latest row of the ACTIVE engine, Ruby-side over the preloaded association
+  # (preserves the no-N+1 property of list endpoints — do NOT switch to a per-channel DB query).
+  # TrustIndexBlueprint is per-row engine-aware, so the pick only decides WHICH engine's latest row
+  # renders.
+  def self.latest_tih_for(channel)
+    engine = ti_v2_engine? ? "v2" : "v1"
+    if channel.trust_index_histories.loaded?
+      channel.trust_index_histories.select { |t| t.engine_version == engine }.max_by(&:calculated_at)
+    else
+      channel.trust_index_histories.where(engine_version: engine).order(calculated_at: :desc).first
+    end
+  end
+
+  def self.ti_v2_engine?
+    Flipper.enabled?(:ti_v2_engine)
+  rescue StandardError
+    false
+  end
+
   # === Headline view (Guest — always available) ===
   view :headline do
     fields :login, :display_name, :profile_image_url, :twitch_id, :is_monitored
@@ -27,7 +46,7 @@ class ChannelBlueprint < Blueprinter::Base
 
     association :latest_trust_index, blueprint: TrustIndexBlueprint, view: :headline,
       name: :trust_index do |channel, _options|
-      channel.trust_index_histories.loaded? ? channel.trust_index_histories.max_by(&:calculated_at) : channel.trust_index_histories.order(calculated_at: :desc).first
+      ChannelBlueprint.latest_tih_for(channel)
     end
 
     field :is_live do |channel, _options|
@@ -41,7 +60,7 @@ class ChannelBlueprint < Blueprinter::Base
 
     association :latest_trust_index, blueprint: TrustIndexBlueprint, view: :drill_down,
       name: :trust_index do |channel, _options|
-      channel.trust_index_histories.loaded? ? channel.trust_index_histories.max_by(&:calculated_at) : channel.trust_index_histories.order(calculated_at: :desc).first
+      ChannelBlueprint.latest_tih_for(channel)
     end
 
     association :current_stream, blueprint: StreamBlueprint, view: :basic do |channel, _options|
@@ -59,7 +78,7 @@ class ChannelBlueprint < Blueprinter::Base
 
     association :latest_trust_index, blueprint: TrustIndexBlueprint, view: :full,
       name: :trust_index do |channel, _options|
-      channel.trust_index_histories.loaded? ? channel.trust_index_histories.max_by(&:calculated_at) : channel.trust_index_histories.order(calculated_at: :desc).first
+      ChannelBlueprint.latest_tih_for(channel)
     end
 
     association :recent_streams, blueprint: StreamBlueprint, view: :basic do |channel, _options|

@@ -7,7 +7,7 @@
 (function () {
   "use strict";
 
-  var LABEL_COLOR = { green: "#25D9A4", yellow: "#F5C451", red: "#F0616D" };
+  var LABEL_COLOR = { green: "#25D9A4", yellow: "#F5C451", red: "#F0616D", grey: "#9A9AA9", amber: "#F6A823" };
 
   function q(root, name) { return (root || document).querySelector('[data-pencil-name="' + name + '"]'); }
   // prefix match — Home card anchors are suffixed per channel (RName Buster) or per index (RRepT 1).
@@ -20,10 +20,13 @@
   }
   function initials(s) { s = (s || "").replace(/[^A-Za-zА-Яа-я0-9]/g, ""); return (s.slice(0, 2) || "?").toUpperCase(); }
   function color(ti) { return (ti && LABEL_COLOR[ti.label_color]) || "#9A9AA9"; }
-  // shown viewers = ccv, backed out from the stored erv_count / erv%.
+  // % real: v2 rows carry authenticity, v1 rows erv_percent (same meaning).
+  function pct(ti) { return ti == null ? null : (ti.authenticity != null ? ti.authenticity : ti.erv_percent); }
+  // shown viewers = ccv, backed out from the stored erv_count / % real.
   function shown(ti) {
-    if (!ti || ti.erv_count == null || !ti.erv_percent) return null;
-    return Math.round(ti.erv_count / (ti.erv_percent / 100));
+    var p = pct(ti);
+    if (!ti || ti.erv_count == null || !p) return null;
+    return Math.round(ti.erv_count / (p / 100));
   }
 
   function cardLink(login) { return "/c/" + encodeURIComponent(login); }
@@ -37,7 +40,7 @@
     setP(card, "RReal ", fmt(ti.erv_count));
     var real = qp(card, "RReal "); if (real) real.style.color = color(ti);
     setP(card, "RShown ", "/ " + fmt(shown(ti)));
-    var fill = qp(card, "RBarFill "); if (fill) fill.style.width = (ti.erv_percent != null ? Math.max(0, Math.min(100, ti.erv_percent)) : 0) + "%";
+    var fill = qp(card, "RBarFill "); if (fill) fill.style.width = (pct(ti) != null ? Math.max(0, Math.min(100, pct(ti))) : 0) + "%";
     if (ti.label) setP(card, "RRepT ", ti.label);
     var dot = qp(card, "RRepDot "); if (dot) dot.style.backgroundColor = color(ti);
     var repT = qp(card, "RRepT "); if (repT) repT.style.color = color(ti);
@@ -58,7 +61,7 @@
     setP(card, "LReal ", fmt(ti.erv_count));
     var real = qp(card, "LReal "); if (real) real.style.color = color(ti);
     setP(card, "LShown ", "из " + fmt(shown(ti)));
-    var fill = qp(card, "LBarFill "); if (fill) fill.style.width = (ti.erv_percent != null ? Math.max(0, Math.min(100, ti.erv_percent)) : 0) + "%";
+    var fill = qp(card, "LBarFill "); if (fill) fill.style.width = (pct(ti) != null ? Math.max(0, Math.min(100, pct(ti))) : 0) + "%";
     var dot = qp(card, "LRepDot "); if (dot) dot.style.backgroundColor = color(ti);
     card.style.cursor = "pointer";
     card.addEventListener("click", function () { window.location.href = cardLink(c.login); });

@@ -142,6 +142,53 @@ RSpec.describe SignalComputeWorker do
     end
   end
 
+  # T1-074 PR3b — the CUTOVER branch. ti_v2_engine ON → v2 is authoritative: v1 not computed,
+  # not persisted, not published; v2 persists (TIH engine_version='v2' + ccv) and ships the v2
+  # headline over the wire. A v2 failure FAILS the stage (Sidekiq retry) — unlike shadow.
+  describe "TI v2 cutover branch (ti_v2_engine ON)" do
+    before do
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+    end
+
+    it "persists ONLY a v2 row (no v1 row, no ErvEstimate) with ccv = engine V" do
+      expect { worker.perform(stream.id) }
+        .to change(TrustIndexHistory.where(engine_version: "v2"), :count).by(1)
+        .and change(TrustIndexHistory.where(engine_version: "v1"), :count).by(0)
+        .and change(ErvEstimate, :count).by(0)
+      row = TrustIndexHistory.where(engine_version: "v2").last
+      expect(row.trust_index_score).to be_nil
+      expect(row.band_color).to be_present
+    end
+
+    it "publishes the v2 headline contract (erv/band/authenticity), not the v1 legacy shape" do
+      published = []
+      fake_redis = instance_double(Redis)
+      allow(fake_redis).to receive(:set).and_return(true)
+      allow(fake_redis).to receive(:publish) { |_ch, payload| published << payload }
+      allow(worker).to receive(:redis).and_return(fake_redis)
+
+      worker.perform(stream.id)
+
+      expect(published.size).to eq(1)
+      parsed = JSON.parse(published.first)
+      expect(parsed).to include("engine_version" => "v2")
+      expect(parsed.keys).to include("erv", "erv_interval", "authenticity", "band", "reason_codes")
+      expect(parsed.keys).not_to include("ti_score", "classification")
+    end
+
+    it "keeps the calibration-observables stream alive (SCW shadow line, v1 fields null)" do
+      allow(Rails.logger).to receive(:info)
+      worker.perform(stream.id)
+      expect(Rails.logger).to have_received(:info).with(/SCW shadow.*"v1_ti":null/)
+    end
+
+    it "a v2 failure FAILS the stage (Sidekiq retry semantics — no silent swallow like shadow)" do
+      allow(TrustIndex::V2::Engine).to receive(:compute).and_raise(StandardError, "v2 boom")
+      expect { worker.perform(stream.id) }.to raise_error(StandardError, /v2 boom/)
+      expect(TrustIndexHistory.where(engine_version: "v2").count).to eq(0)
+    end
+  end
+
   # TASK-039 FR-019: enqueue Trends::AnomalyAttributionWorker per created anomaly ID
   it "enqueues Trends::AnomalyAttributionWorker за каждую созданную anomaly" do
     anomaly_ids = [ SecureRandom.uuid, SecureRandom.uuid ]

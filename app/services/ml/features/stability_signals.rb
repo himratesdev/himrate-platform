@@ -67,15 +67,37 @@ module Ml
       # CR-256 P1: both upper AND lower bounds anchored — `calculated_at BETWEEN window_start
       # AND extraction_anchor`. Without the upper bound a backfill replay would pick up TIH
       # rows for streams completed after `@stream.ended_at`.
+      # PR3b (T1-074, M12): engine-aware. Under ti_v2_engine the basis is `authenticity` (same
+      # 0-100 scale — the v2 trust scalar; column name trust_index_30d_std keeps its slot in
+      # stream_feature_vectors, semantics documented for the next model retrain). The pre-fix
+      # unfiltered pluck was a poisoned-zero source at cutover: v2 rows pluck NULL
+      # trust_index_score → nil.to_f == 0.0 → confidently-wrong std into LightGBM features.
+      # `.compact` BEFORE map(&:to_f) on both branches kills that class of bug.
       def trust_index_scores
-        @trust_index_scores ||= TrustIndexHistory
-          .for_channel(@stream.channel_id)
-          .where.not(stream_id: nil)
-          .where("calculated_at >= ? AND calculated_at <= ?", window_start, extraction_anchor)
-          .order(calculated_at: :desc)
-          .limit(MAX_STREAM_HISTORY)
-          .pluck(:trust_index_score)
-          .map(&:to_f)
+        @trust_index_scores ||= begin
+          column = v2_engine? ? :authenticity : :trust_index_score
+          TrustIndexHistory
+            .for_channel(@stream.channel_id)
+            .where(engine_version: v2_engine? ? "v2" : "v1")
+            .where.not(stream_id: nil)
+            .where("calculated_at >= ? AND calculated_at <= ?", window_start, extraction_anchor)
+            .order(calculated_at: :desc)
+            .limit(MAX_STREAM_HISTORY)
+            .pluck(column)
+            .compact
+            .map(&:to_f)
+        end
+      end
+
+      def v2_engine?
+        return @v2_engine if defined?(@v2_engine)
+
+        @v2_engine =
+          begin
+            Flipper.enabled?(:ti_v2_engine)
+          rescue StandardError
+            false
+          end
       end
 
       # Last MAX_STREAM_HISTORY completed Stream rows for the channel (ended_at IS NOT NULL,

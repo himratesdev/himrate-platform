@@ -32,17 +32,33 @@ class TiDivergenceAlerter
     end
   end
 
-  # Collect TI values from part_boundaries + final TI.
+  # Collect trust values from part_boundaries + final row.
+  # PR3b (T1-074, M13b): under ti_v2_engine the axis is `authenticity` (same 0-100 scale —
+  # DIVERGENCE_THRESHOLD=20 stays meaningful; raw ERV counts are V-scale-dependent, wrong axis).
+  # Boundaries written pre-cutover carry only "ti_score" → per-boundary fallback keeps merged
+  # streams spanning the flip alertable.
   def self.collect_ti_values(stream)
     boundaries = stream.part_boundaries || []
-    values = boundaries.map { |b| b["ti_score"] }
 
-    # Add final TI (current stream end)
-    final_ti = TrustIndexHistory.where(stream_id: stream.id)
-                                .order(calculated_at: :desc)
-                                .pick(:trust_index_score)
-    values << final_ti&.to_f
+    if v2_engine?
+      values = boundaries.map { |b| b["authenticity"] || b["ti_score"] }
+      final = TrustIndexHistory.where(stream_id: stream.id, engine_version: "v2")
+                               .order(calculated_at: :desc)
+                               .pick(:authenticity)
+    else
+      values = boundaries.map { |b| b["ti_score"] }
+      final = TrustIndexHistory.where(stream_id: stream.id, engine_version: "v1")
+                               .order(calculated_at: :desc)
+                               .pick(:trust_index_score)
+    end
+    values << final&.to_f
     values
+  end
+
+  def self.v2_engine?
+    Flipper.enabled?(:ti_v2_engine)
+  rescue StandardError
+    false
   end
 
   def self.enqueue_alert(stream:, part_from:, part_to:, ti_from:, ti_to:, divergence:)

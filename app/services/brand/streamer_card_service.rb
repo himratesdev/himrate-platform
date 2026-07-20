@@ -91,7 +91,9 @@ module Brand
     # overall classification (the engine's actual verdict). Per-signal norm/attention verdict deferred
     # (non-uniform value semantics — ADR DEC-3). Only signals actually present render.
     def layer2(channel)
-      tih = TrustIndexHistory.where(channel_id: channel.id).order(calculated_at: :desc).first
+      return layer2_v2(channel) if v2_engine?
+
+      tih = TrustIndexHistory.where(channel_id: channel.id, engine_version: "v1").order(calculated_at: :desc).first
       return { available: false } if tih.nil? || tih.signal_breakdown.blank?
 
       checks = tih.signal_breakdown.filter_map do |key, v|
@@ -118,6 +120,42 @@ module Brand
         calculated_at: tih.calculated_at&.iso8601,
         basis: "trust_index_history.signal_breakdown"
       }
+    end
+
+    # PR3b (T1-074, M11a): v2 layer2 — the 6-row band + reason_codes replace the retired
+    # 14-signal breakdown/classification (legal-safe: engine-emitted codes, no ti_score scalar).
+    def layer2_v2(channel)
+      tih = TrustIndexHistory.where(channel_id: channel.id, engine_version: "v2").order(calculated_at: :desc).first
+      return { available: false } if tih.nil?
+
+      {
+        available: true,
+        band: {
+          row: tih.band_row, color: tih.band_color,
+          label_key: tih.band_row ? TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[tih.band_row] : nil,
+          sub: tih.band_sub
+        },
+        authenticity: tih.authenticity&.to_f,
+        erv: tih.erv,
+        erv_interval: { lo: tih.erv_lo, hi: tih.erv_hi },
+        reason_codes: tih.reason_codes || [],
+        confirmed_anomaly: tih.confirmed_anomaly,
+        cold_start_tier: tih.cold_start_tier,
+        confidence_marker: tih.confidence_marker,
+        calculated_at: tih.calculated_at&.iso8601,
+        basis: "trust_index_history.v2"
+      }
+    end
+
+    def v2_engine?
+      return @v2_engine if defined?(@v2_engine)
+
+      @v2_engine =
+        begin
+          Flipper.enabled?(:ti_v2_engine)
+        rescue StandardError
+          false
+        end
     end
 
     # Layer 3 — reputation band + trend + trajectory (the free trust-summary, T1-065) + read-only

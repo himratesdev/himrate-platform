@@ -1,0 +1,12 @@
+# T1-074 PR3b — TI v2 6-row band labels (canonical: bft/platform/43_Glossary.md v6.0 §D).
+# Legal-safe: no «боты»/«накрутка»/«фейк» — neutral anomaly statements or positive affirmation.
+# Keys mirror TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW; the extension translates its own
+# labels from label_key — these serve server-rendered surfaces (landing, badge alt, legacy erv_label).
+ru:
+  band:
+    red_significant: "Значительная аномалия онлайна"
+    yellow_anomaly: "Аномалия онлайна"
+    green_real: "Аудитория реальная"
+    green_no_anomaly: "Аномалий не замечено"
+    grey_insufficient: "Недостаточно данных"
+    amber_exceeds: "Онлайн выше наблюдаемой активности"

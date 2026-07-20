@@ -14,7 +14,7 @@ class TrendsDailyAggregate < ApplicationRecord
   # discovery_phase_score / follower_ccv_coupling_r / is_best_stream_day /
   # is_worst_stream_day / tier_change_on_day. v2 still supported для cached
   # responses пока cache TTL не истечёт post-deploy.
-  SUPPORTED_SCHEMA_VERSIONS = [ 2, 3 ].freeze
+  SUPPORTED_SCHEMA_VERSIONS = [ 2, 3, 4 ].freeze # 4 = TI v2 columns (PR3b, 20260720190001)
 
   belongs_to :channel
 
@@ -42,6 +42,9 @@ class TrendsDailyAggregate < ApplicationRecord
 
   # Classification — canonical TI labels only
   validates :classification_at_end, inclusion: { in: CLASSIFICATIONS }, allow_nil: true
+  # PR3b (T1-074): v2 verdict-at-end — 6-row band (see TrustIndex::V2::BandClassifier).
+  validates :band_row_at_end, inclusion: { in: 1..6 }, allow_nil: true
+  validates :band_color_at_end, inclusion: { in: %w[red yellow green grey amber] }, allow_nil: true
 
   # Cache versioning — enforced inclusion (prevents drift).
   validates :schema_version, presence: true, inclusion: { in: SUPPORTED_SCHEMA_VERSIONS }

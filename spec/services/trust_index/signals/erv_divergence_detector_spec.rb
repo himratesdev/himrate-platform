@@ -81,4 +81,41 @@ RSpec.describe TrustIndex::Signals::ErvDivergenceDetector do
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
   end
+
+  # T1-074 PR3b (gap D-4) — v2 basis: TIH.authenticity (the erv_percent heir); ErvEstimate retired.
+  describe ".check under ti_v2_engine" do
+    before { allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true) }
+
+    def make_v2(authenticity:, calculated_at:)
+      TrustIndexHistory.create!(
+        channel: stream.channel, stream: stream, engine_version: "v2",
+        authenticity: authenticity, calculated_at: calculated_at, cold_start_tier: "full"
+      )
+    end
+
+    it "fires on >10% authenticity divergence over v2 rows" do
+      make_v2(authenticity: 90, calculated_at: 10.minutes.ago)
+      make_v2(authenticity: 70, calculated_at: 1.minute.ago)
+      expect { described_class.check(stream) }.to change(Anomaly, :count).by(1)
+    end
+
+    it "no-op below 10% divergence" do
+      make_v2(authenticity: 90, calculated_at: 10.minutes.ago)
+      make_v2(authenticity: 85, calculated_at: 1.minute.ago)
+      expect { described_class.check(stream) }.not_to change(Anomaly, :count)
+    end
+
+    it "ignores ErvEstimate rows under the flag (retired source)" do
+      make_estimate(percent: 90, timestamp: 10.minutes.ago)
+      make_estimate(percent: 40, timestamp: 1.minute.ago)
+      expect { described_class.check(stream) }.not_to change(Anomaly, :count)
+    end
+
+    it "excludes GREY rows (authenticity NULL)" do
+      make_v2(authenticity: 90, calculated_at: 10.minutes.ago)
+      TrustIndexHistory.create!(channel: stream.channel, stream: stream, engine_version: "v2",
+                                authenticity: nil, calculated_at: 1.minute.ago, cold_start_tier: "full")
+      expect { described_class.check(stream) }.not_to change(Anomaly, :count)
+    end
+  end
 end

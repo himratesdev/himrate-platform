@@ -36,8 +36,8 @@ module Trends
           .group(Arel.sql("EXTRACT(DOW FROM date)"))
           .pluck(
             Arel.sql("EXTRACT(DOW FROM date)"),
-            Arel.sql("AVG(ti_avg)"),
-            Arel.sql("AVG(erv_avg_percent)"),
+            Arel.sql("AVG(COALESCE(authenticity_avg, ti_avg))"),
+            Arel.sql("AVG(COALESCE(authenticity_avg, erv_avg_percent))"),
             Arel.sql("SUM(streams_count)")
           )
 
@@ -67,7 +67,7 @@ module Trends
       def aggregate_scope
         TrendsDailyAggregate
           .where(channel_id: @channel.id, date: @from..@to)
-          .where.not(ti_avg: nil)
+          .where("authenticity_avg IS NOT NULL OR ti_avg IS NOT NULL")
       end
 
       def empty_patterns

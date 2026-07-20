@@ -67,10 +67,10 @@ module Trends
       def fetch_aggregates(from_ts, to_ts)
         stats = TrendsDailyAggregate
           .where(channel_id: channel.id, date: from_ts.to_date..to_ts.to_date)
-          .where.not(ti_avg: nil)
+          .where("authenticity_avg IS NOT NULL OR ti_avg IS NOT NULL")
           .pick(
-            Arel.sql("AVG(ti_avg)"),
-            Arel.sql("AVG(ti_std)"),
+            Arel.sql("AVG(COALESCE(authenticity_avg, ti_avg))"),
+            Arel.sql("AVG(COALESCE(authenticity_std, ti_std))"),
             Arel.sql("SUM(streams_count)")
           )
         stats ||= [ nil, nil, 0 ]

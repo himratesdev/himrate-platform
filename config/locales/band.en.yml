@@ -1,0 +1,9 @@
+# T1-074 PR3b — TI v2 6-row band labels (EN). See band.ru.yml for the canon/legal notes.
+en:
+  band:
+    red_significant: "Significant audience anomaly"
+    yellow_anomaly: "Audience anomaly detected"
+    green_real: "Audience is real"
+    green_no_anomaly: "No anomalies detected"
+    grey_insufficient: "Insufficient data"
+    amber_exceeds: "Online exceeds observed activity"

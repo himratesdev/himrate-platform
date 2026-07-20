@@ -152,6 +152,11 @@ class CleanupWorker
     end
   end
 
+  # PR3b MF-1: evidence-referenced TIH rows are EXCLUDED — the FK (named_bot_evidences →
+  # trust_index_histories, no ON DELETE action) would abort the whole batch, and those snapshots
+  # are load-bearing for dispute reproducibility (EC-13). NBE has its own retention contract
+  # (Rolling Window + dispute-grace, N-3) — a dedicated NBE retention job prunes them first,
+  # after which the TIH rows age out here normally.
   def delete_intermediate_tih(cutoff)
     sql = <<~SQL.squish
       DELETE FROM trust_index_histories tih WHERE tih.id IN (
@@ -160,6 +165,9 @@ class CleanupWorker
           FROM trust_index_histories t JOIN streams s ON s.id = t.stream_id
           WHERE s.ended_at IS NOT NULL AND s.ended_at < $1
         ) ranked WHERE rn > 1 LIMIT #{BATCH_SIZE}
+      )
+      AND NOT EXISTS (
+        SELECT 1 FROM named_bot_evidences nbe WHERE nbe.trust_index_history_id = tih.id
       )
     SQL
     batched_loop { ApplicationRecord.connection.exec_update(sql, "cleanup_old_trust_index_histories", [ cutoff ]) }

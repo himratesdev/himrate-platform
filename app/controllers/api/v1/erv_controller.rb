@@ -16,7 +16,8 @@ module Api
         view = erv_view
 
         # CR #10: Redis cache 30s
-        payload = Rails.cache.fetch("erv:#{@channel.id}:#{view}", expires_in: 30.seconds) do
+        engine = v2_engine? ? "v2" : "v1"
+        payload = Rails.cache.fetch("erv:#{engine}:#{@channel.id}:#{view}", expires_in: 30.seconds) do
           build_erv_payload(view)
         end
 
@@ -43,7 +44,9 @@ module Api
       end
 
       def build_erv_payload(view)
-        ti = @channel.trust_index_histories.order(calculated_at: :desc).first
+        return build_erv_payload_v2(view) if v2_engine?
+
+        ti = @channel.trust_index_histories.where(engine_version: "v1").order(calculated_at: :desc).first
         return cold_start_payload if ti.nil?
 
         erv_data = TrustIndex::ErvCalculator.compute(
@@ -83,6 +86,79 @@ module Api
         end
 
         payload
+      end
+
+      # PR3b (T1-074, B2): the v2 contract — ERV subtracted count + interval + band + authenticity
+      # breakdown. Retired: erv_percent (headline), ErvCalculator rescale, bots_estimated (the
+      # subtraction is native — f_hat inside erv_breakdown carries it), auth_percent (dead),
+      # confidence_display / erv_range (replaced by erv_interval). erv is the guest-visible
+      # headline per access-model v2 (extension = 100% free).
+      def build_erv_payload_v2(view)
+        ti = @channel.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
+        return cold_start_payload_v2 if ti.nil?
+
+        label_key = ti.band_row ? TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[ti.band_row] : "band.grey_insufficient"
+        payload = {
+          erv: ti.erv,
+          erv_interval: { lo: ti.erv_lo, hi: ti.erv_hi },
+          band: { row: ti.band_row, color: ti.band_color, label_key: label_key, sub: ti.band_sub },
+          erv_label: I18n.t(label_key, default: nil),
+          confirmed_anomaly: { shown: ti.confirmed_anomaly },
+          cold_start_tier: ti.cold_start_tier,
+          confidence_marker: ti.confidence_marker,
+          engine_version: "v2"
+        }
+
+        if view == :details || view == :full
+          payload.merge!(
+            authenticity: ti.authenticity&.to_f,
+            ccv: ti.ccv&.to_i,
+            erv_breakdown: { v: ti.ccv&.to_i, f_hard: ti.f_hard&.to_f, f_soft: ti.f_soft&.to_f, f_hat: ti.f_hat&.to_f }
+          )
+        end
+
+        if view == :full
+          payload.merge!(
+            authenticity_interval: { lo: ti.authenticity_lo&.to_f, hi: ti.authenticity_hi&.to_f },
+            historical_authenticity_7d: historical_authenticity_7d
+          )
+        end
+
+        payload
+      end
+
+      def cold_start_payload_v2
+        {
+          erv: nil,
+          erv_interval: { lo: nil, hi: nil },
+          band: { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil },
+          confirmed_anomaly: { shown: false },
+          cold_start_tier: "insufficient",
+          confidence_marker: "provisional",
+          cold_start: true,
+          message: I18n.t("erv.insufficient_data", default: "Insufficient data for ERV estimate"),
+          engine_version: "v2"
+        }
+      end
+
+      # 7d trend on authenticity (%, scale-free) — averaging raw erv COUNTS across days with
+      # different V baselines is meaningless.
+      def historical_authenticity_7d
+        recent = @channel.trust_index_histories
+                         .where(engine_version: "v2")
+                         .where("calculated_at >= ?", 7.days.ago)
+                         .pluck(:authenticity)
+                         .compact
+
+        return nil if recent.empty?
+
+        (recent.sum.to_f / recent.size).round(2)
+      end
+
+      def v2_engine?
+        Flipper.enabled?(:ti_v2_engine)
+      rescue StandardError
+        false
       end
 
       def cold_start_payload
