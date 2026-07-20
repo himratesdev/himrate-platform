@@ -78,10 +78,10 @@
     });
   });
 
-  // 4) "Войти" -> pricing
+  // 4) "Войти" -> login
   document.querySelectorAll('[data-pencil-name="Войти"]').forEach(function(el){
     el.setAttribute('data-hr-link','');
-    el.addEventListener('click', function(){ go('/methodology'); });
+    el.addEventListener('click', function(){ go('/login'); });
   });
 })();
 
