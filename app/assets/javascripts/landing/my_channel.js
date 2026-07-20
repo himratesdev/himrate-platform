@@ -74,15 +74,19 @@
       var rl = q(document, "Rel Label"); if (rl) rl.style.color = BAND_COLOR[band] || "#9A9AA9";
     }
 
-    // Real vs shown — same reconciliation as the public card (live: shown=ccv; offline: back out).
-    var erv = hl.erv_percent, real, shown;
+    // Real vs shown — v2 (post-cutover /card): authenticity = % real, erv = the native subtracted
+    // real-viewer COUNT (ccv = shown V). v1 legacy: erv_percent + erv_count (backed out when offline).
+    var isV2 = hl.engine_version === "v2";
+    var erv = isV2 ? hl.authenticity : hl.erv_percent; // % real
+    var ervCount = isV2 ? hl.erv : hl.erv_count;       // real-viewer count
+    var real, shown;
     if (hl.is_live && hl.ccv != null) {
       shown = hl.ccv;
-      real = erv != null ? Math.round(shown * erv / 100) : hl.erv_count;
-    } else if (hl.erv_count != null && erv > 0) {
-      real = hl.erv_count;
+      real = ervCount != null ? ervCount : (erv != null ? Math.round(shown * erv / 100) : null);
+    } else if (ervCount != null && erv > 0) {
+      real = ervCount;
       shown = Math.round(real / (erv / 100));
-    } else { real = hl.erv_count; shown = hl.ccv; }
+    } else { real = ervCount; shown = hl.ccv; }
 
     setT(document, "Real Num", fmt(real));
     setT(document, "Shown Num", "/ " + fmt(shown));
@@ -90,7 +94,7 @@
     var botPct = erv != null ? Math.round(100 - erv) : null;
     if (bots != null && bots > 0) setT(document, "Chip Bots T", "−" + fmt(bots) + " ботов · −" + botPct + "% накрутки");
     else hide(q(document, "Chip Bots"));
-    if (hl.erv_count != null) setT(document, "Chip ERV T", "ERV " + fmt(hl.erv_count) + " вовлечены");
+    if (ervCount != null) setT(document, "Chip ERV T", "ERV " + fmt(ervCount) + " вовлечены");
     else hide(q(document, "Chip ERV"));
 
     // Live anomaly banner — only from real live_drill alerts.
@@ -107,7 +111,7 @@
 
     // Stats grid: CCV + ERV real; чат/зритель + новые аккаунты hidden (scores ≠ raw ratios).
     statValue("Stat Показано (CCV)", fmt(shown));
-    statValue("Stat ERV · вовлечены", fmt(hl.erv_count));
+    statValue("Stat ERV · вовлечены", fmt(ervCount));
     statValue("Stat Чат / зритель", null);
     statValue("Stat Новые аккаунты", null);
   }
