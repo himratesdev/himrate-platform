@@ -87,6 +87,13 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Viewer discover «Куда пойти» (screen 04) — faithful export host. Real live-now channels ranked
+  # by real audience wired client-side by landing/discover.js against GET /api/v1/discover/live.
+  def discover
+    @page = "discover"
+    @brand_dashboard = true
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the

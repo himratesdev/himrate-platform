@@ -10,6 +10,7 @@
   var NAV = {
     "Nav · Главная": "/app/home",
     "Nav · Моя активность": "/app/activity",
+    "Nav · Куда пойти": "/app/discover",
     "Nav · Watchlists": "/app/watchlists",
     "Nav · Поиск стримеров": "/app/search",
     "Nav · Сравнение": "/app/compare",
