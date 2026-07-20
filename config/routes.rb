@@ -227,4 +227,6 @@ Rails.application.routes.draw do
   get "app/activity", to: "pages#my_activity"
   # Viewer discover «Куда пойти» (screen 04) — live-now ranked by real audience.
   get "app/discover", to: "pages#discover"
+  # Streamer own-channel dashboard (screen 10) — card + trends + reputation for the linked channel.
+  get "app/channel", to: "pages#my_channel"
 end

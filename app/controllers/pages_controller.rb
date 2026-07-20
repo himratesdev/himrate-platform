@@ -94,6 +94,14 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Streamer own-channel dashboard (screen 10) — faithful export host. Detects the signed-in
+  # streamer's channel via /api/v1/user/me (twitch_login) client-side; real card/trends/reputation
+  # wired by landing/my_channel.js from the public channel analytics API.
+  def my_channel
+    @page = "my_channel"
+    @brand_dashboard = true
+  end
+
   # Legal pages (Privacy Policy + Terms). Own minimal readable layout (no Pencil JS).
   # Required for Chrome Web Store submission + footer trust links.
   def privacy
