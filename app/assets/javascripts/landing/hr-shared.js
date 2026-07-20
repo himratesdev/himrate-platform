@@ -191,7 +191,7 @@
       if(NAV[t]){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(e){ e.stopPropagation(); window.__hrGo(NAV[t]); }); }
     });
     $all('[data-pencil-name="Wordmark"]').forEach(function(el){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(){ window.__hrGo('/'); }); });
-    $all('[data-pencil-name="Войти"]').forEach(function(el){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(){ window.__hrGo('/methodology'); }); });
+    $all('[data-pencil-name="Войти"]').forEach(function(el){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(){ window.__hrGo('/login'); }); });
 
     function soon(msg){
       var t=document.createElement('div'); t.textContent=msg||'Скоро';

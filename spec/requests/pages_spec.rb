@@ -106,6 +106,15 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).not_to match(/<meta name="robots" content="noindex/)
     end
 
+    it "emits Organization + WebSite JSON-LD structured data" do
+      get "/"
+
+      expect(response.body).to include('<script type="application/ld+json">')
+      expect(response.body).to include('"@type": "Organization"')
+      expect(response.body).to include('"@type": "WebSite"')
+      expect(response.body).to include('"name": "HimRate"')
+    end
+
     it "noindexes the login page (no public search value)" do
       get "/login"
 

@@ -36,6 +36,33 @@
     <meta name="twitter:description" content="<%= content_for(:description) %>">
     <meta name="twitter:image" content="<%= og_image %>">
 
+    <%# Structured data (Organization + WebSite) — helps Google understand the brand
+        and enables rich results / sitelinks. Not executable JS (type=ld+json) → CSP
+        and the no-inline-<script> convention are unaffected. (TASK-060 SEO) %>
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "Organization",
+            "@id": "https://himrate.com/#organization",
+            "name": "HimRate",
+            "url": "https://himrate.com/",
+            "logo": "<%= canonical_asset_url("brand/logo-square-gradient.svg") %>",
+            "description": "Аналитика реальности аудитории Twitch: Trust Index, ERV и репутация стримеров."
+          },
+          {
+            "@type": "WebSite",
+            "@id": "https://himrate.com/#website",
+            "url": "https://himrate.com/",
+            "name": "HimRate",
+            "publisher": { "@id": "https://himrate.com/#organization" },
+            "inLanguage": "ru"
+          }
+        ]
+      }
+    </script>
+
     <%# Export reset + FOUC guard. The export's static decorative dot field
         ([data-pencil-name="Dot BG"]) is stripped from the markup at render time, so
         the animated dot canvas (hr-shared.js on the inner pages, index.js on the
