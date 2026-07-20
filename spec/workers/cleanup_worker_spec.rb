@@ -314,10 +314,10 @@ RSpec.describe CleanupWorker, type: :worker do
 
     context "cleanup_audit_logs" do
       it "writes a success row per cleanup sub-run (TC-034)" do
-        # PR 1e-B (2026-06-01): chat_messages sub_run dropped — 5 :success rows expected
-        # (signals, sessions, ccv, chatters, tih). cleanup_audit_logs sub-run writes :skipped
-        # via record_audit, not :success. Pre-1e-B was 6.
-        expect { described_class.new.perform }.to change { CleanupAuditLog.where(status: :success).count }.by(5)
+        # PR 1e-B (2026-06-01): chat_messages sub_run dropped; T1-074 adds the nbe retention
+        # sub-run → 6 :success rows expected (signals, sessions, ccv, chatters, nbe, tih).
+        # cleanup_audit_logs sub-run writes :skipped via record_audit, not :success.
+        expect { described_class.new.perform }.to change { CleanupAuditLog.where(status: :success).count }.by(6)
         expect(CleanupAuditLog.where(table_name: "tih", status: :success)).to exist
         expect(CleanupAuditLog.where(table_name: "ti_signals", status: :success)).to exist
       end
