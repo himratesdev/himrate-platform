@@ -203,14 +203,17 @@
       if(el.querySelector('[data-hr-btn]')) return;
       el.setAttribute('data-hr-btn','');
       el.addEventListener('click', function(e){
-        var s=txt.toLowerCase(), dest=null;
-        if(s.indexOf('подключить')>-1) dest='/methodology';
+        var s=txt.toLowerCase(), dest;
+        // Every verb the CTA regex matches MUST resolve to a destination — an unmapped
+        // verb was a dead click (e.g. "Установить расширение", "Начать", "Связаться").
+        if(s.indexOf('установить')>-1||s.indexOf('начать')>-1) dest='/viewers';
         else if(s.indexOf('я бренд')>-1) dest='/brands';
         else if(s.indexOf('я зритель')>-1) dest='/viewers';
         else if(s.indexOf('я стример')>-1) dest='/streamers';
-        else if(s.indexOf('как мы измеряем')>-1||s.indexOf('методолог')>-1||s.indexOf('как это работает')>-1) dest='/methodology';
-        else if(s.indexOf('все тарифы')>-1||s.indexOf('тариф')>-1||s.indexOf('план')>-1) dest='/methodology';
-        if(dest){ e.stopPropagation(); window.__hrGo(dest); }
+        else if(s.indexOf('связаться')>-1) dest='/brands';
+        else if(s.indexOf('подключить')>-1||s.indexOf('запросить')>-1) dest='/streamers';
+        else dest='/methodology'; // pricing / methodology bucket + fallback
+        e.stopPropagation(); window.__hrGo(dest);
       });
     });
   }
