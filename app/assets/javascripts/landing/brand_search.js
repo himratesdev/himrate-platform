@@ -38,8 +38,12 @@
     "Chip · Стрим", "Chip · Интеграция", "Chip · Преролл", "Chip · Спонсор-сегмент",
     "Check · Twitch", "Check · YouTube", "Check · Telegram", "Check · VK Play",
     "Check · Безупречная", "Check · Стабильная", "Check · Изменчивая", "Check · Нестабильная",
-    "Btn · Сравнить выбранных", "Btn · Сохранить поиск",
+    "Btn · Сохранить поиск",
   ];
+  // Compare/overlap selection (feeds /app/compare + /app/overlap, both take 2-4 channels).
+  var MAX_SELECT = 4;
+  var selected = [];
+  function isSelected(login) { return selected.indexOf(login) !== -1; }
 
   // ---- dom helpers ----
   function q(root, name) {
@@ -175,9 +179,41 @@
     card.style.cursor = "pointer";
     card.addEventListener("click", function (e) {
       if (e.target.closest('[data-pencil-name="Open"]')) return;
+      if (e.target.closest("[data-hr-select]")) return;
       window.location.href = "/app/streamers/" + encodeURIComponent(s.login);
     });
+
+    // Selection pill — pick 2-4 streamers, then compare / overlap them. Injected into the footer's
+    // left (the price slot is hidden), next to "Open" — a natural action row, no overlap with the badge.
+    var toggle = document.createElement("div");
+    toggle.setAttribute("data-hr-select", s.login);
+    toggle.style.cssText = "display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;" +
+      "cursor:pointer;font-size:12px;font-weight:600;line-height:1;font-family:Inter,system-ui,sans-serif;" +
+      "transition:background .12s,border-color .12s,color .12s;user-select:none;";
+    paintToggle(toggle, isSelected(s.login));
+    toggle.addEventListener("click", function (e) {
+      e.stopPropagation();
+      if (!isSelected(s.login) && selected.length >= MAX_SELECT) return; // cap at 4
+      toggleSelect(s.login);
+      paintToggle(toggle, isSelected(s.login));
+      updateActionBar();
+    });
+    var footer = q(card, "Footer");
+    if (footer) footer.insertBefore(toggle, footer.firstChild); else card.appendChild(toggle);
     return card;
+  }
+
+  function paintToggle(el, on) {
+    el.style.background = on ? "#7B5CFA" : "transparent";
+    el.style.border = on ? "1px solid #7B5CFA" : "1px solid #3A3A46";
+    el.style.color = on ? "#fff" : "#9A9AA9";
+    el.textContent = on ? "✓ В сравнении" : "+ Сравнить";
+  }
+
+  function toggleSelect(login) {
+    var i = selected.indexOf(login);
+    if (i !== -1) selected.splice(i, 1);
+    else if (selected.length < MAX_SELECT) selected.push(login);
   }
 
   function renderResults(data) {
@@ -310,11 +346,57 @@
     });
   }
 
+  // ---- selection action bar (Compare / Overlap of the picked streamers) ----
+  var overlapBtn = null;
+  function wireSelection() {
+    var cmp = q(document, "Btn · Сравнить выбранных");
+    if (!cmp) return;
+    // Handlers read `selected` live; a click with <2 picked is a no-op (bar stays dimmed).
+    cmp.addEventListener("click", function () {
+      if (selected.length >= 2) window.location.href = "/app/compare?channels=" + selected.map(encodeURIComponent).join(",");
+    });
+    // Inject a sibling "Пересечение" action (overlap has no sidebar entry — this is its way in).
+    overlapBtn = cmp.cloneNode(true);
+    overlapBtn.setAttribute("data-pencil-name", "Btn · Пересечение выбранных");
+    overlapBtn.addEventListener("click", function () {
+      if (selected.length >= 2) window.location.href = "/app/overlap?channels=" + selected.map(encodeURIComponent).join(",");
+    });
+    cmp.parentNode.insertBefore(overlapBtn, cmp.nextSibling);
+    updateActionBar();
+  }
+
+  function setBtn(btn, label, enabled) {
+    if (!btn) return;
+    // Update the deepest text node so we keep the design's icon/structure.
+    var textNode = deepestTextHolder(btn);
+    if (textNode) textNode.textContent = label; else btn.textContent = label;
+    btn.style.opacity = enabled ? "1" : "0.4";
+    btn.style.pointerEvents = enabled ? "auto" : "none";
+    btn.style.cursor = enabled ? "pointer" : "default";
+  }
+
+  function deepestTextHolder(el) {
+    // The button's visible label is its last element child that has non-whitespace text.
+    var kids = el.querySelectorAll("*");
+    for (var i = kids.length - 1; i >= 0; i--) {
+      if (kids[i].children.length === 0 && kids[i].textContent.trim()) return kids[i];
+    }
+    return null;
+  }
+
+  function updateActionBar() {
+    var n = selected.length;
+    var ready = n >= 2;
+    setBtn(q(document, "Btn · Сравнить выбранных"), ready ? "Сравнить (" + n + ")" : "Сравнить выбранных", ready);
+    setBtn(overlapBtn, ready ? "Пересечение (" + n + ")" : "Пересечение аудиторий", ready);
+  }
+
   // ---- boot: auth gate then load ----
   function boot() {
     if (!captureTemplates()) return; // markup changed — fail safe, leave design as-is
     wireSort();
     wireFrequency();
+    wireSelection();
     disableDeferred();
     load();
   }
