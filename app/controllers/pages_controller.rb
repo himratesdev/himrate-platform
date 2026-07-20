@@ -30,6 +30,13 @@ class PagesController < ApplicationController
     @page = "brand_search"
   end
 
+  # Brand dashboard compare (screen 23) — faithful export host. Real side-by-side columns wired
+  # client-side by landing/brand_compare.js against GET /api/v1/brand/compare?channels=… (same-origin
+  # session cookie). The page shell is public; the JS gates on /api/v1/lk/status.
+  def brand_compare
+    @page = "brand_compare"
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the

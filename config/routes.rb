@@ -199,4 +199,5 @@ Rails.application.routes.draw do
   # redirects to /login when unauthenticated, then fetches the brand API with the same-origin
   # httpOnly session cookie. Access (brand-gate) is enforced by the API, not the route.
   get "app/search", to: "pages#brand_search"
+  get "app/compare", to: "pages#brand_compare"
 end
