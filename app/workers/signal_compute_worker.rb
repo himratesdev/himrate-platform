@@ -173,6 +173,7 @@ class SignalComputeWorker
       v1_ti: v1.ti_score, v1_erv_percent: v1.erv[:erv_percent],
       v2_erv: v2.erv, v2_authenticity: v2.authenticity,
       v2_band: "#{v2.band&.color}/#{v2.band&.row}", v2_f_hat: v2.f_hat,
+      v2_f_hard: v2.f_hard, v2_f_soft: v2.f_soft, # PR3a: fraud-arm breakdown for shadow analysis
       v2_n_frac: v2.n_frac, v2_confirmed_anomaly: v2.confirmed_anomaly
     }
     Rails.logger.info("SCW shadow #{diff.to_json}")

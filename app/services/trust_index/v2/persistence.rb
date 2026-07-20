@@ -30,8 +30,13 @@ module TrustIndex
       def tih_attrs
         { channel: @channel, stream: @stream, calculated_at: @at, engine_version: "v2",
           erv: round_or_nil(@r.erv), erv_lo: round_or_nil(@r.erv_lo), erv_hi: round_or_nil(@r.erv_hi),
-          f_hat: @r.f_hat, f_hard: @r.f_hard, f_hard_lo: @r.f_hard_lo, f_self: @r.f_self,
-          authenticity: @r.authenticity, n_frac: @r.n_frac, eihc: @r.eihc, rho_obs: @r.rho_obs,
+          f_hat: @r.f_hat, f_hat_lo: @r.f_hat_lo, f_hat_hi: @r.f_hat_hi,
+          f_hard: @r.f_hard, f_hard_lo: @r.f_hard_lo, f_self: @r.f_self,
+          # PR3a (T1-074) — persist the L2 soft breakdown + intervals for /erv erv_breakdown{f_hard,f_soft,f_hat}
+          # (Surface 2) + authenticity interval + Q. Columns exist since M1; were unwritten (verified gap D-3).
+          f_soft: @r.f_soft, f_soft_lo: @r.f_soft_lo, f_soft_hi: @r.f_soft_hi,
+          authenticity: @r.authenticity, authenticity_lo: @r.authenticity_lo, authenticity_hi: @r.authenticity_hi,
+          n_frac: @r.n_frac, q_score: @r.q_score, eihc: @r.eihc, rho_obs: @r.rho_obs,
           band_row: @r.band.row, band_sub: @r.band.sub, band_color: @r.band.color,
           reason_codes: @r.reason_codes.map(&:to_h), c_hard: @r.c_hard, c_self: @r.c_self,
           i_event: @r.c_self, # C_self = (I=1); the i_event column mirrors it (SRS §5.1)

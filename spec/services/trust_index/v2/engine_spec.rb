@@ -62,6 +62,19 @@ RSpec.describe TrustIndex::V2::Engine do
     expect(r.reason_codes.map(&:code)).to include("HARD_NAMED_FRACTION")
   end
 
+  it "PR3a: exposes the additive soft breakdown + authenticity interval + Q (gap D-3, no logic change)" do
+    r = described_class.compute(context: context(Array.new(150) { |i| chatter("h#{i}") }, n_chat_eff: 150), k: k)
+    # f_soft is now surfaced (was folded into f_hat via L3 max); f_hat == max(f_hard, f_soft, f_self)
+    expect(r.f_soft).not_to be_nil
+    expect(r.f_hat).to eq([ r.f_hard, r.f_soft, r.f_self ].max)
+    expect(r.f_soft_lo).to be <= r.f_soft
+    expect(r.f_soft_hi).to be >= r.f_soft
+    # authenticity interval brackets the point estimate (more fraud → lower bound)
+    expect(r.authenticity_lo).to be <= r.authenticity
+    expect(r.authenticity_hi).to be >= r.authenticity
+    expect(r.q_score).to eq(0.9) # Q passthrough from context (helper sets q: 0.9)
+  end
+
   it "EC-15/TC-017: V≤0 (null CCV) short-circuits to GREY with null ERV — never a headline number" do
     r = described_class.compute(context: context([ chatter("a") ], v: 0, n_chat_eff: 0), k: k)
     expect(r.erv).to be_nil
