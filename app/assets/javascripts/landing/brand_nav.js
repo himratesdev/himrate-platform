@@ -8,6 +8,7 @@
   // Sidebar nav anchor → live route. (Overlap has no sidebar entry in the design — reached from the
   // channel-comparison flow; it highlights "Сравнение".)
   var NAV = {
+    "Nav · Главная": "/app/home",
     "Nav · Поиск стримеров": "/app/search",
     "Nav · Сравнение": "/app/compare",
   };

@@ -56,6 +56,14 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Viewer dashboard home (screen 01) — faithful export host. Real recent + live-from-watchlists
+  # channels wired client-side by landing/viewer_home.js against GET /api/v1/me/home/* (same-origin
+  # cookie). @brand_dashboard loads the shared LK sidebar/topbar chrome (landing/brand_nav.js).
+  def viewer_home
+    @page = "viewer_home"
+    @brand_dashboard = true
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the
