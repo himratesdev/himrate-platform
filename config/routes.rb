@@ -231,4 +231,6 @@ Rails.application.routes.draw do
   get "app/discover", to: "pages#discover"
   # Streamer own-channel dashboard (screen 10) — card + trends + reputation for the linked channel.
   get "app/channel", to: "pages#my_channel"
+  # Viewer best-moments (screen 07) — chat-peak moments + clips of a finished stream.
+  get "app/moments", to: "pages#moments"
 end

@@ -12,6 +12,7 @@
     "Nav · Моя активность": "/app/activity",
     "Nav · Куда пойти": "/app/discover",
     "Nav · Watchlists": "/app/watchlists",
+    "Nav · Лучшие моменты": "/app/moments",
     "Nav · Поиск стримеров": "/app/search",
     "Nav · Сравнение": "/app/compare",
     "Nav · Настройки": "/app/settings",
