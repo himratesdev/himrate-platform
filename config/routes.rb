@@ -203,6 +203,9 @@ Rails.application.routes.draw do
   # Public channel card (screen 02) — free real-audience analysis of any channel, no account.
   # login = Twitch login (alnum/underscore); constrained so it can't shadow the pages above.
   get "c/:login", to: "pages#channel_card", as: :channel_card, constraints: { login: /[A-Za-z0-9_]+/ }
+  # Dynamic OG share image per channel (TASK-060 Level 2) — /og/c/:login.png. Public,
+  # CDN-cached PNG used as og:image on channel share links.
+  get "og/c/:login", to: "og_images#channel", as: :og_channel, constraints: { login: /[A-Za-z0-9_]+/ }
 
   # --- Brand dashboard (LK) — faithful export host, real data wired client-side ---
   # Pages are served as public HTML shells; each page's landing/*.js checks /api/v1/lk/status and

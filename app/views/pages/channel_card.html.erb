@@ -1,3 +1,9 @@
+<%# SEO + share: per-channel title/description and a dynamic OG image (TASK-060 L2) so
+    a shared /c/:login link previews a branded card with the channel's avatar + name. %>
+<% content_for :title, "#{@login} — реальность аудитории на HimRate" %>
+<% content_for :description, "Анализ реальности аудитории канала #{@login} на Twitch по данным HimRate." %>
+<% content_for :og_image, "#{ApplicationHelper::CANONICAL_HOST}/og/c/#{@login}.png" %>
+
 <%# No scroll-reveal on this data page (PO 2026-07-20): hr-shared.js auto-adds data-hr-reveal
     to below-fold sections (fade+slide-in on scroll) for the marketing landing. A data card
     shouldn't animate on scroll — neutralise it card-scoped (this view only) without touching the
