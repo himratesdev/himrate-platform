@@ -1,11 +1,10 @@
 name: ti-v2-moat-verify
-# T1-074 GATE-0 STEP 1b+0' — the decisive moat de-risk, READ-ONLY, $0 (no injection).
-# PART A: measure per-cell ρ*/ρ_lo on build_v2's EXACT basis (v2c.rho_obs) from LIVE honest anchors
-#         (partner + TI≥88) — consistent with how F_soft uses it.
-# PART B: DISCRIMINATION test with calibrated ρ_lo — F_soft_lo/V = max(0, 1 − rho_obs/ρ_lo), flag if
-#         rho_obs < ρ_lo. Honest anchors should stay ABOVE ρ_lo (green); SUSPICIOUS channels (top v1
-#         bot-ratio) + viewbot/ccv-step anomaly channels should fall BELOW (flagged). If it separates
-#         them, the calibrated engine catches botters v1 rated trusted. No persist, no publish.
+# T1-074 GATE-0 STEP 0' — moat discrimination test, READ-ONLY, $0, TIME-INDEPENDENT (persisted basis).
+# ρ_obs = min(unique_chatters,500)/avg_ccv per stream (0 chatters → 0 = the silent-view-bot signal, NOT
+# skipped). Calibrated ρ_lo (P10 of honest-anchor ρ_obs) gates the label: flag if ρ_obs < ρ_lo.
+#   PART A: honest anchors (partner+full+TI≥88) → per-cell ρ_lo/ρ* + honest false-positive rate (~P10).
+#   PART C: viewbot_spike/ccv_step anomaly channels (free silent-injection proxy, organic-excluded) →
+#           flagged rate. If C-flag >> A-flag, the calibrated engine catches silent view-bots F_soft.
 on:
   workflow_dispatch:
     inputs:
@@ -39,6 +38,7 @@ jobs:
         run: |
           cat > /tmp/moat.rb <<'RUBY_EOF'
           $stdout.sync = true
+          CAP = 500
           def vbucket(v)
             return "0" if v.nil? || v <= 0
             return "0-1k" if v < 1000
@@ -60,115 +60,81 @@ jobs:
             s = a.sort
             s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
           end
-          # build_v2-basis measurement for a stream → {v, rho_obs, cell} or nil
+          # persisted-basis ρ_obs — 0 chatters kept (silent-view-bot signal), NOT skipped
           def measure(s)
-            chatters = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
-            return nil if chatters.empty?
-            flagged = CrossChannelTemporalFlag.bulk_lookup(chatters)
-            ctx = TrustIndex::ContextBuilder.build(s).merge(
-              stream_chatters: chatters, temporal_cross_channel_flags: { total_chatters: chatters.size, flagged: flagged })
-            v2c = TrustIndex::ContextBuilder.build_v2(s, ctx)
-            return nil if v2c.v.nil? || v2c.v <= 0
+            v = CcvSnapshot.where(stream_id: s.id).average(:ccv_count)&.to_f
+            return nil if v.nil? || v < 10
+            uc = ChattersSnapshot.where(stream_id: s.id).maximum(:unique_chatters_count).to_i
+            eihc = [ uc, CAP ].min
+            rho = eihc / v
             cat = (TrustIndex::Signals::CategoryResolver.resolve(s.game_name) rescue "default")
-            { v: v2c.v, rho_obs: v2c.rho_obs, chatters: chatters.size, flagged: flagged.size,
-              cell: [ cat, vbucket(v2c.v), chat_mode(s.channel.channel_protection_config), (s.language.presence || "default") ].join("|"),
+            { v: v, rho_obs: rho, uc: uc,
+              cell: [ cat, vbucket(v), chat_mode(s.channel.channel_protection_config), (s.language.presence || "default") ].join("|"),
               cat: cat }
           rescue => e
             nil
           end
 
-          # ===== PART A: build_v2-basis ρ*/ρ_lo from LIVE honest anchors =====
+          # ===== PART A: honest-anchor ρ_lo/ρ* per cell + category =====
           cell_rho = Hash.new { |h, k| h[k] = [] }
           cat_rho  = Hash.new { |h, k| h[k] = [] }
-          anchor_live = Channel.where(broadcaster_type: "partner")
-                               .where(id: Stream.where(ended_at: nil).where("started_at > ?", 15.hours.ago).select(:channel_id))
-                               .limit(400).pluck(:id)
-          puts "PART A: live partner candidates=#{anchor_live.size}"
-          anchor_measures = []
-          anchor_live.each do |cid|
+          anchor_ms = []
+          partner_ids = Channel.where(broadcaster_type: "partner")
+                               .where(id: Stream.where("ended_at > ?", 21.days.ago).select(:channel_id))
+                               .limit(600).pluck(:id)
+          partner_ids.each do |cid|
+            break if anchor_ms.size >= 220
+            completed = Stream.where(channel_id: cid).where.not(ended_at: nil).count
+            next if completed < 10
             ti = TrustIndexHistory.where(channel_id: cid).order(calculated_at: :desc).limit(1).pick(:trust_index_score)
             next if ti.nil? || ti.to_f < 88
-            s = Stream.where(channel_id: cid, ended_at: nil).order(started_at: :desc).first
-            next unless s
-            m = measure(s)
-            next unless m
-            cell_rho[m[:cell]] << m[:rho_obs]
-            cat_rho[m[:cat]] << m[:rho_obs]
-            anchor_measures << m
+            Stream.where(channel_id: cid).where.not(ended_at: nil).order(started_at: :desc).limit(2).each do |s|
+              m = measure(s)
+              next unless m
+              next if m[:rho_obs] > 3.0
+              cell_rho[m[:cell]] << m[:rho_obs]; cat_rho[m[:cat]] << m[:rho_obs]; anchor_ms << m
+            end
           end
-          rho_lo_cell  = cell_rho.transform_values { |a| pct(a, 0.10) }
-          rho_star_cell = cell_rho.transform_values { |a| pct(a, 0.50) }
-          rho_lo_cat   = cat_rho.transform_values  { |a| pct(a, 0.10) }
-          puts "PART A: measured #{anchor_measures.size} live anchors, #{cell_rho.size} cells (build_v2 basis)"
-          cell_rho.select { |_, a| a.size >= 4 }.sort_by { |_, a| -a.size }.first(15).each do |c, a|
-            puts format("  %-40s n=%-3d ρ_lo=%.4f ρ*=%.4f", c, a.size, pct(a, 0.10), pct(a, 0.50))
+          rlo_cell = cell_rho.transform_values { |a| pct(a, 0.10) }
+          rlo_cat  = cat_rho.transform_values  { |a| pct(a, 0.10) }
+          global_lo = pct(cat_rho.values.flatten, 0.10) || 0.03
+          puts "PART A: #{anchor_ms.size} honest-anchor stream-measures, #{cell_rho.size} cells"
+
+          def rlo_for(m, rlo_cell, rlo_cat, global_lo)
+            rlo_cell[m[:cell]] || rlo_cat[m[:cat]] || global_lo
           end
 
-          def rho_lo_for(m, rho_lo_cell, rho_lo_cat)
-            rho_lo_cell[m[:cell]] || rho_lo_cat[m[:cat]] || 0.03
-          end
-          def verdict(m, rlo)
-            deficit = [ 0.0, 1.0 - (m[:rho_obs] / rlo) ].max # F_soft_lo / V
+          fp = anchor_ms.count { |m| m[:rho_obs] < rlo_for(m, rlo_cell, rlo_cat, global_lo) }
+          hp = anchor_ms.empty? ? 0.0 : (100.0 * fp / anchor_ms.size).round(1)
+          puts "PART A honest false-positive: #{fp}/#{anchor_ms.size} = #{hp}% (want ~10% = the P10 gate)"
+
+          # ===== PART C: silent-injection proxy — viewbot/ccv-step anomaly channels =====
+          an_sids = Anomaly.where(anomaly_type: %w[viewbot_spike ccv_step_function])
+                           .where("timestamp > ?", 5.days.ago).order(timestamp: :desc).limit(120).pluck(:stream_id).uniq.first(40)
+          puts "\nPART C: #{an_sids.size} viewbot/ccv-step anomaly streams (organic-excluded below)"
+          fc = 0; nc = 0
+          an_sids.each do |sid|
+            s = Stream.find_by(id: sid)
+            next unless s
+            next if RaidAttribution.where(stream_id: sid).exists? # organic exclusion (raid/host)
+            m = measure(s)
+            next unless m
+            nc += 1
+            rlo = rlo_for(m, rlo_cell, rlo_cat, global_lo)
             flagged = m[:rho_obs] < rlo
-            [ deficit, flagged ]
+            fc += 1 if flagged
+            v1 = TrustIndexHistory.where(stream_id: sid).order(:calculated_at).last&.trust_index_score
+            puts format("  %-22s V=%-6d uc=%-4d ρ_obs=%.4f ρ_lo=%.4f v1_TI=%-5s → %s",
+                        s.channel.login.to_s[0, 22], m[:v].to_i, m[:uc], m[:rho_obs], rlo, v1, flagged ? "FLAG" : "green") if nc <= 25
           end
+          cp = nc.zero? ? 0.0 : (100.0 * fc / nc).round(1)
 
-          # ===== PART B1: honest anchors — false-positive rate (should be ~P10 = ~10%) =====
-          fp = 0
-          anchor_measures.each do |m|
-            rlo = rho_lo_for(m, rho_lo_cell, rho_lo_cat)
-            _, flagged = verdict(m, rlo)
-            fp += 1 if flagged
-          end
-          puts "\nPART B1 HONEST anchors: #{anchor_measures.size} measured, flagged=#{fp} (#{anchor_measures.empty? ? 0 : (100.0*fp/anchor_measures.size).round(1)}% — want ~10% = the P10 gate, LOW false-positive)"
-
-          # ===== PART B2: SUSPICIOUS channels (top v1 bot-ratio, live) — should be FLAGGED =====
-          live_ids = Stream.where(ended_at: nil).where("started_at > ?", 15.hours.ago).pluck(:id)
-          total = PerUserBotScore.where(stream_id: live_ids).group(:stream_id).count
-          bots  = PerUserBotScore.where(stream_id: live_ids, classification: %w[confirmed_bot probable_bot]).group(:stream_id).count
-          ranked = total.select { |_, t| t >= 20 }.map { |sid, t| [ sid, (bots[sid] || 0).to_f / t ] }.sort_by { |x| -x[1] }.first(12)
-          puts "\nPART B2 SUSPICIOUS (top v1 bot-ratio live): #{ranked.size} channels"
-          flagged_susp = 0
-          ranked.each do |sid, ratio|
-            s = Stream.find_by(id: sid)
-            next unless s
-            m = measure(s)
-            next unless m
-            rlo = rho_lo_for(m, rho_lo_cell, rho_lo_cat)
-            deficit, flagged = verdict(m, rlo)
-            v1ti = TrustIndexHistory.where(stream_id: sid).order(:calculated_at).last&.trust_index_score
-            flagged_susp += 1 if flagged
-            puts format("  %-22s v1_TI=%-5s v1_botratio=%.0f%% ρ_obs=%.4f ρ_lo=%.4f → %s (deficit=%.2f)",
-                        s.channel.login, v1ti, ratio * 100, m[:rho_obs], rlo, flagged ? "FLAG" : "green", deficit)
-          end
-
-          # ===== PART B3: viewbot/ccv-step anomaly channels (free injection proxy) =====
-          an_streams = Anomaly.where(anomaly_type: %w[viewbot_spike ccv_step_function])
-                              .where("timestamp > ?", 3.days.ago).order(timestamp: :desc).limit(40).pluck(:stream_id).uniq.first(12)
-          puts "\nPART B3 VIEWBOT/CCV-STEP anomaly channels (free injection proxy): #{an_streams.size}"
-          flagged_an = 0; checked_an = 0
-          an_streams.each do |sid|
-            s = Stream.find_by(id: sid)
-            next unless s
-            # organic exclusion: raid near now
-            next if RaidAttribution.where(stream_id: sid).where("timestamp > ?", 20.minutes.ago).exists?
-            m = measure(s)
-            next unless m
-            checked_an += 1
-            rlo = rho_lo_for(m, rho_lo_cell, rho_lo_cat)
-            _, flagged = verdict(m, rlo)
-            flagged_an += 1 if flagged
-            puts format("  %-22s ρ_obs=%.4f ρ_lo=%.4f flagged_ccv=%d → %s",
-                        s.channel.login, m[:rho_obs], rlo, m[:flagged], flagged ? "FLAG" : "green")
-          end
-
-          puts "\n===== MOAT VERDICT ====="
-          hp = anchor_measures.empty? ? 0 : (100.0*fp/anchor_measures.size).round(1)
-          sp = ranked.empty? ? 0 : (100.0*flagged_susp/ranked.size).round(1)
-          puts "  honest false-positive: #{hp}% (want LOW ~10%)"
-          puts "  suspicious flagged:    #{sp}% (want HIGH — these are v1-'trusted' botters)"
-          puts "  anomaly-proxy flagged: #{checked_an.zero? ? 0 : (100.0*flagged_an/checked_an).round(1)}% of #{checked_an}"
-          puts "  → moat DISCRIMINATES if suspicious/anomaly flagged-rate >> honest false-positive rate"
+          puts "\n===== MOAT VERDICT (persisted-basis discrimination) ====="
+          puts "  honest anchors flagged:      #{hp}%  (baseline false-positive, want ~10%)"
+          puts "  injection-proxy flagged:     #{cp}%  of #{nc}  (want >> honest)"
+          puts "  separation: #{(cp - hp).round(1)} pts"
+          puts "  → MOAT DISCRIMINATES if injection-proxy flag-rate >> honest baseline"
+          puts "  (ρ_lo GLOBAL=#{global_lo&.round(4)} — vs illustrative 0.03)"
           RUBY_EOF
           echo "Built ($(wc -l < /tmp/moat.rb) lines)"
 
