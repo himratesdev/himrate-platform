@@ -91,6 +91,7 @@ jobs:
             chatters = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
             return nil if chatters.empty?
             flagged = CrossChannelTemporalFlag.bulk_lookup(chatters)
+            spamf = flagged.reject { |_, d| d[:bot_type] == "utility" }.size.to_f / chatters.size
             ctx = TrustIndex::ContextBuilder.build(s).merge(
               stream_chatters: chatters,
               temporal_cross_channel_flags: { total_chatters: chatters.size, flagged: flagged }
@@ -101,7 +102,7 @@ jobs:
             v2cal = v2c.with(cell: base)
             r_ill = TrustIndex::V2::Engine.compute(context: v2c, k: K_ILL)
             r_cal = TrustIndex::V2::Engine.compute(context: v2cal, k: K_CAL)
-            { v: v2c.v, chat: chatters.size, flagged: flagged.size,
+            { v: v2c.v, chat: chatters.size, flagged: flagged.size, spam_frac: spamf,
               cat: cat, cell: "#{cat}|#{vbucket(v2c.v)}", rho_obs: r_cal.rho_obs,
               ill: r_ill, cal: r_cal }
           rescue => e
@@ -128,16 +129,26 @@ jobs:
             next if Stream.where(channel_id: cid).where.not(ended_at: nil).count < 10
             ti = TrustIndexHistory.where(channel_id: cid).order(calculated_at: :desc).limit(1).pick(:trust_index_score)
             next if ti.nil? || ti.to_f < 88
+            # Anchor hygiene (almazer5 incident): viewbot/ccv-step anomaly in 14d → NOT honest
+            next if Anomaly.where(anomaly_type: %w[viewbot_spike ccv_step_function])
+                           .where("timestamp > ?", 14.days.ago)
+                           .where(stream_id: Stream.where(channel_id: cid).select(:id)).exists?
             seen << cid
             honest << [ sid, ch.login ]
           end
 
           puts "===== HONEST anchors (n=#{honest.size}) — illustrative → CALIBRATED ====="
-          h_acc_ill = 0; h_acc_cal = 0; h_amber = 0; h_green = 0; h_ok = 0
+          h_acc_ill = 0; h_acc_cal = 0; h_amber = 0; h_green = 0; h_ok = 0; h_excl = 0
           honest.each do |sid, login|
             m = run_one(Stream.find_by(id: sid))
             next unless m
             if m[:error]
+              next
+            end
+            # Anchor hygiene pt.2: >5% spam-temporal roster → poisoned, exclude from honest stats
+            if m[:spam_frac] && m[:spam_frac] > 0.05
+              h_excl += 1
+              puts format("  %-20s EXCLUDED (spam_frac=%.3f) — poisoned anchor", login[0, 20], m[:spam_frac])
               next
             end
             h_ok += 1
@@ -148,7 +159,7 @@ jobs:
             puts format("  %-20s V=%-5d chat=%-3d %s | CAL %s", login[0, 20], m[:v].to_i, m[:chat], "ill=#{m[:ill].band.color}", band_str(m[:cal])) if accusatory?(m[:cal]) || h_ok <= 12
           end
           hfp_cal = h_ok.zero? ? 0.0 : (100.0 * h_acc_cal / h_ok).round(1)
-          puts "\n  HONEST: measured=#{h_ok} | accusatory(red/yellow): ill=#{h_acc_ill} CAL=#{h_acc_cal} (#{hfp_cal}%) | amber=#{h_amber} green=#{h_green}"
+          puts "\n  HONEST: measured=#{h_ok} (excluded poisoned=#{h_excl}) | accusatory(red/yellow): ill=#{h_acc_ill} CAL=#{h_acc_cal} (#{hfp_cal}%) | amber=#{h_amber} green=#{h_green}"
           puts "  BR-017 honest accusatory-FP target <1% → #{hfp_cal < 1.0 ? 'PASS' : 'REVIEW'}\n"
 
           # ===== BOTTED / suspicious =====
