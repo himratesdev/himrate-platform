@@ -159,7 +159,7 @@ class SignalComputeWorker
   def shadow_compute_v2(stream, context, v1)
     v2_context = TrustIndex::ContextBuilder.build_v2(stream, context)
     v2 = TrustIndex::V2::Engine.compute(context: v2_context, k: Calibration::Registry.load)
-    log_shadow(stream, v1, v2)
+    log_shadow(stream, v1, v2, v2_context)
   rescue StandardError => e
     Rails.logger.error("SignalComputeWorker: v2 shadow failed (stream #{stream.id}) — #{e.message}")
     Sentry.capture_exception(e) if defined?(Sentry)
@@ -167,14 +167,19 @@ class SignalComputeWorker
 
   # Structured (parseable) shadow-diff line — v1 headline vs v2 headline. Log-only; aggregated across
   # the cohort to validate the v2 engine (does the botter now read RED/AMBER where v1 read "trusted"?).
-  def log_shadow(stream, v1, v2)
+  # Also carries the GATE-0 calibration observables (v/rho_obs/eihc + the ρ* baseline in effect): with
+  # ti_v2_shadow ON, every SCW cycle streams a calibration sample per live channel — the continuous
+  # ρ*-mining source (probe `ti-v2-rho-build` = bootstrap; this = steady-state). Cell key is re-derived
+  # at mining time from stream_id (category/chat_mode/language live on stream/channel records).
+  def log_shadow(stream, v1, v2, v2c)
     diff = {
       stream_id: stream.id, channel_id: stream.channel_id,
       v1_ti: v1.ti_score, v1_erv_percent: v1.erv[:erv_percent],
       v2_erv: v2.erv, v2_authenticity: v2.authenticity,
       v2_band: "#{v2.band&.color}/#{v2.band&.row}", v2_f_hat: v2.f_hat,
       v2_f_hard: v2.f_hard, v2_f_soft: v2.f_soft, # PR3a: fraud-arm breakdown for shadow analysis
-      v2_n_frac: v2.n_frac, v2_confirmed_anomaly: v2.confirmed_anomaly
+      v2_n_frac: v2.n_frac, v2_confirmed_anomaly: v2.confirmed_anomaly,
+      v2_v: v2c.v, v2_rho_obs: v2.rho_obs, v2_eihc: v2.eihc, v2_rho_star: v2c.cell&.rho_star
     }
     Rails.logger.info("SCW shadow #{diff.to_json}")
   end
