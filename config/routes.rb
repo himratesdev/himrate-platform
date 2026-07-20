@@ -50,6 +50,8 @@ Rails.application.routes.draw do
       get "lk/status", to: "lk#status"
       # LK-BACKEND screen 04: live-now discovery ranked by real audience (viewer-free).
       get "discover/live", to: "discover#live"
+      # LK-BACKEND screen 13 «Рост»: game opportunities (Steam novelty × scarcity × distribution).
+      get "discover/games", to: "discover/games#index"
       post "lk/notify", to: "lk#notify"
 
       # TASK-031: User profile
