@@ -9,6 +9,8 @@ name: ti-v2-postflip-health
 #   6. Trends TDA v2 columns — nightly daily_builder fills authenticity_*/erv_avg_count (sv=4)
 #   7. Sidekiq retry/dead — engine exceptions land here first (cutover has NO rescue by design)
 on:
+  schedule:
+    - cron: "50 */6 * * *" # 6-hourly post-flip watch (engine mix / corroboration / NBE / retries) — fail-loud via run history
   workflow_dispatch:
     inputs:
       target:
@@ -128,10 +130,10 @@ jobs:
           RUBY_EOF
           echo "Built ($(wc -l < /tmp/health.rb) lines)"
 
-      - name: Run health probe on ${{ inputs.target }}
+      - name: Run health probe on ${{ inputs.target || 'hostkey' }}
         run: |
-          TARGET="${{ inputs.target }}"
+          TARGET="${{ inputs.target || 'hostkey' }}" # inputs empty on schedule events
           scp /tmp/health.rb ${TARGET}:/tmp/health.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER}"
-          ssh ${TARGET} "docker cp /tmp/health.rb ${CONTAINER}:/tmp/health.rb && docker exec -e HOURS='${{ inputs.hours }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/health.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
+          ssh ${TARGET} "docker cp /tmp/health.rb ${CONTAINER}:/tmp/health.rb && docker exec -e HOURS='${{ inputs.hours || '6' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/health.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
