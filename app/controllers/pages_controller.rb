@@ -72,6 +72,14 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Viewer settings (screen 06) — faithful export host. Real privacy toggles (GET/PUT /me/privacy,
+  # canonical M15 labels) + connected accounts (GET /user/me) wired client-side by landing/settings.js.
+  # TG-bot / sync-frequency have no backend yet → honestly deferred in the JS.
+  def settings
+    @page = "settings"
+    @brand_dashboard = true
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the
