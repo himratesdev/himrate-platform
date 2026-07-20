@@ -163,19 +163,19 @@
     setText(card, "Meta", meta || "—");
     setText(card, "PT", "Twitch");
 
-    // Open → public channel card (live today). Switches to /app/streamers/:login once that page ships.
+    // Open → brand streamer card (screen 21) — the brand's 30-day verification deep view (live now).
     var open = q(card, "Open");
     if (open) {
       open.style.cursor = "pointer";
       open.addEventListener("click", function () {
-        window.location.href = "/c/" + encodeURIComponent(s.login);
+        window.location.href = "/app/streamers/" + encodeURIComponent(s.login);
       });
     }
     // Whole card is also a click target for discoverability.
     card.style.cursor = "pointer";
     card.addEventListener("click", function (e) {
       if (e.target.closest('[data-pencil-name="Open"]')) return;
-      window.location.href = "/c/" + encodeURIComponent(s.login);
+      window.location.href = "/app/streamers/" + encodeURIComponent(s.login);
     });
     return card;
   }
