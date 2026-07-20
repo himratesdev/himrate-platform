@@ -102,6 +102,14 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Viewer best-moments (screen 07) — faithful export host. Real chat-peak moments + window clips
+  # wired client-side by landing/moments.js against GET /api/v1/me/moments (channel from
+  # ?login= or the user's own/recent channels).
+  def moments
+    @page = "moments"
+    @brand_dashboard = true
+  end
+
   # Legal pages (Privacy Policy + Terms). Own minimal readable layout (no Pencil JS).
   # Required for Chrome Web Store submission + footer trust links.
   def privacy
