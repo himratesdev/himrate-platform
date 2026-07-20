@@ -1,0 +1,195 @@
+name: ti-v2-corpus
+# T1-074 GATE-0 STEP 2 — bot/human corpus for LLR calibration. READ-ONLY, $0, time-independent
+# (account features live in ChatterProfile — no live channels needed).
+#
+# LABELS (self-labeled, our data):
+#   BOT-temporal = CrossChannelTemporalFlag tier∈{yellow,confirmed} (R≥4) ∧ bot_type≠utility.
+#                  These are CHAT-spam bots → they post → they get a ChatterProfile → the ONLY bot
+#                  class that can calibrate account_profile_llr (silent view-bots never chat).
+#   BOT-known    = KnownBotList.active (mostly view-bots — expected LOW ChatterProfile coverage;
+#                  measured to prove the point, not used for account_profile LLR).
+#   HUMAN        = mature (>1yr) ∧ temporally-clean (absent from temporal table) ∧ non-bot ChatterProfile
+#                  logins; STRICT variant additionally ∩ PerUserBotScore human/low_suspicion.
+#
+# FEATURES (match BotDetection::Scorer#score_profile verbatim): account_age_days, followers_count,
+#   follows_count → derived flags followers_zero / account_age_7d(<7d) / account_age_30d(<30d) /
+#   follows_zero / follows_excessive(>1000); + PerUserBotScore.bot_score.
+# OUTPUT: per-class distributions + flag rates + crude per-flag LLR = log((rate_bot+ε)/(rate_human+ε))
+#   — the isotonic/Platt seed for STEP 4 cross-fit (account_profile_llr, per_user LLR).
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  corpus:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build corpus script
+        run: |
+          cat > /tmp/corpus.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "set"
+
+          def pct(a, p)
+            return nil if a.nil? || a.empty?
+            s = a.sort
+            s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
+          end
+
+          def dist(label, vals)
+            vals = vals.compact
+            return puts("    #{label}: (empty)") if vals.empty?
+            puts format("    %-18s n=%-6d P10=%s P25=%s P50=%s P75=%s P90=%s",
+                        label, vals.size,
+                        pct(vals, 0.10).round(2), pct(vals, 0.25).round(2), pct(vals, 0.50).round(2),
+                        pct(vals, 0.75).round(2), pct(vals, 0.90).round(2))
+          end
+
+          # collect raw features + score_profile-matching flags for a login set
+          def features_for(logins)
+            ages = []; fols = []; fws = []
+            f_zero = 0; a7 = 0; a30 = 0; fw_zero = 0; fw_exc = 0; profiled = 0
+            logins.each_slice(1000) do |batch|
+              ChatterProfile.where(login: batch).each do |cp|
+                profiled += 1
+                if cp.twitch_created_at
+                  ages << ((Time.current - cp.twitch_created_at) / 86400.0)
+                  a7  += 1 if cp.twitch_created_at > 7.days.ago
+                  a30 += 1 if cp.twitch_created_at > 30.days.ago
+                end
+                unless cp.followers_count.nil?
+                  fols << cp.followers_count
+                  f_zero += 1 if cp.followers_count.zero?
+                end
+                unless cp.follows_count.nil?
+                  fws << cp.follows_count
+                  fw_zero += 1 if cp.follows_count.zero?
+                  fw_exc  += 1 if cp.follows_count > 1000
+                end
+              end
+            end
+            { profiled: profiled, ages: ages, fols: fols, fws: fws,
+              f_zero: f_zero, a7: a7, a30: a30, fw_zero: fw_zero, fw_exc: fw_exc }
+          end
+
+          # per-username mean bot_score (avoids over-counting heavy chatters)
+          def pubs_for(logins)
+            out = []
+            logins.each_slice(1000) do |batch|
+              PerUserBotScore.where(username: batch).group(:username).average(:bot_score).each_value { |v| out << v.to_f }
+            end
+            out
+          end
+
+          def report(name, set)
+            f = features_for(set)
+            cov = set.empty? ? 0.0 : (100.0 * f[:profiled] / set.size).round(1)
+            puts "\n#{name}: set=#{set.size}, profiled=#{f[:profiled]} (#{cov}% ChatterProfile coverage)"
+            dist("account_age_days", f[:ages])
+            dist("followers_count", f[:fols])
+            dist("follows_count", f[:fws])
+            ps = pubs_for(set)
+            dist("per_user_bot_score", ps)
+            n = [ f[:profiled], 1 ].max
+            rates = {
+              followers_zero: 100.0 * f[:f_zero] / n, account_age_7d: 100.0 * f[:a7] / n,
+              account_age_30d: 100.0 * f[:a30] / n, follows_zero: 100.0 * f[:fw_zero] / n,
+              follows_excessive: 100.0 * f[:fw_exc] / n
+            }
+            puts format("    flags: f_zero=%.1f%% age7=%.1f%% age30=%.1f%% fw_zero=%.1f%% fw_exc=%.1f%%",
+                        rates[:followers_zero], rates[:account_age_7d], rates[:account_age_30d],
+                        rates[:follows_zero], rates[:follows_excessive])
+            { profiled: f[:profiled], rates: rates }
+          end
+
+          # ===================== CENSUS =====================
+          puts "===== STEP 2 CORPUS CENSUS (#{Time.current.utc.iso8601}) ====="
+          puts "CrossChannelTemporalFlag: #{CrossChannelTemporalFlag.count} rows, refreshed_at max #{CrossChannelTemporalFlag.maximum(:refreshed_at)}"
+          CrossChannelTemporalFlag.group(:bot_flag_tier).count.each { |t, c| puts "  tier #{t}: #{c}" }
+          CrossChannelTemporalFlag.group(:bot_type).count.each { |t, c| puts "  type #{t}: #{c}" }
+          puts "KnownBotList.active: #{KnownBotList.active.count} (view #{KnownBotList.active.view_bots.count} / service #{KnownBotList.active.service_bots.count})"
+          cp_total = ChatterProfile.count
+          puts "ChatterProfile: #{cp_total} total, created_at present #{ChatterProfile.where.not(twitch_created_at: nil).count}, followers present #{ChatterProfile.where.not(followers_count: nil).count}, fetched_at max #{ChatterProfile.maximum(:fetched_at)}"
+          puts "PerUserBotScore: #{PerUserBotScore.count} total, created max #{PerUserBotScore.maximum(:created_at)}"
+          PerUserBotScore.group(:classification).count.each { |c, n| puts "  #{c}: #{n}" }
+
+          # ===================== LABEL SETS =====================
+          bot_temporal = CrossChannelTemporalFlag.where(bot_flag_tier: %w[yellow confirmed])
+                                                 .where.not(bot_type: "utility").pluck(:username).map(&:downcase).uniq
+          bot_known = KnownBotList.active.pluck(:username).map(&:downcase).uniq
+          temporal_any = CrossChannelTemporalFlag.pluck(:username).map(&:downcase).to_set
+          bot_all = (bot_temporal + bot_known).to_set
+          puts "\nBOT-temporal (R>=4, non-utility): #{bot_temporal.size}"
+          puts "BOT-known (active): #{bot_known.size}"
+
+          mature_cutoff = 365.days.ago
+          human_broad = ChatterProfile.where("twitch_created_at < ?", mature_cutoff)
+                                      .limit(20000).pluck(:login).map(&:downcase)
+                                      .reject { |u| bot_all.include?(u) || temporal_any.include?(u) }
+          pubs_humans = PerUserBotScore.where(classification: %w[human low_suspicion])
+                                       .limit(80000).pluck(:username).map(&:downcase).to_set
+          human_strict = human_broad.select { |u| pubs_humans.include?(u) }
+          puts "HUMAN broad (mature>1yr ∧ temporally-clean ∧ non-bot): #{human_broad.size}"
+          puts "HUMAN strict (∩ PUBS human/low_suspicion): #{human_strict.size}"
+          human_set = human_strict.size >= 200 ? human_strict : human_broad
+          human_label = human_strict.size >= 200 ? "strict" : "broad"
+
+          # cap feature extraction for very large sets (distribution stable well under this)
+          CAP = 12000
+          bt = bot_temporal.first(CAP)
+          bk = bot_known.first(CAP)
+          hs = human_set.first(CAP)
+
+          # ===================== DISTRIBUTIONS =====================
+          puts "\n===== FEATURE DISTRIBUTIONS (cap #{CAP}/set) ====="
+          r_bt = report("BOT-temporal", bt)
+          r_bk = report("BOT-known", bk)
+          r_hu = report("HUMAN-#{human_label}", hs)
+
+          # ===================== CRUDE LLR (account_profile_llr seed) =====================
+          # LLR_flag = log((rate_bot+ε)/(rate_human+ε)); positive class = BOT-temporal (chat bots w/ profiles).
+          eps = 1.0
+          puts "\n===== CRUDE PER-FLAG LLR (BOT-temporal vs HUMAN-#{human_label}) ====="
+          puts "  (log-odds seed for STEP 4 isotonic/Platt cross-fit; >0 ⇒ flag favors BOT)"
+          %i[followers_zero account_age_7d account_age_30d follows_zero follows_excessive].each do |flag|
+            rb = r_bt[:rates][flag]; rh = r_hu[:rates][flag]
+            llr = Math.log((rb + eps) / (rh + eps))
+            puts format("  %-18s bot=%.1f%% human=%.1f%% → LLR=%+.3f", flag, rb, rh, llr)
+          end
+
+          puts "\n===== VERDICT ====="
+          puts "  BOT-temporal ChatterProfile coverage: #{r_bt[:profiled]}/#{bt.size} (account_profile_llr calibratable iff >>0)"
+          puts "  BOT-known coverage: #{r_bk[:profiled]}/#{bk.size} (expected LOW — view-bots don't chat)"
+          puts "  HUMAN-#{human_label} coverage: #{r_hu[:profiled]}/#{hs.size}"
+          puts "  → If BOT-temporal coverage healthy & LLRs separate, STEP 4 can calibrate account_profile_llr on our data ($0)."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/corpus.rb) lines)"
+
+      - name: Run corpus on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          scp /tmp/corpus.rb ${TARGET}:/tmp/corpus.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/corpus.rb ${CONTAINER}:/tmp/corpus.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/corpus.rb > /tmp/cout.txt 2>&1; cat /tmp/cout.txt' 2>&1" | grep -vE 'KnownBotService|Flipper audit|connecting to Redis|stackprof|Please add'
