@@ -193,8 +193,16 @@
     $all('[data-pencil-name="Wordmark"]').forEach(function(el){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(){ window.__hrGo('/'); }); });
     $all('[data-pencil-name="Войти"]').forEach(function(el){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(){ window.__hrGo('/methodology'); }); });
 
+    function soon(msg){
+      var t=document.createElement('div'); t.textContent=msg||'Скоро';
+      t.style.cssText='position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:99999;'+
+        'background:#FF5C8A;color:#0B0B12;font:600 15px system-ui,sans-serif;padding:12px 20px;'+
+        'border-radius:999px;box-shadow:0 8px 30px rgba(0,0,0,.4);opacity:0;transition:opacity .2s;';
+      document.body.appendChild(t); requestAnimationFrame(function(){ t.style.opacity='1'; });
+      setTimeout(function(){ t.style.opacity='0'; setTimeout(function(){ t.remove(); },250); },2200);
+    }
     var ROUND=/rounded-\[(6|8|10|12|999)px\]/;
-    var CTA=/^(подключить|установить|начать|связаться|все тарифы|оформить|выбрать|как это работает|как мы измеряем|узнать|смотреть|посмотреть|открыть метод|открыть демо|запросить|войти|я бренд|я зритель|я стример|выбрать план|перейти)/i;
+    var CTA=/^(подключить|установить|начать|связаться|все тарифы|оформить|выбрать|как это работает|как мы измеряем|узнать|смотреть|посмотреть|открыть|запросить|войти|я бренд|я зритель|я стример|выбрать план|перейти)/i;
     $all('div').forEach(function(el){
       var c=cls(el); var purple=/bg-\[#7C3AED\]/.test(c); var txt=(el.textContent||'').trim();
       var verb=ROUND.test(c)&&CTA.test(txt)&&txt.length<=64;
@@ -203,17 +211,20 @@
       if(el.querySelector('[data-hr-btn]')) return;
       el.setAttribute('data-hr-btn','');
       el.addEventListener('click', function(e){
-        var s=txt.toLowerCase(), dest;
-        // Every verb the CTA regex matches MUST resolve to a destination — an unmapped
-        // verb was a dead click (e.g. "Установить расширение", "Начать", "Связаться").
-        if(s.indexOf('установить')>-1||s.indexOf('начать')>-1) dest='/viewers';
+        e.stopPropagation();
+        var s=txt.toLowerCase();
+        // Not shipped yet → honest "coming soon", never a dead click:
+        if(s.indexOf('расширение')>-1) return soon('Расширение скоро появится в Chrome Web Store');
+        if(s.indexOf('биржу')>-1||s.indexOf('биржа')>-1) return soon('Биржа скоро откроется');
+        var dest;
+        if(s.indexOf('открыть сервис')>-1) dest='/app/home';        // viewer dashboard (gates to login)
+        else if(s.indexOf('подключить')>-1) dest='/app/channel';    // streamer dashboard (gates to login)
         else if(s.indexOf('я бренд')>-1) dest='/brands';
         else if(s.indexOf('я зритель')>-1) dest='/viewers';
         else if(s.indexOf('я стример')>-1) dest='/streamers';
         else if(s.indexOf('связаться')>-1) dest='/brands';
-        else if(s.indexOf('подключить')>-1||s.indexOf('запросить')>-1) dest='/streamers';
-        else dest='/methodology'; // pricing / methodology bucket + fallback
-        e.stopPropagation(); window.__hrGo(dest);
+        else dest='/methodology'; // pricing / methodology / how-it-works + fallback
+        window.__hrGo(dest);
       });
     });
   }
