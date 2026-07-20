@@ -90,9 +90,15 @@ module Watchlists
         # PR3b (T2 contract, api.ts WatchlistChannel): erv COUNT + authenticity + engine-emitted
         # band_color (5 values red/yellow/amber/green/grey — reader-side thresholds retired).
         # last_ti_at → last_calculated_at (T2 rename).
+        # CR SF-3 follow-up: band_color alone cannot distinguish row 3 «Аудитория реальная» from
+        # row 4 «Аномалий не замечено» (both green) — emit band_row + the canonical label_key
+        # (BandClassifier::LABEL_KEYS_BY_ROW) so watchlist rows render the exact band label
+        # without re-deriving thresholds client-side.
         base.merge(
           erv: ti&.erv,
           authenticity: ti&.authenticity&.to_f&.round(1),
+          band_row: ti&.band_row,
+          label_key: TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[ti&.band_row] || "band.grey_insufficient",
           band_color: ti&.band_color || "grey",
           last_calculated_at: ti&.calculated_at&.iso8601
         )
@@ -130,7 +136,7 @@ module Watchlists
       if v2_engine?
         TrustIndexHistory
           .where(channel_id: channel_ids, engine_version: "v2")
-          .select("DISTINCT ON (channel_id) channel_id, erv, authenticity, band_color, ccv, calculated_at")
+          .select("DISTINCT ON (channel_id) channel_id, erv, authenticity, band_row, band_color, ccv, calculated_at")
           .order(:channel_id, calculated_at: :desc)
           .index_by(&:channel_id)
       else

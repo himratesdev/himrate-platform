@@ -22,7 +22,8 @@ ru:
     patterns:
       weekday:
         title: Разрез по дням недели
-        best: "Лучший день %{day} (TI %{ti})"
+        # T1-074: «TI» retired user-facing (Glossary v6.0 — internal/legacy only); scalar = Подлинность (authenticity)
+        best: "Лучший день %{day} (подлинность %{ti})"
       category:
         title: Разрез по категориям
         top: "Лучшая категория %{name} (+%{delta} к базовой линии)"
@@ -34,7 +35,7 @@ ru:
       horizon_30d: На 30 дней
     categories:
       verdict:
-        best_with_delta: "Лучший TI в %{name} (+%{delta})"
+        best_with_delta: "Лучшая подлинность в %{name} (+%{delta})"
         top_with_delta: "Топ-категория %{name} (%{delta} к baseline)"
         top_no_delta: "Топ-категория: %{name}"
     weekday:
@@ -46,4 +47,4 @@ ru:
         fri: пятницу
         sat: субботу
         sun: воскресенье
-      insight: "Лучшие стримы в %{day} (TI %{ti})"
+      insight: "Лучшие стримы в %{day} (подлинность %{ti})"
