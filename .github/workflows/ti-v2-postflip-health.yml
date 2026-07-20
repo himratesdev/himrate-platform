@@ -70,6 +70,11 @@ jobs:
             puts format("  %-20s row=%d nfrac=%s c_hard=%s c_self=%s auth=%s erv=%s", login, t.band_row, t.n_frac, t.c_hard, t.c_self, t.authenticity, t.erv)
           end
 
+          puts "\n===== 2c. RHO OVERFLOW FIX VERIFY (PR #418, migration 20260721120000) ====="
+          puts "  rho_obs sql_type: #{TrustIndexHistory.columns_hash['rho_obs'].sql_type} (want numeric(8,5))"
+          recent = TrustIndexHistory.where(engine_version: "v2").where("calculated_at > ?", 1.hour.ago)
+          puts "  last 1h: max rho_obs = #{recent.maximum(:rho_obs)} | rows with rho_obs >= 10 (tiny-V, pre-fix impossible): #{recent.where('rho_obs >= 10').count}"
+
           puts "\n===== 3. NAMED BOT EVIDENCE (delta-write watch, MF-1) ====="
           puts "  total: #{NamedBotEvidence.count}"
           [ 1, 6, 24 ].each { |hh| puts "  last #{hh}h: #{NamedBotEvidence.where('calculated_at > ?', hh.hours.ago).count}" }
