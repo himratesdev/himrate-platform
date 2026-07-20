@@ -8,10 +8,10 @@ on:
   workflow_dispatch:
     inputs:
       login:
-        description: 'Twitch login, OR "AUTO" to discover currently-live channels'
+        description: 'Twitch login, "AUTO" (fresh-TIH live), or "SUSPICIOUS" (highest v1 bot-ratio live)'
         required: true
         type: string
-        default: AUTO
+        default: SUSPICIOUS
       target:
         description: 'Which VPS to probe (read-only Rails runner)'
         required: true
@@ -100,7 +100,8 @@ jobs:
             puts e.backtrace.first(4).map { |b| "    #{b}" }
           end
 
-          if arg == "AUTO"
+          case arg
+          when "AUTO"
             live_ids = Stream.where(ended_at: nil).where("started_at > ?", 12.hours.ago).pluck(:id)
             puts "AUTO: #{live_ids.size} live streams (<12h)"
             recent = TrustIndexHistory.where(stream_id: live_ids)
@@ -110,6 +111,20 @@ jobs:
             puts "AUTO: #{chan_ids.size} channels with fresh TIH (<20m) → comparing top #{[chan_ids.size,6].min}"
             (puts "AUTO: no currently-live channels with fresh TIH — try a specific login"; exit) if chan_ids.empty?
             Channel.where(id: chan_ids).each { |c| compare(c) }
+          when "SUSPICIOUS"
+            # Hunt botters: rank LIVE streams by v1's own bot-ratio (confirmed+probable / scored),
+            # then run v2 on the worst — does v2 flag (RED/AMBER/F_hat>0/named B_hard) what v1 called trusted?
+            live_ids = Stream.where(ended_at: nil).where("started_at > ?", 12.hours.ago).pluck(:id)
+            total = PerUserBotScore.where(stream_id: live_ids).group(:stream_id).count
+            bots  = PerUserBotScore.where(stream_id: live_ids, classification: %w[confirmed_bot probable_bot]).group(:stream_id).count
+            ranked = total.select { |_, t| t >= 20 }
+                          .map { |sid, t| [ sid, ((bots[sid] || 0).to_f / t), t, (bots[sid] || 0) ] }
+                          .sort_by { |x| -x[1] }.first(8)
+            puts "SUSPICIOUS: #{live_ids.size} live, #{total.size} with ≥1 scored chatter → top bot-ratio (≥20 scored):"
+            ranked.each { |sid, r, t, b| puts format("  stream %s bot_ratio=%.1f%% (%d/%d)", sid, r * 100, b, t) }
+            (puts "SUSPICIOUS: no live streams with ≥20 scored chatters yet"; exit) if ranked.empty?
+            s2c = Stream.where(id: ranked.map(&:first)).pluck(:id, :channel_id).to_h
+            ranked.each { |sid, _r, _t, _b| c = Channel.find_by(id: s2c[sid]); compare(c) if c }
           else
             c = Channel.find_by(login: arg)
             c ? compare(c) : puts("Channel not found: #{arg}")
