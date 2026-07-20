@@ -84,6 +84,16 @@ module Twitch
       get("/clips", { id: Array(ids) })&.dig("data")
     end
 
+    # Screen 13 «Рост» (DSV growth-sources-probe run 29781151115): category meta by exact name,
+    # and the live streams of one category (viewer_count array → streamer count + CCV distribution).
+    def get_game(name:)
+      (get("/games", { name: name })&.dig("data") || []).first
+    end
+
+    def get_streams_by_game(game_id:, first: 100)
+      get("/streams", { game_id: game_id, first: first })&.dig("data") || []
+    end
+
     private
 
     # === HTTP ===
