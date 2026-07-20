@@ -44,8 +44,15 @@
 
     <%= stylesheet_link_tag "landing_fonts" %>
     <%= stylesheet_link_tag "tailwind" %>
+
+    <%# Analytics (Metrika + GA4) — externalised (CSP-clean) and only on the
+        canonical production host so staging / localhost don't pollute stats. %>
+    <% if analytics_enabled? %><%= javascript_include_tag "landing/analytics", async: true %><% end %>
   </head>
   <body>
+    <% if analytics_enabled? %>
+      <noscript><div><img src="https://mc.yandex.ru/watch/110889452" style="position:absolute; left:-9999px;" alt=""></div></noscript>
+    <% end %>
     <%= yield %>
 
     <%# The export's vanilla JS, served as CSP-safe external assets. index.html was
