@@ -32,13 +32,21 @@ RSpec.describe Brand::AudienceOverlapService, type: :service do
     end
 
     it "computes pairwise overlap with strength" do
-      ab = payload[:pairwise].find { |p| p[:a] == "aaa" && p[:b] == "bbb" }
-      ac = payload[:pairwise].find { |p| p[:a] == "aaa" && p[:b] == "ccc" }
+      # Match a pair regardless of (a, b) orientation so the assertion never depends on column order.
+      pair = ->(x, y) { payload[:pairwise].find { |p| [ p[:a], p[:b] ].sort == [ x, y ].sort } }
+      ab = pair.call("aaa", "bbb")
+      ac = pair.call("aaa", "ccc")
       expect(ab[:shared]).to eq(1)               # alice
       expect(ab[:percent]).to eq(50.0)           # 1 / min(3,2)
       expect(ab[:strength]).to eq("strong")
       expect(ac[:shared]).to eq(0)
       expect(ac[:strength]).to eq("weak")
+    end
+
+    it "returns channels and pairwise in the REQUESTED order (deterministic, not DB order)" do
+      expect(payload[:channels].map { |c| c[:login] }).to eq(%w[aaa bbb ccc])
+      # combination order over the requested channels → aaa×bbb, aaa×ccc, bbb×ccc
+      expect(payload[:pairwise].map { |p| [ p[:a], p[:b] ] }).to eq([ %w[aaa bbb], %w[aaa ccc], %w[bbb ccc] ])
     end
 
     it "composition sums to unique reach" do

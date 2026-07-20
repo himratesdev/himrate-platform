@@ -16,9 +16,14 @@ module Brand
     def call
       return Result.new(ok: false, error: "CHANNELS_REQUIRED") unless @logins.size.between?(MIN_CHANNELS, MAX_CHANNELS)
 
-      channels = Channel.where(login: @logins).to_a
-      return Result.new(ok: false, error: "CHANNEL_NOT_FOUND") if (@logins - channels.map(&:login)).any?
+      # Preserve the REQUESTED channel order (Channel.where(login:) returns DB order, which varies with
+      # heap/index state) — otherwise the matrix/pairwise column order and each pair's (a, b) assignment
+      # are non-deterministic (source of the audience_overlap_service_spec full-suite seed flake), and
+      # the rendered overlap columns wouldn't match the order the brand asked for.
+      by_login = Channel.where(login: @logins).index_by(&:login)
+      return Result.new(ok: false, error: "CHANNEL_NOT_FOUND") if (@logins - by_login.keys).any?
 
+      channels = @logins.map { |login| by_login[login] }
       Result.new(ok: true, payload: build(channels))
     end
 
