@@ -28,6 +28,7 @@ class PagesController < ApplicationController
   # (same-origin session cookie). The page shell is public; the JS gates on /api/v1/lk/status.
   def brand_search
     @page = "brand_search"
+    @brand_dashboard = true
   end
 
   # Brand dashboard compare (screen 23) — faithful export host. Real side-by-side columns wired
@@ -35,6 +36,7 @@ class PagesController < ApplicationController
   # session cookie). The page shell is public; the JS gates on /api/v1/lk/status.
   def brand_compare
     @page = "brand_compare"
+    @brand_dashboard = true
   end
 
   # Brand dashboard audience overlap (screen 24) — faithful export host. Real chat-audience overlap
@@ -42,6 +44,7 @@ class PagesController < ApplicationController
   # against GET /api/v1/brand/overlap?channels=… (same-origin cookie). Page shell public; JS gates.
   def brand_overlap
     @page = "brand_overlap"
+    @brand_dashboard = true
   end
 
   # Brand dashboard streamer card (screen 21) — faithful export host. Real 4-layer verification wired
@@ -50,6 +53,7 @@ class PagesController < ApplicationController
   def brand_streamer_card
     @page = "brand_streamer_card"
     @login = params[:login]
+    @brand_dashboard = true
   end
 
   private
