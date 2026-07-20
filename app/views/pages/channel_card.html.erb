@@ -1,3 +1,11 @@
+<%# No scroll-reveal on this data page (PO 2026-07-20): hr-shared.js auto-adds data-hr-reveal
+    to below-fold sections (fade+slide-in on scroll) for the marketing landing. A data card
+    shouldn't animate on scroll — neutralise it card-scoped (this view only) without touching the
+    shared hr-shared.js (no landing regression). scroll-behavior kept auto for instant jumps. %>
+<style>
+  [data-hr-reveal], [data-hr-reveal].hr-in { opacity: 1 !important; transform: none !important; transition: none !important; }
+  html, body { scroll-behavior: auto !important; }
+</style>
 <%# Faithful host of the Pencil export 02-channel-card.html (body verbatim). Public
     channel card — layers 1-3 (headline + reputation) are free on any channel per
     access-model v2. Real data is wired client-side by landing/channel_card.js against
