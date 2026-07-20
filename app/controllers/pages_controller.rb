@@ -23,6 +23,13 @@ class PagesController < ApplicationController
     @login = params[:login]
   end
 
+  # Brand dashboard streamer search (screen 20) — faithful export host. Real ranked results are wired
+  # client-side by landing/brand_search.js against the brand-gated GET /api/v1/brand/streamers/search
+  # (same-origin session cookie). The page shell is public; the JS gates on /api/v1/lk/status.
+  def brand_search
+    @page = "brand_search"
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the
