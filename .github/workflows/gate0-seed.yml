@@ -5,8 +5,11 @@ name: gate0-seed
 # re-dispatch after each miner densification to expand coverage). The engine flip itself is separate:
 # flipper-toggle ti_v2_engine enable.
 #
-# CELLS = shadow-mined (ti-v2-shadow-mine run 29780540466, 16h continuous shadow, 47 hygiene-clean
-# anchors; basis = per-stream MEDIAN of live SCW ρ_obs — the engine's own runtime distribution).
+# CELLS = shadow-mined, CROSS-RUN POOLED (runs 29746489151/29753053748/29780540466/29783579044/
+# 29784014697 → 82 distinct hygiene-clean anchors, deduped by channel keeping the freshest per-stream
+# MEDIAN of live SCW ρ_obs — the engine's own runtime distribution). Pooling is REQUIRED: docker
+# json-log rotation caps each harvest at ~25-30 min regardless of --since hours, so single runs
+# plateau at ~30-50 anchors. Raw pool: _tasks/T1-074/rho-raw/pool.txt (verivio-clode).
 # Phase-A conservative: n≥7 cells only; uncovered cells stay dormant-green (default ρ*=0.03).
 # Mirror: _tasks/T1-074/gate0-seed.rb (verivio-clode).
 on:
@@ -46,9 +49,12 @@ jobs:
           # language = literal DB value ("RU" uppercase — CellResolver compares verbatim; the
           # first seed wrote lowercase "ru" → resolver MISS → engine fell back to DEFAULT 0.03).
           CELLS = [
-            [ "gaming",  "0-1k",  "open",           "RU", 0.876, 0.596, 1.531, 10 ],
-            [ "gaming",  "0-1k",  "followers-only", "RU", 0.566, 0.220, 1.208, 9 ],
-            [ "gaming",  "1k-5k", "followers-only", "RU", 0.306, 0.283, 0.357, 7 ]
+            [ "gaming",        "0-1k",  "open",           "RU", 0.803, 0.271, 1.629, 13 ],
+            [ "gaming",        "0-1k",  "followers-only", "RU", 0.695, 0.206, 1.357, 14 ],
+            [ "gaming",        "1k-5k", "followers-only", "RU", 0.331, 0.304, 0.357, 7 ],
+            [ "esports",       "0-1k",  "followers-only", "RU", 0.369, 0.152, 0.657, 9 ],
+            [ "just_chatting", "0-1k",  "followers-only", "RU", 0.246, 0.116, 0.447, 7 ],
+            [ "just_chatting", "1k-5k", "followers-only", "RU", 0.213, 0.198, 0.271, 7 ]
           ].freeze
 
           # cleanup the mis-cased first-seed rows (language "ru") — dead rows the resolver never hits
