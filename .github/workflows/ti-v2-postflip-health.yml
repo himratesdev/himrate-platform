@@ -97,7 +97,8 @@ jobs:
           require "sidekiq/api"
           Sidekiq::Queue.all.sort_by(&:name).each { |q| puts format("  %-14s size=%-6d latency=%.0fs", q.name, q.size, q.latency) }
           rs = Sidekiq::RetrySet.new
-          puts "  retries: #{rs.size} | dead: #{Sidekiq::DeadSet.new.size}"
+          ds = Sidekiq::DeadSet.new
+          puts "  retries: #{rs.size} | dead: #{ds.size}"
           shown = 0
           rs.each do |j|
             next unless j.klass.to_s =~ /SignalCompute|PostStream|TrustIndex|Reputation|Trends/
@@ -105,6 +106,19 @@ jobs:
             shown += 1
             break if shown >= 8
           end
+          # dead-set ATTRIBUTION (triage input — do NOT bulk-retry stale periodic computes):
+          # breakdown by class × error-head × death-day so "dead=N" is attributable, not a scare number
+          dead_by = Hash.new(0)
+          dead_day = Hash.new(0)
+          ds.each do |j|
+            err = j["error_message"].to_s[0, 60]
+            dead_by["#{j.klass} | #{err}"] += 1
+            dead_day[Time.at(j["failed_at"].to_f).utc.strftime("%Y-%m-%d")] += 1 if j["failed_at"]
+          end
+          puts "  dead by class|error (top 10):"
+          dead_by.sort_by { |_, n| -n }.first(10).each { |k, n| puts format("    %-6d %s", n, k) }
+          puts "  dead by failure day (last 8):"
+          dead_day.sort.last(8).each { |d, n| puts format("    %s  %d", d, n) }
           puts "\nVERDICT hints: v2-only mix + 0 uncorroborated + NBE flat on honest + seeded cells present + 0 engine retries = HEALTHY"
           RUBY_EOF
           echo "Built ($(wc -l < /tmp/health.rb) lines)"
