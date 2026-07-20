@@ -1,0 +1,152 @@
+name: ti-v2-shadow-mine
+# T1-074 GATE-0 — mine the SCW shadow log into the dense per-cell ρ* seed table. READ-ONLY, $0.
+# Prereq: Flipper ti_v2_shadow ON (PO one-click) + PR #384 deployed (shadow line carries
+# v2_v/v2_rho_obs/v2_eihc/v2_rho_star). With shadow ON, EVERY SCW cycle (~30s/stream) logs a
+# calibration sample per live channel → after a few hours this is far denser than manual
+# ti-v2-rho-build runs (intra-stream medians smooth roster-growth/CCV wobble).
+# Pipeline: grep "SCW shadow" from all himrate staging containers (last N hours) → per-stream
+# median ρ_obs → honest-anchor filter (partner ∧ ≥10 completed ∧ TI≥88 ∧ current-stream
+# viewbot/ccv-step anomaly non-raid excluded ∧ roster spam-temporal ≤5%) → per-cell
+# ρ_lo(P10)/ρ*(P50)/ρ_hi(P90) + RAW rows (pooling with ti-v2-rho-build format).
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      hours:
+        required: false
+        type: string
+        default: "6"
+
+jobs:
+  mine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Collect shadow lines from containers
+        run: |
+          TARGET="${{ inputs.target }}"
+          HOURS="${{ inputs.hours }}"
+          ssh ${TARGET} "rm -f /tmp/shadow_lines.txt; for c in \$(docker ps --filter 'name=himrate' --format '{{.Names}}'); do docker logs --since ${HOURS}h \$c 2>&1 | grep -F 'SCW shadow ' >> /tmp/shadow_lines.txt || true; done; wc -l /tmp/shadow_lines.txt"
+
+      - name: Build miner script
+        run: |
+          cat > /tmp/mine.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "json"
+          require "set"
+
+          def pct(a, p)
+            return nil if a.nil? || a.empty?
+            s = a.sort
+            s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
+          end
+
+          def vbucket(v)
+            return "0" if v.nil? || v <= 0
+            return "0-1k" if v < 1000
+            return "1k-5k" if v < 5000
+            return "5k-20k" if v < 20000
+            "20k+"
+          end
+
+          def chat_mode(cfg)
+            return "open" unless cfg
+            return "sub-only" if cfg.subs_only_enabled
+            fol = cfg.followers_only_duration_min
+            return "followers-only" if fol && fol >= 0
+            return "slow" if cfg.slow_mode_seconds.to_i.positive?
+            return "emote-only" if cfg.emote_only_enabled
+            "open"
+          end
+
+          # ===== parse shadow lines → per-stream samples =====
+          samples = Hash.new { |h, k| h[k] = { rho: [], v: [] } }
+          total = 0; usable = 0
+          File.foreach("/tmp/shadow_lines.txt") do |line|
+            total += 1
+            i = line.index("SCW shadow ")
+            next unless i
+            j = JSON.parse(line[(i + 11)..]) rescue next
+            rho = j["v2_rho_obs"]
+            next if rho.nil? || rho.to_f <= 0 # pre-#384 lines / offline streams — skip
+            sid = j["stream_id"]
+            next unless sid
+            samples[sid][:rho] << rho.to_f
+            samples[sid][:v] << j["v2_v"].to_f if j["v2_v"]
+            usable += 1
+          end
+          puts "shadow lines: #{total} total, #{usable} usable, #{samples.size} distinct streams"
+
+          # ===== honest-anchor filter (mirrors ti-v2-rho-build hygiene) =====
+          cell_rho = Hash.new { |h, k| h[k] = [] }
+          all_rho = []
+          kept = 0; rejected = { not_found: 0, not_partner: 0, few_streams: 0, low_ti: 0, anomaly: 0, spam: 0, no_roster: 0 }
+          samples.each do |sid, data|
+            s = Stream.find_by(id: sid)
+            (rejected[:not_found] += 1; next) unless s
+            ch = s.channel
+            (rejected[:not_partner] += 1; next) unless ch.broadcaster_type == "partner"
+            (rejected[:few_streams] += 1; next) if Stream.where(channel_id: ch.id).where.not(ended_at: nil).count < 10
+            ti = TrustIndexHistory.where(channel_id: ch.id).order(calculated_at: :desc).limit(1).pick(:trust_index_score)
+            (rejected[:low_ti] += 1; next) if ti.nil? || ti.to_f < 88
+            anom = Anomaly.where(anomaly_type: %w[viewbot_spike ccv_step_function], stream_id: sid)
+                          .where("timestamp > ?", 24.hours.ago).exists?
+            (rejected[:anomaly] += 1; next) if anom && !RaidAttribution.where(stream_id: sid).exists?
+            roster = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            (rejected[:no_roster] += 1; next) if roster.empty?
+            flagged = CrossChannelTemporalFlag.bulk_lookup(roster)
+            spam = flagged.reject { |_, d| d[:bot_type] == "utility" }
+            (rejected[:spam] += 1; next) if spam.size.to_f / roster.size > 0.05
+
+            rho_med = pct(data[:rho], 0.50)
+            v_med = pct(data[:v], 0.50) || 0
+            cat = (TrustIndex::Signals::CategoryResolver.resolve(s.game_name) rescue "default")
+            cell = [ cat, vbucket(v_med), chat_mode(ch.channel_protection_config), (s.language.presence || "default") ].join("|")
+            cell_rho[cell] << rho_med
+            all_rho << rho_med
+            puts format("RAW %s %s %.5f (n_samples=%d)", ch.login, cell, rho_med, data[:rho].size)
+            kept += 1
+          rescue => e
+            nil
+          end
+          puts "\nanchors kept: #{kept} | rejected: #{rejected.map { |k, v| "#{k}=#{v}" }.join(' ')}"
+
+          # ===== per-cell seed table =====
+          puts "\n===== SHADOW-MINED ρ* PER CELL (n>=3; SEED format) ====="
+          cell_rho.select { |_, a| a.size >= 3 }.sort_by { |_, a| -a.size }.each do |cell, a|
+            cat, vb, cm, lang = cell.split("|")
+            puts format("  [ %-16s %-8s %-16s %-6s ] n=%-3d ρ*=%.4f ρ_lo=%.4f ρ_hi=%.4f",
+                        "\"#{cat}\",", "\"#{vb}\",", "\"#{cm}\",", "\"#{lang.downcase}\",", a.size,
+                        pct(a, 0.50), pct(a, 0.10), pct(a, 0.90))
+          end
+          puts "\nGLOBAL: n=#{all_rho.size} ρ_lo=#{pct(all_rho, 0.10)&.round(4)} ρ*=#{pct(all_rho, 0.50)&.round(4)} ρ_hi=#{pct(all_rho, 0.90)&.round(4)}"
+          puts "→ update _tasks/T1-074/gate0-seed.rb CELLS with the n>=8 rows above."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/mine.rb) lines)"
+
+      - name: Run miner on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          scp /tmp/mine.rb ${TARGET}:/tmp/mine.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/shadow_lines.txt ${CONTAINER}:/tmp/shadow_lines.txt && docker cp /tmp/mine.rb ${CONTAINER}:/tmp/mine.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/mine.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
