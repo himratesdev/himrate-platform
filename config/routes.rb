@@ -151,6 +151,8 @@ Rails.application.routes.draw do
         get "home/recent_channels", to: "home#recent"
         post "home/recent_channels", to: "home#track_recent"
         get "home/live_channels", to: "home#live_channels"
+        # LK-BACKEND Wave 3 (screen 07): chat-peak moments of a finished stream + window clips.
+        get "moments", to: "moments#index"
       end
       # BE-5 M13 minimal soft-delete (PO directive 2026-05-28) — out-of-namespace для чистого DELETE /me
       delete "me", to: "me/privacy#destroy_account"
