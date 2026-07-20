@@ -107,10 +107,12 @@
       })
       .then(function (card) {
         var hl = card && card.data && card.data.layers && card.data.layers.headline && card.data.layers.headline.data || {};
-        if (hl.erv_count == null) { hide(q(document, "Goal Banner")); return; }
-        setT(document, "GP Now N", fmt(hl.erv_count));
+        // v2 /card (post-cutover): the real-viewer count is `erv`; v1 legacy: `erv_count`.
+        var count = hl.engine_version === "v2" ? hl.erv : hl.erv_count;
+        if (count == null) { hide(q(document, "Goal Banner")); return; }
+        setT(document, "GP Now N", fmt(count));
         var fill = q(document, "GP Fill");
-        if (fill) fill.style.width = Math.max(2, Math.min(100, (hl.erv_count / 100) * 100)) + "%";
+        if (fill) fill.style.width = Math.max(2, Math.min(100, (count / 100) * 100)) + "%";
       })
       .catch(function (e) { if (e !== "done") hide(q(document, "Goal Banner")); });
   }
