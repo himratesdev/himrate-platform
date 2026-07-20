@@ -24,6 +24,21 @@ module Web
       redirect_to result[:redirect_url], allow_other_host: true
     end
 
+    # GET /auth/web/google — begin browser OAuth via Google, mirroring #twitch: reuses
+    # Auth::GoogleOauth + the registered /api/v1/auth/google/callback (its web:true branch sets the
+    # httpOnly session cookie), so no new Google redirect URI is needed.
+    def google
+      redirect_uri = ENV.fetch("GOOGLE_REDIRECT_URI")
+      result = Auth::GoogleOauth.new.authorize_url(redirect_uri: redirect_uri)
+
+      Rails.cache.write(
+        "google_state:#{result[:state]}",
+        { redirect_uri: redirect_uri, web: true, web_redirect: "/login" },
+        expires_in: 10.minutes
+      )
+      redirect_to result[:redirect_url], allow_other_host: true
+    end
+
     # DELETE /auth/web/logout — clear the session cookies. Called via fetch(DELETE) from login.js
     # (state-changing, so DELETE not GET → no logout-CSRF via top-level navigation). 204; the client
     # reloads /login to show the logged-out state.

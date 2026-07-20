@@ -34,6 +34,7 @@
   }
 
   var twitchBtn = el("OAuth Twitch");
+  var googleBtn = el("OAuth Google");
 
   function renderLoggedIn(email) {
     setText("LC Title", "Вы вошли");
@@ -45,6 +46,8 @@
       clone.style.cursor = "pointer";
       clone.addEventListener("click", logout);
     }
+    // Signed in — the second provider button is noise; hide it.
+    if (googleBtn) googleBtn.style.display = "none";
   }
 
   function renderLoggedOut() {
@@ -52,10 +55,14 @@
       twitchBtn.style.cursor = "pointer";
       twitchBtn.addEventListener("click", go("/auth/web/twitch"));
     }
+    if (googleBtn) {
+      googleBtn.style.cursor = "pointer";
+      googleBtn.addEventListener("click", go("/auth/web/google"));
+    }
   }
 
-  // Google + email are not wired yet — disable so they aren't dead-looking clickable controls.
-  disable("OAuth Google");
+  // Email (passwordless) is not wired yet — blocked on an email provider; disable so it isn't a
+  // dead-looking clickable control. Twitch + Google are both live web-OAuth flows.
   disable("Email In");
   disable("Continue T");
 

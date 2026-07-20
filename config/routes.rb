@@ -188,6 +188,7 @@ Rails.application.routes.draw do
   # Dashboard login (screen 70) + isolated web OAuth flow (session via httpOnly cookie).
   get "login", to: "pages#login"
   get "auth/web/twitch", to: "web/auth#twitch"
+  get "auth/web/google", to: "web/auth#google"
   # logout is DELETE only (state-changing) — login.js issues fetch(DELETE); no GET logout-CSRF vector.
   delete "auth/web/logout", to: "web/auth#logout"
   # Public channel card (screen 02) — free real-audience analysis of any channel, no account.
