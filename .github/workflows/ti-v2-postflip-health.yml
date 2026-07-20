@@ -1,0 +1,118 @@
+name: ti-v2-postflip-health
+# T1-074 post-flip watch-points in one READ-ONLY probe ($0). Run periodically after the
+# ti_v2_engine cutover (flipped 2026-07-21) to confirm the live engine is healthy:
+#   1. TIH engine mix — v2 rows flowing, no stray v1 writers
+#   2. Band distribution + accusatory-row (1/2) corroboration audit (c_hard/c_self must gate them)
+#   3. NamedBotEvidence growth — delta-write must keep honest-channel evidence ~0 (MF-1 guard)
+#   4. Calibration cells — seeded rows present (language VERBATIM, e.g. "RU") + defaults sane
+#   5. Anomaly creation by type — ErvDivergence/TiDrop v2 branches still emit
+#   6. Trends TDA v2 columns — nightly daily_builder fills authenticity_*/erv_avg_count (sv=4)
+#   7. Sidekiq retry/dead — engine exceptions land here first (cutover has NO rescue by design)
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      hours:
+        required: false
+        type: string
+        default: "3"
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build health script
+        run: |
+          cat > /tmp/health.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          h = (ENV["HOURS"] || "3").to_f
+
+          puts "===== 1. TIH ENGINE MIX (last #{h}h) ====="
+          TrustIndexHistory.where("calculated_at > ?", h.hours.ago).group(:engine_version).count.sort.each do |k, v|
+            puts format("  %-6s %d", k.to_s, v)
+          end
+          puts "  freshest v2 row: #{TrustIndexHistory.where(engine_version: 'v2').maximum(:calculated_at)}"
+
+          v2 = TrustIndexHistory.where(engine_version: "v2").where("calculated_at > ?", h.hours.ago)
+          puts "\n===== 2. V2 BAND DISTRIBUTION (last #{h}h) ====="
+          v2.group(:band_row, :band_color).count.sort_by { |(row, _), _| row.to_i }.each do |(row, color), n|
+            puts format("  row=%s %-7s %d", row, color, n)
+          end
+          puts "  rows=#{v2.count} channels=#{v2.distinct.count(:channel_id)} | nil-audit: auth=#{v2.where(authenticity: nil).count} erv=#{v2.where(erv: nil).count} band=#{v2.where(band_row: nil).count}"
+
+          puts "\n===== 2b. ACCUSATORY ROWS (1/2) — corroboration audit ====="
+          acc = v2.where(band_row: [ 1, 2 ])
+          puts "  accusatory rows last #{h}h: #{acc.count} (each MUST have c_hard OR c_self)"
+          bad = acc.where(c_hard: [ false, nil ], c_self: [ false, nil ]).count
+          puts "  UNCORROBORATED (must be 0): #{bad}"
+          acc.order(calculated_at: :desc).limit(10).each do |t|
+            login = Channel.find_by(id: t.channel_id)&.login.to_s[0, 20]
+            puts format("  %-20s row=%d nfrac=%s c_hard=%s c_self=%s auth=%s erv=%s", login, t.band_row, t.n_frac, t.c_hard, t.c_self, t.authenticity, t.erv)
+          end
+
+          puts "\n===== 3. NAMED BOT EVIDENCE (delta-write watch, MF-1) ====="
+          puts "  total: #{NamedBotEvidence.count}"
+          [ 1, 6, 24 ].each { |hh| puts "  last #{hh}h: #{NamedBotEvidence.where('calculated_at > ?', hh.hours.ago).count}" }
+          NamedBotEvidence.where("calculated_at > ?", 24.hours.ago).group(:stream_id).count.sort_by { |_, n| -n }.first(5).each do |sid, n|
+            puts format("    top: %-20s %d", Stream.find_by(id: sid)&.channel&.login.to_s[0, 20], n)
+          end
+
+          puts "\n===== 4. CALIBRATION CELLS ====="
+          CalibrationCellBaseline.order(:category, :v_bucket, :chat_mode).each do |c|
+            puts format("  [%-14s %-7s %-15s %-4s] calibrated=%-5s ρ*=%-8s n=%s", c.category, c.v_bucket, c.chat_mode, c.language, c.calibrated, c.rho_star, c.sample_size)
+          end
+
+          puts "\n===== 5. ANOMALIES BY TYPE (last #{h}h) ====="
+          Anomaly.where("timestamp > ?", h.hours.ago).group(:anomaly_type).count.sort_by { |_, n| -n }.each do |t, n|
+            puts format("  %-24s %d", t, n)
+          end
+
+          puts "\n===== 6. TRENDS TDA (last 3 days; v2 fill = sv4 + authenticity_avg) ====="
+          TrendsDailyAggregate.where("date >= ?", 3.days.ago.to_date).group(:date, :schema_version).count.sort.each do |(d, sv), n|
+            puts "  #{d} sv=#{sv}: #{n} rows"
+          end
+          puts "  authenticity_avg filled: #{TrendsDailyAggregate.where('date >= ?', 3.days.ago.to_date).where.not(authenticity_avg: nil).count}"
+
+          puts "\n===== 7. SIDEKIQ (engine exceptions land here — cutover has no rescue) ====="
+          require "sidekiq/api"
+          Sidekiq::Queue.all.sort_by(&:name).each { |q| puts format("  %-14s size=%-6d latency=%.0fs", q.name, q.size, q.latency) }
+          rs = Sidekiq::RetrySet.new
+          puts "  retries: #{rs.size} | dead: #{Sidekiq::DeadSet.new.size}"
+          shown = 0
+          rs.each do |j|
+            next unless j.klass.to_s =~ /SignalCompute|PostStream|TrustIndex|Reputation|Trends/
+            puts "    RETRY #{j.klass}: #{j['error_message'].to_s[0, 120]}"
+            shown += 1
+            break if shown >= 8
+          end
+          puts "\nVERDICT hints: v2-only mix + 0 uncorroborated + NBE flat on honest + seeded cells present + 0 engine retries = HEALTHY"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/health.rb) lines)"
+
+      - name: Run health probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          scp /tmp/health.rb ${TARGET}:/tmp/health.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/health.rb ${CONTAINER}:/tmp/health.rb && docker exec -e HOURS='${{ inputs.hours }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/health.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
