@@ -44,6 +44,14 @@ class PagesController < ApplicationController
     @page = "brand_overlap"
   end
 
+  # Brand dashboard streamer card (screen 21) — faithful export host. Real 4-layer verification wired
+  # client-side by landing/brand_streamer_card.js against GET /api/v1/brand/streamers/:login/card
+  # (same-origin cookie). Page shell public; JS gates on /api/v1/lk/status.
+  def brand_streamer_card
+    @page = "brand_streamer_card"
+    @login = params[:login]
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the
