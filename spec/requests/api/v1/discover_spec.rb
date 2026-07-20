@@ -56,6 +56,14 @@ RSpec.describe "Api::V1::Discover", type: :request do
       expect(logins.count("double_live")).to eq(1)
     end
 
+    it "excludes ghost never-closed rows older than the recency bound (scale guard)" do
+      live_channel(login: "ghost_ch", ccv: 100, ti: 90, started_at: 3.days.ago)
+      live_channel(login: "fresh_ch", ccv: 100, ti: 90)
+
+      get "/api/v1/discover/live", headers: headers
+      expect(response.parsed_body["data"].map { |c| c["login"] }).to eq(%w[fresh_ch])
+    end
+
     it "returns [] when nothing is live (honest empty, no samples)" do
       get "/api/v1/discover/live", headers: headers
       expect(response.parsed_body["data"]).to eq([])
