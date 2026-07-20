@@ -43,11 +43,17 @@ jobs:
           cat > /tmp/gate0.rb <<'RUBY_EOF'
           $stdout.sync = true
           # [category, v_bucket, chat_mode, language, rho_star, rho_lo, rho_hi, sample_size]
+          # language = literal DB value ("RU" uppercase — CellResolver compares verbatim; the
+          # first seed wrote lowercase "ru" → resolver MISS → engine fell back to DEFAULT 0.03).
           CELLS = [
-            [ "gaming",  "0-1k",  "open",           "ru", 0.876, 0.596, 1.531, 10 ],
-            [ "gaming",  "0-1k",  "followers-only", "ru", 0.566, 0.220, 1.208, 9 ],
-            [ "gaming",  "1k-5k", "followers-only", "ru", 0.306, 0.283, 0.357, 7 ]
+            [ "gaming",  "0-1k",  "open",           "RU", 0.876, 0.596, 1.531, 10 ],
+            [ "gaming",  "0-1k",  "followers-only", "RU", 0.566, 0.220, 1.208, 9 ],
+            [ "gaming",  "1k-5k", "followers-only", "RU", 0.306, 0.283, 0.357, 7 ]
           ].freeze
+
+          # cleanup the mis-cased first-seed rows (language "ru") — dead rows the resolver never hits
+          purged = CalibrationCellBaseline.where(language: "ru").delete_all
+          puts "purged mis-cased rows: #{purged}"
 
           puts "== GATE-0 Phase-A seed: #{CELLS.size} cells =="
           CELLS.each do |cat, vb, cm, lang, star, lo, hi, n|
