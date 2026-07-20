@@ -85,12 +85,12 @@ jobs:
             next if Stream.where(channel_id: cid).where.not(ended_at: nil).count < 10
             ti = TrustIndexHistory.where(channel_id: cid).order(calculated_at: :desc).limit(1).pick(:trust_index_score)
             next if ti.nil? || ti.to_f < 88
-            # Anchor hygiene (poisoning guard, almazer5 incident 2026-07-20): a recent viewbot/ccv-step
-            # anomaly = NOT honest even if v1 TI>=88 (v1 misses silent bots — the whole v2 point).
-            # A poisoned low-ρ anchor drags ρ_lo DOWN → engine lenient toward botters (defeats recall).
-            next if Anomaly.where(anomaly_type: %w[viewbot_spike ccv_step_function])
-                           .where("timestamp > ?", 14.days.ago)
-                           .where(stream_id: Stream.where(channel_id: cid).select(:id)).exists?
+            # Anchor hygiene (poisoning guard, almazer5 incident 2026-07-20): viewbot/ccv-step anomaly
+            # on the CURRENT stream (non-raid) = NOT honest even if v1 TI>=88. Current-stream only —
+            # the 14d channel-wide variant excluded ALL partners (ccv_step fires on organic jumps too, n=0).
+            anom = Anomaly.where(anomaly_type: %w[viewbot_spike ccv_step_function], stream_id: sid)
+                          .where("timestamp > ?", 24.hours.ago).exists?
+            next if anom && !RaidAttribution.where(stream_id: sid).exists?
             seen << cid
             anchor_sids << sid
           end
