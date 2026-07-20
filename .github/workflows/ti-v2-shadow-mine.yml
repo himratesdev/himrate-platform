@@ -9,6 +9,8 @@ name: ti-v2-shadow-mine
 # viewbot/ccv-step anomaly non-raid excluded ∧ roster spam-temporal ≤5%) → per-cell
 # ρ_lo(P10)/ρ*(P50)/ρ_hi(P90) + RAW rows (pooling with ti-v2-rho-build format).
 on:
+  schedule:
+    - cron: "20 * * * *" # hourly harvest — docker json-log rotation caps the window at ~25-30min, so hourly ≈ lossless pooling cadence (cross-run RAW pool in verivio-clode _tasks/T1-074/rho-raw/)
   workflow_dispatch:
     inputs:
       target:
@@ -43,8 +45,8 @@ jobs:
 
       - name: Collect shadow lines from containers
         run: |
-          TARGET="${{ inputs.target }}"
-          HOURS="${{ inputs.hours }}"
+          TARGET="${{ inputs.target || 'hostkey' }}" # inputs empty on schedule events
+          HOURS="${{ inputs.hours || '1' }}"
           ssh ${TARGET} "rm -f /tmp/shadow_lines.txt; for c in \$(docker ps --filter 'name=himrate' --format '{{.Names}}'); do docker logs --since ${HOURS}h \$c 2>&1 | grep -F 'SCW shadow ' >> /tmp/shadow_lines.txt || true; done; wc -l /tmp/shadow_lines.txt"
 
       - name: Build miner script
@@ -145,9 +147,9 @@ jobs:
           RUBY_EOF
           echo "Built ($(wc -l < /tmp/mine.rb) lines)"
 
-      - name: Run miner on ${{ inputs.target }}
+      - name: Run miner on ${{ inputs.target || 'hostkey' }}
         run: |
-          TARGET="${{ inputs.target }}"
+          TARGET="${{ inputs.target || 'hostkey' }}"
           scp /tmp/mine.rb ${TARGET}:/tmp/mine.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER}"
