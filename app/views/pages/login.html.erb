@@ -1,0 +1,263 @@
+<%# Faithful host of the Pencil export 70-login.html (body verbatim). Public dashboard login
+    (screen 70). Twitch OAuth wired client-side by landing/login.js → /auth/web/twitch;
+    session state checked via /api/v1/lk/status (httpOnly cookie). Google/email = follow-up. %>
+<div
+      data-pencil-name="Screen · Вход (Login)"
+      class="box-border w-[1440px] h-[900px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#0B0B0F] [border:1px_solid_#34343F] rounded-[16px] overflow-hidden"
+    >
+      <div
+        data-pencil-name="Brand Panel"
+        class="box-border w-[620px] shrink-0 h-full flex flex-col gap-0 p-[56px] justify-between items-start [background-image:linear-gradient(-145.437deg,_#1E1838_14.645%,_#0B0B0F_67.678%)] bg-no-repeat bg-[length:100%_100%] [border-width:0px_1px_0px_0px] [border-style:solid] [border-color:#25252F]"
+      >
+        <div
+          data-pencil-name="L Logo"
+          class="box-border w-fit h-fit shrink-0 flex flex-row gap-[11px] justify-start items-center"
+        >
+          <div
+            data-pencil-name="L Mark"
+            class="box-border w-[34px] shrink-0 h-[34px] flex flex-row gap-0 justify-center items-center bg-[#7B5CFA] rounded-[12px]"
+          >
+            <div
+              data-pencil-name="L Mark H"
+              class="text-[19px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-extrabold text-left [white-space:nowrap]"
+            >
+              H
+            </div>
+          </div>
+          <div
+            data-pencil-name="L Wordmark"
+            class="text-[20px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+          >
+            HimRate
+          </div>
+        </div>
+        <div
+          data-pencil-name="L Mid"
+          class="box-border w-full h-fit shrink-0 flex flex-col gap-[24px] justify-start items-start"
+        >
+          <div
+            data-pencil-name="L Tag Col"
+            class="box-border w-full h-fit shrink-0 flex flex-col gap-[14px] justify-start items-start"
+          >
+            <div
+              data-pencil-name="L Tag"
+              class="text-[34px]/[39px] box-border w-[480px] text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left"
+            >
+              Реальная аудитория Twitch. Без накрутки.
+            </div>
+            <div
+              data-pencil-name="L Tag Sub"
+              class="text-[15px]/[23px] box-border w-[440px] text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left"
+            >
+              Бейджик и боковая панель — бесплатно для зрителя. Глубокая аналитика — в кабинете
+              по роли.
+            </div>
+          </div>
+          <div
+            data-pencil-name="L Teaser"
+            class="box-border w-[440px] h-fit shrink-0 flex flex-col gap-[12px] p-[20px] justify-start items-start bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
+          >
+            <div
+              data-pencil-name="LT Row1"
+              class="box-border w-full h-fit shrink-0 flex flex-row gap-0 justify-between items-center"
+            >
+              <div
+                data-pencil-name="LT Name"
+                class="box-border w-fit shrink-0 h-fit flex flex-row gap-[8px] justify-start items-center"
+              >
+                <div
+                  data-pencil-name="LT Av"
+                  class="box-border w-[26px] shrink-0 h-[26px] flex flex-row gap-0 justify-center items-center bg-[#1E1838] rounded-[999px]"
+                >
+                  <div
+                    data-pencil-name="LT Av T"
+                    class="text-[11px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                  >
+                    Bu
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="LT Name T"
+                  class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                >
+                  Buster · в эфире
+                </div>
+              </div>
+              <div
+                data-pencil-name="LT Rep"
+                class="box-border w-fit shrink-0 h-fit flex flex-row gap-[6px] p-[4px_9px] justify-start items-center bg-[#102337] rounded-[999px]"
+              >
+                <div
+                  data-pencil-name="LT Rep D"
+                  class="box-border w-[7px] shrink-0 h-[7px] bg-[#4FA9FF] rounded-full"
+                ></div>
+                <div
+                  data-pencil-name="LT Rep T"
+                  class="text-[11px]/[normal] box-border text-[#4FA9FF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                >
+                  Стабильная
+                </div>
+              </div>
+            </div>
+            <div
+              data-pencil-name="LT Big"
+              class="box-border w-fit h-fit shrink-0 flex flex-row gap-[8px] justify-start items-end"
+            >
+              <div
+                data-pencil-name="LT Big N"
+                class="text-[34px]/[normal] box-border text-[#25D9A4] font-['JetBrains_Mono',system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+              >
+                4 200
+              </div>
+              <div
+                data-pencil-name="LT Big S"
+                class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+              >
+                реальных из 5 000 показанных
+              </div>
+            </div>
+            <div
+              data-pencil-name="LT Track"
+              class="box-border w-full h-[10px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#1C1C24] rounded-[999px] overflow-hidden"
+            >
+              <div
+                data-pencil-name="LT Real"
+                class="box-border w-[336px] shrink-0 h-[10px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+              ></div>
+              <div
+                data-pencil-name="LT Bot"
+                class="box-border w-[64px] shrink-0 h-[10px] flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+              ></div>
+            </div>
+          </div>
+        </div>
+        <div
+          data-pencil-name="L Foot"
+          class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+        >
+          © 2026 HimRate · Прозрачная методология
+        </div>
+      </div>
+      <div
+        data-pencil-name="Form Panel"
+        class="box-border [flex:1_1_0] h-full flex flex-row gap-0 p-[56px] justify-center items-center"
+      >
+        <div
+          data-pencil-name="Login Card"
+          class="box-border w-[400px] shrink-0 h-fit flex flex-col gap-[18px] justify-start items-start"
+        >
+          <div
+            data-pencil-name="LC Title"
+            class="text-[26px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+          >
+            Вход в кабинет
+          </div>
+          <div
+            data-pencil-name="LC Sub"
+            class="text-[14px]/[20px] box-border w-full text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left"
+          >
+            Войдите, чтобы открыть полный кабинет. Зрителю — бесплатно навсегда.
+          </div>
+          <div
+            data-pencil-name="OAuth Twitch"
+            class="box-border w-full h-[50px] shrink-0 flex flex-row gap-[10px] justify-center items-center bg-[#9146FF] rounded-[12px]"
+          >
+            <svg
+              data-pencil-name="Tw I"
+              data-icon-name="twitch"
+              data-icon-set="lucide"
+              viewBox="0 0 13.99993896484375 14"
+              preserveAspectRatio="xMidYMid meet"
+              xmlns="http://www.w3.org/2000/svg"
+              class="box-border w-[18px] shrink-0 h-[18px]"
+            >
+              <path
+                d="M1.65088 0.60156q-0.0957 0.01367-0.17432 0.05127-0.0752 0.03418-0.15381 0.12647-0.0752 0.08887-0.11962 0.17431l-0.02735 0.09571 0 9.61816 0.04102 0.08545q0.04443 0.06836 0.12646 0.15381 0.08545 0.08203 0.15381 0.12646l0.08545 0.04102 2.4917 0 0 0.88183q0 0.88184 0.02734 0.98096 0.04102 0.29395 0.30078 0.42041 0.25977 0.12305 0.52637 0 0.08203-0.04443 1.20313-1.16211l1.12109-1.12109 2.60449 0q0.19482 0 0.27002-0.02734 0.07861-0.02734 0.27344-0.21534 0.19824-0.19141 1.09375-1.08691 0.89551-0.89551 1.0835-1.09033 0.19141-0.19824 0.21875-0.28369l0.02734-0.09571 0-7.22558-0.02734-0.09571q-0.04443-0.08545-0.12305-0.17431-0.0752-0.09229-0.15381-0.12647-0.0752-0.0376-0.18115-0.0581-0.10254-0.02051-5.34571-0.02051-5.24316 0-5.34228 0.02734z m10.0249 4.22803l0 3.09326-2.00293 2.00293-2.82666 0-0.09912 0.05469q-0.06836 0.03076-0.2085 0.16406-0.14014 0.12988-0.58789 0.58106l-0.70068 0.68359-0.01367-1.06299-0.04102-0.09912q-0.04443-0.08203-0.13672-0.16406-0.08887-0.08545-0.17431-0.11963-0.08203-0.0376-0.26319-0.0376l-2.29687 0 0-8.17578 9.35156 0 0 3.07959z m-5.40381-1.31592q-0.11279 0.02734-0.21875 0.11279-0.10254 0.08203-0.15381 0.18116-0.04785 0.09912-0.06152 0.31787-0.01367 0.21533-0.01367 1.12451 0 0.90918 0.01367 1.12793 0.01367 0.21533 0.05469 0.31445 0.04443 0.06836 0.11963 0.14014 0.07861 0.06836 0.16064 0.11279 0.23926 0.10938 0.48194 0 0.24609-0.11279 0.31787-0.36572 0.02734-0.08203 0.02734-1.32959 0-1.24756-0.02734-1.32959-0.05811-0.18115-0.19825-0.28711-0.13672-0.10596-0.32129-0.11963-0.11279-0.01367-0.18115 0z m2.92578 0q-0.14014 0.04102-0.25976 0.15381-0.11963 0.11279-0.16065 0.25293-0.02734 0.09912-0.02734 1.33984 0 1.2373 0.02734 1.31934 0.05811 0.21191 0.23243 0.32471 0.17432 0.10938 0.37597 0.08886 0.20508-0.02051 0.35889-0.17431 0.12646-0.12646 0.15381-0.29395 0.02734-0.11279 0.02734-1.2749 0-1.16211-0.02734-1.2749-0.02734-0.16748-0.15381-0.29395-0.09912-0.11279-0.25293-0.15381-0.15381-0.04102-0.29395-0.01367z"
+                fill="#FFFFFF"
+              ></path>
+            </svg>
+            <div
+              data-pencil-name="Tw T"
+              class="text-[15px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+            >
+              Войти через Twitch
+            </div>
+          </div>
+          <div
+            data-pencil-name="OAuth Google"
+            class="box-border w-full h-[50px] shrink-0 flex flex-row gap-[10px] justify-center items-center bg-[#FFFFFF] rounded-[12px]"
+          >
+            <div
+              data-pencil-name="Gg G"
+              class="text-[17px]/[normal] box-border text-[#4285F4] font-[Inter,system-ui,sans-serif] font-extrabold text-left [white-space:nowrap]"
+            >
+              G
+            </div>
+            <div
+              data-pencil-name="Gg T"
+              class="text-[15px]/[normal] box-border text-[#1A1A1A] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+            >
+              Войти через Google
+            </div>
+          </div>
+          <div
+            data-pencil-name="LC Div"
+            class="box-border w-full h-fit shrink-0 flex flex-row gap-[14px] justify-start items-center"
+          >
+            <div
+              data-pencil-name="LC Div L"
+              class="box-border [flex:1_1_0] h-[1px] flex flex-row gap-0 justify-start items-start bg-[#25252F]"
+            ></div>
+            <div
+              data-pencil-name="LC Div T"
+              class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+            >
+              или
+            </div>
+            <div
+              data-pencil-name="LC Div R"
+              class="box-border [flex:1_1_0] h-[1px] flex flex-row gap-0 justify-start items-start bg-[#25252F]"
+            ></div>
+          </div>
+          <div
+            data-pencil-name="Email Field"
+            class="box-border w-full h-fit shrink-0 flex flex-col gap-[7px] justify-start items-start"
+          >
+            <div
+              data-pencil-name="Email Lbl"
+              class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            >
+              Email
+            </div>
+            <div
+              data-pencil-name="Email In"
+              class="box-border w-full h-[46px] shrink-0 flex flex-row gap-0 p-[0px_14px] justify-start items-center bg-[#1C1C24] [border:1px_solid_#25252F] rounded-[12px]"
+            >
+              <div
+                data-pencil-name="Email Ph"
+                class="text-[14px]/[normal] box-border [flex:1_1_0] text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left"
+              >
+                you@example.com
+              </div>
+            </div>
+          </div>
+          <div
+            data-pencil-name="Continue Btn"
+            class="box-border w-full h-[48px] shrink-0 flex flex-row gap-[8px] justify-center items-center bg-[#7B5CFA] rounded-[12px]"
+          >
+            <div
+              data-pencil-name="Continue T"
+              class="text-[15px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+            >
+              Продолжить с email
+            </div>
+          </div>
+          <div
+            data-pencil-name="LC Legal"
+            class="text-[12px]/[17px] box-border w-full text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left"
+          >
+            Продолжая, вы принимаете Условия использования и Политику конфиденциальности.
+          </div>
+        </div>
+      </div>
+    </div>

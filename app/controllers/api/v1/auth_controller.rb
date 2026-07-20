@@ -98,6 +98,15 @@ module Api
           return
         end
 
+        # Dashboard web login (screen 70): store tokens in httpOnly cookies (JS never sees them —
+        # XSS-safe) and 302 back to the dashboard. Mirrors the extension_redirect branch above; the
+        # JSON path below is unchanged for the extension/API.
+        if cached[:web]
+          set_web_session_cookies(access_token, refresh_token)
+          redirect_to safe_web_redirect(cached[:web_redirect])
+          return
+        end
+
         render json: {
           access_token: access_token,
           refresh_token: refresh_token,
@@ -280,6 +289,25 @@ module Api
 
         Rails.logger.warn("Rejected extension_redirect: #{value.inspect}")
         nil
+      end
+
+      # httpOnly + SameSite=Lax cookies for the dashboard web session. Secure in production (staging
+      # runs the production env over HTTPS); relaxed in dev/test so specs/local can read them.
+      def set_web_session_cookies(access_token, refresh_token)
+        secure = Rails.env.production?
+        cookies.encrypted[:hr_session] = {
+          value: access_token, httponly: true, secure: secure, same_site: :lax, expires: 1.hour
+        }
+        cookies.encrypted[:hr_refresh] = {
+          value: refresh_token, httponly: true, secure: secure, same_site: :lax, expires: 7.days
+        }
+      end
+
+      # Only same-origin relative paths (open-redirect guard) — never an absolute/protocol URL.
+      def safe_web_redirect(target)
+        return "/login" unless target.is_a?(String) && target.start_with?("/") && !target.start_with?("//")
+
+        target
       end
 
       # BUG-USER-PAYLOAD-TWITCH-LINKED (2026-05-29): the extension's SidePanel expects
