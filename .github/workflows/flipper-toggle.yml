@@ -1,0 +1,61 @@
+name: flipper-toggle
+# Ops: toggle a Flipper feature flag on staging via the CI SSH allowlist (laptop SSH is blocked).
+# PO-sanctioned mechanism (2026-07-20) for GATE-0 flips: ti_v2_shadow (log-only shadow) and later
+# ti_v2_engine (the cutover). Prints the flag state before and after — the dispatch log IS the audit
+# trail. Allowed flags are whitelisted below — this is NOT a generic remote-exec tool.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      flag:
+        required: true
+        type: choice
+        options: [ti_v2_shadow, ti_v2_engine]
+      action:
+        required: true
+        type: choice
+        options: [enable, disable, status]
+        default: status
+
+jobs:
+  toggle:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Toggle ${{ inputs.flag }} → ${{ inputs.action }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          FLAG="${{ inputs.flag }}"
+          ACTION="${{ inputs.action }}"
+          cat > /tmp/toggle.rb <<RUBY_EOF
+          flag = "${FLAG}".to_sym
+          puts "before: #{flag} = #{Flipper.enabled?(flag)}"
+          case "${ACTION}"
+          when "enable" then Flipper.enable(flag)
+          when "disable" then Flipper.disable(flag)
+          end
+          puts "after:  #{flag} = #{Flipper.enabled?(flag)}"
+          RUBY_EOF
+          scp /tmp/toggle.rb ${TARGET}:/tmp/toggle.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/toggle.rb ${CONTAINER}:/tmp/toggle.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/toggle.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
