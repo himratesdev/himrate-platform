@@ -1,0 +1,134 @@
+name: growth-sources-probe
+
+# Read-only DSV probe for the two next LK EPICs (PO go 2026-07-21):
+#   - screen 07 «Лучшие моменты»: Helix /clips per broadcaster (+ started_at period param support)
+#   - screen 13 «Рост»: Helix /streams?game_id (streamer count + CCV distribution per category),
+#     Helix /games (category meta), Steam storefront JSON (novelty/trending source candidate).
+# Per the DSV rule: every external source is probed LIVE before Dev builds on it.
+# Read-only: GET requests only, nothing written.
+
+on:
+  workflow_dispatch:
+    inputs:
+      login:
+        description: 'Twitch login for the clips probe (e.g. recrent)'
+        required: true
+        type: string
+      game:
+        description: 'Game/category name for the streams-by-game probe (e.g. Dota 2)'
+        required: true
+        type: string
+
+jobs:
+  helix:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          cat > /tmp/growth-probe.rb <<RUBY_EOF
+          login = "${{ inputs.login }}"
+          game_name = "${{ inputs.game }}"
+          RUBY_EOF
+          cat >> /tmp/growth-probe.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          def section(title); puts "\n## #{title}"; yield; rescue => e; puts "  ERROR: #{e.class}: #{e.message[0..300]}"; end
+
+          helix = Twitch::HelixClient.new
+
+          section("A. Helix /clips by broadcaster (screen 07) — default window") do
+            ch = Channel.find_by("lower(login) = ?", login.downcase)
+            raise "channel not found: #{login}" unless ch
+            clips = helix.get_clips(broadcaster_id: ch.twitch_id, first: 10) || []
+            puts "  broadcaster=#{ch.login} twitch_id=#{ch.twitch_id} clips=#{clips.size}"
+            clips.first(3).each do |c|
+              puts "  - #{c['id']} | views=#{c['view_count']} | created=#{c['created_at']} | dur=#{c['duration']} | game_id=#{c['game_id']}"
+              puts "    title=#{c['title'].to_s[0..80]}"
+              puts "    thumb=#{c['thumbnail_url'].to_s[0..100]}"
+              puts "    url=#{c['url']}" if c['url']
+            end
+            puts "  fields on first clip: #{clips.first&.keys&.join(', ')}"
+          end
+
+          section("B. Helix /clips with started_at/ended_at (7d period — screen 07 needs periods)") do
+            ch = Channel.find_by("lower(login) = ?", login.downcase)
+            data = helix.send(:get, "/clips", {
+              broadcaster_id: ch.twitch_id, first: 10,
+              started_at: 7.days.ago.utc.iso8601, ended_at: Time.current.utc.iso8601
+            })&.dig("data") || []
+            puts "  clips(7d)=#{data.size} — param supported: #{data.is_a?(Array)}"
+            data.first(2).each { |c| puts "  - views=#{c['view_count']} created=#{c['created_at']} #{c['title'].to_s[0..60]}" }
+          end
+
+          section("C. Helix /games by name (screen 13 — category meta + igdb link)") do
+            g = helix.send(:get, "/games", { name: game_name })&.dig("data") || []
+            puts "  games matched: #{g.size}"
+            g.each { |x| puts "  - id=#{x['id']} name=#{x['name']} igdb_id=#{x['igdb_id']}" }
+          end
+
+          section("D. Helix /streams?game_id (screen 13 CORE — streamer count + CCV distribution)") do
+            g = (helix.send(:get, "/games", { name: game_name })&.dig("data") || []).first
+            raise "game not found: #{game_name}" unless g
+            streams = helix.send(:get, "/streams", { game_id: g["id"], first: 100 })&.dig("data") || []
+            ccvs = streams.map { |s| s["viewer_count"].to_i }.sort.reverse
+            total = ccvs.sum
+            puts "  live streamers (first page, max 100): #{streams.size}"
+            puts "  total CCV(page): #{total} | top-1: #{ccvs.first} (#{total.positive? ? (100.0 * ccvs.first / total).round(1) : 0}%) | top-3 share: #{total.positive? ? (100.0 * ccvs.first(3).sum / total).round(1) : 0}%"
+            puts "  median CCV: #{ccvs[ccvs.size / 2]} | languages: #{streams.map { |s| s['language'] }.tally.sort_by { |_, v| -v }.first(5).to_h}"
+            puts "  fields on stream: #{streams.first&.keys&.join(', ')}"
+          end
+          RUBY_EOF
+          scp /tmp/growth-probe.rb hostkey:/tmp/growth-probe.rb
+
+      - name: Run probe in the app container
+        run: |
+          ssh hostkey 'CID=$(docker ps --filter "label=service=himrate" --filter "label=role=web" -q | head -1); docker cp /tmp/growth-probe.rb $CID:/tmp/growth-probe.rb && docker exec $CID bin/rails runner /tmp/growth-probe.rb'
+
+  steam:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - name: Probe Steam storefront JSON (novelty source candidates — public, no key)
+        run: |
+          echo "## E. store.steampowered.com/api/featuredcategories (new_releases + top_sellers)"
+          curl -s --max-time 20 "https://store.steampowered.com/api/featuredcategories?cc=us&l=en" -o /tmp/feat.json
+          python3 - <<'PY'
+          import json
+          d = json.load(open("/tmp/feat.json"))
+          print("  top-level keys:", sorted(d.keys())[:20])
+          for key in ("new_releases", "top_sellers", "specials"):
+              blk = d.get(key) or {}
+              items = blk.get("items") or []
+              print(f"  {key}: {len(items)} items")
+              for it in items[:3]:
+                  print(f"    - id={it.get('id')} name={it.get('name')!r} discounted={it.get('discounted')}")
+          PY
+          echo ""
+          echo "## F. SteamSpy top100in2weeks (players-velocity candidate — public)"
+          curl -s --max-time 25 "https://steamspy.com/api.php?request=top100in2weeks" -o /tmp/spy.json || true
+          python3 - <<'PY'
+          import json
+          try:
+              d = json.load(open("/tmp/spy.json"))
+              items = list(d.values())[:3]
+              print(f"  entries: {len(d)}")
+              for it in items:
+                  print(f"    - appid={it.get('appid')} name={it.get('name')!r} ccu={it.get('ccu')} owners={it.get('owners')!r}")
+          except Exception as e:
+              print("  SteamSpy unavailable:", e)
+          PY
