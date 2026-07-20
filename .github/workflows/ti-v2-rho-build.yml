@@ -83,7 +83,9 @@ jobs:
             ch = Channel.find_by(id: cid)
             next unless ch && ch.broadcaster_type == "partner"
             next if Stream.where(channel_id: cid).where.not(ended_at: nil).count < 10
-            ti = TrustIndexHistory.where(channel_id: cid).order(calculated_at: :desc).limit(1).pick(:trust_index_score)
+            # engine-aware: post-cutover latest rows are v2 (authenticity is the scalar)
+            ti = TrustIndexHistory.where(channel_id: cid).order(calculated_at: :desc).limit(1)
+                                  .pick(Arel.sql("CASE WHEN engine_version = 'v2' THEN authenticity ELSE trust_index_score END"))
             next if ti.nil? || ti.to_f < 88
             # Anchor hygiene (poisoning guard, almazer5 incident 2026-07-20): viewbot/ccv-step anomaly
             # on the CURRENT stream (non-raid) = NOT honest even if v1 TI>=88. Current-stream only —
