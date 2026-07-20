@@ -111,6 +111,14 @@ RSpec.describe "Public landing", type: :request do
 
       expect(response.body).to match(/<meta name="robots" content="noindex, follow">/)
     end
+
+    it "points a channel-card share link at its dynamic OG image + 1200x630 hints" do
+      get "/c/ninja"
+
+      expect(response.body).to include('<meta property="og:image" content="https://himrate.com/og/c/ninja.png">')
+      expect(response.body).to include('<meta property="og:image:width" content="1200">')
+      expect(response.body).to include('<meta name="twitter:image" content="https://himrate.com/og/c/ninja.png">')
+    end
   end
 
   # TASK-060: analytics (Metrika + GA4) must load ONLY on the canonical production
