@@ -235,4 +235,6 @@ Rails.application.routes.draw do
   get "app/channel", to: "pages#my_channel"
   # Viewer best-moments (screen 07) — chat-peak moments + clips of a finished stream.
   get "app/moments", to: "pages#moments"
+  # Streamer grow (screen 13) — game opportunities (Steam novelty × scarcity × distribution).
+  get "app/grow", to: "pages#grow"
 end
