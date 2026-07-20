@@ -58,7 +58,7 @@ RSpec.describe TrustIndex::V2::Persistence do
   it "persists tiny-V rho_obs >= 10 (ρ = EIHC/V, V=1-2 live channels) — numeric(8,5) regression guard" do
     # pre-widening numeric(6,5) overflowed at ρ >= 10 → SCW retry-looped on PG::NumericValueOutOfRange
     # and tiny-V streams never got a v2 row (post-flip incident 2026-07-21). Bound: roster cap 500 / V>=1.
-    expect(persist(result(rho_obs: 437.5)).rho_obs).to eq(437.5)
+    expect(persist(result(rho_obs: 437.5)).reload.rho_obs).to eq(437.5)
   end
 
   it "persists the PR3a soft breakdown + intervals + Q (gap D-3) so /erv erv_breakdown has f_soft" do

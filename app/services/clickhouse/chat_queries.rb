@@ -17,6 +17,11 @@ module Clickhouse
   # 0-divergence vs Postgres at the 1d flip. The username list is ORDER BY username so PG and CH
   # pick the same deterministic 500 (PG path was tweaked to match for parity).
   module ChatQueries
+    # ⚠️ Schema coupling (T1-074): this cap bounds v2 ρ_obs = EIHC/V ≤ 500 (EihcWeigher weights
+    # ≤ 1.0, V ≥ 1), persisted into trust_index_histories.rho_obs numeric(8,5) (max 999.99999).
+    # Raising the cap past 999 (or letting weights exceed 1.0) silently reintroduces the tiny-V
+    # PG::NumericValueOutOfRange overflow (post-flip incident 2026-07-21) — widen the rho columns
+    # in the same PR (migration 20260721120000 is the precedent).
     CROSS_CHANNEL_CHATTER_LIMIT = 500
 
     module_function
