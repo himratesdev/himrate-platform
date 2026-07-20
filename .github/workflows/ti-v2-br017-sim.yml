@@ -19,6 +19,10 @@ on:
         required: false
         type: string
         default: "6.2"
+      llr_r4:
+        required: false
+        type: string
+        default: "2.9" # aggressive mode: 6.2 → yellow-tier (R4-6) reaches B_hard too (PO 2026-07-20)
 
 jobs:
   sim:
@@ -46,6 +50,7 @@ jobs:
           $stdout.sync = true
           require "set"
           LLR_R7 = (ENV["LLR_R7"] || "6.2").to_f
+          LLR_R4 = (ENV["LLR_R4"] || "2.9").to_f
 
           # ρ* off-peak STEP 1b (build_v2 basis). cat|vbucket|chatmode → [star, lo, hi]. Category + GLOBAL fallback.
           CALIB = {
@@ -80,7 +85,7 @@ jobs:
           end
 
           K_ILL = Calibration::Registry.load
-          K_CAL = K_ILL.with(llr_temporal_r7: LLR_R7)
+          K_CAL = K_ILL.with(llr_temporal_r7: LLR_R7, llr_temporal_r4: LLR_R4)
 
           def run_one(s)
             chatters = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
@@ -177,7 +182,7 @@ jobs:
           end
           puts "\n  BOTTED: measured=#{b_ok} | flagged(non-green) CAL=#{b_flag_cal} | accusatory(red/yellow) CAL=#{b_acc_cal}"
 
-          puts "\n===== BR-017 SIM VERDICT (llr_r7=#{LLR_R7}, ρ*=off-peak STEP1b) ====="
+          puts "\n===== BR-017 SIM VERDICT (llr_r7=#{LLR_R7}, llr_r4=#{LLR_R4}, ρ*=STEP1b) ====="
           puts "  honest accusatory-FP: #{hfp_cal}% (want <1%)"
           puts "  botted flagged: #{b_ok.zero? ? 0 : (100.0 * b_flag_cal / b_ok).round(1)}% | accusatory: #{b_ok.zero? ? 0 : (100.0 * b_acc_cal / b_ok).round(1)}%"
           puts "  → refine ρ* with peak-dense STEP 1b before real seed; this validates harness + direction."
@@ -190,4 +195,4 @@ jobs:
           scp /tmp/br017.rb ${TARGET}:/tmp/br017.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER}"
-          ssh ${TARGET} "docker cp /tmp/br017.rb ${CONTAINER}:/tmp/br017.rb && docker exec -e LLR_R7='${{ inputs.llr_r7 }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/br017.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
+          ssh ${TARGET} "docker cp /tmp/br017.rb ${CONTAINER}:/tmp/br017.rb && docker exec -e LLR_R7='${{ inputs.llr_r7 }}' -e LLR_R4='${{ inputs.llr_r4 }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/br017.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true

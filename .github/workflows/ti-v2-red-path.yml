@@ -19,6 +19,10 @@ on:
         required: false
         type: string
         default: "6.2"
+      llr_r4:
+        required: false
+        type: string
+        default: "2.9" # aggressive mode: 6.2 → yellow-tier (R4-6) reaches B_hard too
       scan:
         required: false
         type: string
@@ -50,6 +54,7 @@ jobs:
           $stdout.sync = true
           require "set"
           LLR_R7 = (ENV["LLR_R7"] || "6.2").to_f
+          LLR_R4 = (ENV["LLR_R4"] || "2.9").to_f
           SCAN = (ENV["SCAN"] || "300").to_i
 
           # confirmed chat-bot class = R7-temporal (yellow+confirmed), spam/unknown (utility excluded)
@@ -77,8 +82,8 @@ jobs:
           scored.first(15).each { |sid, lg, rs, h, f| puts format("  %-22s roster=%-4d r7hits=%-3d frac=%.3f", lg[0, 22], rs, h, f) }
 
           # run the engine (WITH llr_r7 bump) on the top overlap streams → check accusatory
-          k_cal = Calibration::Registry.load.with(llr_temporal_r7: LLR_R7)
-          puts "\n===== ENGINE on top-R7 streams (llr_r7=#{LLR_R7}) ====="
+          k_cal = Calibration::Registry.load.with(llr_temporal_r7: LLR_R7, llr_temporal_r4: LLR_R4)
+          puts "\n===== ENGINE on top-R7 streams (llr_r7=#{LLR_R7}, llr_r4=#{LLR_R4}) ====="
           reds = 0; yellows = 0; ambers = 0; tested = 0
           scored.first(12).each do |sid, lg, rs, h, f|
             s = Stream.find_by(id: sid)
@@ -123,4 +128,4 @@ jobs:
           scp /tmp/redp.rb ${TARGET}:/tmp/redp.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER}"
-          ssh ${TARGET} "docker cp /tmp/redp.rb ${CONTAINER}:/tmp/redp.rb && docker exec -e LLR_R7='${{ inputs.llr_r7 }}' -e SCAN='${{ inputs.scan }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/redp.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
+          ssh ${TARGET} "docker cp /tmp/redp.rb ${CONTAINER}:/tmp/redp.rb && docker exec -e LLR_R7='${{ inputs.llr_r7 }}' -e LLR_R4='${{ inputs.llr_r4 }}' -e SCAN='${{ inputs.scan }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/redp.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
