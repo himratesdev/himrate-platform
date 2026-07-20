@@ -206,6 +206,19 @@ module Api
           return
         end
 
+        # Dashboard web login via Google — mirrors the twitch_callback web branch verbatim:
+        # httpOnly DASHBOARD-surface cookie tokens (JS never sees them) + 302 back to the dashboard.
+        # The JSON path below is unchanged for the extension/API.
+        if cached[:web]
+          dashboard = Auth::AuthContext::DASHBOARD
+          set_web_session_cookies(
+            Auth::JwtService.encode_access(user.id, surface: dashboard),
+            Auth::JwtService.encode_refresh(user.id, surface: dashboard)
+          )
+          redirect_to safe_web_redirect(cached[:web_redirect])
+          return
+        end
+
         render json: {
           access_token: access_token,
           refresh_token: refresh_token,
