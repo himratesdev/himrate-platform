@@ -19,6 +19,18 @@
     setTimeout(function(){ location.href = href; }, 240);
   }
   function cls(el){ return (typeof el.className==='string') ? el.className : ''; }
+  // Non-blocking "coming soon" pill for CTAs whose product isn't shipped yet
+  // (browser extension not on the Web Store; marketplace not built). No alert().
+  function soon(msg){
+    var t = document.createElement('div');
+    t.textContent = msg || 'Скоро';
+    t.style.cssText = 'position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:99999;'+
+      'background:#FF5C8A;color:#0B0B12;font:600 15px system-ui,sans-serif;padding:12px 20px;'+
+      'border-radius:999px;box-shadow:0 8px 30px rgba(0,0,0,.4);opacity:0;transition:opacity .2s;';
+    document.body.appendChild(t);
+    requestAnimationFrame(function(){ t.style.opacity='1'; });
+    setTimeout(function(){ t.style.opacity='0'; setTimeout(function(){ t.remove(); }, 250); }, 2200);
+  }
 
   // 1) Text-leaf navigation (header menu + footer links)
   document.querySelectorAll('div,span,a,p').forEach(function(el){
@@ -38,7 +50,7 @@
 
   // 3) Buttons = real CTAs only: purple bg, OR rounded element whose text starts with an action verb.
   var ROUND = /rounded-\[(6|8|10|12|999)px\]/;
-  var CTA = /^(подключить|установить|начать|связаться|все тарифы|оформить|выбрать|как это работает|как мы измеряем|узнать|смотреть|посмотреть|открыть метод|открыть демо|запросить|войти|я бренд|я зритель)/i;
+  var CTA = /^(подключить|установить|начать|связаться|все тарифы|оформить|выбрать|как это работает|как мы измеряем|узнать|смотреть|посмотреть|открыть|запросить|войти|я бренд|я зритель)/i;
   Array.prototype.slice.call(document.querySelectorAll('div')).forEach(function(el){
     var c = cls(el);
     var purple = /bg-\[#7C3AED\]/.test(c);
@@ -49,19 +61,20 @@
     if(el.querySelector('[data-hr-btn]')) return;        // outermost CTA only
     el.setAttribute('data-hr-btn','');
     el.addEventListener('click', function(e){
+      e.stopPropagation();
       var s = txt.toLowerCase();
+      // Not shipped yet → honest "coming soon", never a dead click:
+      if(s.indexOf('расширение')>-1) return soon('Расширение скоро появится в Chrome Web Store');
+      if(s.indexOf('биржу')>-1 || s.indexOf('биржа')>-1) return soon('Биржа скоро откроется');
       var dest;
-      // Every verb the CTA regex above matches MUST resolve to a destination — an
-      // unmapped verb was a dead click (e.g. "Установить расширение", "Начать").
-      if(s.indexOf('установить')>-1 || s.indexOf('начать')>-1) dest='/viewers';
+      if(s.indexOf('открыть сервис')>-1) dest='/app/home';        // viewer dashboard (gates to login)
+      else if(s.indexOf('подключить')>-1) dest='/app/channel';    // streamer dashboard (gates to login)
       else if(s.indexOf('я бренд')>-1) dest='/brands';
       else if(s.indexOf('я зритель')>-1) dest='/viewers';
       else if(s.indexOf('связаться')>-1) dest='/brands';
-      else if(s.indexOf('подключить')>-1) dest='/streamers';
-      else if(s.indexOf('запросить')>-1) dest='/streamers';
-      // pricing / methodology bucket + everything else → methodology (how it works + tariffs)
+      // pricing / methodology / how-it-works + fallback
       else dest='/methodology';
-      e.stopPropagation(); go(dest);
+      go(dest);
     });
   });
 
