@@ -48,6 +48,8 @@ Rails.application.routes.draw do
 
       # LK-BACKEND Wave 1a — SaaS ЛК shell (auth optional): visibility gate + launch-notify.
       get "lk/status", to: "lk#status"
+      # LK-BACKEND screen 04: live-now discovery ranked by real audience (viewer-free).
+      get "discover/live", to: "discover#live"
       post "lk/notify", to: "lk#notify"
 
       # TASK-031: User profile
@@ -216,4 +218,6 @@ Rails.application.routes.draw do
   get "app/settings", to: "pages#settings"
   # Viewer personal activity (screen 03, PVA) — watch time / top channels / insights / feed.
   get "app/activity", to: "pages#my_activity"
+  # Viewer discover «Куда пойти» (screen 04) — live-now ranked by real audience.
+  get "app/discover", to: "pages#discover"
 end
