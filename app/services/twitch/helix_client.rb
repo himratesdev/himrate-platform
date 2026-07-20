@@ -67,8 +67,13 @@ module Twitch
       get("/channels/followers", { broadcaster_id: broadcaster_id, first: 1 })&.dig("total")
     end
 
-    def get_clips(broadcaster_id:, first: 20)
-      get("/clips", { broadcaster_id: broadcaster_id, first: first })&.dig("data")
+    # started_at/ended_at (RFC3339) — Helix period filter, DSV-verified live (growth-sources-probe
+    # run 29781151115): scopes clips to one stream's window for the moments engine (screen 07).
+    def get_clips(broadcaster_id:, first: 20, started_at: nil, ended_at: nil)
+      params = { broadcaster_id: broadcaster_id, first: first }
+      params[:started_at] = started_at.utc.iso8601 if started_at
+      params[:ended_at] = ended_at.utc.iso8601 if ended_at
+      get("/clips", params)&.dig("data")
     end
 
     # TASK-110 FR-012: lookup specific clips by id (vs broadcaster_id). Public accessor so
