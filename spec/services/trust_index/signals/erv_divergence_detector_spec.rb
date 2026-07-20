@@ -118,5 +118,4 @@ RSpec.describe TrustIndex::Signals::ErvDivergenceDetector do
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
   end
-
 end
