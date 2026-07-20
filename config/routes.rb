@@ -204,4 +204,6 @@ Rails.application.routes.draw do
   # Brand streamer card — 30-day track-record verification of one streamer. login constrained so it
   # can't shadow the static /app/* pages above.
   get "app/streamers/:login", to: "pages#brand_streamer_card", constraints: { login: /[A-Za-z0-9_]+/ }
+  # Viewer dashboard home (screen 01) — recent + live-from-watchlists channels.
+  get "app/home", to: "pages#viewer_home"
 end
