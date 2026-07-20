@@ -24,15 +24,8 @@ ru:
     # («вырос»/«снижается»/«стабильный») — bare «Подлинность» (feminine) would not.
     metric:
       trust_index: "Уровень подлинности"
-    patterns:
-      weekday:
-        title: Разрез по дням недели
-        # T1-074: «TI» retired user-facing (Glossary v6.0 — internal/legacy only); scalar = Подлинность (authenticity)
-        best: "Лучший день %{day} (подлинность %{ti})"
-      category:
-        title: Разрез по категориям
-        top: "Лучшая категория %{name} (+%{delta} к базовой линии)"
-        single: "Канал в основном стримит %{name}"
+    # (trends.patterns.* block removed — CR #425 N-3: zero readers in app/; the live weekday
+    # insight is trends.weekday.insight, category verdicts are trends.categories.verdict.*)
     forecast:
       title: Прогноз
       range: "%{value} (%{lower}..%{upper})"

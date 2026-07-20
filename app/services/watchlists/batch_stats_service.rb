@@ -64,7 +64,7 @@ module Watchlists
       if v2_engine?
         TrustIndexHistory
           .where(channel_id: channel_ids, engine_version: "v2")
-          .select("DISTINCT ON (channel_id) channel_id, erv, authenticity, band_color, ccv, calculated_at")
+          .select("DISTINCT ON (channel_id) channel_id, erv, authenticity, ccv, calculated_at") # CR #425 N-4: band_color was selected but never read (stats are aggregate-only)
           .order(:channel_id, calculated_at: :desc)
           .index_by(&:channel_id)
       else
