@@ -37,6 +37,13 @@ class PagesController < ApplicationController
     @page = "brand_compare"
   end
 
+  # Brand dashboard audience overlap (screen 24) — faithful export host. Real chat-audience overlap
+  # (matrix / pairwise / composition / recommendations) wired client-side by landing/brand_overlap.js
+  # against GET /api/v1/brand/overlap?channels=… (same-origin cookie). Page shell public; JS gates.
+  def brand_overlap
+    @page = "brand_overlap"
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the

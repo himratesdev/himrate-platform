@@ -200,4 +200,5 @@ Rails.application.routes.draw do
   # httpOnly session cookie. Access (brand-gate) is enforced by the API, not the route.
   get "app/search", to: "pages#brand_search"
   get "app/compare", to: "pages#brand_compare"
+  get "app/overlap", to: "pages#brand_overlap"
 end
