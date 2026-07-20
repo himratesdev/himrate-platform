@@ -131,7 +131,7 @@ jobs:
           puts "KnownBotList.active: #{KnownBotList.active.count} (view #{KnownBotList.active.view_bots.count} / service #{KnownBotList.active.service_bots.count})"
           cp_total = ChatterProfile.count
           puts "ChatterProfile: #{cp_total} total, created_at present #{ChatterProfile.where.not(twitch_created_at: nil).count}, followers present #{ChatterProfile.where.not(followers_count: nil).count}, fetched_at max #{ChatterProfile.maximum(:fetched_at)}"
-          puts "PerUserBotScore: #{PerUserBotScore.count} total, created max #{PerUserBotScore.maximum(:created_at)}"
+          puts "PerUserBotScore: #{PerUserBotScore.count} total (no timestamp col)"
           PerUserBotScore.group(:classification).count.each { |c, n| puts "  #{c}: #{n}" }
 
           # ===================== LABEL SETS =====================
