@@ -25,7 +25,7 @@ module TrustIndex
 
       def call
         tih = TrustIndexHistory.create!(tih_attrs)
-        persist_evidence(tih) if @r.c_hard && evidence_set_changed?
+        persist_evidence(tih, new_evidence_chatters) if @r.c_hard
         tih
       end
 
@@ -49,23 +49,22 @@ module TrustIndex
           confidence_marker: @r.confidence_marker }
       end
 
-      # PR3b MF-1 (write-amplification guard): under cutover this runs every ~30s live cycle — an
-      # unconditional write would grow named_bot_evidences by N rows per compute for a botted
-      # channel (~2880×N/day). Evidence is CHANGE-TRIGGERED: written only when the stream has no
-      # evidence yet (c_hard onset — the first plashka snapshot gets backing rows, EC-13) or the
-      # named-account set changed (new bots appear). Same-set repeat computes are skipped; a dispute
-      # over a later snapshot references the stream's evidence via for_channel/for_history of the
-      # onset snapshot (dispute-reproducibility preserved — the SET is what the plashka names).
-      def evidence_set_changed?
-        return true if @stream.nil?
+      # PR3b MF-1 + follow-up (delta-write): under cutover this runs every ~30s live cycle — an
+      # unconditional full-set write would grow named_bot_evidences by N rows per compute
+      # (~2880×N/day), and even onset-gated full-set rewrites are O(N²) during a gradual bot ramp.
+      # Evidence is DELTA-WRITTEN: only usernames NOT yet evidenced for this stream get a row, tied
+      # to the snapshot where they first appeared (EC-13 backing + dispute reproducibility — the
+      # accumulated per-stream SET is what the plashka names). Same-set repeat computes write zero
+      # rows. Uses idx_named_bot_evidence_stream_username.
+      def new_evidence_chatters
+        return @r.b_hard if @stream.nil? # channel-aggregate flag (no per-stream dedup basis)
 
         existing = NamedBotEvidence.where(stream: @stream).distinct.pluck(:username).to_set
-        current = @r.b_hard.map(&:username).to_set
-        !(current - existing).empty?
+        @r.b_hard.reject { |chatter| existing.include?(chatter.username) }
       end
 
-      def persist_evidence(tih)
-        @r.b_hard.each do |chatter|
+      def persist_evidence(tih, chatters)
+        chatters.each do |chatter|
           NamedBotEvidence.create!(channel: @channel, stream: @stream, trust_index_history: tih,
                                    username: chatter.username, p_u: chatter.p_u,
                                    evidence_reason: "temporal_cross_channel", calculated_at: @at)
