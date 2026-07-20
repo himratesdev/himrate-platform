@@ -1,0 +1,126 @@
+name: ti-v2-shadow-probe
+# T1-074 — on-demand v1↔v2 comparison. Runs the deployed TI v2 engine (ContextBuilder#build_v2 +
+# V2::Engine.compute) READ-ONLY inside the web container: no persist, no publish — the STRICT
+# live-botter verify tool for the shadow phase. Chatters are fetched directly so it works regardless
+# of the ti_v2_shadow / temporal_cross_channel Flipper state. login=AUTO self-discovers currently-live
+# channels with a fresh TIH (no need to guess logins).
+on:
+  workflow_dispatch:
+    inputs:
+      login:
+        description: 'Twitch login, OR "AUTO" to discover currently-live channels'
+        required: true
+        type: string
+        default: AUTO
+      target:
+        description: 'Which VPS to probe (read-only Rails runner)'
+        required: true
+        type: choice
+        options:
+          - hostkey
+        default: hostkey
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build v2 compare script
+        run: |
+          LOGIN="${{ inputs.login }}"
+          cat > /tmp/v2probe.rb <<RUBY_EOF
+          arg = "${LOGIN}"
+          RUBY_EOF
+          cat >> /tmp/v2probe.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          def line(k, v)
+            puts(format("  %-22s %s", k, v))
+          end
+
+          def compare(c)
+            s = Stream.where(channel_id: c.id).order(started_at: :desc).first
+            return puts("  no streams") unless s
+
+            live = s.ended_at.nil?
+            age = ((Time.current - s.started_at) / 60).round
+            puts "\n================ #{c.login} — stream #{s.id} ================"
+            line("state", live ? "LIVE #{age}m" : "ended #{s.ended_at.iso8601}")
+
+            v1 = TrustIndexHistory.where(stream_id: s.id).order(:calculated_at).last
+            if v1
+              recency = ((Time.current - v1.calculated_at) / 60.0).round(1)
+              line("v1 latest TIH", "#{recency}m ago (engine=#{v1.engine_version})")
+              line("v1 trust_index_score", "#{v1.trust_index_score} (#{v1.classification})")
+              line("v1 erv_percent", v1.erv_percent)
+            else
+              line("v1", "no TIH rows")
+            end
+
+            chatters = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            flagged  = chatters.empty? ? {} : CrossChannelTemporalFlag.bulk_lookup(chatters)
+            ctx = TrustIndex::ContextBuilder.build(s).merge(
+              stream_chatters: chatters,
+              temporal_cross_channel_flags: { total_chatters: chatters.size, flagged: flagged }
+            )
+            v2c = TrustIndex::ContextBuilder.build_v2(s, ctx)
+            r   = TrustIndex::V2::Engine.compute(context: v2c, k: Calibration::Registry.load)
+
+            puts "  --- v2 (computed live, NOT persisted) ---"
+            line("V / chatters / flagged", "#{v2c.v.inspect} / #{v2c.raw_chatters.size} / #{flagged.size}")
+            line("n_chat_eff / Q", "#{v2c.n_chat_eff} / #{v2c.q.round(4)}")
+            line("cold_start_tier", v2c.cold_start_tier)
+            line("cell rho*/lo/hi", "#{v2c.cell.rho_star}/#{v2c.cell.rho_lo}/#{v2c.cell.rho_hi}")
+            line("ERV = V-F_hat", r.erv.inspect)
+            line("authenticity / a_hat", "#{r.authenticity.inspect} / #{r.a_hat&.round(4)}")
+            line("F_hat/F_hard/F_self", "#{r.f_hat&.round(1)}/#{r.f_hard&.round(1)}/#{r.f_self&.round(1)}")
+            line("EIHC / rho_obs", "#{r.eihc&.round(2)} / #{r.rho_obs&.round(5)}")
+            line("N_frac", r.n_frac&.round(4))
+            line("band", "#{r.band.color}/row#{r.band.row}#{r.band.sub}")
+            line("confirmed_anomaly", r.confirmed_anomaly)
+            line("|B_hard| / sample", "#{r.b_hard.size} / #{r.b_hard.first(10).map(&:username).join(', ')}")
+            line("reason_codes", r.reason_codes.map { |x| x.respond_to?(:code) ? x.code : x }.join(", "))
+            puts "  >>> v1: TI=#{v1&.trust_index_score} | v2: ERV=#{r.erv} auth=#{r.authenticity} band=#{r.band.color} confirmed=#{r.confirmed_anomaly}"
+          rescue => e
+            puts "  ERROR #{c.login}: #{e.class}: #{e.message[0..250]}"
+            puts e.backtrace.first(4).map { |b| "    #{b}" }
+          end
+
+          if arg == "AUTO"
+            live_ids = Stream.where(ended_at: nil).where("started_at > ?", 12.hours.ago).pluck(:id)
+            puts "AUTO: #{live_ids.size} live streams (<12h)"
+            recent = TrustIndexHistory.where(stream_id: live_ids)
+                       .where("calculated_at > ?", 20.minutes.ago)
+                       .group(:channel_id).maximum(:calculated_at)
+            chan_ids = recent.sort_by { |_, t| -t.to_i }.first(6).map(&:first)
+            puts "AUTO: #{chan_ids.size} channels with fresh TIH (<20m) → comparing top #{[chan_ids.size,6].min}"
+            (puts "AUTO: no currently-live channels with fresh TIH — try a specific login"; exit) if chan_ids.empty?
+            Channel.where(id: chan_ids).each { |c| compare(c) }
+          else
+            c = Channel.find_by(login: arg)
+            c ? compare(c) : puts("Channel not found: #{arg}")
+          end
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/v2probe.rb) lines)"
+
+      - name: Run v2 compare on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          scp /tmp/v2probe.rb ${TARGET}:/tmp/v2probe.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/v2probe.rb ${CONTAINER}:/tmp/v2probe.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/v2probe.rb > /tmp/v2out.txt 2>&1; cat /tmp/v2out.txt' 2>&1" | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof|Please add the'
