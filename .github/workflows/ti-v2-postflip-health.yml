@@ -72,6 +72,21 @@ jobs:
             puts format("  %-20s row=%d nfrac=%s c_hard=%s c_self=%s auth=%s erv=%s", login, t.band_row, t.n_frac, t.c_hard, t.c_self, t.authenticity, t.erv)
           end
 
+          puts "\n===== 2d. NIL-AUDIT DRILLDOWN (auth/erv nil rows — designed grey path or a bug?) ====="
+          nil_rows = v2.where(authenticity: nil)
+          puts "  nil-auth rows: #{nil_rows.count} | by band_row: #{nil_rows.group(:band_row).count.sort.to_h} | by cold_start_tier: #{nil_rows.group(:cold_start_tier).count.sort_by { |_, n| -n }.to_h}"
+          nil_rows.order(calculated_at: :desc).limit(5).each do |t|
+            puts format("    %-20s row=%s tier=%s ccv=%s eihc=%s codes=%s", Channel.find_by(id: t.channel_id)&.login.to_s[0, 20], t.band_row, t.cold_start_tier, t.ccv, t.eihc, t.reason_codes.to_a.map { |c| c["code"] }.join(","))
+          end
+
+          puts "\n===== 2e. AMBER DRIVER BREAKDOWN (row6 — which path fires: F_soft cell vs F_self history?) ====="
+          amber = v2.where(band_row: 6)
+          puts "  amber rows: #{amber.count} (#{(100.0 * amber.count / [ v2.count, 1 ].max).round(1)}% of v2) | distinct channels: #{amber.distinct.count(:channel_id)}"
+          puts "  driver mix: f_soft>0: #{amber.where('f_soft > 0').count} | f_self>0: #{amber.where('f_self > 0').count} | both: #{amber.where('f_soft > 0 AND f_self > 0').count} | neither(a_hat path): #{amber.where('COALESCE(f_soft,0) = 0 AND COALESCE(f_self,0) = 0').count}"
+          amber.order(calculated_at: :desc).limit(5).each do |t|
+            puts format("    %-20s auth=%-5s f_soft=%-8s f_self=%-8s ccv=%-6s codes=%s", Channel.find_by(id: t.channel_id)&.login.to_s[0, 20], t.authenticity, t.f_soft, t.f_self, t.ccv, t.reason_codes.to_a.map { |c| c["code"] }.join(","))
+          end
+
           puts "\n===== 2c. RHO OVERFLOW FIX VERIFY (PR #418, migration 20260721120000) ====="
           puts "  rho_obs sql_type: #{TrustIndexHistory.columns_hash['rho_obs'].sql_type} (want numeric(8,5))"
           recent = TrustIndexHistory.where(engine_version: "v2").where("calculated_at > ?", 1.hour.ago)
