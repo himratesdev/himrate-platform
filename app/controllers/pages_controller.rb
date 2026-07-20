@@ -8,7 +8,7 @@
 class PagesController < ApplicationController
   layout "landing"
 
-  PAGES = %w[index streamers brands viewers methodology].freeze
+  PAGES = %w[index streamers brands viewers methodology login].freeze
 
   # One action per page; @page selects the per-page JS bundle in the layout.
   PAGES.each do |page|

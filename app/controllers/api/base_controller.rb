@@ -3,6 +3,11 @@
 module Api
   class BaseController < ActionController::API
     include Pundit::Authorization
+    # ActionController::API omits the cookie jar. The dashboard web-login (screen 70) stores the
+    # access JWT in an httpOnly `hr_session` cookie so same-origin page requests authenticate
+    # without exposing the token to JS. Additive: the Bearer header path is unchanged (extension
+    # unaffected); cookies are only read as a fallback.
+    include ActionController::Cookies
 
     before_action :set_locale
     after_action :verify_authorized, if: :pundit_enabled?
@@ -19,7 +24,7 @@ module Api
     end
 
     def authenticate_user!
-      token = request.headers["Authorization"]&.split(" ")&.last
+      token = bearer_or_cookie_token
       unless token
         Rails.logger.warn("Auth failed: no token from #{request.remote_ip}")
         render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.bearer_required") }, status: :unauthorized
@@ -47,7 +52,7 @@ module Api
     end
 
     def authenticate_user_optional!
-      token = request.headers["Authorization"]&.split(" ")&.last
+      token = bearer_or_cookie_token
       return unless token
 
       payload = Auth::JwtService.decode(token)
@@ -63,6 +68,12 @@ module Api
 
     def current_user
       @current_user
+    end
+
+    # Bearer header first (extension / API clients — unchanged), then the httpOnly dashboard
+    # session cookie (web login). Same JWT either way, so downstream decode/aud logic is identical.
+    def bearer_or_cookie_token
+      request.headers["Authorization"]&.split(" ")&.last.presence || cookies.encrypted[:hr_session].presence
     end
 
     # T1-060 FR-5: surface the request arrived on (default extension for missing/legacy aud).
