@@ -179,7 +179,9 @@ class SignalComputeWorker
       v2_band: "#{v2.band&.color}/#{v2.band&.row}", v2_f_hat: v2.f_hat,
       v2_f_hard: v2.f_hard, v2_f_soft: v2.f_soft, # PR3a: fraud-arm breakdown for shadow analysis
       v2_n_frac: v2.n_frac, v2_confirmed_anomaly: v2.confirmed_anomaly,
-      v2_v: v2c.v, v2_rho_obs: v2.rho_obs, v2_eihc: v2.eihc, v2_rho_star: v2c.cell&.rho_star
+      # rho_star&.to_f — a DB-resolved cell yields BigDecimal (decimal 6,5) which to_json's as a
+      # STRING; keep the mining line type-stable (JSON number) pre- and post-GATE-0 seed (CR N1).
+      v2_v: v2c.v, v2_rho_obs: v2.rho_obs, v2_eihc: v2.eihc, v2_rho_star: v2c.cell&.rho_star&.to_f
     }
     Rails.logger.info("SCW shadow #{diff.to_json}")
   end
