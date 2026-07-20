@@ -1,0 +1,97 @@
+name: pva-diag
+# One-off READ-ONLY diagnostics: PVA cold-start stuck pending/in_progress (PO question 2026-07-21).
+# Answers: (1) are pva_* queues being consumed (worker alive) or backlogged? (2) is source_1
+# blocked on the user:read:follows scope (terminal failed) vs jobs never finishing?
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build diag script
+        run: |
+          cat > /tmp/pvadiag.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "sidekiq/api"
+
+          puts "===== SIDEKIQ (are pva_* queues consumed?) ====="
+          %w[pva_critical pva_helix pva_gql_anon monitoring default].each do |q|
+            queue = Sidekiq::Queue.new(q)
+            puts format("  queue %-14s size=%-5d latency=%.1fs", q, queue.size, queue.latency)
+          end
+          ps = Sidekiq::ProcessSet.new
+          puts "  processes: #{ps.size}"
+          ps.each do |p|
+            puts format("    %-30s busy=%-3d queues=%s", p["hostname"].to_s[0, 30], p["busy"], (p["queues"] || []).join(","))
+          end
+          rs = Sidekiq::RetrySet.new
+          pva_r = rs.select { |j| j.queue.to_s.start_with?("pva") }
+          puts "  retry set: total=#{rs.size}, pva=#{pva_r.size}"
+          pva_r.first(5).each { |j| puts "    RETRY #{j.klass} q=#{j.queue} err=#{j['error_class']}: #{j['error_message'].to_s[0, 100]}" }
+
+          puts "\n===== PVA ENROLLMENT STATE (StateStore) ====="
+          store = PersonalAnalytics::Enrollment::StateStore
+          puts "  store class: #{store} (methods: #{(store.methods - Object.methods).sort.first(8).join(', ')})"
+          # States live where StateStore puts them — introspect a few users' states
+          uids = AuthProvider.where(provider: "twitch").order(created_at: :desc).limit(10).pluck(:user_id)
+          uids.each do |uid|
+            st = (store.respond_to?(:read) ? store.read(user_id: uid) : nil) rescue nil
+            st ||= (store.respond_to?(:fetch) ? store.fetch(user_id: uid) : nil) rescue nil
+            st ||= (store.respond_to?(:state_for) ? store.state_for(user_id: uid) : nil) rescue nil
+            puts "  user #{uid.to_s[0, 8]}: #{st.inspect.to_s[0, 300]}"
+          end
+
+          puts "\n===== SCOPE COVERAGE (source_1 user:read:follows) ====="
+          total = AuthProvider.where(provider: "twitch").count
+          has_col = AuthProvider.column_names.include?("scopes")
+          puts "  twitch auth_providers: #{total}, scopes column: #{has_col}"
+          if has_col
+            with_scope = AuthProvider.where(provider: "twitch").where("scopes LIKE ?", "%user:read:follows%").count
+            puts "  with user:read:follows: #{with_scope} / #{total} (#{total.positive? ? (100.0 * with_scope / total).round : 0}%)"
+            AuthProvider.where(provider: "twitch").order(created_at: :desc).limit(5).each do |ap|
+              puts "    #{ap.user_id.to_s[0, 8]} created=#{ap.created_at.to_date} scopes=#{ap.scopes.inspect.to_s[0, 120]}"
+            end
+          end
+
+          puts "\n===== ENQUEUE TRIGGER (who schedules enrollment?) ====="
+          # Cron/scheduler presence
+          if defined?(Sidekiq::Cron::Job)
+            Sidekiq::Cron::Job.all.select { |j| j.name.to_s =~ /pva|enroll|personal/i }.each do |j|
+              puts "  cron: #{j.name} #{j.cron} enabled=#{j.status}"
+            end
+          else
+            puts "  Sidekiq::Cron not loaded"
+          end
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/pvadiag.rb) lines)"
+
+      - name: Run diag on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          scp /tmp/pvadiag.rb ${TARGET}:/tmp/pvadiag.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/pvadiag.rb ${CONTAINER}:/tmp/pvadiag.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/pvadiag.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
