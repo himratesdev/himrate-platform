@@ -25,7 +25,7 @@ module TrustIndex
 
       def call
         tih = TrustIndexHistory.create!(tih_attrs)
-        persist_evidence(tih) if @r.c_hard
+        persist_evidence(tih) if @r.c_hard && evidence_set_changed?
         tih
       end
 
@@ -47,6 +47,21 @@ module TrustIndex
           i_event: @r.c_self, # C_self = (I=1); the i_event column mirrors it (SRS §5.1)
           confirmed_anomaly: @r.confirmed_anomaly, cold_start_tier: @r.cold_start_tier,
           confidence_marker: @r.confidence_marker }
+      end
+
+      # PR3b MF-1 (write-amplification guard): under cutover this runs every ~30s live cycle — an
+      # unconditional write would grow named_bot_evidences by N rows per compute for a botted
+      # channel (~2880×N/day). Evidence is CHANGE-TRIGGERED: written only when the stream has no
+      # evidence yet (c_hard onset — the first plashka snapshot gets backing rows, EC-13) or the
+      # named-account set changed (new bots appear). Same-set repeat computes are skipped; a dispute
+      # over a later snapshot references the stream's evidence via for_channel/for_history of the
+      # onset snapshot (dispute-reproducibility preserved — the SET is what the plashka names).
+      def evidence_set_changed?
+        return true if @stream.nil?
+
+        existing = NamedBotEvidence.where(stream: @stream).distinct.pluck(:username).to_set
+        current = @r.b_hard.map(&:username).to_set
+        !(current - existing).empty?
       end
 
       def persist_evidence(tih)

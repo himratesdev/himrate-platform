@@ -75,7 +75,9 @@
       real = hl.erv_count;
       shown = hl.ccv; // may be null → "—"
     }
-    var bots = shown != null && real != null ? shown - real : null;
+    // Clamp at 0: v2 live shown (current CCV snapshot) can dip below the last-computed real
+    // (row up to ~30s stale) — a negative "difference" is a display artifact, not data (CR SF-1).
+    var bots = shown != null && real != null ? Math.max(0, shown - real) : null;
     var botPct = ervPct != null ? Math.round(100 - ervPct) : null;
     var realPct = ervPct != null ? Math.round(ervPct) : null;
 

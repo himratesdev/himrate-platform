@@ -37,6 +37,12 @@
     if (p >= 50) return "Аномалия онлайна";
     return "Значительная аномалия онлайна";
   }
+  // v2 rows: label from the ENGINE band (5 colors incl. amber/grey) so text can't contradict the
+  // dot; % thresholds serve only v1 rows (CR n5).
+  function bandLabelRu(color) {
+    return { green: "Аномалий не замечено", yellow: "Аномалия онлайна", red: "Значительная аномалия онлайна",
+             grey: "Недостаточно данных", amber: "Онлайн выше наблюдаемой активности" }[color] || null;
+  }
 
   var API = "/api/v1/watchlists";
   var JSON_HEADERS = { Accept: "application/json", "Content-Type": "application/json", "Accept-Language": "ru" };
@@ -139,7 +145,7 @@
 
     // trust badge (derived ERV label + colour); dot is the badge's first small child
     var label = q(row, "Label");
-    if (label) { label.textContent = ervLabel(pctOf(c)); label.style.color = col; }
+    if (label) { label.textContent = (c.band_color && bandLabelRu(c.band_color)) || ervLabel(pctOf(c)); label.style.color = col; }
     var badge = qp(row, "WC Badge");
     if (badge) { var bdot = badge.querySelector("div"); if (bdot) bdot.style.backgroundColor = col; }
 

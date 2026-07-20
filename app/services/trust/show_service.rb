@@ -12,10 +12,11 @@ module Trust
     end
 
     def call
-      latest_ti = latest_trust_index
-      cold_start = cold_start_data
-
-      payload = v2_engine? ? build_headline_v2(latest_v2_ti) : build_headline(latest_ti, cold_start)
+      payload = if v2_engine?
+        build_headline_v2(latest_v2_ti)
+      else
+        build_headline(latest_trust_index, cold_start_data)
+      end
 
       if @view == :drill_down || @view == :full
         payload.merge!(v2_engine? ? build_drill_down_v2 : build_drill_down(latest_ti))

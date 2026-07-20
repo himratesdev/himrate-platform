@@ -27,7 +27,7 @@ module Reputation
     CACHE_TTL = 6.hours
 
     def self.cache_key(channel_id)
-      "reputation_history:#{channel_id}"
+      "reputation_history_v2:#{channel_id}" # PR3b: bumped — old-shape 6h cache entries must not serve post-deploy
     end
 
     # Read path (free endpoint). Lazy compute, 6h backstop; invalidated at stream-end (DEC-4).
@@ -153,9 +153,11 @@ module Reputation
         {
           stream_index: i - display_start,
           ended_at: ended_at.iso8601,
-          # PR3b: `ti_score` → `authenticity` (T2 retired ti_score from api.ts; same 0-100 scale,
-          # engine-discriminated per-row via window_score). `band` here = CATEGORICAL reputation
-          # band (impeccable/stable/…), NOT the v2 6-row band — different taxonomy, key unchanged.
+          # PR3b MF-2: DUAL-EMIT during the transition — the SHIPPED extension still reads
+          # ti_score (T2 migration branch is unmerged); authenticity = the same value for new
+          # clients. Drop ti_score in the post-flip cleanup PR. `band` here = CATEGORICAL
+          # reputation band (impeccable/stable/…), NOT the v2 6-row band.
+          ti_score: tih&.[](:window_score)&.to_f&.clamp(0.0, 100.0),
           authenticity: tih&.[](:window_score)&.to_f&.clamp(0.0, 100.0),
           real_audience_pct: tih&.[](:audience_pct)&.to_f&.clamp(0.0, 100.0),
           band: band

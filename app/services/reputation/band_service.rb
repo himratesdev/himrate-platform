@@ -38,7 +38,7 @@ module Reputation
     UNSTABLE_RATE = 0.34
 
     def self.cache_key(channel_id)
-      "reputation_band:#{channel_id}"
+      "reputation_band_v2:#{channel_id}" # PR3b: bumped with the window-score CASE port
     end
 
     # T1-065 DEC-2: pure band cascade — the SINGLE source of truth for the descriptor, reused by

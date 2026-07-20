@@ -60,7 +60,9 @@ module Trends
           .order(:date)
           .pluck(:date,
                  Arel.sql("COALESCE(erv_avg_percent, authenticity_avg)"),
-                 :erv_min_percent, :erv_max_percent, :ccv_avg, :erv_avg_count, :band_color_at_end)
+                 Arel.sql("COALESCE(erv_min_percent, authenticity_min)"),
+                 Arel.sql("COALESCE(erv_max_percent, authenticity_max)"),
+                 :ccv_avg, :erv_avg_count, :band_color_at_end)
           .map { |date, avg, min, max, ccv, cnt, bcolor| point_for(date, avg, min, max, ccv, erv_count: cnt, band_color: bcolor) }
       end
 
@@ -110,8 +112,8 @@ module Trends
           .pluck(
             Arel.sql("DATE_TRUNC('week', date) AS week"),
             Arel.sql("AVG(COALESCE(erv_avg_percent, authenticity_avg))"),
-            Arel.sql("MIN(erv_min_percent)"),
-            Arel.sql("MAX(erv_max_percent)"),
+            Arel.sql("MIN(COALESCE(erv_min_percent, authenticity_min))"),
+            Arel.sql("MAX(COALESCE(erv_max_percent, authenticity_max))"),
             Arel.sql("AVG(ccv_avg)"),
             Arel.sql("AVG(erv_avg_count)")
           )

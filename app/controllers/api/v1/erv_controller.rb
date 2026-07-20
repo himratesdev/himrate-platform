@@ -16,7 +16,8 @@ module Api
         view = erv_view
 
         # CR #10: Redis cache 30s
-        payload = Rails.cache.fetch("erv:#{@channel.id}:#{view}", expires_in: 30.seconds) do
+        engine = v2_engine? ? "v2" : "v1"
+        payload = Rails.cache.fetch("erv:#{engine}:#{@channel.id}:#{view}", expires_in: 30.seconds) do
           build_erv_payload(view)
         end
 
@@ -129,7 +130,11 @@ module Api
       def cold_start_payload_v2
         {
           erv: nil,
+          erv_interval: { lo: nil, hi: nil },
           band: { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil },
+          confirmed_anomaly: { shown: false },
+          cold_start_tier: "insufficient",
+          confidence_marker: "provisional",
           cold_start: true,
           message: I18n.t("erv.insufficient_data", default: "Insufficient data for ERV estimate"),
           engine_version: "v2"

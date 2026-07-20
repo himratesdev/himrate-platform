@@ -100,7 +100,7 @@ class SignalComputeWorker
     end
 
     # TASK-085 FR-014/015 (ADR-085 D-6 + D-8b): NEW detectors extend AnomalyAlerter pattern.
-    # Run AFTER Engine.compute (writes TrustIndexHistory + ErvEstimate) но ДО invalidate_api_cache
+    # Run AFTER engine_compute (v1: writes TIH+ErvEstimate; v2 cutover: V2::Persistence writes TIH v2) но ДО invalidate_api_cache
     # (D-8b race window prevention — fresh anomalies visible immediately on next poll).
     extra_anomaly_ids = instrument_stage("extra_detectors", stream_id) do
       TrustIndex::Signals::TiDropDetector.check(stream) +

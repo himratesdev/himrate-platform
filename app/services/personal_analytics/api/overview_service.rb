@@ -75,8 +75,8 @@ module PersonalAnalytics
           last_seen: row[:last_seen_at]&.iso8601,
           # PR3b: ti_score kept for the current PVA frontend (nil under v2 — additive transition);
           # authenticity = the v2 scalar (same 0-100). Frontend migrates to authenticity in its own PR.
-          ti_score: channel && !v2_engine? ? ti_scores[channel.id]&.to_f : nil,
-          authenticity: channel && v2_engine? ? ti_scores[channel.id]&.to_f : nil }
+          ti_score: (channel && !v2_engine?) ? ti_scores[channel.id]&.to_f : nil,
+          authenticity: (channel && v2_engine?) ? ti_scores[channel.id]&.to_f : nil }
       end
 
       # Latest trust scalar per channel одним запросом (DISTINCT ON), без N+1. Engine-aware (PR3b).
