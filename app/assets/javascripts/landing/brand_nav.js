@@ -15,6 +15,7 @@
     "Nav · Поиск стримеров": "/app/search",
     "Nav · Сравнение": "/app/compare",
     "Nav · Настройки": "/app/settings",
+    "Nav · Мой канал": "/app/channel",
   };
   var ACTIVE_BG = "#19152E";
 
