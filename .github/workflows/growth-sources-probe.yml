@@ -92,6 +92,22 @@ jobs:
             puts "  median CCV: #{ccvs[ccvs.size / 2]} | languages: #{streams.map { |s| s['language'] }.tally.sort_by { |_, v| -v }.first(5).to_h}"
             puts "  fields on stream: #{streams.first&.keys&.join(', ')}"
           end
+          section("G. Steam egress from the VPS (the DSV gap: probe E ran from the runner)") do
+            r = HTTP.timeout(10).get("https://store.steampowered.com/api/featuredcategories?cc=us&l=en")
+            puts "  steam from VPS: HTTP #{r.status.code}, bytes=#{r.body.to_s.bytesize}"
+            items = JSON.parse(r.body.to_s).dig("new_releases", "items") || []
+            puts "  new_releases parsed: #{items.size}"
+          end
+
+          section("H. Grow::OpportunitiesRefreshWorker inline run + cache state (exact error surface)") do
+            Grow::OpportunitiesRefreshWorker.new.perform
+            c = Rails.cache.read(Grow::OpportunitiesRefreshWorker::CACHE_KEY)
+            if c
+              puts "  cache: #{c['games'].size} games; top: " + c["games"].first(3).map { |g| "#{g['name']} (str=#{g['live_streamers']} ccv=#{g['total_ccv']} score=#{g['growth_score']})" }.join(" | ")
+            else
+              puts "  cache NIL after run — worker returned early (Steam empty? all candidates skipped?)"
+            end
+          end
           RUBY_EOF
           scp /tmp/growth-probe.rb hostkey:/tmp/growth-probe.rb
 
