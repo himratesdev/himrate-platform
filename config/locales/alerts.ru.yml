@@ -21,8 +21,9 @@ ru:
       title: "Аномальная волна аккаунтов"
       detail: "%{N} новых аккаунтов с подозрительным паттерном за %{M} мин"
     ti_drop:
-      title: "Резкое падение Trust Index"
-      detail: "TI упал с %{From} до %{To} (−%{N} pts) за %{M} мин"
+      # T1-074: «TI/Trust Index» retired user-facing — the tracked scalar is Authenticity (Подлинность)
+      title: "Резкое падение подлинности"
+      detail: "Подлинность упала с %{From} до %{To} (−%{N}) за %{M} мин"
     chatter_to_ccv_anomaly:
       title: "Аномалия активности чата"
       detail: "Доля пишущих %{N}%% (норма для категории %{Category}: %{Min}-%{Max}%%)"

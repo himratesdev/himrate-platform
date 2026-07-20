@@ -19,6 +19,9 @@ en:
       rising_generic: "%{metric} trending up (%{delta} over period)."
       declining_generic: "%{metric} trending down (%{delta} over period)."
       flat: "%{metric} stable over the period."
+    # CR #425 N-2: key was missing → hardcoded "Trust Index" fallback leaked user-facing
+    metric:
+      trust_index: "Authenticity"
     patterns:
       weekday:
         title: Weekday pattern

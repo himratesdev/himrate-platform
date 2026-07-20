@@ -19,6 +19,11 @@ ru:
       rising_generic: "%{metric} растёт (%{delta} за период)."
       declining_generic: "%{metric} снижается (%{delta} за период)."
       flat: "%{metric} стабильный за период."
+    # CR #425 N-2: key was missing → hardcoded "Trust Index" fallback leaked user-facing.
+    # «Уровень подлинности» (masculine «уровень») agrees with the generic insight verbs
+    # («вырос»/«снижается»/«стабильный») — bare «Подлинность» (feminine) would not.
+    metric:
+      trust_index: "Уровень подлинности"
     patterns:
       weekday:
         title: Разрез по дням недели
