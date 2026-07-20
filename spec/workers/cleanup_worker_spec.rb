@@ -29,6 +29,35 @@ RSpec.describe CleanupWorker, type: :worker do
 
     # --- pre-existing time-series cleanups (TASK-016/033, migrated to SignalConfiguration) ---
 
+    # T1-074 pre-flip follow-up: NBE Rolling-Window retention + dispute-grace (N-3) + the TIH
+    # exclusion interplay (evidence-referenced TIH survives until NBE ages out first).
+    context "named_bot_evidences retention (N-3)" do
+      let(:nbe_channel) { create(:channel) }
+
+      it "deletes evidence older than the retention horizon" do
+        create(:named_bot_evidence, channel: nbe_channel, calculated_at: 91.days.ago)
+        fresh = create(:named_bot_evidence, channel: nbe_channel, calculated_at: 1.day.ago)
+        described_class.new.perform
+        expect(NamedBotEvidence.all).to contain_exactly(fresh)
+      end
+
+      it "dispute-grace: evidence tied to an OPEN dispute survives past the horizon" do
+        dispute = create(:score_dispute, channel: nbe_channel, resolution_status: "reviewing")
+        kept = create(:named_bot_evidence, channel: nbe_channel, calculated_at: 91.days.ago,
+                                           score_dispute: dispute)
+        described_class.new.perform
+        expect(NamedBotEvidence.exists?(kept.id)).to be(true)
+      end
+
+      it "closed-dispute evidence ages out normally" do
+        dispute = create(:score_dispute, channel: nbe_channel, resolution_status: "resolved")
+        gone = create(:named_bot_evidence, channel: nbe_channel, calculated_at: 91.days.ago,
+                                           score_dispute: dispute)
+        described_class.new.perform
+        expect(NamedBotEvidence.exists?(gone.id)).to be(false)
+      end
+    end
+
     context "old signals (FR-019)" do
       it "deletes signals older than the configured retention, keeps recent" do
         old_signal = TiSignal.create!(stream: stream, timestamp: 91.days.ago, signal_type: "auth_ratio", value: 0.5)
@@ -285,10 +314,10 @@ RSpec.describe CleanupWorker, type: :worker do
 
     context "cleanup_audit_logs" do
       it "writes a success row per cleanup sub-run (TC-034)" do
-        # PR 1e-B (2026-06-01): chat_messages sub_run dropped — 5 :success rows expected
-        # (signals, sessions, ccv, chatters, tih). cleanup_audit_logs sub-run writes :skipped
-        # via record_audit, not :success. Pre-1e-B was 6.
-        expect { described_class.new.perform }.to change { CleanupAuditLog.where(status: :success).count }.by(5)
+        # PR 1e-B (2026-06-01): chat_messages sub_run dropped; T1-074 adds the nbe retention
+        # sub-run → 6 :success rows expected (signals, sessions, ccv, chatters, nbe, tih).
+        # cleanup_audit_logs sub-run writes :skipped via record_audit, not :success.
+        expect { described_class.new.perform }.to change { CleanupAuditLog.where(status: :success).count }.by(6)
         expect(CleanupAuditLog.where(table_name: "tih", status: :success)).to exist
         expect(CleanupAuditLog.where(table_name: "ti_signals", status: :success)).to exist
       end

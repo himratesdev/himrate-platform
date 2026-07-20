@@ -80,4 +80,30 @@ RSpec.describe TrustIndex::V2::Persistence do
     tih = persist(result(c_hard: false, b_hard: []))
     expect(NamedBotEvidence.where(trust_index_history_id: tih.id)).to be_empty
   end
+
+  # PR3b MF-1 follow-up: delta-write — repeat computes with the SAME named set write ZERO rows;
+  # set growth writes only the NEW accounts, tied to the snapshot where they first appeared.
+  describe "evidence delta-write (write-amplification guard)" do
+    let(:bots_ab) do
+      [ PersistenceSpecDoubles::Chatter.new(username: "botA", p_u: 0.97),
+        PersistenceSpecDoubles::Chatter.new(username: "botB", p_u: 0.94) ]
+    end
+
+    it "same-set repeat compute writes no new evidence rows" do
+      persist(result(c_hard: true, confirmed_anomaly: true, b_hard: bots_ab))
+      expect {
+        persist(result(c_hard: true, confirmed_anomaly: true, b_hard: bots_ab))
+      }.not_to change(NamedBotEvidence, :count)
+    end
+
+    it "set growth writes ONLY the delta, linked to the current snapshot" do
+      persist(result(c_hard: true, confirmed_anomaly: true, b_hard: bots_ab))
+      grown = bots_ab + [ PersistenceSpecDoubles::Chatter.new(username: "botC", p_u: 0.92) ]
+      tih2 = nil
+      expect {
+        tih2 = persist(result(c_hard: true, confirmed_anomaly: true, b_hard: grown))
+      }.to change(NamedBotEvidence, :count).by(1)
+      expect(NamedBotEvidence.where(trust_index_history_id: tih2.id).pluck(:username)).to eq([ "botC" ])
+    end
+  end
 end

@@ -126,6 +126,7 @@ class CleanupWorker
       sessions: -> { cleanup_expired_sessions },
       ccv: -> { cleanup_old_records(CcvSnapshot, "ccv_snapshots") },
       chatters: -> { cleanup_old_records(ChattersSnapshot, "chatters_snapshots") },
+      nbe: -> { cleanup_named_bot_evidences },
       tih: -> { cleanup_old_trust_index_histories },
       audit_logs: -> { cleanup_old_audit_logs }
     }
@@ -135,9 +136,34 @@ class CleanupWorker
     Rails.logger.info(
       "CleanupWorker: deleted #{counts[:signals]} signals, #{counts[:sessions]} sessions, " \
       "#{counts[:ccv]} ccv_snapshots, #{counts[:chatters]} chatters_snapshots, " \
-      "#{counts[:tih]} trust_index_histories, " \
+      "#{counts[:nbe]} named_bot_evidences, #{counts[:tih]} trust_index_histories, " \
       "#{counts[:audit_logs]} cleanup_audit_logs"
     )
+  end
+
+  # --- NBE retention (T1-074 N-3, pre-flip follow-up) --------------------------
+  # Rolling-Window contract: evidence rows age out после TIH-retention горизонта, EXCEPT rows tied
+  # to an OPEN score_dispute (resolution_status pending/reviewing) — dispute-grace: a dispute filed
+  # near the retention edge must not lose its evidence mid-review (N-3). Closed-dispute rows age out
+  # normally. Runs BEFORE tih cleanup (ordered map) so freed TIH rows become deletable same-night.
+  # NBE is append-only (model blocks updates) — delete_all bypasses callbacks safely.
+  def cleanup_named_bot_evidences
+    retention_days = retention_for("trust_index_histories", "default")
+    cutoff = retention_days.days.ago
+    instrumented("nbe", retention_days) do
+      batched_loop do
+        NamedBotEvidence
+          .where("named_bot_evidences.calculated_at < ?", cutoff)
+          .where.not(
+            id: NamedBotEvidence
+                  .joins(:score_dispute)
+                  .where(score_disputes: { resolution_status: %w[pending reviewing] })
+                  .select(:id)
+          )
+          .limit(BATCH_SIZE)
+          .delete_all
+      end
+    end
   end
 
   # --- TIH cleanup (FR-001/004/023): single-SQL window function, batched -------
@@ -152,11 +178,12 @@ class CleanupWorker
     end
   end
 
-  # PR3b MF-1: evidence-referenced TIH rows are EXCLUDED — the FK (named_bot_evidences →
-  # trust_index_histories, no ON DELETE action) would abort the whole batch, and those snapshots
-  # are load-bearing for dispute reproducibility (EC-13). NBE has its own retention contract
-  # (Rolling Window + dispute-grace, N-3) — a dedicated NBE retention job prunes them first,
-  # after which the TIH rows age out here normally.
+  # PR3b MF-1 (+follow-up): evidence-referenced TIH rows are EXCLUDED INSIDE the candidate
+  # selection (not the outer WHERE — outer placement wasted LIMIT slots and ended batched_loop
+  # early, degrading the nightly drain). The FK (named_bot_evidences → trust_index_histories, no
+  # ON DELETE action) would abort the batch otherwise, and those snapshots are dispute-load-bearing
+  # (EC-13). cleanup_named_bot_evidences prunes NBE first (Rolling-Window + dispute-grace, N-3);
+  # once its rows age out, the TIH rows become deletable here on the next run.
   def delete_intermediate_tih(cutoff)
     sql = <<~SQL.squish
       DELETE FROM trust_index_histories tih WHERE tih.id IN (
@@ -164,10 +191,12 @@ class CleanupWorker
           SELECT t.id, ROW_NUMBER() OVER (PARTITION BY t.stream_id ORDER BY t.calculated_at DESC, t.id DESC) AS rn
           FROM trust_index_histories t JOIN streams s ON s.id = t.stream_id
           WHERE s.ended_at IS NOT NULL AND s.ended_at < $1
-        ) ranked WHERE rn > 1 LIMIT #{BATCH_SIZE}
-      )
-      AND NOT EXISTS (
-        SELECT 1 FROM named_bot_evidences nbe WHERE nbe.trust_index_history_id = tih.id
+        ) ranked
+        WHERE rn > 1
+          AND NOT EXISTS (
+            SELECT 1 FROM named_bot_evidences nbe WHERE nbe.trust_index_history_id = ranked.id
+          )
+        LIMIT #{BATCH_SIZE}
       )
     SQL
     batched_loop { ApplicationRecord.connection.exec_update(sql, "cleanup_old_trust_index_histories", [ cutoff ]) }
