@@ -64,6 +64,14 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Viewer watchlists (screen 05) — faithful export host. Real lists + channels + create/rename/delete
+  # + add/remove wired client-side by landing/watchlists.js against GET/POST/PATCH/DELETE
+  # /api/v1/watchlists(/:id/channels) (same-origin cookie). @brand_dashboard loads the shared nav.
+  def watchlists
+    @page = "watchlists"
+    @brand_dashboard = true
+  end
+
   private
 
   # Marketing pages must reach the widest possible audience — opt out of the
