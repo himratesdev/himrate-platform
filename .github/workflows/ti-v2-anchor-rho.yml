@@ -1,0 +1,166 @@
+name: ti-v2-anchor-rho
+# T1-074 GATE-0 STEP 1 — mine the honest-anchor set + measure per-cell ρ* (honest chat-share baseline)
+# from production data, READ-ONLY. First-pass anchor gate: broadcaster_type=partner + full cold-start
+# (≥10 completed streams) + latest v1 TI ≥ TI_MIN (honest proxy). ρ_obs = min(unique_chatters,500)/avg_ccv
+# per stream (capped to match build_v2's EIHC basis). Aggregates ρ*/ρ_lo/ρ_hi per cell + per category
+# (shrinkage parent). Also samples anchor temporal-flagged-chatter fraction to assess ρ*-poisoning risk.
+on:
+  workflow_dispatch:
+    inputs:
+      ti_min:
+        description: 'Min latest v1 TI to qualify as honest anchor (poisoning guard)'
+        required: false
+        type: string
+        default: "88"
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  anchor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build anchor-rho script
+        run: |
+          TI_MIN="${{ inputs.ti_min }}"
+          cat > /tmp/anchorrho.rb <<RUBY_EOF
+          ti_min = "${TI_MIN}".to_f
+          RUBY_EOF
+          cat >> /tmp/anchorrho.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          CAP = 500
+
+          def vbucket(v)
+            return "0" if v.nil? || v <= 0
+            return "0-1k" if v < 1000
+            return "1k-5k" if v < 5000
+            return "5k-20k" if v < 20000
+            "20k+"
+          end
+
+          def chat_mode(cfg)
+            return "open" unless cfg
+            return "sub-only" if cfg.subs_only_enabled
+            fol = cfg.followers_only_duration_min
+            return "followers-only" if fol && fol >= 0
+            return "slow" if cfg.slow_mode_seconds.to_i.positive?
+            return "emote-only" if cfg.emote_only_enabled
+            "open"
+          end
+
+          def pct(arr, p)
+            return nil if arr.empty?
+            s = arr.sort
+            s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
+          end
+
+          samples = Hash.new { |h, k| h[k] = [] }
+          cat_samples = Hash.new { |h, k| h[k] = [] }
+          anchors = 0
+          streams_used = 0
+          temporal_fracs = []
+
+          partner_ids = Channel.where(broadcaster_type: "partner")
+                               .where(id: Stream.where("ended_at > ?", 21.days.ago).select(:channel_id))
+                               .limit(600).pluck(:id)
+          puts "candidate partners (active <21d): #{partner_ids.size} | TI_MIN=#{ti_min}"
+
+          partner_ids.each do |cid|
+            break if anchors >= 250
+            ch = Channel.find_by(id: cid)
+            next unless ch
+            completed = Stream.where(channel_id: cid).where.not(ended_at: nil).count
+            next if completed < 10 # full cold-start tier
+            ti = TrustIndexHistory.where(channel_id: cid).order(calculated_at: :desc).limit(1).pick(:trust_index_score)
+            next if ti.nil? || ti.to_f < ti_min # honest proxy (poisoning guard)
+
+            cm = chat_mode(ch.channel_protection_config)
+            used = false
+            Stream.where(channel_id: cid).where.not(ended_at: nil).order(started_at: :desc).limit(3).each do |s|
+              v = CcvSnapshot.where(stream_id: s.id).average(:ccv_count)&.to_f
+              next if v.nil? || v < 10
+              uc = ChattersSnapshot.where(stream_id: s.id).maximum(:unique_chatters_count).to_i
+              next if uc <= 0
+              rho = [ uc, CAP ].min / v
+              next if rho > 3.0 # guard nonsensical (V-vs-chatter time-base on tiny streams)
+              cat = (TrustIndex::Signals::CategoryResolver.resolve(s.game_name) rescue "default")
+              cell = [ cat, vbucket(v), cm, (s.language.presence || "default") ].join("|")
+              samples[cell] << rho
+              cat_samples[cat] << rho
+              streams_used += 1
+              used = true
+            end
+            next unless used
+            anchors += 1
+
+            # poisoning-quality sample: temporal-flagged (spam) chatter fraction on first 40 anchors
+            if temporal_fracs.size < 40
+              begin
+                s = Stream.where(channel_id: cid).order(started_at: :desc).first
+                cs = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+                if cs.size >= 20
+                  fl = CrossChannelTemporalFlag.bulk_lookup(cs)
+                  spam = fl.count { |_, d| d[:bot_type] == "spam" }
+                  temporal_fracs << (spam.to_f / cs.size)
+                end
+              rescue => e
+                # skip quality sample on error
+              end
+            end
+          end
+
+          puts "\nanchors qualified: #{anchors} | streams measured: #{streams_used} | cells: #{samples.size}"
+
+          puts "\n## POISONING QUALITY — temporal-flagged (spam) chatter fraction of anchors (want ~0, >5% = suspect)"
+          if temporal_fracs.any?
+            tf = temporal_fracs.sort
+            puts format("  sampled=%d  median=%.3f%%  p90=%.3f%%  max=%.3f%%  over-5pct=%d",
+                        tf.size, pct(tf, 0.5) * 100, pct(tf, 0.9) * 100, tf.last * 100, tf.count { |x| x > 0.05 })
+          else
+            puts "  (no temporal sample — flags off or no chatters)"
+          end
+
+          puts "\n## PER-CELL rho* (category|vbucket|chatmode|lang) — cells with n>=5"
+          puts format("  %-40s %5s %8s %8s %8s", "cell", "n", "rho_lo", "rho*", "rho_hi")
+          samples.select { |_, a| a.size >= 5 }.sort_by { |_, a| -a.size }.first(40).each do |cell, a|
+            puts format("  %-40s %5d %8.4f %8.4f %8.4f", cell, a.size, pct(a, 0.10), pct(a, 0.5), pct(a, 0.90))
+          end
+          thin = samples.count { |_, a| a.size < 5 }
+          puts "  (+ #{thin} thin cells n<5 → use category fallback / shrinkage)"
+
+          puts "\n## PER-CATEGORY fallback (hierarchical-shrinkage parent)"
+          puts format("  %-16s %5s %8s %8s %8s", "category", "n", "rho_lo", "rho*", "rho_hi")
+          cat_samples.sort_by { |_, a| -a.size }.each do |cat, a|
+            puts format("  %-16s %5d %8.4f %8.4f %8.4f", cat, a.size, pct(a, 0.10), pct(a, 0.5), pct(a, 0.90))
+          end
+          all = cat_samples.values.flatten
+          puts "\n## GLOBAL coarsest fallback: n=#{all.size} rho_lo=#{pct(all,0.10)&.round(4)} rho*=#{pct(all,0.5)&.round(4)} rho_hi=#{pct(all,0.90)&.round(4)}"
+          puts "(illustrative default currently 0.03/0.02/0.05 — compare)"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/anchorrho.rb) lines)"
+
+      - name: Run anchor-rho on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target }}"
+          scp /tmp/anchorrho.rb ${TARGET}:/tmp/anchorrho.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/anchorrho.rb ${CONTAINER}:/tmp/anchorrho.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/anchorrho.rb > /tmp/aout.txt 2>&1; cat /tmp/aout.txt' 2>&1" | grep -vE 'Flipper audit|Sidekiq 7|connecting to Redis|stackprof|Please add the'
