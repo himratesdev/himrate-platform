@@ -100,9 +100,15 @@ module Api
 
         # Dashboard web login (screen 70): store tokens in httpOnly cookies (JS never sees them —
         # XSS-safe) and 302 back to the dashboard. Mirrors the extension_redirect branch above; the
-        # JSON path below is unchanged for the extension/API.
+        # JSON path below is unchanged for the extension/API. The cookie tokens are minted with the
+        # DASHBOARD surface (not the extension tokens above) so current_surface resolves correctly
+        # and the ЛК paywall surfaces SUBSCRIPTION_REQUIRED, not EXTENSION_DEEP_LOCKED (CR SF-2).
         if cached[:web]
-          set_web_session_cookies(access_token, refresh_token)
+          dashboard = Auth::AuthContext::DASHBOARD
+          set_web_session_cookies(
+            Auth::JwtService.encode_access(user.id, surface: dashboard),
+            Auth::JwtService.encode_refresh(user.id, surface: dashboard)
+          )
           redirect_to safe_web_redirect(cached[:web_redirect])
           return
         end

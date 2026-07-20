@@ -24,11 +24,13 @@ module Web
       redirect_to result[:redirect_url], allow_other_host: true
     end
 
-    # DELETE/GET /auth/web/logout — clear the session cookies + return to the login page.
+    # DELETE /auth/web/logout — clear the session cookies. Called via fetch(DELETE) from login.js
+    # (state-changing, so DELETE not GET → no logout-CSRF via top-level navigation). 204; the client
+    # reloads /login to show the logged-out state.
     def logout
       cookies.delete(:hr_session)
       cookies.delete(:hr_refresh)
-      redirect_to "/login"
+      head :no_content
     end
   end
 end

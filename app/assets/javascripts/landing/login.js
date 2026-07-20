@@ -17,6 +17,13 @@
       window.location.href = href;
     };
   }
+  function logout(e) {
+    if (e) e.preventDefault();
+    // DELETE (not a GET navigation) — no logout-CSRF; reload to the logged-out login page.
+    fetch("/auth/web/logout", { method: "DELETE", credentials: "same-origin" }).then(function () {
+      window.location.href = "/login";
+    });
+  }
   function disable(pencilName) {
     var n = el(pencilName);
     if (n) {
@@ -36,7 +43,7 @@
       var clone = twitchBtn.cloneNode(true); // drop any prior listener
       twitchBtn.parentNode.replaceChild(clone, twitchBtn);
       clone.style.cursor = "pointer";
-      clone.addEventListener("click", go("/auth/web/logout"));
+      clone.addEventListener("click", logout);
     }
   }
 

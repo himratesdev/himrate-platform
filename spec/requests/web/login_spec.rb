@@ -65,10 +65,12 @@ RSpec.describe "Dashboard web login", type: :request do
   end
 
   describe "logout" do
-    it "clears the session cookie" do
-      get "/auth/web/logout"
-      expect(response).to have_http_status(:redirect)
-      expect(response.location).to end_with("/login")
+    it "clears the session cookie via DELETE (no GET logout-CSRF vector)" do
+      delete "/auth/web/logout"
+      expect(response).to have_http_status(:no_content)
+      # a subsequent API request is no longer authenticated
+      get "/api/v1/lk/status"
+      expect(response.parsed_body["authenticated"]).to be(false)
     end
   end
 end
