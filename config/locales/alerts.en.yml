@@ -14,8 +14,9 @@ en:
       title: "Anomalous account wave"
       detail: "%{N} new accounts with suspicious pattern in %{M} min"
     ti_drop:
-      title: "Trust Index sharp drop"
-      detail: "TI dropped %{From} → %{To} (−%{N} pts) in %{M} min"
+      # T1-074: "TI/Trust Index" retired user-facing — the tracked scalar is Authenticity
+      title: "Authenticity sharp drop"
+      detail: "Authenticity dropped %{From} → %{To} (−%{N}) in %{M} min"
     chatter_to_ccv_anomaly:
       title: "Chat activity anomaly"
       detail: "Chatter ratio %{N}%% (normal for %{Category}: %{Min}-%{Max}%%)"
