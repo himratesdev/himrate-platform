@@ -36,7 +36,12 @@ module TrustIndex
       Result = Data.define(:erv, :erv_lo, :erv_hi, :authenticity, :a_hat, :n_frac, :band,
                            :reason_codes, :confirmed_anomaly, :cold_start_tier, :confidence_marker,
                            :c_hard, :c_self, :axes, :eihc, :rho_obs, :f_hat, :f_hat_lo, :f_hat_hi,
-                           :f_hard, :f_hard_lo, :f_self, :b_hard, :engine_version) do
+                           :f_hard, :f_hard_lo, :f_self,
+                           # PR3a (T1-074) — additive observability breakdown (no logic change): L2 soft
+                           # deficit + interval, authenticity interval, Q. Persisted for /erv
+                           # erv_breakdown{f_hard,f_soft,f_hat} (Surface 2) + richer shadow diff.
+                           :f_soft, :f_soft_lo, :f_soft_hi, :authenticity_lo, :authenticity_hi, :q_score,
+                           :b_hard, :engine_version) do
         # DEC-7 adapter — the engine maps its own fields to the publish payload; SCW calls this.
         def to_headline_payload
           { erv: erv, erv_interval: { lo: erv_lo, hi: erv_hi }, authenticity: authenticity,
@@ -51,7 +56,9 @@ module TrustIndex
         erv: nil, erv_lo: nil, erv_hi: nil, authenticity: nil, a_hat: nil, n_frac: nil, band: nil,
         reason_codes: [], confirmed_anomaly: false, cold_start_tier: nil, confidence_marker: "provisional",
         c_hard: false, c_self: false, axes: nil, eihc: nil, rho_obs: nil, f_hat: nil, f_hat_lo: nil,
-        f_hat_hi: nil, f_hard: nil, f_hard_lo: nil, f_self: nil, b_hard: [], engine_version: "v2"
+        f_hat_hi: nil, f_hard: nil, f_hard_lo: nil, f_self: nil,
+        f_soft: nil, f_soft_lo: nil, f_soft_hi: nil, authenticity_lo: nil, authenticity_hi: nil, q_score: nil,
+        b_hard: [], engine_version: "v2"
       }.freeze
 
       def self.compute(context:, k:)
@@ -104,11 +111,24 @@ module TrustIndex
       end
 
       def extras(post, hard, soft, fraud, emit)
+        v = @ctx.v.to_f
         { axes: AxesBuilder.call(authenticity: emit.authenticity, reputation: @ctx.reputation,
                                  rho_obs: soft.rho_obs, cps: @ctx.cps),
           eihc: soft.eihc, rho_obs: soft.rho_obs, f_hat: fraud.f_hat, f_hat_lo: fraud.f_hat_lo,
           f_hat_hi: fraud.f_hat_hi, f_hard: hard.f_hard, f_hard_lo: hard.f_hard_lo,
-          f_self: fraud.f_self, b_hard: post.b_hard, engine_version: "v2" }
+          f_self: fraud.f_self,
+          f_soft: soft.f_soft, f_soft_lo: soft.f_soft_lo, f_soft_hi: soft.f_soft_hi,
+          # authenticity interval mirrors the ERV interval: MORE fraud (f_hat_hi) → LOWER authenticity.
+          authenticity_lo: authenticity_pct(fraud.f_hat_hi, v), authenticity_hi: authenticity_pct(fraud.f_hat_lo, v),
+          q_score: @ctx.q,
+          b_hard: post.b_hard, engine_version: "v2" }
+      end
+
+      # A = 100·(1 − F̂/V) for an interval bound; nil at V≤0 (extras only runs when V>0, but be safe).
+      def authenticity_pct(f, v)
+        return nil unless v.positive?
+
+        (100.0 * (1.0 - f / v)).clamp(0.0, 100.0)
       end
     end
   end
