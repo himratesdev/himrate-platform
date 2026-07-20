@@ -5,12 +5,27 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><%= content_for(:title) || "HimRate" %></title>
     <meta name="description" content="<%= content_for(:description) %>">
+
+    <%# Self-referencing canonical on the apex host consolidates www/http/staging
+        duplicates onto https://himrate.com (TASK-060 SEO). LK app shells and the
+        login page carry no public value → noindex (still `follow` so equity flows). %>
+    <link rel="canonical" href="<%= canonical_url %>">
+    <% if @brand_dashboard || @page == "login" %>
+      <meta name="robots" content="noindex, follow">
+    <% end %>
+
+    <link rel="icon" type="image/svg+xml" href="<%= asset_path("brand/favicon.svg") %>">
+
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="HimRate">
     <meta property="og:title" content="<%= content_for(:title) || "HimRate" %>">
     <meta property="og:description" content="<%= content_for(:description) %>">
+    <meta property="og:url" content="<%= canonical_url %>">
+    <meta property="og:image" content="<%= canonical_asset_url("brand/logo-square-gradient.svg") %>">
     <meta property="og:locale" content="ru_RU">
     <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="<%= content_for(:title) || "HimRate" %>">
+    <meta name="twitter:description" content="<%= content_for(:description) %>">
 
     <%# Export reset + FOUC guard. The export's static decorative dot field
         ([data-pencil-name="Dot BG"]) is stripped from the markup at render time, so

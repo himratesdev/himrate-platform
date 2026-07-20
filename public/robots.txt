@@ -1,1 +1,14 @@
 # See https://www.robotstxt.org/robotstxt.html for documentation on how to use the robots.txt file
+User-agent: *
+Allow: /
+
+# Authenticated LK app shells, auth, API and internal endpoints carry no public
+# search value (also noindex'd at the page level).
+Disallow: /app/
+Disallow: /login
+Disallow: /api/
+Disallow: /dashboard
+Disallow: /po-debug
+Disallow: /health
+
+Sitemap: https://himrate.com/sitemap.xml
