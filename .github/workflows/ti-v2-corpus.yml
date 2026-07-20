@@ -192,4 +192,4 @@ jobs:
           scp /tmp/corpus.rb ${TARGET}:/tmp/corpus.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER}"
-          ssh ${TARGET} "docker cp /tmp/corpus.rb ${CONTAINER}:/tmp/corpus.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/corpus.rb > /tmp/cout.txt 2>&1; cat /tmp/cout.txt' 2>&1" | grep -vE 'KnownBotService|Flipper audit|connecting to Redis|stackprof|Please add'
+          ssh ${TARGET} "docker cp /tmp/corpus.rb ${CONTAINER}:/tmp/corpus.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/corpus.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add' || true
