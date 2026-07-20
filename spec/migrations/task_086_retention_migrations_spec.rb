@@ -112,14 +112,16 @@ RSpec.describe "TASK-086 retention migrations", type: :model do
       expect(unique_idx).to eq(1)
     end
 
-    it "uses the ACTUAL TIH column names (trust_index_score / erv_percent / signal_breakdown)" do
+    it "uses the ACTUAL TIH column names (v1 bridge + TI v2 columns — PR3b recreate 20260720190000)" do
       expect(mv_columns).to include("trust_index_score", "erv_percent", "signal_breakdown", "ccv")
-      expect(mv_columns).not_to include("ti_score", "erv", "signals_data")
+      expect(mv_columns).to include("engine_version", "authenticity", "erv", "band_row", "band_color",
+                                    "confirmed_anomaly", "cold_start_tier", "confidence_marker")
+      expect(mv_columns).not_to include("ti_score", "signals_data", "classification", "cold_start_status")
     end
 
-    # CR Nit-2: the migration uses CREATE MATERIALIZED VIEW IF NOT EXISTS + CREATE
-    # INDEX IF NOT EXISTS, so re-running it after a half-applied migration does not
-    # error with "already exists". Re-run the exact migration DDL on the live schema.
+    # CR Nit-2: re-running a CREATE-IF-NOT-EXISTS DDL after a half-applied migration must not
+    # error. NB (PR3b): the MV was recreated with the v2 column set (20260720190000); the legacy
+    # DDL below exercises only the IF NOT EXISTS no-op path against the existing MV.
     it "is idempotent — re-running the CREATE-MV-IF-NOT-EXISTS DDL on the existing MV does not raise" do
       ddl = <<~SQL.squish
         CREATE MATERIALIZED VIEW IF NOT EXISTS latest_tih_per_stream AS

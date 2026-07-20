@@ -78,7 +78,7 @@ RSpec.describe PostStreamWorker do
       described_class.new.perform(stream.id)
 
       expect(PostStreamNotificationService).to have_received(:broadcast_stream_ended)
-        .with(stream, instance_of(PostStreamReport))
+        .with(stream, instance_of(PostStreamReport), tih: anything) # PR3b: tih feeds v2 erv_interval
     end
 
     # TASK-086 FR-032: PostStreamWorker enqueues the MV-refresh worker (2-min delay,
@@ -162,6 +162,7 @@ RSpec.describe PostStreamWorker do
 
     it "creates compute_failure Anomaly + schedules deferred retry when TIH missing AND flag is OFF" do
       TrustIndexHistory.where(stream_id: stream.id).delete_all
+      allow(Flipper).to receive(:enabled?).and_return(false) # default (ti_v2_engine etc.)
       allow(Flipper).to receive(:enabled?).with(:signal_compute).and_return(false)
       allow(SignalComputeWorker).to receive(:new).and_return(instance_double(SignalComputeWorker, perform: nil))
       allow(SignalComputeWorker).to receive(:perform_in)
@@ -193,6 +194,7 @@ RSpec.describe PostStreamWorker do
       # No bots, no chat, no chatters — empty stream legitimately produces no TIH.
       # We don't want to spam Anomaly for every such empty stream.
       TrustIndexHistory.where(stream_id: stream.id).delete_all
+      allow(Flipper).to receive(:enabled?).and_return(false) # default (ti_v2_engine etc.)
       allow(Flipper).to receive(:enabled?).with(:signal_compute).and_return(true)
       allow(SignalComputeWorker).to receive(:new).and_return(instance_double(SignalComputeWorker, perform: nil))
       allow(SignalComputeWorker).to receive(:perform_in)
