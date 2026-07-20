@@ -160,6 +160,10 @@
     var capDot = q(document, "Card Cap Dot · Telegram-бот"); if (capDot) capDot.style.backgroundColor = "#5E5E6B";
     var body = q(document, "Card Body · Telegram-бот");
     dim(body, "Скоро — Telegram-бот в разработке");
+    // Blank the design's sample personal data — even dimmed, a fake handle/date reads as real.
+    setP(document, "TG Handle", "—");
+    setP(document, "TG Linked", "аккаунт не привязан");
+    setP(document, "TG Av", "?");
   }
 
   // ---- boot ----

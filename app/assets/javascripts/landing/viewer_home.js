@@ -88,12 +88,34 @@
     });
   }
 
+  // Hero quick-chips: the design bakes sample channel names (Buster/Recrent/…) — replace with the
+  // user's REAL recent channels (same source as the list below); hide the row when there are none.
+  function renderHeroChips(channels) {
+    var wrap = q(document, "Recent Chips");
+    if (!wrap) return;
+    var chips = Array.prototype.slice.call(wrap.querySelectorAll('[data-pencil-name^="Chip "]'));
+    var tpl = chips[0] && chips[0].cloneNode(true);
+    chips.forEach(function (n) { n.remove(); });
+    if (!channels.length || !tpl) { if (!channels.length) wrap.style.display = "none"; return; }
+    channels.slice(0, 5).forEach(function (c) {
+      var chip = tpl.cloneNode(true);
+      chip.setAttribute("data-pencil-name", "Chip " + c.login);
+      var t = chip.querySelector('[data-pencil-name^="Chip T"]');
+      if (t) t.textContent = c.display_name || c.login;
+      chip.style.cursor = "pointer";
+      chip.addEventListener("click", function () { window.location.href = "/c/" + encodeURIComponent(c.login); });
+      wrap.appendChild(chip);
+    });
+  }
+
   function load() {
     var opts = { headers: { Accept: "application/json", "Accept-Language": "ru" }, credentials: "same-origin" };
     fetch("/api/v1/me/home/recent_channels", opts)
       .then(function (r) { return r.ok ? r.json() : { data: [] }; })
       .then(function (d) {
-        renderSection("Rec List", "RRow ", (d && d.data) || [], fillRecent, "Вы ещё не открывали каналы — найдите канал через поиск.");
+        var list = (d && d.data) || [];
+        renderSection("Rec List", "RRow ", list, fillRecent, "Вы ещё не открывали каналы — найдите канал через поиск.");
+        renderHeroChips(list);
       })
       .catch(function () {});
     fetch("/api/v1/me/home/live_channels?source=watchlists", opts)
