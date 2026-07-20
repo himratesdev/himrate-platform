@@ -106,7 +106,9 @@ jobs:
             ch = s.channel
             (rejected[:not_partner] += 1; next) unless ch.broadcaster_type == "partner"
             (rejected[:few_streams] += 1; next) if Stream.where(channel_id: ch.id).where.not(ended_at: nil).count < 10
-            ti = TrustIndexHistory.where(channel_id: ch.id).order(calculated_at: :desc).limit(1).pick(:trust_index_score)
+            # engine-aware: post-cutover latest rows are v2 (trust_index_score nil, authenticity set)
+            ti = TrustIndexHistory.where(channel_id: ch.id).order(calculated_at: :desc).limit(1)
+                                  .pick(Arel.sql("CASE WHEN engine_version = 'v2' THEN authenticity ELSE trust_index_score END"))
             (rejected[:low_ti] += 1; next) if ti.nil? || ti.to_f < 88
             anom = Anomaly.where(anomaly_type: %w[viewbot_spike ccv_step_function], stream_id: sid)
                           .where("timestamp > ?", 24.hours.ago).exists?
@@ -135,7 +137,7 @@ jobs:
           cell_rho.select { |_, a| a.size >= 3 }.sort_by { |_, a| -a.size }.each do |cell, a|
             cat, vb, cm, lang = cell.split("|")
             puts format("  [ %-16s %-8s %-16s %-6s ] n=%-3d ρ*=%.4f ρ_lo=%.4f ρ_hi=%.4f",
-                        "\"#{cat}\",", "\"#{vb}\",", "\"#{cm}\",", "\"#{lang.downcase}\",", a.size,
+                        "\"#{cat}\",", "\"#{vb}\",", "\"#{cm}\",", "\"#{lang}\",", a.size, # lang VERBATIM — the .downcase cosmetic caused the ru/RU seed-miss bug
                         pct(a, 0.50), pct(a, 0.10), pct(a, 0.90))
           end
           puts "\nGLOBAL: n=#{all_rho.size} ρ_lo=#{pct(all_rho, 0.10)&.round(4)} ρ*=#{pct(all_rho, 0.50)&.round(4)} ρ_hi=#{pct(all_rho, 0.90)&.round(4)}"
