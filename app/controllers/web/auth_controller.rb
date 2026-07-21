@@ -6,6 +6,12 @@ module Web
   # httpOnly session cookie on the `web:true` branch), so no new Twitch redirect URI is needed. This
   # controller is isolated from the extension's /api/v1/auth/* API flow.
   class AuthController < ApplicationController
+    # After a successful web login, land the user INSIDE the dashboard — not back on /login. Previously
+    # web_redirect was "/login", so the callback bounced the user to the login page in a "logged-in"
+    # limbo (login.js showed «Вы вошли» + a repurposed Twitch-icon logout button) instead of entering
+    # the LK. /app/home (viewer home) is the default landing; role-specific sections open from the nav.
+    DASHBOARD_HOME = "/app/home"
+
     # Login must reach the widest audience — skip the modern-browser guard (mirrors PagesController).
     def browser_guard_enabled?
       false
@@ -18,7 +24,7 @@ module Web
 
       Rails.cache.write(
         "pkce:#{result[:state]}",
-        { code_verifier: result[:code_verifier], redirect_uri: redirect_uri, web: true, web_redirect: "/login" },
+        { code_verifier: result[:code_verifier], redirect_uri: redirect_uri, web: true, web_redirect: DASHBOARD_HOME },
         expires_in: 10.minutes
       )
       redirect_to result[:redirect_url], allow_other_host: true
@@ -33,7 +39,7 @@ module Web
 
       Rails.cache.write(
         "google_state:#{result[:state]}",
-        { redirect_uri: redirect_uri, web: true, web_redirect: "/login" },
+        { redirect_uri: redirect_uri, web: true, web_redirect: DASHBOARD_HOME },
         expires_in: 10.minutes
       )
       redirect_to result[:redirect_url], allow_other_host: true

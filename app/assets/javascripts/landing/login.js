@@ -1,28 +1,18 @@
-// Dashboard login (screen 70). Wires the Twitch OAuth button to the web-login flow and reflects the
-// session state. Twitch is fully functional; Google + email are disabled (follow-up: Google mirrors
-// Twitch, email passwordless is blocked on an email provider). CSP-safe external asset, no eval.
+// Dashboard login (screen 70). Wires the Twitch + Google OAuth buttons to the web-login flow. A user
+// who is ALREADY authenticated (or who just completed OAuth and got bounced here) is sent straight
+// into the dashboard — the login page is never a resting place for a logged-in user. Email
+// (passwordless) stays disabled until an email provider is wired. CSP-safe external asset, no eval.
 (function () {
   "use strict";
 
   function el(pencilName) {
     return document.querySelector('[data-pencil-name="' + pencilName + '"]');
   }
-  function setText(pencilName, text) {
-    var n = el(pencilName);
-    if (n != null && text != null) n.textContent = text;
-  }
   function go(href) {
     return function (e) {
       if (e) e.preventDefault();
       window.location.href = href;
     };
-  }
-  function logout(e) {
-    if (e) e.preventDefault();
-    // DELETE (not a GET navigation) — no logout-CSRF; reload to the logged-out login page.
-    fetch("/auth/web/logout", { method: "DELETE", credentials: "same-origin" }).then(function () {
-      window.location.href = "/login";
-    });
   }
   function disable(pencilName) {
     var n = el(pencilName);
@@ -33,22 +23,9 @@
     }
   }
 
+  var DASHBOARD_HOME = "/app/home";
   var twitchBtn = el("OAuth Twitch");
   var googleBtn = el("OAuth Google");
-
-  function renderLoggedIn(email) {
-    setText("LC Title", "Вы вошли");
-    setText("LC Sub", email ? "как " + email : "Аккаунт активен");
-    setText("Tw T", "Выйти");
-    if (twitchBtn) {
-      var clone = twitchBtn.cloneNode(true); // drop any prior listener
-      twitchBtn.parentNode.replaceChild(clone, twitchBtn);
-      clone.style.cursor = "pointer";
-      clone.addEventListener("click", logout);
-    }
-    // Signed in — the second provider button is noise; hide it.
-    if (googleBtn) googleBtn.style.display = "none";
-  }
 
   function renderLoggedOut() {
     if (twitchBtn) {
@@ -71,7 +48,9 @@
       return r.ok ? r.json() : {};
     })
     .then(function (s) {
-      if (s && s.authenticated) renderLoggedIn(s.email);
+      // Already signed in (incl. the just-completed-OAuth bounce) → enter the dashboard, don't linger
+      // on /login. replace() so Back doesn't return to the login page.
+      if (s && s.authenticated) window.location.replace(DASHBOARD_HOME);
       else renderLoggedOut();
     })
     .catch(function () {
