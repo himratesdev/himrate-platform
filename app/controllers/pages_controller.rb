@@ -1,12 +1,13 @@
 # frozen_string_literal: true
 
-# Public marketing landing (TASK-060). Faithful Rails host of the Pencil export:
-# each action renders the export's page on a dedicated `landing` layout that pulls
-# in production-built Tailwind, self-hosted fonts, and the export's own vanilla JS
-# (hr-i18n.js client-side RU/EN + hr-shared.js animated background). No auth — these
-# are public GET pages; API / extension traffic (api/v1/*) is unaffected.
+# Faithful Rails host of the Pencil export (TASK-060). Serves two surfaces on two layouts:
+#   - the public MARKETING site + the public channel card → `landing` layout (SEO head, marketing JS)
+#   - the product / LK (login + /app/* dashboards) → `app` layout (noindex, no marketing canvas/nav)
+# resolve_layout picks per request. This is the seam for the app.himrate.com subdomain split — the
+# product surfaces already render on their own layout, independent of the marketing chrome. No auth —
+# these are public GET shells; API / extension traffic (api/v1/*) is unaffected.
 class PagesController < ApplicationController
-  layout "landing"
+  layout :resolve_layout
 
   PAGES = %w[index streamers brands viewers methodology login].freeze
 
@@ -129,6 +130,15 @@ class PagesController < ApplicationController
   end
 
   private
+
+  # The product surfaces — login + the /app/* dashboards (@brand_dashboard) — render on the `app`
+  # layout (noindex, product chrome). Everything else the marketing landing serves — the marketing
+  # pages + the public channel card /c/:login — stays on the SEO-rich `landing` layout.
+  def resolve_layout
+    return "app" if @page == "login" || @brand_dashboard
+
+    "landing"
+  end
 
   # Marketing pages must reach the widest possible audience — opt out of the
   # app-wide `allow_browser versions: :modern` guard (no 406 for old browsers).
