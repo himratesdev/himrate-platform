@@ -83,6 +83,23 @@ jobs:
             end
             puts "  snapshots for #{login}: #{SocialProfileSnapshot.for_login(login).count}"
           end
+
+          section("G. YouTube adapter (why the youtube block is absent from the profile)") do
+            puts "  YOUTUBE_API_KEY present in this container: #{ENV['YOUTUBE_API_KEY'].to_s.length.positive?} (len=#{ENV['YOUTUBE_API_KEY'].to_s.length})"
+            yt = SocialAnalytics::TwitchSocials.call(login).find { |s| s[:platform] == 'youtube' }
+            puts "  youtube in footprint: #{yt.inspect}"
+            if yt && yt[:url]
+              prof = SocialAnalytics::Youtube::PublicProfile.call(yt[:url])
+              if prof
+                m = prof[:metrics] || {}
+                puts "  Youtube::PublicProfile ✅ title=#{prof[:title]} subs=#{prof[:subscribers]} views=#{prof[:total_views]} ER=#{m[:er_percent]}"
+              else
+                puts "  Youtube::PublicProfile returned NIL (blank key? resolve failed? api error?)"
+              end
+            end
+            p = SocialAnalytics::StreamerSocialProfile.call(login)
+            puts "  orchestrator platforms: #{(p&.dig(:platforms) || {}).transform_values { |v| v && v[:available] }.inspect}"
+          end
           RUBY_EOF
           scp /tmp/social-diag.rb hostkey:/tmp/social-diag.rb
 
