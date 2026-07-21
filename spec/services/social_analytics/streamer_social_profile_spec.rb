@@ -41,6 +41,21 @@ RSpec.describe SocialAnalytics::StreamerSocialProfile do
     expect(r[:platforms]).to eq({})
   end
 
+  it "wires the YouTube platform alongside Telegram" do
+    allow(SocialAnalytics::TwitchSocials).to receive(:call).and_return([
+      { platform: "youtube", url: "https://www.youtube.com/c/recrentchannel", handle: "recrentchannel", analyzable: true }
+    ])
+    allow(SocialAnalytics::Telegram::PublicProfile).to receive(:call).and_return(nil)
+    allow(SocialAnalytics::Youtube::PublicProfile).to receive(:call).with("https://www.youtube.com/c/recrentchannel").and_return(
+      title: "Recrent Shorts", subscribers: 55_900, total_views: 65_762_244, video_count: 828,
+      metrics: { avg_views: 145_639, er_percent: 2.76 }
+    )
+
+    yt = described_class.call("recrent").dig(:platforms, :youtube)
+    expect(yt).to include(available: true, subscribers: 55_900, total_views: 65_762_244, video_count: 828)
+    expect(yt[:metrics][:er_percent]).to eq(2.76)
+  end
+
   it "degrades gracefully when an external source raises (never crashes the warm)" do
     allow(SocialAnalytics::TwitchSocials).to receive(:call).and_return([
       { platform: "telegram", url: "https://t.me/x", handle: "x", analyzable: true }

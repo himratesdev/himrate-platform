@@ -200,6 +200,9 @@ env:
     - GOOGLE_CLIENT_ID
     - GOOGLE_CLIENT_SECRET
     - GOOGLE_REDIRECT_URI
+    # Social Analytics (SA-1): YouTube Data API v3 key — public channel stats (subs/views/ER) for a
+    # streamer's linked YouTube. App-level key (not per-user); demographics = later via owner OAuth.
+    - YOUTUBE_API_KEY
     # BUG-027: comma-separated allowlist of extra OAuth redirect_uris (extension
     # chromiumapp.org + future clients). Web-callback defaults are always trusted.
     - OAUTH_ALLOWED_REDIRECT_URIS
