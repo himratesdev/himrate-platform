@@ -94,12 +94,19 @@
     <%# The export's vanilla JS, served as CSP-safe external assets. index.html was
         self-contained in the export (its own canvas bg + nav live in index.js), so
         it does NOT also load hr-shared.js — that would double the canvas/nav. The
-        other pages share hr-shared.js. hr-i18n.js (client RU/EN) loads on all. %>
+        marketing pages share hr-shared.js. hr-i18n.js (client RU/EN) loads on all. %>
     <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
     <%# Shared brand-dashboard chrome (sidebar nav + topbar + logout) on the brand LK pages. %>
     <% if @brand_dashboard %><%= javascript_include_tag "landing/brand_nav" %><% end %>
     <%= javascript_include_tag "landing/hr-i18n" %>
-    <% unless @page == "index" %><%= javascript_include_tag "landing/hr-shared" %><% end %>
+    <%# hr-shared.js = MARKETING-site nav + animated dot canvas. It must NOT load on the LK/app
+        surfaces: (1) its aggressive nav-wiring hijacks page buttons to a /methodology fallback — it
+        was catching the login «Войти через Twitch» button and sending it to /methodology instead of
+        the OAuth flow; (2) its canvas paints an animated background, which the product UI shouldn't
+        have (PO: «не вставляй везде анимцию на фон»). App pages = @brand_dashboard dashboards + login
+        + channel_card; they carry their own per-page JS + brand_nav and need nothing from hr-shared. %>
+    <% app_page = @brand_dashboard || %w[login channel_card].include?(@page) %>
+    <% unless @page == "index" || app_page %><%= javascript_include_tag "landing/hr-shared" %><% end %>
     <%# Responsive header burger — every page, including the self-contained index. %>
     <%= javascript_include_tag "landing/mobile-nav" %>
   </body>
