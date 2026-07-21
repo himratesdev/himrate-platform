@@ -48,13 +48,21 @@ jobs:
           # [category, v_bucket, chat_mode, language, rho_star, rho_lo, rho_hi, sample_size]
           # language = literal DB value ("RU" uppercase — CellResolver compares verbatim; the
           # first seed wrote lowercase "ru" → resolver MISS → engine fell back to DEFAULT 0.03).
+          # Cycle-2 (2026-07-21 ~17:00Z): pool 159 distinct channels across 13 hygienic runs.
+          # 5 NEW cells + 2 reseeds (Δρ*>20%) + 4 refreshed from the same pool snapshot.
+          # jc|5k-20k ρ*=0.037 is REAL: the 500-chatter roster cap bounds ρ ≤ 500/V for big V.
           CELLS = [
-            [ "gaming",        "0-1k",  "open",           "RU", 0.803, 0.271, 1.629, 13 ],
-            [ "gaming",        "0-1k",  "followers-only", "RU", 0.695, 0.206, 1.357, 14 ],
-            [ "gaming",        "1k-5k", "followers-only", "RU", 0.331, 0.304, 0.357, 7 ],
-            [ "esports",       "0-1k",  "followers-only", "RU", 0.369, 0.152, 0.657, 9 ],
-            [ "just_chatting", "0-1k",  "followers-only", "RU", 0.246, 0.116, 0.447, 7 ],
-            [ "just_chatting", "1k-5k", "followers-only", "RU", 0.213, 0.198, 0.271, 7 ]
+            [ "gaming",        "0-1k",   "open",           "RU", 0.842, 0.596, 1.629, 19 ],
+            [ "gaming",        "0-1k",   "followers-only", "RU", 0.566, 0.220, 0.932, 18 ],
+            [ "gaming",        "1k-5k",  "followers-only", "RU", 0.304, 0.277, 0.353, 7 ],
+            [ "esports",       "0-1k",   "open",           "RU", 0.289, 0.130, 1.000, 17 ],
+            [ "esports",       "0-1k",   "followers-only", "RU", 0.505, 0.152, 0.857, 15 ],
+            [ "esports",       "1k-5k",  "followers-only", "RU", 0.287, 0.264, 0.320, 7 ],
+            [ "just_chatting", "0-1k",   "open",           "RU", 0.519, 0.111, 0.861, 21 ],
+            [ "just_chatting", "0-1k",   "followers-only", "RU", 0.257, 0.212, 0.472, 12 ],
+            [ "just_chatting", "1k-5k",  "open",           "RU", 0.328, 0.174, 0.444, 9 ],
+            [ "just_chatting", "1k-5k",  "followers-only", "RU", 0.280, 0.209, 0.448, 10 ],
+            [ "just_chatting", "5k-20k", "followers-only", "RU", 0.037, 0.030, 0.059, 7 ]
           ].freeze
 
           # cleanup the mis-cased first-seed rows (language "ru") — dead rows the resolver never hits
