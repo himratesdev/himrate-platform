@@ -104,12 +104,14 @@ module Discover
     end
 
     # v2 rows carry no erv_label text — re-derive it from the persisted band_row via the canonical
-    # BandClassifier map + band.<key>.ru locale (mirrors the card headline). v1 legacy rows keep the
-    # ErvCalculator label. Returns [label_ru, color].
+    # BandClassifier map + band.<key> locale. Surface-audit sweep: resolved under the REQUEST locale
+    # (was force-:ru — the only v2 surface ignoring Accept-Language; Trust::ShowService#build_headline_v2
+    # resolves under the request locale). v1 legacy rows keep the ErvCalculator label.
+    # Returns [label, color].
     def label_and_color(row, v2, pct)
       if v2
-        key = TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[row["band_row"].to_i]
-        label = key ? I18n.t(key, locale: :ru, default: nil) : nil
+        key = TrustIndex::V2::BandClassifier.label_key_for(row["band_row"].to_i)
+        label = I18n.t(key, default: nil)
         [ label, row["band_color"] ]
       else
         label = pct ? TrustIndex::ErvCalculator.resolve_label(pct) : nil

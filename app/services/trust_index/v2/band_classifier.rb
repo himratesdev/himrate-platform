@@ -20,6 +20,12 @@ module TrustIndex
         4 => "band.green_no_anomaly", 5 => "band.grey_insufficient", 6 => "band.amber_exceeds"
       }.freeze
 
+      # Surface-audit sweep (T1-074): the ONE derivation point for reader-side label_key —
+      # nil/unknown row → grey key, mirroring the grey fallback contract every surface uses.
+      def self.label_key_for(row)
+        LABEL_KEYS_BY_ROW[row] || "band.grey_insufficient"
+      end
+
       # Canonical driver contract (L4 builds this; the class stays duck-typed for isolated tests).
       Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
                             :c_hard, :c_self, :raid_window, :cold_start_tier)

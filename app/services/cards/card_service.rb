@@ -202,7 +202,14 @@ module Cards
         avg_ccv: stream.current_avg_ccv
       }
       if v2_engine?
-        base.merge(erv: ti&.erv, authenticity: ti&.authenticity&.to_f&.round(1), band_color: ti&.band_color)
+        # Surface-audit sweep: band_row + canonical label_key + grey fallback — mirrors the
+        # Watchlists::EnrichmentService flat contract (row3/row4 green must be distinguishable).
+        base.merge(
+          erv: ti&.erv, authenticity: ti&.authenticity&.to_f&.round(1),
+          band_row: ti&.band_row,
+          label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
+          band_color: ti&.band_color || "grey"
+        )
       else
         base.merge(ti_score: ti&.trust_index_score&.to_f&.round(1), erv_percent: ti&.erv_percent&.to_f&.round(1))
       end

@@ -75,7 +75,7 @@ module Trends
               classification: cls, stream_id: stream_id, confidence: confidence&.to_f&.round(3),
               engine_version: engine
             }
-            point[:band] = { row: brow, color: bcolor } if engine == "v2" && brow
+            point[:band] = { row: brow, color: bcolor, label_key: TrustIndex::V2::BandClassifier.label_key_for(brow) } if engine == "v2" && brow
             point
           end
       end
@@ -106,7 +106,7 @@ module Trends
           ti_max: max&.to_f&.round(2),
           classification: cls
         }
-        point[:band] = { row: band_row, color: band_color } if band_row
+        point[:band] = { row: band_row, color: band_color, label_key: TrustIndex::V2::BandClassifier.label_key_for(band_row) } if band_row
         point
       end
 

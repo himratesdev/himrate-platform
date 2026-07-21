@@ -6,15 +6,14 @@ module Brand
   # each band term is spelled out. Keys are the exact BandService enum (impeccable/stable/variable/
   # unstable); nil band (cold-start) → nil label.
   module ReputationBands
-    LABELS_RU = {
-      "impeccable" => "Безупречная",
-      "stable" => "Стабильная",
-      "variable" => "Изменчивая",
-      "unstable" => "Нестабильная"
-    }.freeze
-
+    # Surface-audit sweep: the RU labels live in ONE place — config/locales/reputation.ru.yml
+    # (T1-064 §10A canonical). This module used to duplicate them as a hardcoded constant
+    # (byte-identical, but two sources drift). The emitted field is band_label_ru by contract,
+    # hence the explicit locale: :ru (NOT request locale). Unknown/nil band → nil (cold-start).
     def self.label_ru(band)
-      LABELS_RU[band]
+      return nil if band.nil?
+
+      I18n.t("reputation.band.#{band}", locale: :ru, default: nil)
     end
   end
 end

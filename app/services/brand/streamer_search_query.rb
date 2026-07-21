@@ -177,7 +177,7 @@ module Brand
     def classification_label_for(channel_id, ti_avg)
       band_row = @latest_bands&.[](channel_id)
       if band_row
-        I18n.t(TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[band_row], locale: :ru, default: nil)
+        I18n.t(TrustIndex::V2::BandClassifier.label_key_for(band_row), locale: :ru, default: nil)
       elsif ti_avg
         TrustIndex::ErvCalculator.resolve_label(ti_avg)[:ru]
       end

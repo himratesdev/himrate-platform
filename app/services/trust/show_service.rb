@@ -122,7 +122,7 @@ module Trust
       {
         row: tih.band_row,
         color: tih.band_color,
-        label_key: TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[tih.band_row],
+        label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row),
         sub: tih.band_sub
       }
     end

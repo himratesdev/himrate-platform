@@ -98,7 +98,7 @@ module Watchlists
           erv: ti&.erv,
           authenticity: ti&.authenticity&.to_f&.round(1),
           band_row: ti&.band_row,
-          label_key: TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[ti&.band_row] || "band.grey_insufficient",
+          label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
           band_color: ti&.band_color || "grey",
           last_calculated_at: ti&.calculated_at&.iso8601
         )

@@ -17,14 +17,18 @@ RSpec.describe Discover::LiveNowQuery do
                                          ccv: 5000, erv: 3600, authenticity: 72.0,
                                          band_row: 3, band_color: "green", calculated_at: 1.minute.ago)
 
-      row = described_class.new(user: user).call.find { |r| r[:login] == "v2chan" }
+      # Surface-audit sweep: erv_label resolves under the REQUEST locale (was force-:ru)
+      row = I18n.with_locale(:ru) { described_class.new(user: user).call }.find { |r| r[:login] == "v2chan" }
 
       expect(row).to be_present
       expect(row[:shown_viewers]).to eq(5000)      # V (engine input)
       expect(row[:real_viewers]).to eq(3600)        # NATIVE erv, not ccv × pct
       expect(row[:erv_percent]).to eq(72.0)         # authenticity
-      expect(row[:erv_label]).to eq("Аудитория реальная") # band_row 3 → band.green_real (ru)
+      expect(row[:erv_label]).to eq("Аудитория реальная") # band_row 3 → band.green_real (request locale ru)
       expect(row[:erv_label_color]).to eq("green")
+
+      en_row = I18n.with_locale(:en) { described_class.new(user: user).call }.find { |r| r[:login] == "v2chan" }
+      expect(en_row[:erv_label]).to eq("Audience is real") # same key, EN request locale
     end
 
     it "still serves a v1 legacy row within the transition window (ccv × erv%)" do

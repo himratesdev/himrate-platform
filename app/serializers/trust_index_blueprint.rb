@@ -43,7 +43,7 @@ class TrustIndexBlueprint < Blueprinter::Base
       next nil unless tih&.engine_version == "v2" && tih.band_row
 
       { row: tih.band_row, color: tih.band_color,
-        label_key: TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[tih.band_row], sub: tih.band_sub }
+        label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row), sub: tih.band_sub }
     end
 
     field :confirmed_anomaly do |tih, _options|
@@ -69,7 +69,7 @@ class TrustIndexBlueprint < Blueprinter::Base
       if tih&.engine_version == "v2"
         next nil unless tih.band_row
 
-        next I18n.t(TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[tih.band_row], default: nil)
+        next I18n.t(TrustIndex::V2::BandClassifier.label_key_for(tih.band_row), default: nil)
       end
       erv = tih&.erv_percent&.to_f
       next nil unless erv

@@ -27,12 +27,18 @@ module Streams
       # (band/authenticity/interval live there, PSR = denormalized cache). v1 PSRs render as before.
       trust_index = if v2_engine?
         tih = final_v2_tih
+        # Surface-audit sweep: +label_key, grey fallback instead of nil, and PSR/assembled parity
+        # (cold_start_tier/confidence_marker/reason_codes — the two v2 branches of the same
+        # endpoint must not disagree on shape).
         {
           erv: psr.erv_final,
           erv_interval: tih&.erv_lo ? { lo: tih.erv_lo, hi: tih.erv_hi } : nil,
           authenticity: tih&.authenticity&.to_f,
-          band: tih&.band_row ? { row: tih.band_row, color: tih.band_color, sub: tih.band_sub } : nil,
+          band: band_payload(tih),
           confirmed_anomaly: tih&.confirmed_anomaly,
+          cold_start_tier: tih&.cold_start_tier,
+          confidence_marker: tih&.confidence_marker,
+          reason_codes: tih&.reason_codes || [],
           engine_version: "v2"
         }
       else
@@ -100,7 +106,7 @@ module Streams
           erv: ti.erv,
           erv_interval: { lo: ti.erv_lo, hi: ti.erv_hi },
           authenticity: ti.authenticity&.to_f,
-          band: ti.band_row ? { row: ti.band_row, color: ti.band_color, sub: ti.band_sub } : nil,
+          band: band_payload(ti),
           confirmed_anomaly: ti.confirmed_anomaly,
           cold_start_tier: ti.cold_start_tier,
           confidence_marker: ti.confidence_marker,
@@ -120,6 +126,15 @@ module Streams
                                .where(engine_version: "v2")
                                .order(calculated_at: :desc)
                                .first
+    end
+
+    # Surface-audit sweep: canonical band hash {row, color, label_key, sub} with the grey
+    # fallback shape (never nil — readers render the grey label instead of branching).
+    def band_payload(tih)
+      return { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil } unless tih&.band_row
+
+      { row: tih.band_row, color: tih.band_color,
+        label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row), sub: tih.band_sub }
     end
 
     def v2_engine?
