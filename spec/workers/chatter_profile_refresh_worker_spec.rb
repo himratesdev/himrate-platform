@@ -13,6 +13,9 @@ RSpec.describe ChatterProfileRefreshWorker do
   # In-memory ledger driving Clickhouse::ChatQueries.distinct_active_chatters. Each entry is
   # { username:, at: } — the stub filters by `since` cutoff so timestamp-sensitive specs still work.
   let(:ch_chatters) { [] }
+  # BUG-C: ledger driving Clickhouse::ChatQueries.chatters_on_streams (chatters on live monitored
+  # streams — the fraud-priority set). Only consulted when Stream.active is non-empty.
+  let(:ch_live_chatters) { [] }
 
   before do
     allow(Flipper).to receive(:enabled?).with(:stream_monitor).and_return(true)
@@ -26,10 +29,18 @@ RSpec.describe ChatterProfileRefreshWorker do
         .uniq
         .first(limit.to_i)
     end
+    allow(Clickhouse::ChatQueries).to receive(:chatters_on_streams) do |_stream_ids, limit:|
+      ch_live_chatters.uniq.first(limit.to_i)
+    end
   end
 
   def chat(username, ts: 10.minutes.ago)
     ch_chatters << { username: username, at: ts }
+  end
+
+  # register a chatter as present on a currently-live monitored stream (priority set)
+  def live_chat(username)
+    ch_live_chatters << username
   end
 
   def profile(login:, created_at: "2020-01-01T00:00:00Z", followers: 100)
@@ -114,5 +125,42 @@ RSpec.describe ChatterProfileRefreshWorker do
     ).and_return([])
 
     worker.perform
+  end
+
+  # BUG-C (2026-07-21): fraud-prioritized selection — chatters on live monitored streams are
+  # profiled FIRST, so a fresh single-channel fake on a channel we're scoring can't stay invisible.
+  describe "fraud-prioritized selection" do
+    before { create(:stream, ended_at: nil) } # ≥1 live monitored stream → priority path active
+
+    it "profiles live-stream chatters BEFORE general backfill within the fixed budget" do
+      stub_const("ChatterProfileRefreshWorker::MAX_PER_RUN", 2)
+      live_chat("livefake1")
+      live_chat("livefake2")           # priority set (on a live monitored stream)
+      chat("backfill1")
+      chat("backfill2")                # general recent chatters (lower priority)
+      allow(gql).to receive(:batch_bot_check) { |logins:| logins.map { |l| profile(login: l) } }
+
+      worker.perform
+      # budget of 2 spent on the priority set, NOT the arbitrary backfill
+      expect(ChatterProfile.pluck(:login)).to contain_exactly("livefake1", "livefake2")
+    end
+
+    it "profiles a fresh single-channel fake on a live stream (matvey228666337-class regression)" do
+      live_chat("matvey228666337")
+      allow(gql).to receive(:batch_bot_check)
+        .with(logins: [ "matvey228666337" ])
+        .and_return([ profile(login: "matvey228666337", created_at: 12.minutes.ago.utc.iso8601, followers: 0) ])
+
+      expect { worker.perform }.to change(ChatterProfile, :count).by(1)
+      expect(ChatterProfile.find_by(login: "matvey228666337")).to be_present
+    end
+
+    it "falls back to general backfill when no stream is live" do
+      Stream.update_all(ended_at: Time.current) # no active streams → priority empty
+      chat("only_backfill")
+      allow(gql).to receive(:batch_bot_check).with(logins: [ "only_backfill" ]).and_return([ profile(login: "only_backfill") ])
+
+      expect { worker.perform }.to change(ChatterProfile, :count).by(1)
+    end
   end
 end

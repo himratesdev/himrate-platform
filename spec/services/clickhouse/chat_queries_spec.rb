@@ -505,6 +505,37 @@ RSpec.describe Clickhouse::ChatQueries do
     end
   end
 
+  describe ".chatters_on_streams (BUG-C fraud-priority set)" do
+    let(:sid1) { "11111111-1111-4111-8111-111111111111" }
+    let(:sid2) { "22222222-2222-4222-8222-222222222222" }
+
+    it "queries DISTINCT username over the given stream_ids with the privmsg + non-empty filter" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT DISTINCT username/)
+          .and(a_string_matching(/stream_id IN \('#{sid1}','#{sid2}'\)/))
+          .and(a_string_matching(/msg_type = 'privmsg'/))
+          .and(a_string_matching(/username != ''/))
+          .and(a_string_matching(/LIMIT 9000/))
+      ).and_return([ { "username" => "livefake" }, { "username" => "realchatter" } ])
+
+      expect(described_class.chatters_on_streams([ sid1, sid2 ], limit: 9000)).to eq(%w[livefake realchatter])
+    end
+
+    it "returns [] for an empty stream set without hitting ClickHouse" do
+      expect(ch).not_to receive(:select)
+      expect(described_class.chatters_on_streams([], limit: 100)).to eq([])
+    end
+
+    it "raises ArgumentError on a non-UUID stream_id (bad caller, sibling convention)" do
+      expect { described_class.chatters_on_streams(%w[not-a-uuid], limit: 100) }.to raise_error(ArgumentError, /not a UUID/)
+    end
+
+    it "swallows Clickhouse::Error and returns []" do
+      allow(ch).to receive(:select).and_raise(Clickhouse::QueryError, "boom")
+      expect(described_class.chatters_on_streams([ sid1 ], limit: 100)).to eq([])
+    end
+  end
+
   describe ".validate_stream_uuid!" do
     it "accepts valid UUID v4 string" do
       expect { described_class.validate_stream_uuid!(SecureRandom.uuid) }.not_to raise_error

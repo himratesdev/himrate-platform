@@ -424,6 +424,33 @@ module Clickhouse
       []
     end
 
+    # BUG-C (2026-07-21): DISTINCT chatters on a SPECIFIC set of stream_ids (the currently-live
+    # monitored streams). ChatterProfileRefreshWorker uses this to PRIORITIZE profiling the chatters
+    # whose account metadata drives a LIVE authenticity verdict — a fresh single-channel fake on a
+    # scored stream must be profiled, or Account Profile Scoring (#11) counts it as a full honest
+    # human and the deficit shrinks. The prior arbitrary `distinct_active_chatters LIMIT 5250` CH
+    # scan-order sample dropped ~88% of active chatters with zero fraud-priority, so new/rare fake
+    # accounts (matvey228666337-class) were profiled only by coincidence. Bounded by the stream_id
+    # set (live streams) + LIMIT. Order is implementation-defined; caller de-dups + prioritizes.
+    def chatters_on_streams(stream_ids, limit:)
+      return [] if stream_ids.empty?
+
+      # CR-231 convention (matches privmsg_counts_for_streams / chat_activity_batch): stream_id sets
+      # are validated as UUIDs and interpolated — raises on a bad caller rather than escaping.
+      validate_stream_uuid!(stream_ids)
+      quoted = stream_ids.map { |sid| "'#{sid}'" }.join(",")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT DISTINCT username
+        FROM chat_messages
+        WHERE stream_id IN (#{quoted}) AND msg_type = 'privmsg' AND username != ''
+        LIMIT #{limit.to_i}
+      SQL
+      rows.map { |r| r["username"] }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: chatters_on_streams failed (#{e.class})")
+      []
+    end
+
     # ─── ML feature aggregations (Ml::Features::ChatSignals, PR3) ──────────────
     # Single multi-aggregate over the stream's chat history (msg_type='privmsg') returning
     # everything `Ml::Features::ChatSignals` needs to derive the 7 BFT 15_ML-Pipeline.md §3.2

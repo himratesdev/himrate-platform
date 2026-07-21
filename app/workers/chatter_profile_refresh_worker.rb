@@ -19,9 +19,13 @@ class ChatterProfileRefreshWorker
   include Sidekiq::Job
   sidekiq_options queue: :monitoring, retry: 1
 
-  LOOKBACK = 2.hours      # "recently active" chatters = those who chatted in this window
-  STALE_AFTER = 30.days   # profile data is slow-moving; re-fetch rarely
-  MAX_PER_RUN = 350       # ≤10 GQL batches (batch size 35); cron re-runs to clear the backlog
+  LOOKBACK = 2.hours    # "recently active" chatters = those who chatted in this window
+  STALE_AFTER = 30.days # profile data is slow-moving; re-fetch rarely
+  # ≤18 GQL batches (batch size 35); cron re-runs to clear the backlog. BUG-C: raised 350→600 — the
+  # :monitoring queue runs empty (0 backlog, verified 2026-07-21), so throughput headroom exists; the
+  # constraint is the Twitch GQL rate-limit, not the box, and fetch_profiles rescues (adaptive).
+  MAX_PER_RUN = 600
+  LIVE_STREAM_CAP = 500 # bound the live-stream priority CH query (≈concurrent monitored streams)
 
   # Columns updated on a re-fetch (excludes login = unique key; created_at/updated_at are managed
   # by record_timestamps so created_at is preserved and updated_at is bumped automatically).
@@ -49,23 +53,33 @@ class ChatterProfileRefreshWorker
 
   private
 
-  # Recently-active chatter logins without a fresh cached profile. PR-251.14 PR 1e-A follow-up:
-  # post PR #231 chat_messages is CH-only, but chatter_profiles stays in PG (it's small, slow-
-  # moving, joined into PG signal queries). Cross-DB NOT EXISTS isn't possible, so:
-  #   1. CH returns up to OVERSAMPLE_LIMIT distinct active chatters in the LOOKBACK window
-  #      (oversamples because the next filter rejects already-fresh entries).
-  #   2. PG returns the subset that's already fresh-cached (fetched_at > STALE_AFTER.ago).
-  #   3. Ruby set-difference yields the to-enrich list, capped at MAX_PER_RUN.
-  # Self-throttles to small batches when cache hit rate is high (steady state) and to a full
-  # MAX_PER_RUN burst when cold (fresh staging / cache wipe) — same shape the prior PG NOT EXISTS
-  # delivered.
-  OVERSAMPLE_LIMIT = MAX_PER_RUN * 15 # 5250 — cushion for steady-state 95%+ cache hit ratio
+  # Chatter logins without a fresh cached profile, FRAUD-PRIORITIZED (BUG-C, 2026-07-21).
+  #
+  # Root cause fixed: the prior `distinct_active_chatters LIMIT 5250` returned an ARBITRARY CH
+  # scan-order sample of the ~43k chatters active in the window (no ORDER BY, no fraud-priority),
+  # then took the first MAX_PER_RUN. ~88% of active chatters were never even candidates, and a
+  # fresh single-channel fake (matvey228666337-class) was profiled only by coincidence — so it
+  # counted as a full honest human in EIHC and RAISED the channel's authenticity (Account Profile
+  # Scoring #11 gets nil → no-op). We are a bot-detection product blind to a chatter who chatted.
+  #
+  # Fix: spend the fixed GQL budget on the chatters that actually matter for a LIVE verdict FIRST:
+  #   1. PRIORITY — chatters on currently-live MONITORED streams (Stream.active). Their profile
+  #      directly drives the live authenticity of a channel we are scoring right now.
+  #   2. BACKFILL — general recently-active chatters (feed cross-stream account signals) if budget
+  #      remains.
+  # Then the same cross-DB freshness filter + MAX_PER_RUN cap. Priority-first order is preserved
+  # through `Array#|` (union, dedup, order-stable) and `Array#-` (set-diff, order-stable).
+  OVERSAMPLE_LIMIT = MAX_PER_RUN * 15 # cushion for steady-state high cache-hit ratio
 
   def logins_to_enrich
-    candidates = Clickhouse::ChatQueries.distinct_active_chatters(
-      since: LOOKBACK.ago,
-      limit: OVERSAMPLE_LIMIT
-    )
+    live_ids = Stream.active.limit(LIVE_STREAM_CAP).pluck(:id)
+    priority = if live_ids.any?
+      Clickhouse::ChatQueries.chatters_on_streams(live_ids, limit: OVERSAMPLE_LIMIT)
+    else
+      []
+    end
+    backfill = Clickhouse::ChatQueries.distinct_active_chatters(since: LOOKBACK.ago, limit: OVERSAMPLE_LIMIT)
+    candidates = priority | backfill # union, priority-first, deduped
     return [] if candidates.empty?
 
     fresh = ChatterProfile
@@ -73,7 +87,7 @@ class ChatterProfileRefreshWorker
       .where("fetched_at > ?", STALE_AFTER.ago)
       .pluck(:login)
       .to_set
-    (candidates - fresh.to_a).first(MAX_PER_RUN)
+    (candidates - fresh.to_a).first(MAX_PER_RUN) # set-diff preserves priority-first order
   end
 
   # Batch GQL profile lookups (≤35 logins/request). Returns { login => profile_hash_or_nil }.
