@@ -7,8 +7,9 @@
 class UserEvent < ApplicationRecord
   belongs_to :user
 
-  # Known event types (documentation + a light guard). Adding a campaign trigger =
-  # add its type here and emit it via UserEvents::Recorder.
+  # Documented event types (event_type is an open string — NOT enforced — so new
+  # campaigns add events without a migration). Adding a campaign trigger = add its
+  # type here for reference and emit it via UserEvents::Recorder.
   REGISTERED = "registered"
   KNOWN_TYPES = [ REGISTERED ].freeze
 

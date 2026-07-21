@@ -16,10 +16,16 @@ namespace :marketing do
       scope = scope.where("created_at >= ?", Time.zone.parse(ENV["SINCE"]))
     end
 
+    # username derives from a user-controlled Google `name` claim → could start with
+    # =, +, -, @ and execute as a formula if the export is opened in Excel/Sheets.
+    # Neutralise those cells (CSV formula injection).
+    sanitize = ->(v) { v.to_s.match?(/\A[=+\-@]/) ? "'#{v}" : v }
+
     csv = CSV.generate do |out|
       out << %w[email username role tier email_source email_verified registered_at]
       scope.order(:created_at).find_each do |u|
-        out << [ u.email, u.username, u.role, u.tier, u.email_source, u.email_verified, u.created_at.iso8601 ]
+        out << [ u.email, u.username, u.role, u.tier,
+                 u.email_source, u.email_verified, u.created_at.iso8601 ].map { |c| sanitize.call(c) }
       end
     end
 

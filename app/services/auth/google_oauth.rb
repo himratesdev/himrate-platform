@@ -85,7 +85,7 @@ module Auth
             role: "viewer",
             tier: "free",
             email_source: "google",
-            email_verified: google_user[:email].present?
+            email_verified: google_user[:email_verified] == true
           )
 
           AuthProvider.create!(
