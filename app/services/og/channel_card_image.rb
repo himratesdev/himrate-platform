@@ -15,6 +15,17 @@ module Og
     AVATAR = 260
     FONT = "DejaVu Sans" # Debian base has fonts-dejavu-core (Cyrillic-capable)
     AVATAR_TIMEOUT = 3 # seconds — bounded; the whole PNG is CDN-cached so this is rare
+    AVATAR_MAX_BYTES = 3 * 1024 * 1024 # 3 MB cap — a Twitch avatar is ~KBs; guards against a memory bomb
+    # Avatar host allow-list: profile_image_url comes from Twitch (static-cdn.jtvnw.net),
+    # never raw user input — but pin the host so this can never become a blind SSRF.
+    AVATAR_HOST_SUFFIX = ".jtvnw.net"
+    # Magic-number → MIME (libvips/librsvg embed): cover the formats Twitch CDN serves.
+    IMAGE_SIGNATURES = {
+      "\x89PNG".b => "image/png",
+      "\xFF\xD8\xFF".b => "image/jpeg",
+      "GIF8".b => "image/gif",
+      "RIFF".b => "image/webp" # RIFF....WEBP; RIFF prefix is sufficient to disambiguate here
+    }.freeze
 
     def initialize(channel)
       @channel = channel
@@ -80,20 +91,31 @@ module Og
       return nil unless url
 
       uri = URI.parse(url)
-      return nil unless uri.is_a?(URI::HTTPS)
+      return nil unless uri.is_a?(URI::HTTPS) && uri.host&.end_with?(AVATAR_HOST_SUFFIX)
 
       body = nil
       Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: AVATAR_TIMEOUT, read_timeout: AVATAR_TIMEOUT) do |http|
         res = http.get(uri.request_uri)
         return nil unless res.is_a?(Net::HTTPSuccess)
+        return nil if res.content_length && res.content_length > AVATAR_MAX_BYTES
 
         body = res.body
       end
-      mime = body[0, 3] == "\xFF\xD8\xFF".b ? "image/jpeg" : "image/png"
+      return nil if body.bytesize > AVATAR_MAX_BYTES # chunked responses lack Content-Length
+
+      mime = mime_for(body)
+      return nil unless mime
+
       "data:#{mime};base64,#{Base64.strict_encode64(body)}"
     rescue StandardError => e
       Rails.logger.warn("[Og::ChannelCardImage] avatar fetch failed for #{@channel.login}: #{e.class}")
       nil
+    end
+
+    # MIME by real magic-number signature (not a 3-byte JPEG-or-else guess) — a WebP
+    # avatar mislabelled image/png produced an invalid data-URI. Unknown → nil (skip).
+    def mime_for(body)
+      IMAGE_SIGNATURES.find { |sig, _| body.start_with?(sig) }&.last
     end
 
     def truncate(str, limit)
