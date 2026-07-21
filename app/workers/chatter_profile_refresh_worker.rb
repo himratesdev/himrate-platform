@@ -19,13 +19,13 @@ class ChatterProfileRefreshWorker
   include Sidekiq::Job
   sidekiq_options queue: :monitoring, retry: 1
 
-  LOOKBACK = 2.hours       # "recently active" chatters = those who chatted in this window
-  STALE_AFTER = 30.days    # profile data is slow-moving; re-fetch rarely
-  MAX_PER_RUN = 600        # ≤18 GQL batches (batch size 35); cron re-runs to clear the backlog.
-                           # BUG-C: raised 350→600 — the :monitoring queue runs empty (0 backlog,
-                           # verified 2026-07-21), so throughput headroom exists; the constraint is
-                           # Twitch GQL rate-limit, not the box. Adaptive: fetch_profiles rescues.
-  LIVE_STREAM_CAP = 500    # bound the live-stream priority CH query (≈concurrent monitored streams)
+  LOOKBACK = 2.hours    # "recently active" chatters = those who chatted in this window
+  STALE_AFTER = 30.days # profile data is slow-moving; re-fetch rarely
+  # ≤18 GQL batches (batch size 35); cron re-runs to clear the backlog. BUG-C: raised 350→600 — the
+  # :monitoring queue runs empty (0 backlog, verified 2026-07-21), so throughput headroom exists; the
+  # constraint is the Twitch GQL rate-limit, not the box, and fetch_profiles rescues (adaptive).
+  MAX_PER_RUN = 600
+  LIVE_STREAM_CAP = 500 # bound the live-stream priority CH query (≈concurrent monitored streams)
 
   # Columns updated on a re-fetch (excludes login = unique key; created_at/updated_at are managed
   # by record_timestamps so created_at is preserved and updated_at is bumped automatically).
