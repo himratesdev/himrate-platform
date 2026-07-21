@@ -97,6 +97,13 @@ RSpec.describe TrustIndex::Signals::ErvDivergenceDetector do
       make_v2(authenticity: 90, calculated_at: 10.minutes.ago)
       make_v2(authenticity: 70, calculated_at: 1.minute.ago)
       expect { described_class.check(stream) }.to change(Anomaly, :count).by(1)
+
+      # CR #432 N-2 (surface-audit dual-emit): axis + authenticity-named keys alongside legacy
+      details = Anomaly.last.details
+      expect(details["axis"]).to eq("authenticity")
+      expect(details["from_authenticity"]).to be_within(0.1).of(90.0)
+      expect(details["to_authenticity"]).to be_within(0.1).of(70.0)
+      expect(details["from_erv_percent"]).to be_within(0.1).of(90.0) # legacy keys kept
     end
 
     it "no-op below 10% divergence" do
