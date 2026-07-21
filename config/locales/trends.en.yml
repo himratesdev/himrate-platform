@@ -22,15 +22,8 @@ en:
     # CR #425 N-2: key was missing → hardcoded "Trust Index" fallback leaked user-facing
     metric:
       trust_index: "Authenticity"
-    patterns:
-      weekday:
-        title: Weekday pattern
-        # T1-074: "TI" retired user-facing (Glossary v6.0 — internal/legacy only); scalar = Authenticity
-        best: "Best day %{day} (authenticity %{ti})"
-      category:
-        title: Category pattern
-        top: "Best category %{name} (+%{delta} vs baseline)"
-        single: Channel operates mostly in %{name}
+    # (trends.patterns.* block removed — CR #425 N-3: zero readers in app/; the live weekday
+    # insight is trends.weekday.insight, category verdicts are trends.categories.verdict.*)
     forecast:
       title: Forecast
       range: "%{value} (%{lower}..%{upper})"
