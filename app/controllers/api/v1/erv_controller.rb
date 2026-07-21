@@ -97,7 +97,7 @@ module Api
         ti = @channel.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
         return cold_start_payload_v2 if ti.nil?
 
-        label_key = ti.band_row ? TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[ti.band_row] : "band.grey_insufficient"
+        label_key = TrustIndex::V2::BandClassifier.label_key_for(ti.band_row)
         payload = {
           erv: ti.erv,
           erv_interval: { lo: ti.erv_lo, hi: ti.erv_hi },
@@ -128,8 +128,9 @@ module Api
       end
 
       def cold_start_payload_v2
-        # Surface-audit sweep: shape parity with the non-cold v2 payload — erv_label (server-resolved,
-        # the landing/server-rendered surfaces read it), authenticity + reason_codes keys present.
+        # Surface-audit sweep: erv_label (server-resolved — landing/server-rendered surfaces read it)
+        # + explicit-nil authenticity and empty reason_codes so cold-start carries the keys a client
+        # written against the labeled band contract may probe (warm payload emits them per-view).
         {
           erv: nil,
           erv_interval: { lo: nil, hi: nil },

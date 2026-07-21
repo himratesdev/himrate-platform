@@ -110,8 +110,8 @@ module Discover
     # Returns [label, color].
     def label_and_color(row, v2, pct)
       if v2
-        key = TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[row["band_row"].to_i]
-        label = key ? I18n.t(key, default: nil) : nil
+        key = TrustIndex::V2::BandClassifier.label_key_for(row["band_row"].to_i)
+        label = I18n.t(key, default: nil)
         [ label, row["band_color"] ]
       else
         label = pct ? TrustIndex::ErvCalculator.resolve_label(pct) : nil

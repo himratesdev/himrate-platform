@@ -132,7 +132,7 @@ module Brand
         available: true,
         band: {
           row: tih.band_row, color: tih.band_color,
-          label_key: tih.band_row ? TrustIndex::V2::BandClassifier::LABEL_KEYS_BY_ROW[tih.band_row] : nil,
+          label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row),
           sub: tih.band_sub
         },
         authenticity: tih.authenticity&.to_f,
