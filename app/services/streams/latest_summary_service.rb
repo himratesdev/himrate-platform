@@ -21,12 +21,38 @@ module Streams
       return NOT_FOUND unless stream
 
       payload = StreamSummaryBlueprint.render_as_hash(stream)
+      payload.merge!(v2_verdict_block(stream)) if v2_engine?
       meta = build_meta(stream)
 
       { data: payload, meta: meta }
     end
 
     private
+
+    # T1-074 surface-audit (HIGH): under the v2 cutover PSRs stop-write erv_percent_final —
+    # the blueprint field is permanently nil and the surface carried NO v2 verdict at all.
+    # Enrich additively from the stream's final v2 TIH (ONE query — single-stream endpoint);
+    # erv_count_final stays the blueprint's (PSR erv_final = the same v2 count).
+    def v2_verdict_block(stream)
+      tih = stream.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
+      band = if tih&.band_row
+        { row: tih.band_row, color: tih.band_color,
+          label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row), sub: tih.band_sub }
+      else
+        { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil }
+      end
+      {
+        authenticity: tih&.authenticity&.to_f,
+        band: band,
+        engine_version: "v2"
+      }
+    end
+
+    def v2_engine?
+      Flipper.enabled?(:ti_v2_engine)
+    rescue StandardError
+      false
+    end
 
     def latest_completed_stream
       @channel.streams

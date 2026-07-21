@@ -55,8 +55,14 @@ module TrustIndex
           confidence: 1.0,
           details: {
             delta_pct: delta_pct.round(2),
+            # T1-074 surface-audit dual-emit: under v2 the values ARE authenticity — new keys name
+            # the axis honestly; the legacy erv_percent-named keys stay for shipped readers and
+            # retire in a follow-up once the extension migrates (additive, EC back-compat).
+            axis: v2_engine? ? "authenticity" : "erv_percent",
             from_erv_percent: baseline.round(2),
             to_erv_percent: latest.round(2),
+            from_authenticity: (v2_engine? ? baseline.round(2) : nil),
+            to_authenticity: (v2_engine? ? latest.round(2) : nil),
             window_minutes: (WINDOW / 60).to_i
           }
         )

@@ -32,11 +32,16 @@ module Brand
 
     # Derived real-audience block, or {available:false} when the window has no usable data
     # (never zero-as-data).
+    #
+    # Surface-audit (HIGH): ported to the M11b COALESCE pattern (Brand::StreamerSearchQuery
+    # REAL_EXPR) — v2 TDA days write erv_avg_percent/ti_avg = NULL and carry erv_avg_count /
+    # authenticity_* instead, so v1-only reads silently shrank the brand audience metrics to
+    # the aging v1 days (fully unavailable once v1 rows age out of the 30d window).
     def audience
       return unavailable if rows.empty?
 
       ccv_avgs = rows.filter_map(&:ccv_avg)
-      reals = rows.filter_map { |r| r.ccv_avg && r.erv_avg_percent ? r.ccv_avg * r.erv_avg_percent.to_f / 100 : nil }
+      reals = rows.filter_map { |r| real_for(r) }
       return unavailable if ccv_avgs.empty? || reals.empty?
 
       shown_avg = ccv_avgs.sum.to_f / ccv_avgs.size
@@ -44,7 +49,6 @@ module Brand
       return unavailable if shown_avg.zero?
 
       real_pct = (real_avg / shown_avg * 100).round(1)
-      peak_reals = rows.filter_map { |r| r.ccv_peak && r.erv_avg_percent ? (r.ccv_peak * r.erv_avg_percent.to_f / 100).round : nil }
       {
         available: true,
         real_avg_viewers: real_avg.round,
@@ -54,9 +58,10 @@ module Brand
         filtered_est: (shown_avg - real_avg).round,
         peak_real: peak_reals.max,
         peak_shown: rows.filter_map(&:ccv_peak).max,
-        ti_avg: avg(rows.filter_map(&:ti_avg)),
-        ti_std: avg(rows.filter_map(&:ti_std)),
-        erv_pct_range: { min: rows.filter_map(&:erv_min_percent).min, max: rows.filter_map(&:erv_max_percent).max },
+        ti_avg: avg(rows.filter_map { |r| r.authenticity_avg || r.ti_avg }),
+        ti_std: avg(rows.filter_map { |r| r.authenticity_std || r.ti_std }),
+        erv_pct_range: { min: rows.filter_map { |r| r.authenticity_min || r.erv_min_percent }.min,
+                         max: rows.filter_map { |r| r.authenticity_max || r.erv_max_percent }.max },
         basis: BASIS
       }
     end
@@ -78,6 +83,23 @@ module Brand
     end
 
     private
+
+    # M11b per-row real: native v2 subtracted count when the day carries it, else the v1 rescale.
+    # Mirrors StreamerSearchQuery::REAL_EXPR = COALESCE(erv_avg_count, ccv_avg * erv_avg_percent / 100).
+    def real_for(row)
+      return row.erv_avg_count.to_f if row.erv_avg_count
+
+      row.ccv_avg && row.erv_avg_percent ? row.ccv_avg * row.erv_avg_percent.to_f / 100 : nil
+    end
+
+    # Peak reals: v2 days scale ccv_peak by the day's authenticity (their % axis); v1 days keep
+    # the erv_avg_percent rescale.
+    def peak_reals
+      rows.filter_map do |r|
+        pct = r.authenticity_avg || r.erv_avg_percent
+        r.ccv_peak && pct ? (r.ccv_peak * pct.to_f / 100).round : nil
+      end
+    end
 
     def unavailable
       { available: false, reason: "insufficient_window" }

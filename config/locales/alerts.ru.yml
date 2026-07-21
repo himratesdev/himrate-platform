@@ -12,7 +12,9 @@ ru:
   alert:
     ccv_spike:
       title: "Скачок зрителей"
-      detail: "+%{N}%% за %{M} мин (рост с %{From} до %{To})"
+      # T1-074 surface-audit: шаблон требовал %{N}/%{From}/%{To}, которых ни один producer не даёт
+      # (presenter эмитит только z-score) — невыполнимый контракт; упрощено до реальных данных.
+      detail: "Аномальный скачок зрителей за %{M} мин"
     confirmed_raid:
       title: "Подтверждённый рейд"
       detail: "Рейд от @%{raider}: %{viewers} зрителей"

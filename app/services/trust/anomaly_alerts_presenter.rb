@@ -200,8 +200,13 @@ module Trust
         window_minutes: anomaly.details["window_minutes"]&.to_i || 15,
         created_at: anomaly.timestamp.iso8601,
         metadata: {
+          # T1-074 surface-audit dual-emit: axis + authenticity-named keys (v2 values ARE
+          # authenticity; legacy keys kept for shipped readers, retire in follow-up).
+          axis: anomaly.details["axis"],
           from_erv_percent: anomaly.details["from_erv_percent"],
-          to_erv_percent: anomaly.details["to_erv_percent"]
+          to_erv_percent: anomaly.details["to_erv_percent"],
+          from_authenticity: anomaly.details["from_authenticity"],
+          to_authenticity: anomaly.details["to_authenticity"]
         }
       }
     end
