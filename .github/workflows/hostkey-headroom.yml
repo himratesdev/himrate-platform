@@ -1,0 +1,85 @@
+name: hostkey-headroom
+# One-shot resource headroom snapshot before the TI v2.1 fixes (PO: "не сдох сервер").
+# CPU/load/iowait · RAM/swap · disk I/O (the real bottleneck) · per-container footprint
+# (himrate vs co-tenant bft-*/xray — answers "can I turn my mini-project off") · Sidekiq depth.
+# READ-ONLY, $0.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  headroom:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Host resource snapshot
+        run: |
+          ssh hostkey 'bash -s' <<'REMOTE'
+          echo "===== LOAD / CPU ====="
+          echo "cores: $(nproc)"; uptime
+          echo "--- top (CPU incl. iowait wa) ---"
+          top -bn1 | head -6
+          echo
+          echo "===== MEM / SWAP (MB) ====="
+          free -m
+          echo
+          echo "===== DISK I/O (real bottleneck) ====="
+          if command -v iostat >/dev/null 2>&1; then
+            iostat -x 1 2 | awk 'NR>1' | tail -40
+          else
+            echo "(no iostat) vmstat wa column = iowait%:"; vmstat 1 3
+          fi
+          echo
+          echo "===== DISK USAGE ====="
+          df -h / 2>/dev/null; df -h /var/lib/docker 2>/dev/null
+          echo
+          echo "===== PER-CONTAINER CPU/MEM (himrate vs co-tenant) ====="
+          docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}' 2>/dev/null
+          echo
+          echo "===== PER-CONTAINER BLOCK-I/O + PIDs ====="
+          docker stats --no-stream --format 'table {{.Name}}\t{{.BlockIO}}\t{{.NetIO}}\t{{.PIDs}}' 2>/dev/null
+          echo
+          echo "===== TOP PROCESSES by CPU + by RSS ====="
+          echo "--- by CPU ---"; ps -eo pid,comm,%cpu,%mem --sort=-%cpu | head -8
+          echo "--- by RSS ---"; ps -eo pid,comm,rss --sort=-rss | head -8
+          echo
+          echo "===== D-state (I/O-blocked) processes ====="
+          ps -eo state,pid,comm | awk '$1 ~ /D/' | head -12
+          REMOTE
+
+      - name: Sidekiq queue depth
+        run: |
+          CONTAINER=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          cat > /tmp/sq.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "sidekiq/api"
+          puts "===== SIDEKIQ QUEUES ====="
+          Sidekiq::Queue.all.sort_by(&:name).each { |q| puts format("  %-16s size=%-7d latency=%.0fs", q.name, q.size, q.latency) }
+          puts "  retries=#{Sidekiq::RetrySet.new.size} dead=#{Sidekiq::DeadSet.new.size} scheduled=#{Sidekiq::ScheduledSet.new.size}"
+          st = Sidekiq::Stats.new
+          puts "  processed=#{st.processed} failed=#{st.failed} enqueued=#{st.enqueued} workers_busy=#{Sidekiq::Workers.new.size}"
+          puts "  processes/concurrency:"
+          Sidekiq::ProcessSet.new.each { |p| puts format("    %-24s conc=%-3d busy=%-3d queues=%s", p["hostname"].to_s[0,24], p["concurrency"], p["busy"], p["queues"].join(",")) }
+          RUBY_EOF
+          scp /tmp/sq.rb hostkey:/tmp/sq.rb
+          ssh hostkey "docker cp /tmp/sq.rb ${CONTAINER}:/tmp/sq.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/sq.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
