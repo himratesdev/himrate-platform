@@ -435,7 +435,10 @@ module Clickhouse
     def chatters_on_streams(stream_ids, limit:)
       return [] if stream_ids.empty?
 
-      quoted = stream_ids.map { |id| "'#{escape_string_literal(id.to_s)}'" }.join(",")
+      # CR-231 convention (matches privmsg_counts_for_streams / chat_activity_batch): stream_id sets
+      # are validated as UUIDs and interpolated — raises on a bad caller rather than escaping.
+      validate_stream_uuid!(stream_ids)
+      quoted = stream_ids.map { |sid| "'#{sid}'" }.join(",")
       rows = Clickhouse.client.select(<<~SQL)
         SELECT DISTINCT username
         FROM chat_messages
