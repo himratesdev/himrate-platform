@@ -37,10 +37,19 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).not_to match(%r{landing/hr-shared[-\w]*\.js})
     end
 
-    it "loads the shared visual layer on the non-index pages" do
+    it "loads the shared visual layer on the marketing pages" do
       get "/streamers"
 
       expect(response.body).to match(%r{landing/hr-shared[-\w]*\.js})
+    end
+
+    it "does NOT load hr-shared.js on the LK/app surfaces (no nav-hijack, no animated bg)" do
+      # hr-shared's nav-wiring hijacked the login Twitch button to /methodology, and its canvas
+      # painted an animated background the product UI must not have.
+      %w[/login /app/home /app/discover /app/search /c/recrent].each do |path|
+        get path
+        expect(response.body).not_to match(%r{landing/hr-shared[-\w]*\.js}), "expected no hr-shared.js on #{path}"
+      end
     end
 
     it "guards the FOUC: strips the static dot field + paints the dark bg up front" do
