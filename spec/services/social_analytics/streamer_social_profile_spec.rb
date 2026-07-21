@@ -20,7 +20,8 @@ RSpec.describe SocialAnalytics::StreamerSocialProfile do
     expect(r[:socials].size).to eq(2)                              # full footprint
     tg = r.dig(:platforms, :telegram)
     expect(tg).to include(available: true, subscribers: 236_000)
-    expect(tg[:trust][:band_label]).to eq("Аудитория реальная")   # real analysis wired through
+    expect(tg[:metrics]).to include(view_sub_ratio: 23.7)          # descriptive metric, no fraud verdict
+    expect(tg).not_to have_key(:trust)                             # socials = no накрутка score
   end
 
   it "marks Telegram unavailable when the public preview cannot be read" do

@@ -82,10 +82,11 @@ module SocialAnalytics
         {
           posts_on_page: posts.size,
           avg_views: avg_views,
-          # «Просматриваемость» — avg views ÷ subscribers. The single strongest keyless real-audience
-          # proxy (healthy TG 20-50%; <10% = views far below subscriber base → inflated followers).
+          # «Просматриваемость» — avg views ÷ subscribers (%). The standard Telegram engagement metric
+          # (what share of the subscriber base a typical post reaches) — same one TGStat/LabelUp show.
+          # Descriptive, NOT a fraud verdict (PO: no накрутка analysis on socials).
           view_sub_ratio: (avg_views && subscribers&.positive? ? (avg_views.to_f / subscribers * 100).round(1) : nil),
-          # Coefficient of variation of views — near-zero variance across posts reads as manufactured.
+          # Coefficient of variation of views across posts — a descriptive spread stat for the chart.
           view_cv: coefficient_of_variation(view_values),
           post_span_days: post_span_days(posts),
           median_gap_hours: median_gap_hours(posts)

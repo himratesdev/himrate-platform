@@ -2,9 +2,13 @@
 
 module SocialAnalytics
   # Slice-1 orchestrator (SA-1/SA-2, keyless): a Twitch streamer login → their cross-platform social
-  # footprint (auto-discovered from Twitch) + the real Telegram public-audience analysis. Validates the
+  # footprint (auto-discovered from Twitch) + DESCRIPTIVE Telegram public analytics. Validates the
   # end-to-end value on production data with ZERO credentials (Twitch GQL + Telegram public preview).
-  # VK (demographics/geo backbone) + YouTube adapters slot into `platforms` once their creds land.
+  #
+  # NOT a fraud/накрутка verdict (PO 2026-07-21: "мы не анализируем накрутку соц сетей" — bot-detection
+  # stays Twitch-only, where per-viewer data exists; socials have no honest signal for it). We surface
+  # the same descriptive field set as TGStat/LabelUp — subscribers, reach, viewability, cadence — as
+  # neutral numbers, no "real audience"/LQI score. VK (demographics/geo) + YouTube slot in with creds.
   #
   # Sidekiq-only (fans out to Twitch::GqlClient + Telegram HTTP). The API serves a worker-warmed cache
   # (mirrors the Grow/Moments on-demand pattern) — never blocks a request thread on external I/O.
@@ -43,8 +47,7 @@ module SocialAnalytics
         title: profile[:title],
         subscribers: profile[:subscribers],
         metrics: profile[:metrics],
-        recent_posts: profile[:posts].first(20),
-        trust: Telegram::TrustScore.call(profile[:metrics])
+        recent_posts: profile[:posts].first(20)
       )
     end
   end
