@@ -1,0 +1,176 @@
+name: ti-v2-rho-duration-diag
+# T1-074 forensic: is ρ_obs (cumulative_unique_chatters / CCV) DURATION-CONFOUNDED? READ-ONLY, $0.
+# PO domain-challenge 2026-07-21: triffon7 (59min in) flagged AMBER auth=53 with an ACTIVE chat
+# (5-10 msgs/min) — doesn't look like silent viewbotting. Hypothesis: ρ_obs numerator (unique
+# chatters) accumulates over stream time while ρ* is a per-stream-median calibrated on mature
+# streams → a young honest stream reads a false deficit. Test: honest-BY-STRUCTURE (partner ∧
+# ≥10 completed ∧ no current viewbot/ccv_step anomaly) live channels, ρ_obs + authenticity BY
+# stream-age bucket. If both CLIMB with age → confound real → triffon7 amber is a young-stream
+# artifact, not botting. Also dumps triffon7's message dynamics (msgs/min, msgs/chatter).
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      login:
+        required: false
+        type: string
+        default: "triffon7"
+      chatter:
+        required: false
+        type: string
+        default: "matvey228666337"
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build diag script
+        run: |
+          cat > /tmp/rdiag.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "set"
+          def pct(a, p)
+            return nil if a.empty?
+            s = a.sort
+            s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
+          end
+          def latest_ccv(sid)
+            CcvSnapshot.where(stream_id: sid).order(timestamp: :desc).limit(1).pick(:ccv_count).to_i
+          end
+
+          # ===== target channel message dynamics (msg RATE vs unique-chatter RATIO) =====
+          login = ENV["LOGIN"].to_s
+          t = Channel.find_by(login: login)
+          if t && (s = Stream.where(channel_id: t.id, ended_at: nil).order(started_at: :desc).first)
+            age = ((Time.current - s.started_at) / 60.0)
+            chatters = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            v = latest_ccv(s.id)
+            rate = (Clickhouse::ChatQueries.chat_rate(s, s.started_at) rescue [])
+            msgs = rate.sum { |r| r[:msg_count].to_i }
+            auth = TrustIndexHistory.where(channel_id: t.id, engine_version: "v2").order(calculated_at: :desc).limit(1).pick(:authenticity)
+            puts "===== #{login} MESSAGE DYNAMICS ====="
+            puts format("  age=%.0fmin  V=%d  unique_chatters=%d  rho_obs=%.3f  authenticity=%s",
+                        age, v, chatters.size, chatters.size.to_f / [ v, 1 ].max, auth)
+            puts format("  total_msgs=%d  msgs/min=%.1f  msgs/chatter=%.1f  chat_participation=%.1f%% (unique/V)",
+                        msgs, msgs / [ age, 1 ].max, msgs.to_f / [ chatters.size, 1 ].max, 100.0 * chatters.size / [ v, 1 ].max)
+            puts "  NOTE: an active chat drives msgs/min; the engine gates on unique/V, not msgs/min."
+          else
+            puts "#{login}: not currently live"
+          end
+
+          # ===== CHATTER FORENSICS: the specific fake-loyalty account (PO ground truth) =====
+          # PO 2026-07-21: matvey228666337 posted a "you're the only streamer who always cheers me
+          # up" long-fan message, but Twitch shows "following 12 min" + digit-suffix username.
+          # Did OUR engine catch it? (flagged=0 on the stream ⇒ suspected NO.)
+          cu = ENV["CHATTER"].to_s
+          if t
+            puts "\n===== CHATTER FORENSICS: #{cu} on #{login} ====="
+            s = Stream.where(channel_id: t.id, ended_at: nil).order(started_at: :desc).first
+            pubs = PerUserBotScore.where(stream_id: s&.id, username: cu).first if s
+            puts "  PerUserBotScore: #{pubs ? "class=#{pubs.classification} score=#{pubs.bot_score} conf=#{pubs.confidence}" : "NO RECORD (never scored → invisible to bot detection)"}"
+            cp = ChatterProfile.find_by(login: cu)
+            if cp && cp.twitch_created_at
+              age_d = ((Time.current - cp.twitch_created_at) / 86_400.0).round
+              puts "  ChatterProfile: account_age=#{age_d}d (created #{cp.twitch_created_at.to_date}) followers=#{cp.followers_count} follows=#{cp.follows_count}"
+            else
+              puts "  ChatterProfile: #{cp ? "no twitch_created_at" : "NO PROFILE (account metadata never fetched)"}"
+            end
+            tf = CrossChannelTemporalFlag.find_by(username: cu)
+            puts "  CrossChannelTemporalFlag: #{tf ? "tier=#{tf.bot_flag_tier} type=#{tf.bot_type} max_channels=#{tf.max_concurrent_channels}" : "NO FLAG (single-channel bot → temporal detector blind)"}"
+            puts "  username digit-suffix (>=6 trailing digits): #{cu.match?(/\d{6,}$/) ? "YES (throwaway pattern)" : "no"}"
+          end
+
+          # ===== ROSTER SCAN: how fabricated is #{login}'s chat? =====
+          if t && (s = Stream.where(channel_id: t.id, ended_at: nil).order(started_at: :desc).first)
+            roster = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            if roster.any?
+              profs = ChatterProfile.where(login: roster).index_by(&:login)
+              scored = PerUserBotScore.where(stream_id: s.id, username: roster).index_by(&:username)
+              tflags = CrossChannelTemporalFlag.where(username: roster).pluck(:username).to_set
+              young = profs.values.count { |p| p.twitch_created_at && (Time.current - p.twitch_created_at) < 30.days.to_i }
+              digitsfx = roster.count { |u| u.match?(/\d{6,}$/) }
+              caught = scored.values.count { |x| %w[confirmed_bot probable_bot].include?(x.classification) }
+              temporal = roster.count { |u| tflags.include?(u) }
+              noprofile = roster.count { |u| !profs.key?(u) }
+              puts "\n===== ROSTER SCAN: #{login} — #{roster.size} chatters ====="
+              puts format("  young accounts (<30d):        %d (%.0f%%)", young, 100.0 * young / roster.size)
+              puts format("  digit-suffix usernames:       %d (%.0f%%)", digitsfx, 100.0 * digitsfx / roster.size)
+              puts format("  caught by PerUserBotScore:    %d (%.0f%%)", caught, 100.0 * caught / roster.size)
+              puts format("  caught by temporal detector:  %d (%.0f%%)", temporal, 100.0 * temporal / roster.size)
+              puts format("  no ChatterProfile at all:     %d (%.0f%%)", noprofile, 100.0 * noprofile / roster.size)
+              puts "  → fabricated chat inflates 'unique_chatters' → true engagement deficit is LARGER → amber is CONSERVATIVE."
+            end
+          end
+
+          # ===== duration-confound test: honest-BY-STRUCTURE live channels by stream age =====
+          live = Stream.where(ended_at: nil).where("started_at > ?", 12.hours.ago).order(started_at: :desc).pluck(:id, :channel_id, :started_at)
+          buckets = Hash.new { |h, k| h[k] = [] } # bucket => [[rho, auth], ...]
+          seen = Set.new
+          n = 0
+          live.each do |sid, cid, started|
+            break if n >= 250
+            next if seen.include?(cid)
+            ch = Channel.find_by(id: cid)
+            next unless ch && ch.broadcaster_type == "partner"
+            next if Stream.where(channel_id: cid).where.not(ended_at: nil).count < 10
+            anom = Anomaly.where(anomaly_type: %w[viewbot_spike ccv_step_function], stream_id: sid).where("timestamp > ?", 24.hours.ago).exists?
+            next if anom # honest by STRUCTURE, not by current authenticity (avoid circularity)
+            seen << cid
+            v = latest_ccv(sid)
+            next if v < 10
+            chatters = (Clickhouse::ChatQueries.stream_chatters(Stream.find_by(id: sid)) rescue [])
+            next if chatters.empty?
+            age = (Time.current - started) / 60.0
+            rho = chatters.size.to_f / v
+            auth = TrustIndexHistory.where(channel_id: cid, engine_version: "v2").order(calculated_at: :desc).limit(1).pick(:authenticity)&.to_f
+            b = age < 30 ? "0-30m" : age < 60 ? "30-60m" : age < 120 ? "1-2h" : age < 240 ? "2-4h" : "4h+"
+            buckets[b] << [ rho, auth ]
+            n += 1
+          rescue => e
+            nil
+          end
+
+          puts "\n===== HONEST-BY-STRUCTURE live channels by STREAM AGE (n=#{n}) ====="
+          puts "  (partner ∧ ≥10 completed ∧ no current viewbot/ccv_step anomaly)"
+          puts format("  %-8s %-5s %-11s %-12s %s", "age", "n", "median_rho", "median_auth", "amber<80")
+          %w[0-30m 30-60m 1-2h 2-4h 4h+].each do |b|
+            a = buckets[b]
+            next if a.empty?
+            rhos = a.map(&:first)
+            auths = a.map(&:last).compact
+            amber = auths.count { |x| x < 80 }
+            puts format("  %-8s %-5d %-11.3f %-12.1f %d/%d (%.0f%%)", b, a.size, pct(rhos, 0.5), (auths.empty? ? -1 : pct(auths, 0.5)), amber, auths.size, 100.0 * amber / [ auths.size, 1 ].max)
+          end
+          puts "\n→ If median_rho AND median_auth CLIMB with age: ρ_obs is DURATION-CONFOUNDED →"
+          puts "  triffon7 (young stream) amber is likely a young-stream artifact, NOT botting → calibration fix needed."
+          puts "→ If they're FLAT across age: ρ_obs is duration-stable → triffon7's deficit is real (silent viewbot)."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/rdiag.rb) lines)"
+
+      - name: Run diag on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/rdiag.rb ${TARGET}:/tmp/rdiag.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/rdiag.rb ${CONTAINER}:/tmp/rdiag.rb && docker exec -e LOGIN='${{ inputs.login || 'triffon7' }}' -e CHATTER='${{ inputs.chatter || 'matvey228666337' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/rdiag.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
