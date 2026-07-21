@@ -20,8 +20,7 @@ module Api
         Rails.error.report(e, context: { controller: "channels", action: action_name }, handled: true)
         render json: {
           error: "BILLING_NOT_CONFIGURED",
-          message: I18n.t("channels.errors.billing_not_configured",
-            default: "Subscription billing is not yet configured. Contact support.")
+          message: I18n.t("channels.errors.billing_not_configured")
         }, status: :payment_required
       end
 
@@ -73,7 +72,7 @@ module Api
         existing = TrackedChannel.find_by(user: current_user, channel: channel)
 
         if existing&.tracking_enabled?
-          render json: { error: "ALREADY_TRACKED", message: I18n.t("channels.errors.already_tracked", default: "Channel is already tracked") },
+          render json: { error: "ALREADY_TRACKED", message: I18n.t("channels.errors.already_tracked") },
             status: :conflict
           return
         end
@@ -103,7 +102,7 @@ module Api
         tracked = TrackedChannel.find_by(user: current_user, channel: channel, tracking_enabled: true)
 
         unless tracked
-          render json: { error: "CHANNEL_NOT_TRACKED", message: I18n.t("channels.errors.not_tracked", default: "Channel is not tracked") },
+          render json: { error: "CHANNEL_NOT_TRACKED", message: I18n.t("channels.errors.not_tracked") },
             status: :not_found
           return
         end
@@ -206,7 +205,8 @@ module Api
       def badge_html(channel, svg_url, value)
         login = ERB::Util.html_escape(channel.login)
         # v2 alt-text: real-viewer count, no retired "Trust Index" scalar, no bot wording (legal).
-        alt = v2_engine? ? "HimRate: #{value || '—'} real viewers" : "HimRate Trust Index: #{value}"
+        # Surface-audit: resolved via I18n (RU variant exists); v1 branch = flag-OFF legacy, untouched.
+        alt = v2_engine? ? I18n.t("channels.badge_alt_v2", value: value || "—") : "HimRate Trust Index: #{value}"
         %(<a href="https://himrate.com/channel/#{login}" target="_blank" rel="noopener">) +
           %(<img src="#{ERB::Util.html_escape(svg_url)}" alt="#{alt}" width="200" height="40" />) +
           %(</a>)

@@ -7,7 +7,10 @@
 #   - trend: {direction, delta, ...}  — from TrendCalculator
 #   - improvement_signals: [{name, delta}, ...] — sorted DESC (positive delta)
 #   - degradation_signals: [{name, delta}, ...] — sorted ASC (negative delta)
-#   - metric: human-readable metric name (e.g. "Trust Index", "ERV%")
+#   - metric_key: i18n KEY of the metric name (e.g. "trends.metric.trust_index"), resolved
+#     per-locale INSIDE the builder. T1-074 surface-audit: callers used to pass ONE string
+#     resolved under the request locale — it then leaked into BOTH explanation_ru and
+#     explanation_en (RU narrative with an English metric name and vice versa).
 #
 # i18n keys: trends.explanation.*  (5 templates per locale).
 # Graceful fallback: когда signals empty → generic "trends.explanation.rising_generic" etc.
@@ -17,20 +20,20 @@ module Trends
     class ExplanationBuilder
       TOP_N_SIGNALS = 3
 
-      def self.call(trend:, improvement_signals: [], degradation_signals: [], metric: "Trust Index")
+      def self.call(trend:, improvement_signals: [], degradation_signals: [], metric_key: "trends.metric.trust_index")
         new(
           trend: trend,
           improvement_signals: improvement_signals,
           degradation_signals: degradation_signals,
-          metric: metric
+          metric_key: metric_key
         ).call
       end
 
-      def initialize(trend:, improvement_signals:, degradation_signals:, metric:)
+      def initialize(trend:, improvement_signals:, degradation_signals:, metric_key:)
         @trend = trend || {}
         @improvement_signals = Array(improvement_signals).first(TOP_N_SIGNALS)
         @degradation_signals = Array(degradation_signals).first(TOP_N_SIGNALS)
-        @metric = metric
+        @metric_key = metric_key
       end
 
       def call
@@ -40,14 +43,18 @@ module Trends
         key_base = select_template_key(direction)
 
         {
-          explanation_ru: I18n.t("trends.explanation.#{key_base}", locale: :ru, metric: @metric, delta: delta, top_signals: signal_list(:ru, key_base)),
-          explanation_en: I18n.t("trends.explanation.#{key_base}", locale: :en, metric: @metric, delta: delta, top_signals: signal_list(:en, key_base)),
+          explanation_ru: I18n.t("trends.explanation.#{key_base}", locale: :ru, metric: metric_for(:ru), delta: delta, top_signals: signal_list(:ru, key_base)),
+          explanation_en: I18n.t("trends.explanation.#{key_base}", locale: :en, metric: metric_for(:en), delta: delta, top_signals: signal_list(:en, key_base)),
           improvement_signals: @improvement_signals,
           degradation_signals: @degradation_signals
         }
       end
 
       private
+
+      def metric_for(locale)
+        I18n.t(@metric_key, locale: locale)
+      end
 
       def select_template_key(direction)
         case direction

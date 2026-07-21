@@ -136,7 +136,7 @@ module Api
           cold_start_tier: "insufficient",
           confidence_marker: "provisional",
           cold_start: true,
-          message: I18n.t("erv.insufficient_data", default: "Insufficient data for ERV estimate"),
+          message: I18n.t("erv.insufficient_data"),
           engine_version: "v2"
         }
       end
@@ -167,7 +167,7 @@ module Api
           erv_label: nil,
           erv_label_color: nil,
           cold_start: true,
-          message: I18n.t("erv.insufficient_data", default: "Insufficient data for ERV estimate")
+          message: I18n.t("erv.insufficient_data")
         }
       end
 

@@ -179,13 +179,11 @@ module Trends
       end
 
       def build_explanation(trend)
+        # T1-074 surface-audit: key resolved per-locale inside the builder; the old
+        # default: "ERV%" fallback leaked retired rescale-percent vocabulary (key was missing).
         Trends::Analysis::ExplanationBuilder.call(
-          trend: trend, improvement_signals: [], degradation_signals: [], metric: metric_label
+          trend: trend, improvement_signals: [], degradation_signals: [], metric_key: "trends.metric.erv"
         )
-      end
-
-      def metric_label
-        I18n.t("trends.metric.erv", default: "ERV%")
       end
     end
   end

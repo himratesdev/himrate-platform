@@ -14,3 +14,20 @@ en:
       full: "%{H}h %{M}m"
       short: "%{M} min"
       multi_day: "%{D}d %{H}h"
+  # T1-074 surface-audit 2026-07-21: see api.ru.yml — EN values = former hardcoded defaults verbatim.
+  channels:
+    errors:
+      billing_not_configured: "Subscription billing is not yet configured. Contact support."
+      already_tracked: "Channel is already tracked"
+      not_tracked: "Channel is not tracked"
+    badge_alt_v2: "HimRate: %{value} real viewers"
+  tracking_requests:
+    errors:
+      already_requested: "Tracking request already submitted for this channel"
+  clip_transcripts:
+    errors:
+      free_limit: "Free tier limit (10/month) reached"
+      invalid_clip_id: "clip_id must be valid Twitch clip slug"
+      not_found: "Transcript not found"
+  erv:
+    insufficient_data: "Insufficient data for ERV estimate"

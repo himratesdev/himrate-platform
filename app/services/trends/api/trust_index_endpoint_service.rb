@@ -140,13 +140,12 @@ module Trends
       end
 
       def build_explanation(trend)
+        # T1-074 surface-audit: pass the i18n KEY — the builder resolves it per-locale
+        # (a pre-resolved string leaked the request locale into both RU and EN narratives;
+        # the old default: "Trust Index" fallback was also retired vocabulary).
         Trends::Analysis::ExplanationBuilder.call(
-          trend: trend, improvement_signals: [], degradation_signals: [], metric: metric_label
+          trend: trend, improvement_signals: [], degradation_signals: [], metric_key: "trends.metric.trust_index"
         )
-      end
-
-      def metric_label
-        I18n.t("trends.metric.trust_index", default: "Trust Index")
       end
 
       def build_anomaly_markers(from_ts, to_ts)

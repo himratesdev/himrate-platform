@@ -24,8 +24,10 @@ en:
       title: "Chat entropy drop"
       detail: "Entropy %{N} (normal >2.0) — chat is templated"
     erv_divergence:
-      title: "ERV/CCV divergence"
-      detail: "ERV/CCV ratio changed %{N}%% in %{M} min"
+      # T1-074 (surface-audit): "ERV/CCV ratio" = retired v1 semantics; the v2 detector measures
+      # the authenticity axis — relabeled after the ti_drop pattern above.
+      title: "Authenticity sharp change"
+      detail: "Authenticity changed %{N}%% in %{M} min"
     severity:
       info:
         aria: "Info"
