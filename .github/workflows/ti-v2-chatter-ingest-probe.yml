@@ -1,0 +1,122 @@
+name: ti-v2-chatter-ingest-probe
+# PO question 2026-07-21: "человек ПИСАЛ в чат, а мы его не увидели — ни сообщение, ни регистрацию.
+# почему?" Decisive layer-by-layer probe for one (login, chatter): (1) is the MESSAGE in ClickHouse
+# chat_messages at all (ingest)? (2) is the chatter in the live stream_chatters roster (engine input)?
+# (3) do we have the ACCOUNT (ChatterProfile) + a bot score (PerUserBotScore)? (4) flag/backlog state
+# explaining any gap. READ-ONLY, $0.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      login:
+        required: false
+        type: string
+        default: "triffon7"
+      chatter:
+        required: false
+        type: string
+        default: "matvey228666337"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          cat > /tmp/cingest.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          cu = ENV["CHATTER"].to_s
+          login = ENV["LOGIN"].to_s
+          def esc(s) = s.gsub("'", "''")
+
+          ch = Channel.find_by(login: login)
+          s = ch && Stream.where(channel_id: ch.id, ended_at: nil).order(started_at: :desc).first
+          puts "target: #{login} (channel #{ch&.id}) live stream=#{s&.id} broadcaster_type=#{ch&.broadcaster_type} is_monitored=#{ch&.respond_to?(:is_monitored) ? ch.is_monitored : 'n/a'}"
+
+          puts "\n===== 1. MESSAGE in ClickHouse chat_messages? (ingest layer) ====="
+          if s
+            q1 = Clickhouse.client.select(<<~SQL)
+              SELECT count() c, min(timestamp) mn, max(timestamp) mx, any(message_text) sample, any(channel_login) chl, any(msg_type) mt
+              FROM chat_messages WHERE stream_id = '#{esc(s.id)}' AND username = '#{esc(cu)}'
+            SQL
+            r = q1.first || {}
+            puts "  this stream: msgs=#{r["c"]} first=#{r["mn"]} last=#{r["mx"]} channel=#{r["chl"]} type=#{r["mt"]}"
+            puts "  sample text: #{r["sample"].to_s[0, 120].inspect}"
+          end
+          q2 = Clickhouse.client.select(<<~SQL)
+            SELECT count() c, uniqExact(stream_id) streams, uniqExact(channel_login) channels, min(timestamp) mn, max(timestamp) mx
+            FROM chat_messages WHERE username = '#{esc(cu)}' AND timestamp > now() - INTERVAL 24 HOUR
+          SQL
+          r2 = q2.first || {}
+          puts "  channel-wide 24h: msgs=#{r2["c"]} in #{r2["streams"]} streams / #{r2["channels"]} channels  (#{r2["mn"]}..#{r2["mx"]})"
+          puts "  → VERDICT ingest: #{(r2["c"].to_i.positive?) ? "MESSAGE IS INGESTED (we DID capture it)" : "MESSAGE ABSENT from chat_messages (ingest gap!)"}"
+
+          puts "\n===== 2. in the engine's stream_chatters roster? (engine input) ====="
+          if s
+            roster = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            inrost = roster.include?(cu)
+            puts "  roster size=#{roster.size} (cap 500) | #{cu} in roster: #{inrost}"
+            puts "  → if ingested but NOT in roster: roster LIMIT 500 truncation (ORDER BY username) or msg_type filter"
+          end
+
+          puts "\n===== 3. ACCOUNT (ChatterProfile) + bot score? (enrichment layer) ====="
+          cp = ChatterProfile.find_by(login: cu)
+          puts "  ChatterProfile: #{cp ? "EXISTS created=#{cp.twitch_created_at} followers=#{cp.followers_count} fetched=#{cp.fetched_at}" : "NONE (Twitch account metadata never fetched)"}"
+          pubs = s ? PerUserBotScore.where(stream_id: s.id, username: cu).first : nil
+          puts "  PerUserBotScore(this stream): #{pubs ? "class=#{pubs.classification} score=#{pubs.bot_score}" : "NONE"}"
+          puts "  PerUserBotScore(any stream): #{PerUserBotScore.where(username: cu).count} rows total"
+
+          puts "\n===== 4. WHY no account data — flag + backlog state ====="
+          %i[stream_monitor chatter_profile_enrichment bot_scoring live_bot_scoring ti_v2_engine].each do |f|
+            puts "  flag #{f}: #{(Flipper.enabled?(f) rescue "err")}"
+          end
+          fresh = ChatterProfile.where("fetched_at > ?", 30.days.ago).count
+          puts "  ChatterProfile cache: total=#{ChatterProfile.count} fresh(<30d)=#{fresh}"
+          # enrichment backlog: distinct recent chatters (2h) missing a fresh profile — the 350/run cap queue
+          begin
+            recent = Clickhouse.client.select(<<~SQL)
+              SELECT uniqExact(username) u FROM chat_messages
+              WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 2 HOUR
+            SQL
+            ru = recent.first&.fetch("u", 0).to_i
+            puts "  recently-active chatters (2h): #{ru} | enrichment cap = 350/run → backlog if #{ru} >> 350×(runs/2h)"
+          rescue => e
+            puts "  backlog query failed: #{e.class}"
+          end
+          if s
+            roster = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            scored = PerUserBotScore.where(stream_id: s.id, username: roster).count
+            profiled = ChatterProfile.where(login: roster).count
+            puts "  THIS stream roster coverage: #{roster.size} chatters → #{scored} scored (#{(100.0*scored/[roster.size,1].max).round}%), #{profiled} profiled (#{(100.0*profiled/[roster.size,1].max).round}%)"
+          end
+          puts "\nSUMMARY: message ingested? (§1) · in roster/engine? (§2) · account+score? (§3) · flags/backlog cause (§4)."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/cingest.rb) lines)"
+
+      - name: Run probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/cingest.rb ${TARGET}:/tmp/cingest.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/cingest.rb ${CONTAINER}:/tmp/cingest.rb && docker exec -e LOGIN='${{ inputs.login || 'triffon7' }}' -e CHATTER='${{ inputs.chatter || 'matvey228666337' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/cingest.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
