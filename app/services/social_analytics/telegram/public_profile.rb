@@ -50,9 +50,20 @@ module SocialAnalytics
           title: parse_title(html),
           subscribers: subscribers,
           posts: posts,
-          metrics: compute_metrics(subscribers, posts),
+          metrics: compute_metrics(subscribers, posts, parse_reactions_total(html)),
           captured_at: nil # stamped by the caller (Time.current unavailable in pure context)
         }
+      end
+
+      # Sum of reaction counts across the page's posts (emoji + paid-star reactions). Each individual
+      # `tgme_reaction` span ends with its count; strip the inner icon markup and take the trailing
+      # number. The container span is `tgme_widget_message_reactions` — the `tgme_reaction` (underscore-r)
+      # match hits only the per-reaction spans, not the container.
+      def self.parse_reactions_total(html)
+        html.scan(%r{class="tgme_reaction[^"]*"[^>]*>(.*?)</span>}m).sum do |inner|
+          num = inner[0].gsub(/<[^>]*>/, "").strip[/([\d][\d.,  ]*[KM]?)\s*\z/, 1]
+          num ? (to_i(num) || 0) : 0
+        end
       end
 
       def self.parse_subscribers(html)
@@ -76,12 +87,17 @@ module SocialAnalytics
         end
       end
 
-      def self.compute_metrics(subscribers, posts)
+      def self.compute_metrics(subscribers, posts, reactions_total = 0)
         view_values = posts.map { |p| p[:views] }.compact.reject(&:zero?)
         avg_views = view_values.any? ? (view_values.sum.to_f / view_values.size).round : nil
+        avg_reactions = posts.any? ? (reactions_total.to_f / posts.size).round : nil
         {
           posts_on_page: posts.size,
           avg_views: avg_views,
+          avg_reactions: avg_reactions,
+          # ER (вовлечённость) — avg reactions ÷ avg views (%). Same engagement metric TGStat/LabelUp
+          # show. Reactions are what the public preview exposes (comments/forwards need the Bot API).
+          er_percent: (avg_reactions && avg_views&.positive? ? (avg_reactions.to_f / avg_views * 100).round(2) : nil),
           # «Просматриваемость» — avg views ÷ subscribers (%). The standard Telegram engagement metric
           # (what share of the subscriber base a typical post reaches) — same one TGStat/LabelUp show.
           # Descriptive, NOT a fraud verdict (PO: no накрутка analysis on socials).
