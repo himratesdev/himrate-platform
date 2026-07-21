@@ -96,11 +96,16 @@ module Api
           merged_parts_count: stream.merged_parts_count
         }
         if v2_engine?
+          # Surface-audit sweep: band_row + canonical label_key + grey fallback + engine_version
+          # (the dual-shape consumers rely on engine_version to branch).
           base.merge(
             erv: ti&.erv,
             authenticity: ti&.authenticity&.to_f,
-            band_color: ti&.band_color,
-            confirmed_anomaly: ti&.confirmed_anomaly
+            band_row: ti&.band_row,
+            label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
+            band_color: ti&.band_color || "grey",
+            confirmed_anomaly: ti&.confirmed_anomaly,
+            engine_version: "v2"
           )
         else
           base.merge(

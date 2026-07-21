@@ -93,7 +93,7 @@ module Trends
               ti: auth&.to_f&.round(2),
               erv_breakdown: { f_hard: f_hard&.to_f, f_soft: f_soft&.to_f, f_hat: f_hat&.to_f },
               reason_codes: reason_codes || [],
-              band: { row: band_row, color: band_color },
+              band: { row: band_row, color: band_color, label_key: TrustIndex::V2::BandClassifier.label_key_for(band_row) },
               engine_version: "v2"
             }
           end

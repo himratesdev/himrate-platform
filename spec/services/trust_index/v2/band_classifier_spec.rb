@@ -73,4 +73,17 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     b = classify(n_frac: 0.40, c_hard: true, a_hat: 0.05, q: 0.9) # A≈95 but named fraction is damning
     expect(b.row).to eq(1)
   end
+
+  describe ".label_key_for (surface-audit sweep — the ONE reader-side derivation point)" do
+    it "maps every persisted row to its canonical key" do
+      expect(described_class.label_key_for(3)).to eq("band.green_real")
+      expect(described_class.label_key_for(4)).to eq("band.green_no_anomaly")
+      expect(described_class.label_key_for(6)).to eq("band.amber_exceeds")
+    end
+
+    it "falls back to the grey key for nil/unknown rows (grey fallback contract)" do
+      expect(described_class.label_key_for(nil)).to eq("band.grey_insufficient")
+      expect(described_class.label_key_for(99)).to eq("band.grey_insufficient")
+    end
+  end
 end

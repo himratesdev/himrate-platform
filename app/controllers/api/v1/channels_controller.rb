@@ -131,7 +131,15 @@ module Api
             data: base.merge(
               html: badge_html(channel, svg_url, ti&.erv),
               erv: ti&.erv,
-              band_color: ti&.band_color || "grey"
+              # Surface-audit sweep: canonical band {row, color, label_key} on the labeled surface;
+              # band_color kept for compat with earlier readers.
+              band: {
+                row: ti&.band_row,
+                color: ti&.band_color || "grey",
+                label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row)
+              },
+              band_color: ti&.band_color || "grey",
+              engine_version: "v2"
             )
           }
         else

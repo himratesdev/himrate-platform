@@ -27,10 +27,18 @@ class PostStreamNotificationService
     }
 
     if ti_v2_engine?
+      # Surface-audit sweep: canonical band {row, color, label_key, sub} (label_key derived —
+      # TIH stores no label_key column) with the grey fallback shape instead of nil.
+      band = if tih&.band_row
+        { row: tih.band_row, color: tih.band_color,
+          label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row), sub: tih.band_sub }
+      else
+        { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil }
+      end
       payload.merge!(
         erv: report&.erv_final,
         erv_interval: tih&.erv_lo ? { lo: tih.erv_lo, hi: tih.erv_hi } : nil,
-        band: tih&.band_row ? { row: tih.band_row, color: tih.band_color, sub: tih.band_sub } : nil,
+        band: band,
         engine_version: "v2"
       )
     else

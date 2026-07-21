@@ -128,10 +128,15 @@ module Api
       end
 
       def cold_start_payload_v2
+        # Surface-audit sweep: shape parity with the non-cold v2 payload — erv_label (server-resolved,
+        # the landing/server-rendered surfaces read it), authenticity + reason_codes keys present.
         {
           erv: nil,
           erv_interval: { lo: nil, hi: nil },
+          authenticity: nil,
           band: { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil },
+          erv_label: I18n.t("band.grey_insufficient", default: nil),
+          reason_codes: [],
           confirmed_anomaly: { shown: false },
           cold_start_tier: "insufficient",
           confidence_marker: "provisional",
