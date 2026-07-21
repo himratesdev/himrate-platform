@@ -39,6 +39,11 @@ class User < ApplicationRecord
 
   scope :active, -> { where(deleted_at: nil) }
 
+  # Email-marketing foundation: log a `registered` lifecycle event once per new user,
+  # after commit (never rolls back the signup; fires for every provider). This is the
+  # hook action-triggered campaigns build on.
+  after_create_commit :record_registration_event
+
   # TASK-039 FR-039: Memoized Twitch IDs of channels broadcaster по active OAuth providers.
   # Eliminates per-policy-call N+1 (10 Trends endpoints на странице → 1 query вместо 10).
   # Single Twitch OAuth = single channel today; Set keeps API stable если modeling меняется.
@@ -77,6 +82,14 @@ class User < ApplicationRecord
 
   def roles
     [ :viewer, (:streamer if streamer?), (:brand if brand?) ].compact
+  end
+
+  def record_registration_event
+    UserEvents::Recorder.record(self, UserEvent::REGISTERED, { email_source: email_source })
+  rescue StandardError => e
+    # A logging failure must never surface to the just-registered user.
+    Rails.logger.error("[User#record_registration_event] #{id}: #{e.class} #{e.message}")
+    Sentry.capture_exception(e) if defined?(Sentry)
   end
 
   def business_via_active_team?

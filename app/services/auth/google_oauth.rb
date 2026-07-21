@@ -83,7 +83,9 @@ module Auth
             email: google_user[:email],
             username: derive_username(google_user),
             role: "viewer",
-            tier: "free"
+            tier: "free",
+            email_source: "google",
+            email_verified: google_user[:email].present?
           )
 
           AuthProvider.create!(
