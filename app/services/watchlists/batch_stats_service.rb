@@ -60,17 +60,20 @@ module Watchlists
       wl_ids.to_h { |id| [ id, empty ] }
     end
 
+    # CR #425 N-4 + CR #427 Nit-1: SELECT only what this service reads — stats are aggregate-only
+    # (v2 reads authenticity, v1 reads erv_percent; channel_id/calculated_at drive DISTINCT ON).
+    # The per-row label contract lives in EnrichmentService, not here.
     def latest_ti_for_channels(channel_ids)
       if v2_engine?
         TrustIndexHistory
           .where(channel_id: channel_ids, engine_version: "v2")
-          .select("DISTINCT ON (channel_id) channel_id, erv, authenticity, ccv, calculated_at") # CR #425 N-4: band_color was selected but never read (stats are aggregate-only)
+          .select("DISTINCT ON (channel_id) channel_id, authenticity, calculated_at")
           .order(:channel_id, calculated_at: :desc)
           .index_by(&:channel_id)
       else
         TrustIndexHistory
           .where(channel_id: channel_ids, engine_version: "v1")
-          .select("DISTINCT ON (channel_id) channel_id, trust_index_score, erv_percent, ccv, calculated_at")
+          .select("DISTINCT ON (channel_id) channel_id, erv_percent, calculated_at")
           .order(:channel_id, calculated_at: :desc)
           .index_by(&:channel_id)
       end
