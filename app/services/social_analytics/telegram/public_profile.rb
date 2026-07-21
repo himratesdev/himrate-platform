@@ -29,7 +29,10 @@ module SocialAnalytics
 
         html = fetch
         html && self.class.parse(html, handle: @handle)
-      rescue HTTP::Error, OpenSSL::SSL::SSLError => e
+      # Connection-level failures (SocketError/Errno/DNS/timeout-at-connect) are NOT HTTP::Error —
+      # t.me may be unreachable from some hosts (RU-hosted egress can block Telegram). Degrade to nil
+      # (→ platform marked unavailable) instead of crashing the whole profile warm.
+      rescue HTTP::Error, OpenSSL::SSL::SSLError, SocketError, SystemCallError, Timeout::Error => e
         Rails.logger.warn("SocialAnalytics::Telegram::PublicProfile #{@handle}: #{e.class}: #{e.message[0..120]}")
         nil
       end

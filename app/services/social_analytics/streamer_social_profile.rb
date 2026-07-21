@@ -24,7 +24,9 @@ module SocialAnalytics
     def call
       return nil if @login.blank?
 
-      socials = TwitchSocials.call(@login)
+      # Build-for-scale: no single external source may crash the whole warm. Each fetch degrades to
+      # its own empty/unavailable result so the profile always assembles (footprint + whatever analysed).
+      socials = safe("TwitchSocials") { TwitchSocials.call(@login) } || []
       {
         login: @login,
         socials: socials, # full footprint (every linked account, incl. display-only discord/rkn)
@@ -34,11 +36,18 @@ module SocialAnalytics
 
     private
 
+    def safe(label)
+      yield
+    rescue StandardError => e
+      Rails.logger.warn("SocialAnalytics::StreamerSocialProfile[#{@login}] #{label}: #{e.class}: #{e.message[0..160]}")
+      nil
+    end
+
     def analyze_telegram(socials)
       tg = socials.find { |s| s[:platform] == "telegram" && s[:handle].present? }
       return nil unless tg
 
-      profile = Telegram::PublicProfile.call(tg[:handle])
+      profile = safe("Telegram") { Telegram::PublicProfile.call(tg[:handle]) }
       base = { handle: tg[:handle], url: tg[:url] }
       return base.merge(available: false) unless profile
 
