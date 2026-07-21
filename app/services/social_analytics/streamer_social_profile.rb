@@ -30,7 +30,10 @@ module SocialAnalytics
       {
         login: @login,
         socials: socials, # full footprint (every linked account, incl. display-only discord/rkn)
-        platforms: { telegram: analyze_telegram(socials) }.compact # analysed platforms (grows w/ creds)
+        platforms: {
+          telegram: analyze_telegram(socials),
+          youtube: analyze_youtube(socials)
+        }.compact # analysed platforms (grows with creds)
       }
     end
 
@@ -57,6 +60,25 @@ module SocialAnalytics
         subscribers: profile[:subscribers],
         metrics: profile[:metrics],
         recent_posts: profile[:posts].first(20)
+      )
+    end
+
+    def analyze_youtube(socials)
+      yt = socials.find { |s| s[:platform] == "youtube" && s[:url].present? }
+      return nil unless yt
+
+      profile = safe("Youtube") { Youtube::PublicProfile.call(yt[:url]) }
+      base = { handle: yt[:handle], url: yt[:url] }
+      return base.merge(available: false) unless profile
+
+      base.merge(
+        available: true,
+        title: profile[:title],
+        subscribers: profile[:subscribers],
+        total_views: profile[:total_views],
+        video_count: profile[:video_count],
+        metrics: profile[:metrics]
+        # demographics (age/gender/geo) = later, via owner-OAuth (YouTube Analytics API) — NOT here
       )
     end
   end
