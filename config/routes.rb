@@ -52,6 +52,9 @@ Rails.application.routes.draw do
       get "discover/live", to: "discover#live"
       # LK-BACKEND screen 13 «Рост»: game opportunities (Steam novelty × scarcity × distribution).
       get "discover/games", to: "discover/games#index"
+
+      # EPIC Social Analytics: streamer cross-platform social profile (public, descriptive).
+      get "social/streamers/:login", to: "social/streamers#show", constraints: { login: /[A-Za-z0-9_]+/ }
       post "lk/notify", to: "lk#notify"
 
       # TASK-031: User profile
