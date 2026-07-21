@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <%= render "layouts/head_shared" %>
+
+    <title><%= content_for(:title) || "HimRate" %></title>
+    <meta name="description" content="<%= content_for(:description) %>">
+    <%# Product / LK surfaces (login + /app/*) carry no public search value → noindex (follow so link
+        equity still flows). No canonical / OG / JSON-LD here: this is the product UI, not the
+        marketing site. This layout is the seam for the app.himrate.com subdomain split. %>
+    <meta name="robots" content="noindex, follow">
+  </head>
+  <body>
+    <%= yield %>
+
+    <%# App JS: the page's own bundle + dashboard chrome (brand_nav) + client RU/EN + responsive burger.
+        Deliberately NO hr-shared.js — that is the MARKETING bundle (animated dot canvas + a nav-wiring
+        that hijacks buttons to /methodology). The product UI must stay free of it (it broke the login
+        Twitch button, and PO: «не вставляй везде анимцию на фон»). %>
+    <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
+    <% if @brand_dashboard %><%= javascript_include_tag "landing/brand_nav" %><% end %>
+    <%= javascript_include_tag "landing/hr-i18n" %>
+    <%= javascript_include_tag "landing/mobile-nav" %>
+  </body>
+</html>

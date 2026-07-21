@@ -1,20 +1,16 @@
 <!DOCTYPE html>
 <html lang="ru">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <%= render "layouts/head_shared" %>
+
     <title><%= content_for(:title) || "HimRate" %></title>
     <meta name="description" content="<%= content_for(:description) %>">
 
-    <%# Self-referencing canonical on the apex host consolidates www/http/staging
-        duplicates onto https://himrate.com (TASK-060 SEO). LK app shells and the
-        login page carry no public value → noindex (still `follow` so equity flows). %>
+    <%# Self-referencing canonical on the apex host consolidates www/http/staging duplicates onto
+        https://himrate.com (TASK-060 SEO). The landing layout serves ONLY public, indexable surfaces
+        (marketing pages + the public channel card /c/:login). The product UI (login + /app/*) lives on
+        the `app` layout (noindex) — see PagesController#resolve_layout. %>
     <link rel="canonical" href="<%= canonical_url %>">
-    <% if @brand_dashboard || @page == "login" %>
-      <meta name="robots" content="noindex, follow">
-    <% end %>
-
-    <link rel="icon" type="image/svg+xml" href="<%= asset_path("brand/favicon.svg") %>">
 
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="HimRate">
@@ -63,24 +59,6 @@
       }
     </script>
 
-    <%# Export reset + FOUC guard. The export's static decorative dot field
-        ([data-pencil-name="Dot BG"]) is stripped from the markup at render time, so
-        the animated dot canvas (hr-shared.js on the inner pages, index.js on the
-        home page) is the only background. Paint the dark bg up front so there is no
-        flash before the canvas initialises. %>
-    <style>
-      *, ::before, ::after { box-sizing: border-box; }
-      body { margin: 0; }
-      html, body { background: #07070C; }
-      /* Safety net: the fluid layout fits the viewport at every width, but the
-         animated marquee / canvas background paint beyond it by design — clip any
-         horizontal bleed so phones never get a stray sideways scroll. */
-      html, body { overflow-x: hidden; max-width: 100%; }
-    </style>
-
-    <%= stylesheet_link_tag "landing_fonts" %>
-    <%= stylesheet_link_tag "tailwind" %>
-
     <%# Analytics (Metrika + GA4) — externalised (CSP-clean) and only on the
         canonical production host so staging / localhost don't pollute stats. %>
     <% if analytics_enabled? %><%= javascript_include_tag "landing/analytics", async: true %><% end %>
@@ -91,23 +69,16 @@
     <% end %>
     <%= yield %>
 
-    <%# The export's vanilla JS, served as CSP-safe external assets. index.html was
-        self-contained in the export (its own canvas bg + nav live in index.js), so
-        it does NOT also load hr-shared.js — that would double the canvas/nav. The
-        marketing pages share hr-shared.js. hr-i18n.js (client RU/EN) loads on all. %>
+    <%# The export's vanilla JS, served as CSP-safe external assets. index.html was self-contained in
+        the export (its own canvas bg + nav live in index.js), so it does NOT also load hr-shared.js.
+        hr-i18n.js (client RU/EN) loads on every landing page. %>
     <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
-    <%# Shared brand-dashboard chrome (sidebar nav + topbar + logout) on the brand LK pages. %>
-    <% if @brand_dashboard %><%= javascript_include_tag "landing/brand_nav" %><% end %>
     <%= javascript_include_tag "landing/hr-i18n" %>
-    <%# hr-shared.js = MARKETING-site nav + animated dot canvas. It must NOT load on the LK/app
-        surfaces: (1) its aggressive nav-wiring hijacks page buttons to a /methodology fallback — it
-        was catching the login «Войти через Twitch» button and sending it to /methodology instead of
-        the OAuth flow; (2) its canvas paints an animated background, which the product UI shouldn't
-        have (PO: «не вставляй везде анимцию на фон»). App pages = @brand_dashboard dashboards + login
-        + channel_card; they carry their own per-page JS + brand_nav and need nothing from hr-shared. %>
-    <% app_page = @brand_dashboard || %w[login channel_card].include?(@page) %>
-    <% unless @page == "index" || app_page %><%= javascript_include_tag "landing/hr-shared" %><% end %>
-    <%# Responsive header burger — every page, including the self-contained index. %>
+    <%# hr-shared.js = the marketing nav + animated dot canvas. Skipped on index (self-contained bundle)
+        and on the public channel card (/c/:login — it has its own chrome, and hr-shared's nav-wiring
+        would hijack its buttons). The product UI never reaches this layout at all (app layout). %>
+    <% unless @page.in?(%w[index channel_card]) %><%= javascript_include_tag "landing/hr-shared" %><% end %>
+    <%# Responsive header burger — every landing page, including the self-contained index. %>
     <%= javascript_include_tag "landing/mobile-nav" %>
   </body>
 </html>

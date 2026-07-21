@@ -52,6 +52,29 @@ RSpec.describe "Public landing", type: :request do
       end
     end
 
+    # Layout split (app.himrate.com seam): the product surfaces (login + /app/*) render on the `app`
+    # layout — noindex, product chrome, NO marketing SEO. The marketing pages + the public channel
+    # card stay on the SEO-rich `landing` layout. Both layouts share tailwind/fonts via the head partial.
+    it "renders login + /app/* on the app layout (noindex, no marketing SEO head)" do
+      %w[/login /app/home /app/discover].each do |path|
+        get path
+        expect(response.body).to match(/<meta name="robots" content="noindex, follow">/), "#{path} must be noindex"
+        expect(response.body).not_to include('application/ld+json'), "#{path} must not carry marketing JSON-LD"
+        expect(response.body).not_to include('<link rel="canonical"'), "#{path} must not carry a marketing canonical"
+        expect(response.body).to match(%r{/assets/tailwind[-\w]*\.css}), "#{path} still gets shared tailwind"
+        expect(response.body).to match(%r{landing/brand_nav[-\w]*\.js}) if path.start_with?("/app/") # dashboard chrome
+      end
+    end
+
+    it "keeps the public channel card on the landing layout (indexable SEO: canonical + OG + JSON-LD, but no hr-shared)" do
+      get "/c/recrent"
+
+      expect(response.body).to include('<link rel="canonical"')                 # indexable
+      expect(response.body).to include('application/ld+json')                    # marketing SEO head
+      expect(response.body).to match(%r{<meta property="og:image" content=".*og/c/recrent\.png">}) # dynamic share image
+      expect(response.body).not_to match(%r{landing/hr-shared[-\w]*\.js})        # its own chrome, no marketing nav
+    end
+
     it "guards the FOUC: strips the static dot field + paints the dark bg up front" do
       get "/"
 

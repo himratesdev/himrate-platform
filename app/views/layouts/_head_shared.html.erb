@@ -1,0 +1,18 @@
+<%# Shared <head> essentials for both the marketing (landing) and product (app) layouts:
+    charset + viewport, favicon, the FOUC dark-bg guard, and the built Tailwind + self-hosted fonts.
+    SEO-specific tags (title/canonical/OG/JSON-LD/robots) live in each layout, not here. %>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" type="image/svg+xml" href="<%= asset_path("brand/favicon.svg") %>">
+
+<%# Export reset + FOUC guard: paint the dark bg up front so there is no flash before JS/CSS, and
+    clip horizontal bleed so phones never get a stray sideways scroll from marquee/canvas overflow. %>
+<style>
+  *, ::before, ::after { box-sizing: border-box; }
+  body { margin: 0; }
+  html, body { background: #07070C; }
+  html, body { overflow-x: hidden; max-width: 100%; }
+</style>
+
+<%= stylesheet_link_tag "landing_fonts" %>
+<%= stylesheet_link_tag "tailwind" %>
