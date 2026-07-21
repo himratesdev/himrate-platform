@@ -40,4 +40,24 @@ RSpec.describe SocialAnalytics::StreamerSocialProfile do
     expect(r[:socials]).to eq([])
     expect(r[:platforms]).to eq({})
   end
+
+  it "degrades gracefully when an external source raises (never crashes the warm)" do
+    allow(SocialAnalytics::TwitchSocials).to receive(:call).and_return([
+      { platform: "telegram", url: "https://t.me/x", handle: "x", analyzable: true }
+    ])
+    allow(SocialAnalytics::Telegram::PublicProfile).to receive(:call).and_raise(SocketError, "getaddrinfo: t.me unreachable")
+
+    r = described_class.call("recrent")
+
+    expect(r[:login]).to eq("recrent")           # profile still assembles
+    expect(r[:socials].size).to eq(1)            # footprint intact
+    expect(r.dig(:platforms, :telegram, :available)).to be(false) # platform marked unavailable, no raise
+  end
+
+  it "returns an empty footprint (not a crash) when the Twitch seed itself raises" do
+    allow(SocialAnalytics::TwitchSocials).to receive(:call).and_raise(StandardError, "gql down")
+    r = described_class.call("recrent")
+    expect(r[:socials]).to eq([])
+    expect(r[:platforms]).to eq({})
+  end
 end

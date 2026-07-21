@@ -1,0 +1,91 @@
+name: social-diag
+
+# Diagnose why SocialAnalytics::ProfileRefreshWorker leaves the /api/v1/social/streamers/:login
+# endpoint stuck on "pending" on staging: run the worker INLINE in the app container and surface the
+# exact error, plus probe the two external sources from the VPS itself (egress can differ from CI/laptop).
+# Read-only diagnostic (the worker writes one snapshot row + a cache entry — same as normal operation).
+
+on:
+  workflow_dispatch:
+    inputs:
+      login:
+        description: 'Twitch login to warm (e.g. recrent)'
+        required: true
+        default: 'recrent'
+        type: string
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build diag script
+        run: |
+          cat > /tmp/social-diag.rb <<RUBY_EOF
+          login = "${{ inputs.login }}"
+          RUBY_EOF
+          cat >> /tmp/social-diag.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          def section(t); puts "\n## #{t}"; yield; rescue => e; puts "  ERROR: #{e.class}: #{e.message[0..400]}"; puts "  #{e.backtrace&.first(4)&.join("\n  ")}"; end
+
+          section("A. table + cache config") do
+            puts "  social_profile_snapshots table exists: #{ActiveRecord::Base.connection.table_exists?('social_profile_snapshots')}"
+            puts "  cache store: #{Rails.cache.class}"
+          end
+
+          section("B. egress: gql.twitch.tv (socials seed)") do
+            r = HTTP.timeout(8).post("https://gql.twitch.tv/gql",
+              headers: { "Client-Id" => "kd1unb4b3q4t58fwlpcbzcbnm76a8fp", "Content-Type" => "application/json" },
+              body: %({"query":"query{user(login:\\"#{login}\\"){id}}"}))
+            puts "  twitch gql from VPS: HTTP #{r.status.code} bytes=#{r.body.to_s.bytesize}"
+          end
+
+          section("C. egress: t.me public preview (telegram adapter)") do
+            r = HTTP.headers("User-Agent" => "Mozilla/5.0").timeout(10).get("https://t.me/s/#{login}")
+            puts "  t.me/s/#{login} from VPS: HTTP #{r.status.code} bytes=#{r.body.to_s.bytesize}"
+          end
+
+          section("D. TwitchSocials.call (seed)") do
+            socials = SocialAnalytics::TwitchSocials.call(login)
+            puts "  socials: #{socials.map { |s| s[:platform] }.join(', ')}"
+          end
+
+          section("E. StreamerSocialProfile.call (full orchestrator)") do
+            p = SocialAnalytics::StreamerSocialProfile.call(login)
+            tg = p&.dig(:platforms, :telegram)
+            puts "  login=#{p&.dig(:login)} footprint=#{(p&.dig(:socials) || []).size} tg_available=#{tg&.dig(:available)} tg_subs=#{tg&.dig(:subscribers)}"
+          end
+
+          section("F. ProfileRefreshWorker.perform INLINE (exact failure surface)") do
+            Rails.cache.delete(SocialAnalytics::ProfileRefreshWorker.cache_key(login))
+            SocialAnalytics::ProfileRefreshWorker.new.perform(login)
+            c = Rails.cache.read(SocialAnalytics::ProfileRefreshWorker.cache_key(login))
+            if c
+              tg = c.dig(:platforms, :telegram) || {}
+              puts "  cache WRITTEN ✅ generated=#{c[:generated_at]} tg_subs=#{tg[:subscribers]} reach=#{tg.dig(:metrics, :avg_views)} ER=#{tg.dig(:metrics, :er_percent)}"
+            else
+              puts "  cache NIL after inline run — worker raised before write (see error above) OR returned nil"
+            end
+            puts "  snapshots for #{login}: #{SocialProfileSnapshot.for_login(login).count}"
+          end
+          RUBY_EOF
+          scp /tmp/social-diag.rb hostkey:/tmp/social-diag.rb
+
+      - name: Run diag in app container
+        run: |
+          ssh hostkey 'CID=$(docker ps --filter "label=service=himrate" --filter "label=role=web" -q | head -1); docker cp /tmp/social-diag.rb $CID:/tmp/social-diag.rb && docker exec $CID bin/rails runner /tmp/social-diag.rb'
