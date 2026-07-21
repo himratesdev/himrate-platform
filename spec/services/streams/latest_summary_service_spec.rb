@@ -97,4 +97,32 @@ RSpec.describe Streams::LatestSummaryService do
       expect { service.call }.not_to raise_error
     end
   end
+  # CR #432 N-2: the v2 verdict block (surface-audit PR-C) — flag-ON coverage.
+  describe "#call under ti_v2_engine" do
+    before do
+      allow(Flipper).to receive(:enabled?).and_return(false)
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+    end
+
+    it "merges the additive v2 verdict from the final v2 TIH (canonical band + label_key)" do
+      stream = Stream.create!(channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago)
+      create(:trust_index_history, :v2, channel: channel, stream: stream,
+             authenticity: 91.5, band_row: 3, band_color: "green")
+
+      data = service.call[:data]
+      expect(data[:authenticity]).to eq(91.5)
+      expect(data[:band]).to eq(row: 3, color: "green", label_key: "band.green_real", sub: nil)
+      expect(data[:engine_version]).to eq("v2")
+      expect(data[:erv_percent_final]).to be_nil # PSR stop-write — kept for v1-consumer compat
+    end
+
+    it "falls back to the grey band shape when the stream has no v2 TIH (pre-cutover stream)" do
+      Stream.create!(channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago)
+
+      data = service.call[:data]
+      expect(data[:authenticity]).to be_nil
+      expect(data[:band]).to eq(row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil)
+      expect(data[:engine_version]).to eq("v2")
+    end
+  end
 end

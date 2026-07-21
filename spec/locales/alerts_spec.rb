@@ -45,11 +45,12 @@ RSpec.describe "Alert i18n catalog (alerts.{ru,en}.yml)" do
   end
 
   it "applies interpolation params correctly (ccv_spike example)" do
-    ru = I18n.t("alert.ccv_spike.detail", N: 142, M: 5, From: 5000, To: 12_100, locale: :ru)
-    expect(ru).to eq("+142% за 5 мин (рост с 5000 до 12100)")
+    # T1-074 surface-audit: detail simplified to the params producers actually supply (window only).
+    ru = I18n.t("alert.ccv_spike.detail", M: 5, locale: :ru)
+    expect(ru).to eq("Аномальный скачок зрителей за 5 мин")
 
-    en = I18n.t("alert.ccv_spike.detail", N: 142, M: 5, From: 5000, To: 12_100, locale: :en)
-    expect(en).to eq("+142% in 5 min (5000 → 12100)")
+    en = I18n.t("alert.ccv_spike.detail", M: 5, locale: :en)
+    expect(en).to eq("Anomalous viewer spike in 5 min")
   end
 
   it "applies interpolation params correctly (confirmed_raid)" do

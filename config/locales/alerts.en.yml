@@ -5,7 +5,9 @@ en:
   alert:
     ccv_spike:
       title: "Viewer surge"
-      detail: "+%{N}%% in %{M} min (%{From} → %{To})"
+      # T1-074 surface-audit: the old template interpolated %{N}/%{From}/%{To} that no producer
+      # supplies (presenter emits z-score only) — unfulfillable contract; simplified to real data.
+      detail: "Anomalous viewer spike in %{M} min"
     confirmed_raid:
       title: "Confirmed raid"
       detail: "Raid from @%{raider}: %{viewers} viewers"
