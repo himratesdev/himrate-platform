@@ -22,7 +22,8 @@ RSpec.describe "Dashboard web login", type: :request do
       get "/auth/web/twitch"
       expect(response).to have_http_status(:redirect)
       expect(response.location).to start_with("https://id.twitch.tv/oauth2/authorize")
-      expect(Rails.cache.read("pkce:abc")).to include(web: true)
+      # web login must land INSIDE the dashboard after callback, not bounce back to /login
+      expect(Rails.cache.read("pkce:abc")).to include(web: true, web_redirect: "/app/home")
     end
   end
 
@@ -30,11 +31,11 @@ RSpec.describe "Dashboard web login", type: :request do
     it "sets an httpOnly session cookie that authenticates subsequent API requests" do
       user = create(:user, email: "web@himrate.test")
       allow(Auth::TwitchOauth).to receive(:new).and_return(instance_double(Auth::TwitchOauth, callback: user))
-      Rails.cache.write("pkce:st8", { code_verifier: "v", redirect_uri: "https://cb", web: true, web_redirect: "/login" }, expires_in: 10.minutes)
+      Rails.cache.write("pkce:st8", { code_verifier: "v", redirect_uri: "https://cb", web: true, web_redirect: "/app/home" }, expires_in: 10.minutes)
 
       get "/api/v1/auth/twitch/callback", params: { code: "c", state: "st8" }
       expect(response).to have_http_status(:redirect)
-      expect(response.location).to end_with("/login")
+      expect(response.location).to end_with("/app/home")
       expect(response.cookies["hr_session"]).to be_present
 
       # the httpOnly cookie now authenticates a same-origin API request (no Bearer header)
@@ -65,7 +66,7 @@ RSpec.describe "Dashboard web login", type: :request do
       get "/auth/web/google"
       expect(response).to have_http_status(:redirect)
       expect(response.location).to start_with("https://accounts.google.com/o/oauth2/v2/auth")
-      expect(Rails.cache.read("google_state:gst")).to include(web: true)
+      expect(Rails.cache.read("google_state:gst")).to include(web: true, web_redirect: "/app/home")
     end
   end
 
@@ -73,11 +74,11 @@ RSpec.describe "Dashboard web login", type: :request do
     it "sets an httpOnly session cookie that authenticates subsequent API requests" do
       user = create(:user, email: "gweb@himrate.test")
       allow(Auth::GoogleOauth).to receive(:new).and_return(instance_double(Auth::GoogleOauth, callback: user))
-      Rails.cache.write("google_state:gw1", { redirect_uri: "https://cb", web: true, web_redirect: "/login" }, expires_in: 10.minutes)
+      Rails.cache.write("google_state:gw1", { redirect_uri: "https://cb", web: true, web_redirect: "/app/home" }, expires_in: 10.minutes)
 
       get "/api/v1/auth/google/callback", params: { code: "c", state: "gw1" }
       expect(response).to have_http_status(:redirect)
-      expect(response.location).to end_with("/login")
+      expect(response.location).to end_with("/app/home")
       expect(response.cookies["hr_session"]).to be_present
 
       get "/api/v1/lk/status"
