@@ -20,6 +20,13 @@ class PagesController < ApplicationController
   # landing/channel_card.js against the public GET /api/v1/channels/:login/card (headline +
   # reputation are free on any channel per access-model v2). No auth.
   def channel_card
+    # Only render the card for a channel we actually hold — the card API 404s for
+    # unknown logins anyway, so a bare shell for any string was a soft-404 + indexable
+    # empty page. 404 unknown channels instead (no SEO junk). (landing hardening)
+    unless Channel.exists?(login: params[:login])
+      return render(file: Rails.public_path.join("404.html"), status: :not_found, layout: false)
+    end
+
     @page = "channel_card"
     @login = params[:login]
   end

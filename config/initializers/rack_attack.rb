@@ -50,6 +50,18 @@ class Rack::Attack
     req.ip if req.path == "/api/v1/me/analytics/export" && req.post?
   end
 
+  # Public landing compute endpoints (no auth, not under /api/): the dynamic OG image
+  # (/og/c/:login.png → server-side avatar fetch + libvips render) and the public
+  # channel card (/c/:login). CDN caches them, but cache-miss / cache-buster requests
+  # hit the app directly — throttle so they can't be used to hammer the box. (landing hardening)
+  throttle("og_image/ip", limit: 30, period: 1.minute) do |req|
+    req.ip if req.path.start_with?("/og/") && !req.options?
+  end
+
+  throttle("channel_card/ip", limit: 60, period: 1.minute) do |req|
+    req.ip if req.path.match?(%r{\A/c/[^/]+\z}) && !req.options?
+  end
+
   # General API per IP
   throttle("api/ip", limit: 60, period: 1.minute) do |req|
     req.ip if req.path.start_with?("/api/") && !req.options?

@@ -4,6 +4,7 @@ require "rails_helper"
 
 RSpec.describe "Public channel card page", type: :request do
   it "renders the faithful export markup for a public visitor (no auth)" do
+    create(:channel, login: "buster") # a known channel — unknown logins 404 (no soft-404 SEO junk)
     get "/c/buster"
 
     expect(response).to have_http_status(:ok)

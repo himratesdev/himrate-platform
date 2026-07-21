@@ -67,6 +67,7 @@ RSpec.describe "Public landing", type: :request do
     end
 
     it "keeps the public channel card on the landing layout (indexable SEO: canonical + OG + JSON-LD, but no hr-shared)" do
+      create(:channel, login: "recrent")
       get "/c/recrent"
 
       expect(response.body).to include('<link rel="canonical"')                 # indexable
@@ -153,12 +154,19 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).to match(/<meta name="robots" content="noindex, follow">/)
     end
 
-    it "points a channel-card share link at its dynamic OG image + 1200x630 hints" do
+    it "points a known channel-card share link at its dynamic OG image + 1200x630 hints" do
+      create(:channel, login: "ninja")
       get "/c/ninja"
 
       expect(response.body).to include('<meta property="og:image" content="https://himrate.com/og/c/ninja.png">')
       expect(response.body).to include('<meta property="og:image:width" content="1200">')
       expect(response.body).to include('<meta name="twitter:image" content="https://himrate.com/og/c/ninja.png">')
+    end
+
+    it "404s an unknown channel card (no soft-404 / indexable empty page)" do
+      get "/c/definitely_not_a_real_channel"
+
+      expect(response).to have_http_status(:not_found)
     end
   end
 
