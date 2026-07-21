@@ -11,11 +11,12 @@ RSpec.describe Og::ChannelCardImage do
   let(:avatar_url) { "https://static-cdn.jtvnw.net/jtv_user_pictures/abc.png" }
   let(:service) { described_class.new(channel) }
 
-  def stub_avatar(body:, status: 200, content_length: nil, host: "static-cdn.jtvnw.net")
-    res = instance_double(Net::HTTPOK, body: body, content_length: content_length)
+  def stub_avatar(body:, status: 200, content_length: nil)
+    res = instance_double(Net::HTTPOK, content_length: content_length)
     allow(res).to receive(:is_a?).with(Net::HTTPSuccess).and_return(status == 200)
+    allow(res).to receive(:read_body).and_yield(body)
     http = instance_double(Net::HTTP)
-    allow(http).to receive(:get).and_return(res)
+    allow(http).to receive(:request_get).and_yield(res)
     allow(Net::HTTP).to receive(:start).and_yield(http)
   end
 
@@ -40,8 +41,13 @@ RSpec.describe Og::ChannelCardImage do
       expect(service.send(:fetch_avatar_data_uri)).to be_nil
     end
 
-    it "rejects an oversized body (memory-bomb guard)" do
+    it "aborts an oversized streamed body (memory-bomb guard)" do
       stub_avatar(body: ("\x89PNG".b + ("x" * (4 * 1024 * 1024))))
+      expect(service.send(:fetch_avatar_data_uri)).to be_nil
+    end
+
+    it "rejects early via the Content-Length header pre-check" do
+      stub_avatar(body: "\x89PNG".b, content_length: 5 * 1024 * 1024)
       expect(service.send(:fetch_avatar_data_uri)).to be_nil
     end
 

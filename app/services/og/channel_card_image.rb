@@ -93,15 +93,20 @@ module Og
       uri = URI.parse(url)
       return nil unless uri.is_a?(URI::HTTPS) && uri.host&.end_with?(AVATAR_HOST_SUFFIX)
 
-      body = nil
+      # Stream + abort so peak memory is actually bounded (a buffered http.get would
+      # allocate the whole body before any size check — the cap must gate allocation).
+      body = +""
       Net::HTTP.start(uri.host, uri.port, use_ssl: true, open_timeout: AVATAR_TIMEOUT, read_timeout: AVATAR_TIMEOUT) do |http|
-        res = http.get(uri.request_uri)
-        return nil unless res.is_a?(Net::HTTPSuccess)
-        return nil if res.content_length && res.content_length > AVATAR_MAX_BYTES
+        http.request_get(uri.request_uri) do |res|
+          return nil unless res.is_a?(Net::HTTPSuccess)
+          return nil if res.content_length && res.content_length > AVATAR_MAX_BYTES # cheap header pre-check
 
-        body = res.body
+          res.read_body do |chunk|
+            body << chunk
+            return nil if body.bytesize > AVATAR_MAX_BYTES # abort mid-stream (chunked lacks Content-Length)
+          end
+        end
       end
-      return nil if body.bytesize > AVATAR_MAX_BYTES # chunked responses lack Content-Length
 
       mime = mime_for(body)
       return nil unless mime
@@ -115,7 +120,11 @@ module Og
     # MIME by real magic-number signature (not a 3-byte JPEG-or-else guess) — a WebP
     # avatar mislabelled image/png produced an invalid data-URI. Unknown → nil (skip).
     def mime_for(body)
-      IMAGE_SIGNATURES.find { |sig, _| body.start_with?(sig) }&.last
+      mime = IMAGE_SIGNATURES.find { |sig, _| body.start_with?(sig) }&.last
+      # RIFF also fronts WAV/AVI — confirm it's really WEBP (bytes 8..11).
+      return nil if mime == "image/webp" && body[8, 4] != "WEBP"
+
+      mime
     end
 
     def truncate(str, limit)
