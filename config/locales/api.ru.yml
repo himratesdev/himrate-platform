@@ -14,3 +14,23 @@ ru:
       full: "%{H}ч %{M}м"
       short: "%{M}мин"
       multi_day: "%{D}д %{H}ч"
+  # T1-074 surface-audit 2026-07-21: controller error strings leaked hardcoded-English
+  # defaults (keys did not exist in any locale). EN values duplicate the former defaults
+  # verbatim — no EN behavior change; RU users stop seeing English errors.
+  channels:
+    errors:
+      billing_not_configured: "Оплата подписки ещё не подключена. Напишите в поддержку."
+      already_tracked: "Канал уже отслеживается"
+      not_tracked: "Канал не отслеживается"
+    # CR #429 N-1: «реальных зрителей: N» обходит числовое согласование («21 реальных зрителей» неграмматично)
+    badge_alt_v2: "HimRate — реальных зрителей: %{value}"
+  tracking_requests:
+    errors:
+      already_requested: "Заявка на отслеживание этого канала уже отправлена"
+  clip_transcripts:
+    errors:
+      free_limit: "Лимит Free-тарифа (10/мес) исчерпан"
+      invalid_clip_id: "clip_id должен быть корректным слагом Twitch-клипа"
+      not_found: "Транскрипт не найден"
+  erv:
+    insufficient_data: "Недостаточно данных для оценки ERV"

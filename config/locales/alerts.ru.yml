@@ -31,8 +31,10 @@ ru:
       title: "Падение энтропии чата"
       detail: "Энтропия %{N} (норма >2.0) — чат шаблонный"
     erv_divergence:
-      title: "Расхождение ERV/CCV"
-      detail: "ERV/CCV изменился на %{N}%% за %{M} мин"
+      # T1-074 (surface-audit): «ERV/CCV ratio» = retired v1-семантика; v2-детектор меряет ось
+      # подлинности (authenticity delta) — релейбл по образцу ti_drop выше.
+      title: "Резкое изменение подлинности"
+      detail: "Подлинность изменилась на %{N}%% за %{M} мин"
     severity:
       info:
         aria: "Информация"

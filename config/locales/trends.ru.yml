@@ -24,6 +24,10 @@ ru:
     # («вырос»/«снижается»/«стабильный») — bare «Подлинность» (feminine) would not.
     metric:
       trust_index: "Уровень подлинности"
+      # surface-audit 2026-07-21: key was missing → hardcoded "ERV%" fallback leaked (retired
+      # rescale-percent vocabulary; the v2 series is authenticity-based). Masculine «показатель»
+      # agrees with the generic insight verbs, same pattern as «уровень» above.
+      erv: "Показатель реальной аудитории"
     # (trends.patterns.* block removed — CR #425 N-3: zero readers in app/; the live weekday
     # insight is trends.weekday.insight, category verdicts are trends.categories.verdict.*)
     forecast:

@@ -49,8 +49,7 @@ module Api
       def render_already_requested(channel_login)
         render json: {
           error: "ALREADY_REQUESTED",
-          message: I18n.t("tracking_requests.errors.already_requested",
-            default: "Tracking request already submitted for this channel"),
+          message: I18n.t("tracking_requests.errors.already_requested"),
           channel_login: channel_login
         }, status: :conflict
       end

@@ -70,7 +70,7 @@ module Api
         transcript = ClipTranscript.find_by(clip_id: clip_id)
         unless transcript
           skip_authorization
-          return render(json: { error: "not_found", message: "Transcript not found" }, status: :not_found)
+          return render(json: { error: "not_found", message: I18n.t("clip_transcripts.errors.not_found") }, status: :not_found)
         end
 
         authorize transcript, :show?, policy_class: ClipTranscriptPolicy
@@ -117,15 +117,14 @@ module Api
       end
 
       def render_invalid_clip
-        render json: { error: "invalid_clip_id", message: "clip_id must be valid Twitch clip slug" },
+        render json: { error: "invalid_clip_id", message: I18n.t("clip_transcripts.errors.invalid_clip_id") },
                status: :bad_request
       end
 
       def render_paywall_402
         render json: {
           error: "limit_reached",
-          message: I18n.t("clip_transcripts.errors.free_limit",
-                          default: "Free tier limit (10/month) reached"),
+          message: I18n.t("clip_transcripts.errors.free_limit"),
           upgrade_url: "https://himrate.com/pricing#premium",
           tier: "free",
           used: ClipTranscriptRequest.month_count_for(current_user),

@@ -22,6 +22,8 @@ en:
     # CR #425 N-2: key was missing → hardcoded "Trust Index" fallback leaked user-facing
     metric:
       trust_index: "Authenticity"
+      # surface-audit 2026-07-21: key was missing → hardcoded "ERV%" fallback leaked (retired vocabulary)
+      erv: "Real-audience share"
     # (trends.patterns.* block removed — CR #425 N-3: zero readers in app/; the live weekday
     # insight is trends.weekday.insight, category verdicts are trends.categories.verdict.*)
     forecast:
