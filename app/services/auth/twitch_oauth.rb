@@ -94,7 +94,9 @@ module Auth
             username: twitch_user[:login],
             role: determine_role(twitch_user[:broadcaster_type]),
             tier: "free",
-            is_streamer: streamer?(twitch_user[:broadcaster_type])
+            is_streamer: streamer?(twitch_user[:broadcaster_type]),
+            email_source: "twitch",
+            email_verified: twitch_user[:email].present?
           )
 
           AuthProvider.create!(
