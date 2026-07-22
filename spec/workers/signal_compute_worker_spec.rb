@@ -204,6 +204,7 @@ RSpec.describe SignalComputeWorker do
     end
 
     it "when the flag is ON + due, emits a v2_rho_conv=windowed shadow line (accrues for the P2 re-seed)" do
+      stream.ccv_snapshots.create!(ccv_count: 500, timestamp: 1.minute.ago) # V>0 so the engine isn't the GREY offline short-circuit (which nils rho_convention)
       allow(Flipper).to receive(:enabled?).with(:ti_v2_cowindowed_shadow).and_return(true)
       allow(worker).to receive(:windowed_shadow_due?).and_return(true)
       allow(TrustIndex::ContextBuilder).to receive(:windowed_inputs).and_return([ Set.new(%w[u1 u2]), 400 ])
