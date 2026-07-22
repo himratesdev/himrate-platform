@@ -18,6 +18,18 @@ RSpec.describe "Public landing", type: :request do
       end
     end
 
+    it "loads hr-i18n before hr-shared and mobile-nav (canonical translator defined first)" do
+      # i18n consolidation: hr-shared/mobile-nav delegate to window.__hrApplyI18n, which
+      # hr-i18n defines — it MUST be included first. This is a load-bearing invariant.
+      get "/streamers" # an inner page loads all three
+      i18n = response.body.index(%r{landing/hr-i18n[-\w]*\.js})
+      shared = response.body.index(%r{landing/hr-shared[-\w]*\.js})
+      mobile = response.body.index(%r{landing/mobile-nav[-\w]*\.js})
+      expect(i18n).to be_present
+      expect(i18n).to be < shared
+      expect(i18n).to be < mobile
+    end
+
     it "every marketing page's header nav = crawlable <a href> links in a <nav> landmark" do
       PAGES.each_key do |path|
         get path

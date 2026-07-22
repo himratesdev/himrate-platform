@@ -742,10 +742,13 @@ window.HR_TRANS = {
   "💎 ГЛАВНОЕ · BRAND ATTRIBUTION": "💎 KEY · BRAND ATTRIBUTION"
 };
 
-/* ---- self-contained i18n fallback ----
-   On pages that load hr-shared.js (02–05), that script owns the RU/EN switch.
-   This block only activates on pages WITHOUT it (e.g. 01-glavnaya) — it builds
-   the same RU/EN toggle in the header and swaps leaf-node text. */
+/* ---- canonical RU/EN translator ----
+   The single implementation of the language swap, exposed as window.__hrApplyI18n;
+   hr-shared.js and mobile-nav.js delegate to it. Both are included AFTER this file
+   in layouts/landing.html.erb, so it is always defined first (a request spec guards
+   that order). This block also self-boots the header toggle on pages WITHOUT
+   hr-shared.js (e.g. index); on pages with it, hr-shared owns the switch and this
+   block's boot() returns early. */
 (function(){
   var RE=/[А-Яа-яЁё]/;
   function $all(s,r){ return Array.prototype.slice.call((r||document).querySelectorAll(s)); }
