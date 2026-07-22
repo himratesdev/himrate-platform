@@ -143,6 +143,17 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Brand-side blogger social profile (screen 61) — the brand's descriptive cross-platform view of ANY
+  # streamer (login from the path). Same keyless engine as screen 50 (GET /api/v1/social/streamers/:login
+  # + /attribution), wired client-side by landing/blogger_profile.js. Brand-gated shell (JS gates on
+  # /api/v1/lk/status). Fraud/«bot-corrected»/«real audience %» blocks are stripped — descriptive only
+  # (subs / reach / ER / growth / footprint); demographics / geo / посты / прогноз цен honest-deferred.
+  def blogger_profile
+    @page = "blogger_profile"
+    @login = params[:login]
+    @brand_dashboard = true
+  end
+
   # Legal pages (Privacy Policy + Terms). Own minimal readable layout (no Pencil JS).
   # Required for Chrome Web Store submission + footer trust links.
   def privacy
