@@ -1,0 +1,122 @@
+name: twitch-followedat-usertoken-dsv
+# DSV capability-test (PO-approved 2026-07-22): does sending a stored USER OAuth token unlock
+# followedAt on gql.twitch.tv for an ARBITRARY channel (not owned/modded)? Anonymous Client-ID
+# returned null (privacy-gated, verified). This tests the one remaining lever. CAPABILITY-ONLY —
+# production use is a separate ToS decision. Runs on server (token + AR encryption key in ENV).
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          cat > /tmp/utok.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "http"
+
+          aps = AuthProvider.where.not(access_token: nil).to_a
+          puts "AuthProviders w/ token: #{aps.size} | providers=#{aps.map { |a| a.try(:provider) }.tally}"
+          ap = aps.select { |a| a.try(:provider).to_s.downcase.include?("twitch") }.max_by(&:updated_at)
+          unless ap
+            puts "NO twitch AuthProvider token on record → cannot test user-token lever. STOP."
+            next rescue exit(0)
+          end
+          token = ap.access_token.to_s
+          puts "using AuthProvider ##{ap.id} uid=#{ap.try(:uid)} scope=#{ap.try(:scope).inspect} expires=#{ap.try(:expires_at)} updated=#{ap.updated_at} token_len=#{token.size}"
+          if token.empty?
+            puts "token empty after decrypt → STOP"; next rescue exit(0)
+          end
+
+          gc = Twitch::GqlClient.new
+          s = Stream.where(ended_at: nil).order(started_at: :desc).limit(200)
+                    .map { |x| [x, x.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i] }
+                    .select { |(_, c)| c >= 100 }.max_by { |(_, c)| c }&.first
+          unless s
+            puts "no live stream ccv>=100 → STOP"; next rescue exit(0)
+          end
+          ch = s.channel
+          prof = gc.bot_check(login: ch.login)
+          channel_id = prof && prof[:id]
+          ct = gc.community_tab(channel_login: ch.login)
+          chatters = (ct && ct[:viewers] || []).first(6)
+          mods = (ct && ct[:moderators] || []).first(3)
+          puts "channel=#{ch.login} id=#{channel_id} live_ccv=#{s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count)} chatters=#{chatters.size} mods=#{mods.size}"
+          test_logins = (mods + chatters).uniq.first(8)
+
+          QUERY = "query($login:String!,$cid:ID!){user(login:$login){login createdAt relationship(targetUserID:$cid){followedAt subscriptionBenefit{tier}}}}"
+          WEB = "kimne78kx3ncx6brgo4mv6wki5h1ko"
+          ANDROID = "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"
+          APP = ENV["TWITCH_CLIENT_ID"]
+          ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/131.0.0.0 Safari/537.36"
+
+          fire = lambda do |login, cid, auth|
+            headers = { "Client-ID" => cid, "Content-Type" => "application/json", "User-Agent" => ua }
+            headers["Authorization"] = auth if auth
+            body = { query: QUERY, variables: { login: login, cid: channel_id } }
+            r = HTTP.timeout(8).headers(headers).post("https://gql.twitch.tv/gql", json: body)
+            JSON.parse(r.body.to_s) rescue { "http" => r.status.to_i, "raw" => r.body.to_s[0, 200] }
+          end
+
+          v0 = test_logins.first
+          puts "\n=== control: NO auth (baseline null expected) — #{v0} ==="
+          [["web", WEB], ["android", ANDROID]].each do |name, cid|
+            d = fire.call(v0, cid, nil)
+            puts "  #{name}/noauth: followedAt=#{d.dig("data", "user", "relationship", "followedAt").inspect} err=#{(d["errors"] || []).map { |e| e["message"] }.inspect}"
+          end
+
+          puts "\n=== USER TOKEN test (Authorization: OAuth <token>) across Client-IDs ==="
+          [["app(#{APP})", APP], ["web", WEB], ["android", ANDROID]].each do |name, cid|
+            next unless cid && !cid.empty?
+            d = fire.call(v0, cid, "OAuth #{token}")
+            errs = (d["errors"] || []).map { |e| e["message"] }
+            puts "  OAuth+#{name}: HTTP=#{d["http"] || 200} followedAt=#{d.dig("data", "user", "relationship", "followedAt").inspect} err=#{errs.inspect} #{d["raw"]}"
+          end
+
+          # Best case: if any variant returned non-null OR no auth-error, sweep all test logins with web CID.
+          puts "\n=== sweep all #{test_logins.size} logins (mods first) — OAuth + web Client-ID ==="
+          test_logins.each do |v|
+            d = fire.call(v, WEB, "OAuth #{token}")
+            fa = d.dig("data", "user", "relationship", "followedAt")
+            errs = (d["errors"] || []).map { |e| e["message"] }
+            printf("  %-22s followedAt=%-26s err=%s\n", v, fa.inspect, errs.inspect)
+          end
+
+          puts "\n===== VERDICT ====="
+          puts "  non-null followedAt with user token (esp. for mods=definite-followers) → follow-recency"
+          puts "  IS pullable with ONE authenticated account for the GENERAL population (ToS decision separate)."
+          puts "  All null + 'must be authenticated'/scope err → third-party token not honored by GQL / needs"
+          puts "  broadcaster-mod of the channel → consented-channel only. 'invalid oauth token' → token expired."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/utok.rb) lines)"
+
+      - name: Run probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/utok.rb ${TARGET}:/tmp/utok.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/utok.rb ${CONTAINER}:/tmp/utok.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/utok.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
