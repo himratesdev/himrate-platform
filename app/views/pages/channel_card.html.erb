@@ -16,13 +16,19 @@
     channel card — layers 1-3 (headline + reputation) are free on any channel per
     access-model v2. Real data is wired client-side by landing/channel_card.js against
     /api/v1/channels/:login/card (headline + reputation). No auth. %>
+<%# Responsive (TASK-060 PR-4a): below lg (<1024) the card reflows to a single fluid column
+    (sidebar + top-bar controls hidden, rows stacked). At >=lg the root is pinned to the origin
+    fixed 1440px frame (lg:w-[1440px] lg:max-w-none) so desktop is byte-identical to origin. This
+    preserves — but does NOT fix — the pre-existing 1024-1439 laptop clipping (the fixed 1440 card
+    is clipped by _head_shared's overflow-x:hidden; origin behaves the same). Making 1024-1439 fully
+    fluid is a deliberate follow-up (fluidize bar/Gate/Search fixed px up to 1440), tracked for PO. %>
 <div
       data-pencil-name="Экран · Карточка канала"
-      class="box-border w-[1440px] h-[2210px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#0B0B0F] [border:1px_solid_#34343F] rounded-[16px] overflow-hidden"
+      class="box-border w-full max-w-[1440px] lg:w-[1440px] lg:max-w-none mx-auto h-auto lg:h-[2210px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#0B0B0F] [border:1px_solid_#34343F] rounded-[16px] overflow-hidden"
     >
       <div
         data-pencil-name="Sidebar"
-        class="box-border w-[264px] shrink-0 h-full flex flex-col gap-[2px] p-[18px_14px] justify-start items-start bg-[#0D0D12] [border-width:0px_1px_0px_0px] [border-style:solid] [border-color:#25252F] overflow-hidden"
+        class="box-border w-[264px] shrink-0 h-full hidden lg:flex flex-col gap-[2px] p-[18px_14px] justify-start items-start bg-[#0D0D12] [border-width:0px_1px_0px_0px] [border-style:solid] [border-color:#25252F] overflow-hidden"
       >
         <div
           data-pencil-name="Logo"
@@ -724,7 +730,7 @@
       </div>
       <div
         data-pencil-name="Main"
-        class="box-border [flex:1_1_0] h-full flex flex-col gap-0 justify-start items-start bg-[#0B0B0F]"
+        class="box-border [flex:1_1_0] min-w-0 lg:[min-width:auto] h-auto lg:h-full flex flex-col gap-0 justify-start items-start bg-[#0B0B0F]"
       >
         <div
           data-pencil-name="Topbar"
@@ -732,7 +738,7 @@
         >
           <div
             data-pencil-name="Search"
-            class="box-border w-[480px] shrink-0 h-[40px] flex flex-row gap-[10px] p-[0px_12px] justify-start items-center bg-[#1C1C24] [border:1px_solid_#25252F] rounded-[12px]"
+            class="box-border w-full lg:w-[480px] shrink-0 h-[40px] flex flex-row gap-[10px] p-[0px_12px] justify-start items-center bg-[#1C1C24] [border:1px_solid_#25252F] rounded-[12px]"
           >
             <svg
               data-pencil-name="Search Icon"
@@ -760,7 +766,7 @@
             >
               <div
                 data-pencil-name="Kbd T"
-                class="text-[11px]/[normal] box-border text-[#5E5E6B] font-['JetBrains_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[11px]/[normal] box-border text-[#5E5E6B] font-['JetBrains_Mono',system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 ⌘K
               </div>
@@ -768,7 +774,7 @@
           </div>
           <div
             data-pencil-name="Right"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-[10px] justify-start items-center"
+            class="box-border w-fit shrink-0 h-fit hidden lg:flex flex-row gap-[10px] justify-start items-center"
           >
             <div
               data-pencil-name="Help"
@@ -822,7 +828,7 @@
             >
               <div
                 data-pencil-name="TB Avatar T"
-                class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 DH
               </div>
@@ -831,11 +837,11 @@
         </div>
         <div
           data-pencil-name="Content"
-          class="box-border w-full [flex:1_1_0] flex flex-col gap-[22px] p-[26px_40px_40px_40px] justify-start items-start bg-[#0B0B0F]"
+          class="box-border w-full [flex:1_1_0] min-w-0 lg:[min-width:auto] flex flex-col gap-[22px] p-[16px] lg:p-[26px_40px_40px_40px] justify-start items-start bg-[#0B0B0F]"
         >
           <div
             data-pencil-name="Breadcrumb"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-0 justify-between items-center"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[12px] lg:gap-0 justify-between items-start lg:items-center"
           >
             <div
               data-pencil-name="BC Left"
@@ -857,7 +863,7 @@
               </svg>
               <div
                 data-pencil-name="BC Home"
-                class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Главная
               </div>
@@ -877,14 +883,14 @@
               </svg>
               <div
                 data-pencil-name="BC Cur"
-                class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Карточка канала
               </div>
             </div>
             <div
               data-pencil-name="BC Right"
-              class="box-border w-fit shrink-0 h-fit flex flex-row gap-[10px] justify-start items-center"
+              class="box-border w-fit shrink-0 h-fit flex flex-row flex-wrap lg:flex-nowrap gap-[10px] justify-start items-center"
             >
               <div
                 data-pencil-name="Free Pill"
@@ -906,14 +912,14 @@
                 </svg>
                 <div
                   data-pencil-name="Free T"
-                  class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Бесплатно · без аккаунта
                 </div>
               </div>
               <div
                 data-pencil-name="Updated"
-                class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 обновлено 8 сек назад
               </div>
@@ -921,7 +927,7 @@
           </div>
           <div
             data-pencil-name="Channel Header"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-[20px] p-[18px_22px] justify-start items-center bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[20px] p-[18px_22px] justify-start items-start lg:items-center bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
           >
             <div
               data-pencil-name="H Avatar"
@@ -929,7 +935,7 @@
             >
               <div
                 data-pencil-name="H Avatar T"
-                class="text-[26px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                class="text-[26px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Bu
               </div>
@@ -940,11 +946,11 @@
             >
               <div
                 data-pencil-name="H Name Row"
-                class="box-border w-fit h-fit shrink-0 flex flex-row gap-[10px] justify-start items-center"
+                class="box-border w-fit h-fit shrink-0 flex flex-row flex-wrap lg:flex-nowrap gap-[10px] justify-start items-center"
               >
                 <div
                   data-pencil-name="H Name"
-                  class="text-[26px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                  class="text-[26px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Buster
                 </div>
@@ -968,7 +974,7 @@
                   </svg>
                   <div
                     data-pencil-name="H Verified T"
-                    class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Подтверждён в HimRate
                   </div>
@@ -983,7 +989,7 @@
                   ></div>
                   <div
                     data-pencil-name="H Live T"
-                    class="text-[10px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.5px] text-left [white-space:nowrap]"
+                    class="text-[10px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.5px] text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     В ЭФИРЕ
                   </div>
@@ -991,7 +997,7 @@
               </div>
               <div
                 data-pencil-name="H Meta"
-                class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 twitch.tv/buster · Dota 2 · в эфире 3 ч 12 мин
               </div>
@@ -1020,7 +1026,7 @@
                 </svg>
                 <div
                   data-pencil-name="H Share T"
-                  class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Поделиться проверкой
                 </div>
@@ -1045,7 +1051,7 @@
                 </svg>
                 <div
                   data-pencil-name="H Follow T"
-                  class="text-[13px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[13px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Следить
                 </div>
@@ -1058,7 +1064,7 @@
           >
             <div
               data-pencil-name="L1 Top"
-              class="box-border w-full h-fit shrink-0 flex flex-row gap-0 justify-between items-start"
+              class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-0 justify-between items-stretch lg:items-start"
             >
               <div
                 data-pencil-name="L1 LCol"
@@ -1066,7 +1072,7 @@
               >
                 <div
                   data-pencil-name="L1 Label"
-                  class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[1px] text-left [white-space:nowrap]"
+                  class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[1px] text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   РЕАЛЬНЫЕ ЗРИТЕЛИ СЕЙЧАС
                 </div>
@@ -1076,17 +1082,17 @@
                 >
                   <div
                     data-pencil-name="L1 Real"
-                    class="text-[60px]/[normal] box-border text-[#25D9A4] font-['JetBrains_Mono',system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[60px]/[normal] box-border text-[#25D9A4] font-['JetBrains_Mono',system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     4 200
                   </div>
                   <div
                     data-pencil-name="L1 SlashSp"
-                    class="box-border w-[1px] shrink-0 h-[18px] flex flex-row gap-0 justify-start items-start"
+                    class="box-border w-[1px] shrink-0 h-[18px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start"
                   ></div>
                   <div
                     data-pencil-name="L1 Shown"
-                    class="text-[19px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[19px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     / 5 000 показано
                   </div>
@@ -1115,7 +1121,7 @@
                     </svg>
                     <div
                       data-pencil-name="L1 D1 T"
-                      class="text-[13px]/[normal] box-border text-[#FB4E55] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13px]/[normal] box-border text-[#FB4E55] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       −800 скрытая разница
                     </div>
@@ -1126,7 +1132,7 @@
                   >
                     <div
                       data-pencil-name="L1 D2 T"
-                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       −16% от показанных
                     </div>
@@ -1135,7 +1141,7 @@
               </div>
               <div
                 data-pencil-name="L1 RCol"
-                class="box-border w-fit shrink-0 h-fit flex flex-col gap-[10px] justify-start items-end"
+                class="box-border w-fit shrink-0 h-fit flex flex-col gap-[10px] justify-start items-start lg:items-end"
               >
                 <div
                   data-pencil-name="L1 Rep"
@@ -1147,7 +1153,7 @@
                   ></div>
                   <div
                     data-pencil-name="L1 Rep T"
-                    class="text-[14px]/[normal] box-border text-[#4FA9FF] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[14px]/[normal] box-border text-[#4FA9FF] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Надёжность: Стабильная
                   </div>
@@ -1172,14 +1178,14 @@
                   </svg>
                   <div
                     data-pencil-name="L1 Anom T"
-                    class="text-[12px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[12px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Аномалия онлайна: лёгкий всплеск 21:40
                   </div>
                 </div>
                 <div
                   data-pencil-name="L1 Window"
-                  class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                  class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   окно репутации: 30 стримов
                 </div>
@@ -1195,11 +1201,11 @@
               >
                 <div
                   data-pencil-name="L1 Real Seg"
-                  class="box-border w-[874px] shrink-0 h-[16px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                  class="box-border w-[84%] lg:w-[874px] shrink-0 h-[16px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
                 ></div>
                 <div
                   data-pencil-name="L1 Bot Seg"
-                  class="box-border w-[166px] shrink-0 h-[16px] flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                  class="box-border w-[16%] lg:w-[166px] shrink-0 h-[16px] flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
                 ></div>
               </div>
               <div
@@ -1220,7 +1226,7 @@
                     ></div>
                     <div
                       data-pencil-name="Leg T real"
-                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Реальные 4 200 · 84%
                     </div>
@@ -1235,7 +1241,7 @@
                     ></div>
                     <div
                       data-pencil-name="Leg T bot"
-                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Скрытая разница 800 · 16%
                     </div>
@@ -1243,7 +1249,7 @@
                 </div>
                 <div
                   data-pencil-name="L1 Total"
-                  class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                  class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Всего показано Twitch: 5 000
                 </div>
@@ -2928,7 +2934,7 @@
               </svg>
               <div
                 data-pencil-name="Gate Lab T"
-                class="text-[12px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.6px] text-left [white-space:nowrap]"
+                class="text-[12px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.6px] text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 РОЛЕВОЙ ГЕЙТ · ДАЛЬШЕ ПЛАТНО, ТОЛЬКО В КАБИНЕТЕ
               </div>
@@ -2940,7 +2946,7 @@
           </div>
           <div
             data-pencil-name="Gate Card"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-[24px] p-[28px] justify-start items-start bg-[#141419] [border:1px_solid_#7B5CFA] rounded-[20px]"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[24px] p-[28px] justify-start items-stretch lg:items-start bg-[#141419] [border:1px_solid_#7B5CFA] rounded-[20px]"
           >
             <div
               data-pencil-name="Gate Left"
@@ -2975,13 +2981,13 @@
                 >
                   <div
                     data-pencil-name="Gate Title"
-                    class="text-[20px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[20px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Период-история и глубина канала
                   </div>
                   <div
                     data-pencil-name="Gate Sub"
-                    class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Слой 4–5 · платно · живёт в кабинете
                   </div>
@@ -3024,7 +3030,7 @@
                   </div>
                   <div
                     data-pencil-name="GFeat T 1"
-                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Drill в конкретные прошлые стримы
                   </div>
@@ -3054,7 +3060,7 @@
                   </div>
                   <div
                     data-pencil-name="GFeat T 2"
-                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Движение аудитории · когорты по неделям
                   </div>
@@ -3084,7 +3090,7 @@
                   </div>
                   <div
                     data-pencil-name="GFeat T 3"
-                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     География и язык — глубокий разрез
                   </div>
@@ -3114,7 +3120,7 @@
                   </div>
                   <div
                     data-pencil-name="GFeat T 4"
-                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Транскрипция, нарезки клипов и экспорт
                   </div>
@@ -3123,7 +3129,7 @@
             </div>
             <div
               data-pencil-name="Gate Right"
-              class="box-border w-[360px] shrink-0 h-fit flex flex-col gap-[12px] p-[20px] justify-start items-start bg-[#1C1C24] [border:1px_solid_#25252F] rounded-[16px]"
+              class="box-border w-full lg:w-[360px] shrink-0 h-fit flex flex-col gap-[12px] p-[20px] justify-start items-start bg-[#1C1C24] [border:1px_solid_#25252F] rounded-[16px]"
             >
               <div
                 data-pencil-name="Gate CTA1"
@@ -3131,7 +3137,7 @@
               >
                 <div
                   data-pencil-name="Gate CTA1 T"
-                  class="text-[14px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[14px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Открыть в кабинете
                 </div>
@@ -3170,7 +3176,7 @@
                 </svg>
                 <div
                   data-pencil-name="Gate CTA2 T"
-                  class="text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Разовый отчёт за период
                 </div>
