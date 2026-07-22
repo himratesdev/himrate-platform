@@ -14,7 +14,7 @@ on:
       flag:
         required: true
         type: choice
-        options: [ti_v2_shadow, ti_v2_engine, pva]
+        options: [ti_v2_shadow, ti_v2_engine, pva, ti_v2_cowindowed_shadow]
       action:
         required: true
         type: choice
