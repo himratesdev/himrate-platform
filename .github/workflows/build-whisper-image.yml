@@ -76,7 +76,7 @@ jobs:
       # a runtime-broken image (missing .so libs → exit 127) НИКОГДА не попадает на ghcr.
       - name: Build whisper.cpp HTTP server image (load locally, no push yet)
         id: build
-        uses: docker/build-push-action@v6.9.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: ./whisper
           file: ./whisper/Dockerfile
