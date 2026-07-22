@@ -18,13 +18,15 @@ RSpec.describe "Public landing", type: :request do
       end
     end
 
-    it "home header nav uses real crawlable <a href> links inside a <nav> landmark" do
-      get "/"
-
-      nav = Nokogiri::HTML(response.body).at_css("nav[aria-label]")
-      expect(nav).to be_present
-      expect(nav.css("a[href]").map { |a| a["href"] })
-        .to match_array(%w[/streamers /brands /viewers /methodology /methodology])
+    it "every marketing page's header nav = crawlable <a href> links in a <nav> landmark" do
+      PAGES.each_key do |path|
+        get path
+        nav = Nokogiri::HTML(response.body).at_css("nav[aria-label]")
+        expect(nav).to be_present, "#{path} must have a <nav aria-label> landmark"
+        expect(nav.css("a[href]").map { |a| a["href"] })
+          .to match_array(%w[/streamers /brands /viewers /methodology /methodology]),
+              "#{path} nav must link to each section"
+      end
     end
   end
 
