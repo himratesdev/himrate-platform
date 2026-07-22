@@ -78,11 +78,16 @@ jobs:
           puts "\n===== 5. SELF-BASELINE byte-identical (flag OFF) — data-level invariant ====="
           # Flag OFF → v2_self_history scope = (rho_convention IS NULL OR 'cumulative'). Byte-identical
           # holds iff NO clean v2 row is 'windowed' (i.e. the OFF scope selects the full clean set).
-          clean = TrustIndexHistory.where(engine_version: "v2", c_hard: false)
-          off_scope = clean.where("rho_convention IS NULL OR rho_convention = 'cumulative'").count
-          windowed = clean.where(rho_convention: "windowed").count
-          puts "  clean v2 rows: #{clean.count} | flag-OFF scope selects: #{off_scope} | windowed: #{windowed}"
-          puts "  → byte-identical iff windowed=0 AND off_scope==clean_total (#{windowed.zero? && off_scope == clean.count ? 'OK' : 'MISMATCH'})"
+          # Single atomic group-by (ONE snapshot) — 3 separate .count queries on a live-writing table
+          # race and can't be compared. The invariant: every clean v2 row is NULL or 'cumulative', none
+          # 'windowed', none unexpected. flag-OFF scope (NULL|cumulative) then = the full clean set.
+          breakdown = TrustIndexHistory.where(engine_version: "v2", c_hard: false).group(:rho_convention).count
+          pretty = breakdown.transform_keys { |k| k.nil? ? "NULL" : k }
+          windowed = breakdown["windowed"].to_i
+          unexpected = breakdown.reject { |k, _| k.nil? || k == "cumulative" || k == "windowed" }
+          puts "  rho_convention breakdown (atomic): #{pretty.inspect}"
+          puts "  windowed=#{windowed} (expect 0) | unexpected values=#{unexpected.inspect} (expect {})"
+          puts "  → byte-identical iff windowed=0 AND no unexpected values (#{windowed.zero? && unexpected.empty? ? 'OK' : 'CHECK'})"
 
           ok = !col.nil? && Flipper.enabled?(:ti_v2_engine) && !Flipper.enabled?(:ti_v2_cowindowed_rho)
           puts "\nVERDICT: #{ok ? '🟢 DV OK — migration applied, dormant, stamp writing cumulative' : '🔴 DV FAIL — check above'}"
