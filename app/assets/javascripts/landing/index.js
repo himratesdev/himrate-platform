@@ -38,7 +38,9 @@
     var t = (el.textContent||'').trim();
     if(NAV[t]){
       el.setAttribute('data-hr-link','');
-      el.addEventListener('click', function(e){ e.stopPropagation(); go(NAV[t]); });
+      // Nav items are real <a href> now (crawlable/keyboard) — preventDefault so the
+      // native jump doesn't race the fade-out; go() drives the transition + navigation.
+      el.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); go(NAV[t]); });
     }
   });
 

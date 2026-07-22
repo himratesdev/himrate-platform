@@ -17,6 +17,15 @@ RSpec.describe "Public landing", type: :request do
         expect(h1_count).to eq(1), "#{path} must have exactly one <h1>, had #{h1_count}"
       end
     end
+
+    it "home header nav uses real crawlable <a href> links (in a <nav> landmark)" do
+      get "/"
+
+      expect(response.body).to include("<nav")
+      %w[/streamers /brands /viewers /methodology].each do |route|
+        expect(response.body).to match(/<a\s+href="#{Regexp.escape(route)}"/), "expected a nav link to #{route}"
+      end
+    end
   end
 
   describe "every page renders" do
