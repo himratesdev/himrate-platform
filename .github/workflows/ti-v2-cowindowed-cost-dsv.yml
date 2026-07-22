@@ -1,0 +1,107 @@
+name: ti-v2-cowindowed-cost-dsv
+# P1 DSV (PO 'build P1 duty-cycled, DSV-first' 2026-07-22): measure the REAL marginal cost of the
+# windowed shadow-compute BEFORE building it, because PG is hot (himrate-db 158% CPU). Per live stream
+# time the two NEW operations of v2_cowindowed_inputs separately from the baseline SCW already pays:
+#   baseline  cum_ch = ChatQueries.stream_chatters(s)            (CH — SCW already runs this every cycle)
+#   NEW       win_ch = ChatQueries.stream_chatters_windowed(s)   (CH — has headroom, ~10% CPU)
+#   NEW       win_pg = ccv_snapshots windowed-median read        (PG — the HOT component, must be tiny)
+# Then extrapolate the fleet cost at duty-cycle factors. If win_pg is small + duty-cycled → acceptable;
+# if not, escalate to PO before writing P1. READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      min_ccv:
+        required: false
+        type: string
+        default: "100"
+      sample:
+        required: false
+        type: string
+        default: "20"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          cat > /tmp/cwcost.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          MIN_CCV = ENV["MIN_CCV"].to_i
+          N = ENV["SAMPLE"].to_i.clamp(1, 30)
+          def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
+          def timed
+            t = Process.clock_gettime(Process::CLOCK_MONOTONIC)
+            yield
+            (Process.clock_gettime(Process::CLOCK_MONOTONIC) - t) * 1000.0
+          end
+          def pct(a, p)
+            return 0.0 if a.empty?
+            s = a.sort
+            s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
+          end
+
+          live = Stream.where(ended_at: nil).where("lower(language) = 'ru'").order(started_at: :desc).limit(300).to_a
+          scored = live.map { |s| [ s, latest_ccv(s) ] }.select { |(_, c)| c >= MIN_CCV }.sort_by { |(_, c)| -c }.first(N)
+          puts "sampling #{scored.size} live RU streams (ccv>=#{MIN_CCV})"
+          puts "login            | cum_ch_ms | win_ch_ms(NEW) | win_pg_ms(NEW) | marginal_ms"
+
+          cum_ms = []; winch_ms = []; winpg_ms = []
+          scored.each do |(s, ccv)|
+            since = [ s.started_at, 60.minutes.ago ].max
+            c1 = timed { Clickhouse::ChatQueries.stream_chatters(s) rescue [] }
+            c2 = timed { Clickhouse::ChatQueries.stream_chatters_windowed(s, since: since) rescue [] }
+            c3 = timed { s.ccv_snapshots.where("timestamp > ?", since).pluck(:ccv_count) }
+            cum_ms << c1; winch_ms << c2; winpg_ms << c3
+            printf("%-16s | %9.1f | %14.1f | %14.1f | %8.1f\n", s.channel.login, c1, c2, c3, c2 + c3)
+          rescue => e
+            puts "  #{s.channel&.login} ERR #{e.class}"
+          end
+
+          puts "\n===== MARGINAL COST per compute (NEW = win_ch + win_pg; cum_ch already paid by SCW) ====="
+          puts format("  win_ch (CH, NEW):  p50=%.1fms p95=%.1fms  (ClickHouse — ~10%% CPU, big headroom)", pct(winch_ms, 0.5), pct(winch_ms, 0.95))
+          puts format("  win_pg (PG, NEW):  p50=%.1fms p95=%.1fms  (Postgres — the HOT component, must stay tiny)", pct(winpg_ms, 0.5), pct(winpg_ms, 0.95))
+          puts format("  cum_ch baseline (CH, already paid): p50=%.1fms", pct(cum_ms, 0.5))
+
+          fleet = 400; cycle = 30.0
+          puts "\n===== FLEET EXTRAPOLATION (~#{fleet} live streams, #{cycle.to_i}s SCW cycle) ====="
+          [ 1, 4, 10 ].each do |d|
+            qps = fleet / (cycle * d)
+            ch_busy = qps * pct(winch_ms, 0.5)   # ms of CH time added per wall-second
+            pg_busy = qps * pct(winpg_ms, 0.5)   # ms of PG time added per wall-second
+            puts format("  duty=1/%-2d → +%.1f computes/s | CH +%.0fms/s busy (%.1f%%) | PG +%.0fms/s busy (%.1f%%)",
+                        d, qps, ch_busy, ch_busy / 10.0, pg_busy, pg_busy / 10.0)
+          end
+          puts "  (busy%% = added engine-busy-ms per 1000ms wall. PG% is the number that matters — PG is hot.)"
+          puts "  VERDICT rule: if PG busy%% at a sane duty (1/4..1/10) is low single digits → P1 safe duty-cycled."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/cwcost.rb) lines)"
+
+      - name: Run probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/cwcost.rb ${TARGET}:/tmp/cwcost.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/cwcost.rb ${CONTAINER}:/tmp/cwcost.rb && docker exec -e MIN_CCV='${{ inputs.min_ccv || '100' }}' -e SAMPLE='${{ inputs.sample || '20' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/cwcost.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
