@@ -767,6 +767,9 @@ window.HR_TRANS = {
     try{ document.documentElement.setAttribute('lang', lang==='en'?'en':'ru'); }catch(e){}
     $all('[data-hr-lang-btn]').forEach(function(b){ var on=b.getAttribute('data-hr-lang-btn')===lang; b.style.background=on?'#FFFFFF1A':'transparent'; b.style.color=on?'#F5F2EC':'#8E8A9A'; });
   }
+  // Single canonical translator. hr-i18n loads before hr-shared/mobile-nav on every
+  // page, so exposing it here lets those delegate instead of maintaining copies.
+  window.__hrApplyI18n = apply;
   function buildSwitch(){
     var actions=document.querySelector('[data-pencil-name="Actions"]');
     if(!actions || actions.querySelector('[data-hr-lang]')) return;

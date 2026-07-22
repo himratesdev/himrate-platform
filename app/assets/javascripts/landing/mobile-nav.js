@@ -21,30 +21,13 @@
     (document.head || document.documentElement).appendChild(s);
   }
 
-  /* Fallback RU/EN engine — installed only when the page has no hr-shared.js
-     (i.e. index). Mirrors hr-shared.js applyLang so behaviour is identical. */
+  /* RU/EN switch on pages without hr-shared.js (i.e. index). Delegates to the single
+     canonical translator in hr-i18n.js (loaded before this file) — was a byte-identical
+     copy of it; dedup'd to one source. */
   function installI18n() {
     if (typeof window.__hrSetLang === 'function') return; // hr-shared owns it
-    var I18N_RE = /[А-Яа-яЁё]/;
     function getLang() { try { return localStorage.getItem('hr-lang') || 'ru'; } catch (e) { return 'ru'; } }
-    function applyLang(lang) {
-      var T = window.HR_TRANS || {};
-      $all('*').forEach(function (el) {
-        if (el.children.length) return;
-        var tag = el.tagName; if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'SVG' || tag === 'PATH') return;
-        var ru = el.getAttribute && el.getAttribute('data-i18n-ru');
-        if (ru === null || ru === undefined) {
-          var cur = el.textContent;
-          if (!cur || !I18N_RE.test(cur)) return;
-          ru = cur.replace(/\s+/g, ' ').trim();
-          try { el.setAttribute('data-i18n-ru', ru); el.setAttribute('data-i18n-o', cur); } catch (e) { return; }
-        }
-        if (lang === 'en') { var en = T[ru]; if (en != null && el.textContent !== en) el.textContent = en; }
-        else { var o = el.getAttribute('data-i18n-o'); if (o != null && el.textContent !== o) el.textContent = o; }
-      });
-      try { document.documentElement.setAttribute('lang', lang === 'en' ? 'en' : 'ru'); } catch (e) {}
-      $all('[data-hr-lang-btn]').forEach(function (b) { var on = b.getAttribute('data-hr-lang-btn') === lang; b.style.background = on ? '#FFFFFF1A' : 'transparent'; b.style.color = on ? '#F5F2EC' : '#8E8A9A'; });
-    }
+    function applyLang(lang) { if (window.__hrApplyI18n) window.__hrApplyI18n(lang); }
     window.__hrSetLang = function (l) { l = (l === 'en') ? 'en' : 'ru'; try { localStorage.setItem('hr-lang', l); } catch (e) {} applyLang(l); };
     applyLang(getLang());
     setTimeout(function () { applyLang(getLang()); }, 600);
