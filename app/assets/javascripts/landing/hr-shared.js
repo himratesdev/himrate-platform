@@ -188,7 +188,7 @@
     $all('div,span,a,p').forEach(function(el){
       if(el.querySelector('*')) return;
       var t=(el.textContent||'').trim();
-      if(NAV[t]){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(e){ e.stopPropagation(); window.__hrGo(NAV[t]); }); }
+      if(NAV[t]){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(e){ if(e.metaKey||e.ctrlKey||e.shiftKey||e.altKey||e.button!==0) return; e.preventDefault(); e.stopPropagation(); window.__hrGo(NAV[t]); }); }
     });
     $all('[data-pencil-name="Wordmark"]').forEach(function(el){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(){ window.__hrGo('/'); }); });
     $all('[data-pencil-name="Войти"]').forEach(function(el){ el.setAttribute('data-hr-link',''); el.addEventListener('click', function(){ window.__hrGo('/login'); }); });
