@@ -2,10 +2,11 @@
 
 module TrustIndex
   module V2
-    # Maps the active L4 band + drivers to the reason-code enum array (SRS FR-009/FR-010, §10A — 11
+    # Maps the active L4 band + drivers to the reason-code enum array (SRS FR-009/FR-010, §10A — 12
     # codes). Pure function. Legal-safe: the codes and their §10A i18n strings never say
     # "bot/fraud/fake"; each carries params ({n}, {pct}) the frontend interpolates. Accusatory codes
-    # (rows 1-2 / plashka) only when C_hard ∨ C_self; a soft deficit surfaces the non-accusatory
+    # (rows 1-2 / plashka) only when C_hard ∨ C_self ∨ C_inflation (TI v2.1 CCV-shape corroborator, a
+    # per-STREAM code that names nobody); a soft deficit alone surfaces the non-accusatory
     # ENGAGEMENT_DEFICIT_UNCORROBORATED (row 6a).
     class ReasonCodeBuilder
       Code = Data.define(:code, :params)

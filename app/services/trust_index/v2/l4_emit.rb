@@ -5,7 +5,8 @@ module TrustIndex
     # L4 — emit ERV + interval + band + reason codes + plashka (SRS FR-006/007/008/009/010).
     # ERV = V − F̂ (subtracted count, clamped ≥0); authenticity A = 100·(1−F̂/V); â = F̂/V. The label
     # comes from the 6-row band table (BandClassifier) on N_frac/I/â/Q/tier — NOT an A-threshold.
-    # The plashka (confirmed_anomaly) renders only on C_hard (N_frac ≥ φ_yellow) ∨ C_self (I=1).
+    # The plashka (confirmed_anomaly) renders on C_hard (N_frac ≥ φ_yellow) ∨ C_self (I=1) ∨
+    # C_inflation (TI v2.1 CCV-shape corroborator, only when the band is accusatory — row ≤ 2).
     class L4Emit
       EmitResult = Data.define(:erv, :erv_lo, :erv_hi, :authenticity, :a_hat, :n_frac,
                                :band, :reason_codes, :confirmed_anomaly, :cold_start_tier,

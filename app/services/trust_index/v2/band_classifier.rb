@@ -4,11 +4,12 @@ module TrustIndex
   module V2
     # 6-row first-match band table (SRS FR-008 / Glossary §D). Pure function on the L3/L4 drivers —
     # NOT on an Authenticity threshold: accusatory rows can fire at high A (N_frac ≥ φ_red with a small
-    # F̂ → A ≈ 90). Accusatory rows 1-2 require C_hard ∨ C_self corroboration; a soft engagement deficit
-    # alone NEVER accuses → AMBER (row 6, ELSE catch-all sealing the cold-start dead-zone).
+    # F̂ → A ≈ 90). Accusatory rows 1-2 require C_hard ∨ C_self ∨ C_inflation corroboration; a soft
+    # engagement deficit alone NEVER accuses → AMBER (row 6, ELSE catch-all sealing the cold-start
+    # dead-zone). (C_inflation ships dormant — its L4 gate keys off inflation_corrob_enabled.)
     #
     # drivers — responds to: n_frac, f_self_ratio (F_self/V), f_soft_lo_ratio (F_soft_lo/V), a_hat (F̂/V),
-    #   q, i_event, c_hard, c_self, raid_window, cold_start_tier.
+    #   q, i_event, c_hard, c_self, c_inflation, raid_window, cold_start_tier.
     # k — calibration thresholds: phi_yellow, phi_red, q_mid, q_hi.
     class BandClassifier
       Band = Data.define(:row, :color, :label_key, :sub)

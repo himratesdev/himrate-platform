@@ -16,6 +16,11 @@ module L4EmitSpecDoubles
   K_INFLATION_ON = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :inflation_corrob_enabled, :phi_inflation)
                        .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8,
                             inflation_corrob_enabled: 1.0, phi_inflation: 0.30)
+  # PRODUCTION dormant shape: K RESPONDS to inflation_corrob_enabled but the value is 0.0 (the real
+  # Registry default). Exercises the .positive? flip-guard, not just the respond_to? guard.
+  K_INFLATION_OFF = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :inflation_corrob_enabled, :phi_inflation)
+                        .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8,
+                             inflation_corrob_enabled: 0.0, phi_inflation: 0.30)
 end
 
 RSpec.describe TrustIndex::V2::L4Emit do
@@ -98,6 +103,16 @@ RSpec.describe TrustIndex::V2::L4Emit do
   # pre-v2.1). This is the zero-behavior-change proof for merge.
   it "DORMANT: default K → C_inflation never fires; a max CCV-shape signature leaves the deficit at AMBER" do
     r = emit(hard: hard(0.0), soft: soft(1250.0), fraud: fraud(1250.0), ccv_chat_divergence: 0.9)
+    expect([ r.band.row, r.band.color ]).to eq([ 6, "amber" ])
+    expect(r.confirmed_anomaly).to be(false)
+    expect(r.reason_codes.map(&:code)).not_to include("INFLATION_EVENT_CORROBORATION")
+  end
+
+  # The exact PRODUCTION flip-guard: K has the constant but it is 0.0 (Registry default) → .positive?
+  # false → C_inflation false even with a maximal divergence. This is what protects prod until the flip.
+  it "DORMANT (production K shape): inflation_corrob_enabled=0.0 → max divergence still AMBER, no escalation" do
+    r = emit(hard: hard(0.0), soft: soft(1250.0), fraud: fraud(1250.0),
+             ccv_chat_divergence: 0.9, k_override: L4EmitSpecDoubles::K_INFLATION_OFF)
     expect([ r.band.row, r.band.color ]).to eq([ 6, "amber" ])
     expect(r.confirmed_anomaly).to be(false)
     expect(r.reason_codes.map(&:code)).not_to include("INFLATION_EVENT_CORROBORATION")
