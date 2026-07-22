@@ -9,6 +9,8 @@ module Api
       # enqueues one refresh and reports pending (Grow/Moments pattern). NO fraud verdict — descriptive
       # only (PO 2026-07-21: накрутку соцсетей не оцениваем).
       class StreamersController < Api::BaseController
+        include SocialProfileWarming
+
         skip_after_action :verify_authorized
         before_action :authenticate_user_optional!
 
@@ -19,21 +21,11 @@ module Api
 
           cached = Rails.cache.read(::SocialAnalytics::ProfileRefreshWorker.cache_key(login))
           if cached.nil?
-            warm(login)
+            warm_social_profile(login)
             return render json: { data: { status: "pending", login: login } }
           end
 
           render json: { data: cached.merge(status: "ready") }
-        end
-
-        private
-
-        def warm(login)
-          pending = ::SocialAnalytics::ProfileRefreshWorker.pending_key(login)
-          return if Rails.cache.exist?(pending)
-
-          Rails.cache.write(pending, true, expires_in: ::SocialAnalytics::ProfileRefreshWorker::PENDING_TTL)
-          ::SocialAnalytics::ProfileRefreshWorker.perform_async(login)
         end
       end
     end
