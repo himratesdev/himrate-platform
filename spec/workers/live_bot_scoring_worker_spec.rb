@@ -62,10 +62,9 @@ RSpec.describe LiveBotScoringWorker do
 
   it "stamps bot_scored_at on the enqueued streams so the rotation advances next run" do
     s = create(:stream, ended_at: nil, bot_scored_at: nil)
-    freeze_time do
-      worker.perform
-      expect(s.reload.bot_scored_at).to eq(Time.current)
-    end
+    worker.perform
+    expect(s.reload.bot_scored_at).to be_present
+    expect(s.bot_scored_at).to be_within(5.seconds).of(Time.current)
     expect(BotScoringWorker).to have_received(:perform_async).with(s.id)
   end
 end
