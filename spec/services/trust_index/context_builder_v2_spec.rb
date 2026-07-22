@@ -174,7 +174,8 @@ RSpec.describe TrustIndex::ContextBuilder do
       k = Calibration::Registry::K.new(
         pi0: 0.02, tau_hard: 0.90, tau_delta: 0.05, phi_yellow: 0.10, phi_red: 0.35,
         q_mid: 0.50, q_hi: 0.80, llr_temporal_r2: 1.10, llr_temporal_r3: 2.20,
-        llr_temporal_r4: 2.90, llr_temporal_r7: 4.60, llr_per_user_bot_score: 3.90, llr_known_bot: 3.40
+        llr_temporal_r4: 2.90, llr_temporal_r7: 4.60, llr_per_user_bot_score: 3.90, llr_known_bot: 3.40,
+        phi_inflation: 0.30, inflation_corrob_enabled: 0.0 # TI v2.1 dormant
       )
       r = TrustIndex::V2::Engine.compute(context: c, k: k)
       expect(r.b_hard.map(&:username)).to include("megabot")

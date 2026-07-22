@@ -25,7 +25,8 @@ RSpec.describe Calibration::Registry do
     expect(described_class::K.members).to contain_exactly(
       :pi0, :tau_hard, :tau_delta, :phi_yellow, :phi_red, :q_mid, :q_hi,
       :llr_temporal_r2, :llr_temporal_r3, :llr_temporal_r4, :llr_temporal_r7,
-      :llr_per_user_bot_score, :llr_known_bot
+      :llr_per_user_bot_score, :llr_known_bot,
+      :phi_inflation, :inflation_corrob_enabled # TI v2.1 inflation corroborator (dormant)
     )
   end
 end
