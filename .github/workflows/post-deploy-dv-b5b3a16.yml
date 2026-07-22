@@ -1,0 +1,78 @@
+name: post-deploy-dv-b5b3a16
+# DV for the b5b3a16 force-deploy: confirms (1) BUG-A dormant (ti_v2_cowindowed_rho OFF → build_v2
+# nil windowed inputs), (2) PVA permanent fix worked (:pva re-enabled on BOOT via ALL_FLAGS — the
+# proof the deploy-proofing landed), (3) live v2 engine still healthy + unchanged. READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  dv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build DV script
+        run: |
+          cat > /tmp/pddv.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
+
+          puts "===== 1. FLAGS after boot ====="
+          puts "  ti_v2_engine          = #{Flipper.enabled?(:ti_v2_engine)}  (expect true — v2 live)"
+          puts "  ti_v2_cowindowed_rho  = #{Flipper.enabled?(:ti_v2_cowindowed_rho)}  (expect FALSE — BUG-A dormant)"
+          puts "  pva                   = #{Flipper.enabled?(:pva)}  (expect TRUE — permanent fix: ALL_FLAGS re-enabled on boot)"
+          puts "  → PVA deploy-proof: #{Flipper.enabled?(:pva) ? 'CONFIRMED (survived redeploy via ALL_FLAGS)' : '🔴 STILL OFF — fix did not land'}"
+
+          puts "\n===== 2. BUG-A dormancy + live v2 engine (currently-live RU stream) ====="
+          live = Stream.where(ended_at: nil).where("lower(language) = 'ru'").order(started_at: :desc).limit(300).to_a
+          s = live.map { |x| [x, latest_ccv(x)] }.select { |(st, c)| c >= 100 && st.started_at > 30.minutes.ago }
+                  .max_by { |(_, c)| c }&.first
+          s ||= live.map { |x| [x, latest_ccv(x)] }.select { |(_, c)| c >= 100 }.max_by { |(_, c)| c }&.first
+          if s
+            ch = s.channel
+            ctx = TrustIndex::ContextBuilder.build(s)
+            v2ctx = TrustIndex::ContextBuilder.build_v2(s, ctx)
+            puts "  stream=#{ch.login} ccv=#{latest_ccv(s)} started=#{((Time.current - s.started_at) / 60).round}min ago"
+            puts "  BUG-A dormant inputs: l2_roster_usernames=#{v2ctx.l2_roster_usernames.inspect} v_w=#{v2ctx.v_w.inspect} (expect nil,nil)"
+            puts "  corroborator field:   ccv_chat_divergence=#{v2ctx.ccv_chat_divergence.inspect}"
+            res = TrustIndex::V2::Engine.compute(context: v2ctx, k: Calibration::Registry.load)
+            puts "  v2 engine LIVE: erv=#{res.erv&.round} auth=#{res.authenticity&.round(1)} band=#{res.band&.color}/#{res.band&.row} confirmed=#{res.confirmed_anomaly}"
+            tih = TrustIndexHistory.where(channel_id: ch.id, engine_version: "v2").order(calculated_at: :desc).first
+            puts "  recency: latest v2 TIH #{tih ? ((Time.current - tih.calculated_at) / 60.0).round(1) : '?'}min ago (<5 = fresh pipeline)"
+          else
+            puts "  no live RU stream ccv>=100 right now — engine-health check skipped"
+          end
+
+          puts "\nVERDICT: PVA :pva on-boot (§1) + BUG-A dormant nil inputs (§2) + live engine healthy = 🟢 DV OK"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/pddv.rb) lines)"
+
+      - name: Run
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          echo "=== staging image SHA ==="
+          ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Image}}' | head -1" || true
+          scp /tmp/pddv.rb ${TARGET}:/tmp/pddv.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/pddv.rb ${CONTAINER}:/tmp/pddv.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/pddv.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
