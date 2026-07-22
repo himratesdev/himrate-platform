@@ -47,7 +47,7 @@ jobs:
 
           puts "\n===== 2. LIVE engine health — currently-live RU stream ====="
           def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
-          live = Stream.where(ended_at: nil).where(language: "ru").order(started_at: :desc).limit(300).to_a
+          live = Stream.where(ended_at: nil).where("lower(language) = 'ru'").order(started_at: :desc).limit(300).to_a
           s = live.map { |x| [x, latest_ccv(x)] }.select { |(st, c)| c >= 100 && st.started_at > 30.minutes.ago }
                   .max_by { |(_, c)| c }&.first
           s ||= live.map { |x| [x, latest_ccv(x)] }.select { |(_, c)| c >= 100 }.max_by { |(_, c)| c }&.first
