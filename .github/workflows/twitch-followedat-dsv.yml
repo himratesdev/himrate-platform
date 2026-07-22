@@ -1,0 +1,85 @@
+name: twitch-followedat-dsv
+# DSV (PO challenge 2026-07-22): "what I see on hover (Отслеживает N минут) can be pulled via GQL —
+# are you SURE we can't get follow-timestamp?". My earlier "auth-gated" claim was based on Helix
+# channels/followers (broadcaster scope) — NOT verified for the GQL viewer-card path. This probe
+# fires the actual `user.relationship(targetUserID:).followedAt` GQL query with our public Android
+# Client-ID (Kasada-bypass, same as GqlClient) DIRECTLY from the runner (public gql.twitch.tv, no SSH,
+# no server load). If followedAt returns for a chatter→channel pair → the matvey-killer signal is
+# available for the GENERAL population, and I was wrong. If it errors (auth/field) → confirms gated.
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "channel login to test (blank → auto-pick a live top stream)"
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      CID: "kd1unb4b3q4t58fwlpcbzcbnm76a8fp"   # public Android Client-ID (from GqlClient)
+      UA: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    steps:
+      - name: Probe followedAt via GQL relationship
+        run: |
+          set -e
+          gql() { # $1 = json body
+            curl -s -X POST https://gql.twitch.tv/gql \
+              -H "Client-ID: ${CID}" -H "Content-Type: application/json" -H "User-Agent: ${UA}" \
+              --data "$1"
+          }
+
+          CH="${{ inputs.channel }}"
+          if [ -z "$CH" ]; then
+            echo "== auto-pick a live top stream =="
+            BODY=$(jq -nc '{query:"query($first:Int!){streams(first:$first){edges{node{broadcaster{login} viewersCount}}}}",variables:{first:6}}')
+            TOP=$(gql "$BODY")
+            echo "$TOP" | jq -c '.data.streams.edges[]?|{login:.node.broadcaster.login,ccv:.node.viewersCount}' || echo "top_streams parse fail"
+            CH=$(echo "$TOP" | jq -r '.data.streams.edges[0].node.broadcaster.login // empty')
+          fi
+          echo "channel under test: ${CH:-<none>}"
+          [ -z "$CH" ] && { echo "no channel — abort"; exit 0; }
+
+          echo ""
+          echo "== 1. channelID via bot_check =="
+          BODY=$(jq -nc --arg l "$CH" '{query:"query($login:String!){user(login:$login){id login createdAt}}",variables:{login:$l}}')
+          U=$(gql "$BODY"); echo "$U" | jq -c '.data.user, (.errors//empty)'
+          CID_CH=$(echo "$U" | jq -r '.data.user.id // empty')
+          echo "channelID=${CID_CH:-<none>}"
+          [ -z "$CID_CH" ] && { echo "no channelID — abort"; exit 0; }
+
+          echo ""
+          echo "== 2. chatters via community_tab (first few viewers) =="
+          BODY=$(jq -nc --arg l "$CH" '{query:"query($login:String!){channel(name:$login){chatters{viewers{login} count}}}",variables:{login:$l}}')
+          C=$(gql "$BODY")
+          echo "count=$(echo "$C" | jq -r '.data.channel.chatters.count // "?"') errors=$(echo "$C" | jq -c '.errors//empty')"
+          VIEWERS=$(echo "$C" | jq -r '.data.channel.chatters.viewers[]?.login' | head -8)
+          echo "sample viewers:"; echo "$VIEWERS"
+
+          echo ""
+          echo "== 3. THE TEST: user.relationship(targetUserID: channelID).followedAt per chatter =="
+          echo "   (this is the exact hover-card 'Отслеживает N минут' field)"
+          for V in $VIEWERS; do
+            BODY=$(jq -nc --arg l "$V" --arg cid "$CID_CH" '{query:"query($login:String!,$cid:ID!){user(login:$login){login createdAt relationship(targetUserID:$cid){followedAt subscriptionBenefit{tier}}}}",variables:{login:$l,cid:$cid}}')
+            R=$(gql "$BODY")
+            FA=$(echo "$R" | jq -r '.data.user.relationship.followedAt // "null"')
+            ERR=$(echo "$R" | jq -c '.errors // empty')
+            CA=$(echo "$R" | jq -r '.data.user.createdAt // "?"')
+            printf "  %-22s followedAt=%-26s acct_created=%-22s err=%s\n" "$V" "$FA" "$CA" "${ERR:-none}"
+          done
+
+          echo ""
+          echo "== 4. fallback path: user.follows edges (does the follows list expose data?) =="
+          FV=$(echo "$VIEWERS" | head -1)
+          BODY=$(jq -nc --arg l "$FV" '{query:"query($login:String!){user(login:$login){login follows(first:3){totalCount edges{followedAt node{login}}}}}",variables:{login:$l}}')
+          F=$(gql "$BODY")
+          echo "  $FV follows: $(echo "$F" | jq -c '.data.user.follows // .errors // "?"')"
+
+          echo ""
+          echo "===== VERDICT ====="
+          echo "  If §3 followedAt returns ISO timestamps (not null/err) → follow-recency IS pullable"
+          echo "  with public Client-ID for the GENERAL population → my 'auth-gated' was WRONG → this"
+          echo "  becomes the real matvey-killer signal. If §3 errors (auth/field) → gated, confirmed."
