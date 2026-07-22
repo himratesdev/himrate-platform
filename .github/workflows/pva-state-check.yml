@@ -47,9 +47,10 @@ jobs:
           puts "most recent DONE completed: #{PvaEnrollmentBackfillState.where(overall_status: 'done').maximum(:completed_at)}"
 
           puts "\n== sample stuck rows (per-source cells) =="
-          PvaEnrollmentBackfillState.pending_or_in_progress.order(oauth_linked_at: :desc).limit(6).each do |r|
-            puts "  user=#{r.user_id.to_s[0, 8]} overall=#{r.overall_status} oauth=#{r.oauth_linked_at&.strftime('%m-%d %H:%M')}"
-            puts "     s1=#{r.source_1.inspect} s2=#{r.source_2.inspect} s5=#{r.source_5.inspect} failed=#{r.try(:failed_sources).inspect}"
+          PvaEnrollmentBackfillState.order(oauth_linked_at: :desc).limit(6).each do |r|
+            age = ((Time.current - r.oauth_linked_at) / 60).round if r.oauth_linked_at
+            puts "  user=#{r.user_id.to_s[0, 8]} overall=#{r.overall_status} oauth=#{r.oauth_linked_at&.strftime('%m-%d %H:%M')} (#{age}m ago) completed=#{r.completed_at}"
+            puts "     sources=#{r.sources.inspect[0, 400]}"
           end
 
           puts "\n== REAL API path: StateStore.read_state for a stuck user =="
