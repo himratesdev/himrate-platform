@@ -28,6 +28,19 @@ RSpec.describe "Dashboard web login", type: :request do
   end
 
   describe "web OAuth callback → cookie session" do
+    it "scopes the session cookie to .himrate.com so it is shared across apex ↔ app subdomains" do
+      host! "himrate.com"
+      user = create(:user, email: "sub@himrate.test")
+      allow(Auth::TwitchOauth).to receive(:new).and_return(instance_double(Auth::TwitchOauth, callback: user))
+      Rails.cache.write("pkce:sd1", { code_verifier: "v", redirect_uri: "https://cb", web: true, web_redirect: "/app/home" }, expires_in: 10.minutes)
+
+      get "/api/v1/auth/twitch/callback", params: { code: "c", state: "sd1" }
+
+      set_cookie = Array(response.headers["Set-Cookie"]).join("\n")
+      expect(set_cookie).to match(/hr_session=[^\n]*domain=\.himrate\.com/i)
+      expect(set_cookie).to match(/hr_refresh=[^\n]*domain=\.himrate\.com/i)
+    end
+
     it "sets an httpOnly session cookie that authenticates subsequent API requests" do
       user = create(:user, email: "web@himrate.test")
       allow(Auth::TwitchOauth).to receive(:new).and_return(instance_double(Auth::TwitchOauth, callback: user))

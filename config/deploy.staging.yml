@@ -13,7 +13,7 @@ proxy:
   # kamal-proxy issues a Let's Encrypt cert per host — each MUST be Cloudflare DNS-only
   # (grey cloud) → 82.21.7.48 so the ACME HTTP-01 challenge reaches port 80.
   # www.himrate.com deferred until its DNS is DNS-only (still Cloudflare-proxied as of cutover).
-  host: staging.himrate.com,himrate.com,api.himrate.com
+  host: staging.himrate.com,himrate.com,api.himrate.com,app.himrate.com
 
 env:
   clear:

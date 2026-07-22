@@ -49,8 +49,14 @@ module Web
     # (state-changing, so DELETE not GET → no logout-CSRF via top-level navigation). 204; the client
     # reloads /login to show the logged-out state.
     def logout
-      cookies.delete(:hr_session)
-      cookies.delete(:hr_refresh)
+      # Clear BOTH the host-only cookie (legacy, pre-subdomain) AND the ".himrate.com" cookie the login
+      # now sets (Api::V1::AuthController#session_cookie_domain), so logout works across the transition
+      # and across subdomains. A cookie is only cleared by delete() when the domain matches how it was set.
+      domain = request.host.to_s.end_with?("himrate.com") ? ".himrate.com" : nil
+      %i[hr_session hr_refresh].each do |name|
+        cookies.delete(name)
+        cookies.delete(name, domain: domain) if domain
+      end
       head :no_content
     end
   end
