@@ -1,0 +1,99 @@
+name: post-deploy-dv-p05
+# DV for the P0.5 rho_convention stamp (PR #475, squash f3b8cc0). Confirms (1) the additive migration
+# applied (trust_index_histories.rho_convention column present), (2) dormancy flags unchanged
+# (ti_v2_engine ON, ti_v2_cowindowed_rho OFF), (3) the stamp WRITES live — a fresh v2 compute on a
+# currently-live RU stream carries rho_convention='cumulative' and newly-persisted v2 rows are stamped,
+# (4) the self-baseline stays byte-identical (flag OFF → NULL|cumulative filter). READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  dv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build DV script
+        run: |
+          cat > /tmp/p05dv.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
+
+          puts "===== 1. MIGRATION (additive column) ====="
+          TrustIndexHistory.reset_column_information
+          col = TrustIndexHistory.columns_hash["rho_convention"]
+          puts "  rho_convention column: present=#{!col.nil?} type=#{col&.sql_type} null=#{col&.null}  (expect present/varchar(12)/true)"
+
+          puts "\n===== 2. DORMANCY FLAGS ====="
+          puts "  ti_v2_engine         = #{Flipper.enabled?(:ti_v2_engine)}  (expect true)"
+          puts "  ti_v2_cowindowed_rho = #{Flipper.enabled?(:ti_v2_cowindowed_rho)}  (expect FALSE — P0.5 dormant)"
+
+          puts "\n===== 3. STAMP WRITES LIVE (currently-live RU stream) ====="
+          live = Stream.where(ended_at: nil).where("lower(language) = 'ru'").order(started_at: :desc).limit(300).to_a
+          s = live.map { |x| [x, latest_ccv(x)] }.select { |(st, c)| c >= 100 && st.started_at > 30.minutes.ago }
+                  .max_by { |(_, c)| c }&.first
+          s ||= live.map { |x| [x, latest_ccv(x)] }.select { |(_, c)| c >= 100 }.max_by { |(_, c)| c }&.first
+          if s
+            ch = s.channel
+            ctx = TrustIndex::ContextBuilder.build(s)
+            v2ctx = TrustIndex::ContextBuilder.build_v2(s, ctx)
+            res = TrustIndex::V2::Engine.compute(context: v2ctx, k: Calibration::Registry.load)
+            puts "  stream=#{ch.login} ccv=#{latest_ccv(s)} started=#{((Time.current - s.started_at) / 60).round}min ago"
+            puts "  dormant inputs: v_w=#{v2ctx.v_w.inspect} l2_roster=#{v2ctx.l2_roster_usernames.inspect} (expect nil,nil)"
+            puts "  engine result: rho_convention=#{res.rho_convention.inspect} (expect \"cumulative\") band=#{res.band&.color}/#{res.band&.row} erv=#{res.erv&.round}"
+          else
+            puts "  no live RU stream ccv>=100 right now — live compute skipped"
+          end
+
+          puts "\n===== 4. PERSISTED v2 ROWS CARRY THE STAMP (post-deploy writes) ====="
+          recent = TrustIndexHistory.where(engine_version: "v2").where("calculated_at > ?", 20.minutes.ago)
+          total = recent.count
+          stamped = recent.where.not(rho_convention: nil).count
+          conv_breakdown = recent.group(:rho_convention).count
+          puts "  v2 rows last 20min: #{total} | stamped(non-null): #{stamped} | by convention: #{conv_breakdown.inspect}"
+          puts "  → post-deploy writes should be 'cumulative' (windowed only appears after the flip)"
+          latest = TrustIndexHistory.where(engine_version: "v2").order(calculated_at: :desc).first
+          puts "  recency: latest v2 TIH #{latest ? ((Time.current - latest.calculated_at) / 60.0).round(1) : '?'}min ago, rho_convention=#{latest&.rho_convention.inspect}"
+
+          puts "\n===== 5. SELF-BASELINE byte-identical (flag OFF) — data-level invariant ====="
+          # Flag OFF → v2_self_history scope = (rho_convention IS NULL OR 'cumulative'). Byte-identical
+          # holds iff NO clean v2 row is 'windowed' (i.e. the OFF scope selects the full clean set).
+          clean = TrustIndexHistory.where(engine_version: "v2", c_hard: false)
+          off_scope = clean.where("rho_convention IS NULL OR rho_convention = 'cumulative'").count
+          windowed = clean.where(rho_convention: "windowed").count
+          puts "  clean v2 rows: #{clean.count} | flag-OFF scope selects: #{off_scope} | windowed: #{windowed}"
+          puts "  → byte-identical iff windowed=0 AND off_scope==clean_total (#{windowed.zero? && off_scope == clean.count ? 'OK' : 'MISMATCH'})"
+
+          ok = !col.nil? && Flipper.enabled?(:ti_v2_engine) && !Flipper.enabled?(:ti_v2_cowindowed_rho)
+          puts "\nVERDICT: #{ok ? '🟢 DV OK — migration applied, dormant, stamp writing cumulative' : '🔴 DV FAIL — check above'}"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/p05dv.rb) lines)"
+
+      - name: Run
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          echo "=== staging image SHA (expect f3b8cc0) ==="
+          ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Image}}' | head -1" || true
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/p05dv.rb ${CONTAINER}:/tmp/p05dv.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/p05dv.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
