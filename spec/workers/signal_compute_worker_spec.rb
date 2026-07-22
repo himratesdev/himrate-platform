@@ -190,6 +190,38 @@ RSpec.describe SignalComputeWorker do
     end
   end
 
+  describe "P1 windowed-shadow accrual (BUG-A flip-path)" do
+    before { allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true) }
+
+    it "windowed_shadow_due? is false when ti_v2_cowindowed_shadow is OFF (byte-identical, no accrual)" do
+      expect(worker.send(:windowed_shadow_due?, stream)).to be(false)
+    end
+
+    it "windowed_shadow_due? is false when duty <= 0 (kill-switch via CalibrationConstant)" do
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_cowindowed_shadow).and_return(true)
+      allow(CalibrationConstant).to receive(:value_for).with("cowindowed_shadow_duty", fallback: 4).and_return(0)
+      expect(worker.send(:windowed_shadow_due?, stream)).to be(false)
+    end
+
+    it "when the flag is ON + due, emits a v2_rho_conv=windowed shadow line (accrues for the P2 re-seed)" do
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_cowindowed_shadow).and_return(true)
+      allow(worker).to receive(:windowed_shadow_due?).and_return(true)
+      allow(TrustIndex::ContextBuilder).to receive(:windowed_inputs).and_return([ Set.new(%w[u1 u2]), 400 ])
+      allow(Rails.logger).to receive(:info)
+      worker.perform(stream.id)
+      expect(Rails.logger).to have_received(:info).with(/SCW shadow.*"v2_rho_conv":"windowed"/)
+    end
+
+    it "no-op (no windowed line) when the windowed CCV window is empty (v_w nil — no half-window)" do
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_cowindowed_shadow).and_return(true)
+      allow(worker).to receive(:windowed_shadow_due?).and_return(true)
+      allow(TrustIndex::ContextBuilder).to receive(:windowed_inputs).and_return([ nil, nil ])
+      allow(Rails.logger).to receive(:info)
+      worker.perform(stream.id)
+      expect(Rails.logger).not_to have_received(:info).with(/"v2_rho_conv":"windowed"/)
+    end
+  end
+
   # TASK-039 FR-019: enqueue Trends::AnomalyAttributionWorker per created anomaly ID
   it "enqueues Trends::AnomalyAttributionWorker за каждую созданную anomaly" do
     anomaly_ids = [ SecureRandom.uuid, SecureRandom.uuid ]

@@ -98,6 +98,14 @@ module TrustIndex
       )
     end
 
+    # P1 (TI v2.1 BUG-A flip-path): the trailing-60min L2 inputs computed UNCONDITIONALLY (no verdict-flag
+    # gate), for the windowed shadow-accrual path (SignalComputeWorker#accrue_windowed_shadow). The caller
+    # gates on the SEPARATE ti_v2_cowindowed_shadow flag; this just computes. Same [roster, v_w] / [nil, nil]
+    # contract as the flag-gated verdict path v2_cowindowed_inputs (both delegate to compute_windowed_inputs).
+    def self.windowed_inputs(stream)
+      compute_windowed_inputs(stream)
+    end
+
     class << self
       private
 
@@ -328,19 +336,24 @@ module TrustIndex
       def v2_cowindowed_inputs(stream)
         return [ nil, nil ] unless cowindowed_rho_enabled?
 
+        compute_windowed_inputs(stream)
+      end
+
+      # Shared core for the verdict path (v2_cowindowed_inputs, flag-gated) and the P1 shadow path
+      # (self.windowed_inputs, ungated). CR must-fix: the roster filter and the V_W denominator MUST flip
+      # together. Chat (IRC) and CCV snapshots are separate pipelines, so a stream can have recent chat but
+      # a >60min CCV-snapshot gap → v_w nil. Returning [Set, nil] there would half-window (windowed EIHC
+      # over an INSTANT-V denominator = an inflated false deficit — the cross-frame confound from the other
+      # side, while engine#windowed? reads false). Compute V_W first; if it's absent, stay FULLY dormant.
+      def compute_windowed_inputs(stream)
         since = [ stream.started_at, COWINDOW_MINUTES.minutes.ago ].max
-        # CR must-fix: the roster filter and the V_W denominator MUST flip together. Chat (IRC) and CCV
-        # snapshots are separate pipelines, so a stream can have recent chat but a >60min CCV-snapshot
-        # gap → v_w nil. Returning [Set, nil] there would half-window (windowed EIHC over an INSTANT-V
-        # denominator = an inflated false deficit — the cross-frame confound from the other side, while
-        # engine#windowed? reads false). Compute V_W first; if it's absent, stay FULLY dormant.
         v_w = v2_median_ccv_windowed(stream, since)
         return [ nil, nil ] if v_w.nil?
 
         roster = Clickhouse::ChatQueries.stream_chatters_windowed(stream, since: since).to_set
         [ roster, v_w ]
       rescue StandardError => e
-        Rails.logger.warn("ContextBuilder: v2 cowindowed inputs failed (#{e.message})")
+        Rails.logger.warn("ContextBuilder: windowed inputs failed (#{e.message})")
         [ nil, nil ]
       end
 

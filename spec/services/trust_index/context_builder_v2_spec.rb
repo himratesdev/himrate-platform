@@ -57,6 +57,17 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(c.v_w).to be_nil
     end
 
+    it "P1: ContextBuilder.windowed_inputs computes windowed inputs UNCONDITIONALLY (ungated shadow path)" do
+      s = create(:stream, channel: channel, language: "ru", started_at: 3.hours.ago)
+      # verdict flag OFF, but windowed_inputs is ungated — still [nil, nil] here only because no CCV window.
+      expect(described_class.windowed_inputs(s)).to eq([ nil, nil ])
+      [ 500, 600, 700 ].each_with_index { |c, i| s.ccv_snapshots.create!(ccv_count: c, timestamp: (i + 1).minutes.ago) }
+      allow(Clickhouse::ChatQueries).to receive(:stream_chatters_windowed).and_return(%w[u1 u2 u3])
+      roster, v_w = described_class.windowed_inputs(s)
+      expect(roster).to eq(Set.new(%w[u1 u2 u3]))
+      expect(v_w).to eq(600) # median of 500/600/700 (nearest-rank)
+    end
+
     # TI v2.1 inflation corroborator input: build_v2 reuses the calibrated v1 CcvChatCorrelation
     # signal to compute ccv_chat_divergence (CCV↑ ∧ chat-flat = silent-injection signature).
     it "wires ccv_chat_divergence from CcvChatCorrelation when CCV rises with flat chat" do
