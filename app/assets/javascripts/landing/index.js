@@ -38,9 +38,14 @@
     var t = (el.textContent||'').trim();
     if(NAV[t]){
       el.setAttribute('data-hr-link','');
-      // Nav items are real <a href> now (crawlable/keyboard) — preventDefault so the
-      // native jump doesn't race the fade-out; go() drives the transition + navigation.
-      el.addEventListener('click', function(e){ e.preventDefault(); e.stopPropagation(); go(NAV[t]); });
+      // Nav items are real <a href> now (crawlable/keyboard) — for a plain left-click,
+      // preventDefault so the native jump doesn't race the fade-out (go() drives the
+      // transition). Let modified clicks (Cmd/Ctrl/Shift/Alt, middle) keep the native
+      // <a> behaviour (open in new tab/window).
+      el.addEventListener('click', function(e){
+        if(e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+        e.preventDefault(); e.stopPropagation(); go(NAV[t]);
+      });
     }
   });
 
