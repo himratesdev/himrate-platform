@@ -18,11 +18,11 @@
     /api/v1/channels/:login/card (headline + reputation). No auth. %>
 <div
       data-pencil-name="Экран · Карточка канала"
-      class="box-border w-[1440px] h-[2210px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#0B0B0F] [border:1px_solid_#34343F] rounded-[16px] overflow-hidden"
+      class="box-border w-full max-w-[1440px] mx-auto h-auto lg:h-[2210px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#0B0B0F] [border:1px_solid_#34343F] rounded-[16px] overflow-hidden"
     >
       <div
         data-pencil-name="Sidebar"
-        class="box-border w-[264px] shrink-0 h-full flex flex-col gap-[2px] p-[18px_14px] justify-start items-start bg-[#0D0D12] [border-width:0px_1px_0px_0px] [border-style:solid] [border-color:#25252F] overflow-hidden"
+        class="box-border w-[264px] shrink-0 h-full hidden lg:flex flex-col gap-[2px] p-[18px_14px] justify-start items-start bg-[#0D0D12] [border-width:0px_1px_0px_0px] [border-style:solid] [border-color:#25252F] overflow-hidden"
       >
         <div
           data-pencil-name="Logo"
@@ -34,14 +34,14 @@
           >
             <div
               data-pencil-name="Mark H"
-              class="text-[17px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-extrabold text-left [white-space:nowrap]"
+              class="text-[17px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-extrabold text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               H
             </div>
           </div>
           <div
             data-pencil-name="Wordmark"
-            class="text-[17px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+            class="text-[17px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             HimRate
           </div>
@@ -66,18 +66,18 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Главная"
-            class="text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Главная
           </div>
         </div>
         <div
           data-pencil-name="Cap ЗРИТЕЛЬ"
-          class="box-border w-full h-fit shrink-0 flex flex-row gap-0 p-[12px_8px_4px_8px] justify-start items-start"
+          class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-0 p-[12px_8px_4px_8px] justify-start items-stretch lg:items-start"
         >
           <div
             data-pencil-name="Cap ЗРИТЕЛЬ T"
-            class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.6px] text-left [white-space:nowrap]"
+            class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.6px] text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             ЗРИТЕЛЬ
           </div>
@@ -102,7 +102,7 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Моя активность"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Моя активность
           </div>
@@ -127,7 +127,7 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Куда пойти"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Куда пойти
           </div>
@@ -152,7 +152,7 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Watchlists"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Watchlists
           </div>
@@ -177,18 +177,18 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Лучшие моменты"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Лучшие моменты
           </div>
         </div>
         <div
           data-pencil-name="Cap СТРИМЕР"
-          class="box-border w-full h-fit shrink-0 flex flex-row gap-0 p-[12px_8px_4px_8px] justify-start items-start"
+          class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-0 p-[12px_8px_4px_8px] justify-start items-stretch lg:items-start"
         >
           <div
             data-pencil-name="Cap СТРИМЕР T"
-            class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.6px] text-left [white-space:nowrap]"
+            class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.6px] text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             СТРИМЕР
           </div>
@@ -213,7 +213,7 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Мой канал"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Мой канал
           </div>
@@ -238,7 +238,7 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Рост"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Рост
           </div>
@@ -263,21 +263,21 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Мои соцсети"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Мои соцсети
           </div>
           <div
             data-pencil-name="Nav Sp · Мои соцсети"
-            class="box-border [flex:1_1_0] h-[1px] flex flex-row gap-0 justify-start items-start"
+            class="box-border [flex:1_1_0] h-[1px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start"
           ></div>
           <div
             data-pencil-name="Nav Chip · Мои соцсети"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[3px_7px] justify-start items-start bg-[#1E1838] rounded-[999px]"
+            class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[3px_7px] justify-start items-stretch lg:items-start bg-[#1E1838] rounded-[999px]"
           >
             <div
               data-pencil-name="Nav Chip T · Мои соцсети"
-              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Pro
             </div>
@@ -303,7 +303,7 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Подключение"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Подключение
           </div>
@@ -328,18 +328,18 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Шаблоны"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Шаблоны
           </div>
         </div>
         <div
           data-pencil-name="Cap БРЕНД"
-          class="box-border w-full h-fit shrink-0 flex flex-row gap-0 p-[12px_8px_4px_8px] justify-start items-start"
+          class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-0 p-[12px_8px_4px_8px] justify-start items-stretch lg:items-start"
         >
           <div
             data-pencil-name="Cap БРЕНД T"
-            class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.6px] text-left [white-space:nowrap]"
+            class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.6px] text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             БРЕНД
           </div>
@@ -364,7 +364,7 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Поиск стримеров"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Поиск стримеров
           </div>
@@ -389,21 +389,21 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Поиск блогеров"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Поиск блогеров
           </div>
           <div
             data-pencil-name="Nav Sp · Поиск блогеров"
-            class="box-border [flex:1_1_0] h-[1px] flex flex-row gap-0 justify-start items-start"
+            class="box-border [flex:1_1_0] h-[1px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start"
           ></div>
           <div
             data-pencil-name="Nav Chip · Поиск блогеров"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[3px_7px] justify-start items-start bg-[#1E1838] rounded-[999px]"
+            class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[3px_7px] justify-start items-stretch lg:items-start bg-[#1E1838] rounded-[999px]"
           >
             <div
               data-pencil-name="Nav Chip T · Поиск блогеров"
-              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Pro
             </div>
@@ -429,21 +429,21 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Измерение"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Измерение
           </div>
           <div
             data-pencil-name="Nav Sp · Измерение"
-            class="box-border [flex:1_1_0] h-[1px] flex flex-row gap-0 justify-start items-start"
+            class="box-border [flex:1_1_0] h-[1px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start"
           ></div>
           <div
             data-pencil-name="Nav Chip · Измерение"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[3px_7px] justify-start items-start bg-[#1E1838] rounded-[999px]"
+            class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[3px_7px] justify-start items-stretch lg:items-start bg-[#1E1838] rounded-[999px]"
           >
             <div
               data-pencil-name="Nav Chip T · Измерение"
-              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Pro
             </div>
@@ -469,21 +469,21 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Сравнение"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Сравнение
           </div>
           <div
             data-pencil-name="Nav Sp · Сравнение"
-            class="box-border [flex:1_1_0] h-[1px] flex flex-row gap-0 justify-start items-start"
+            class="box-border [flex:1_1_0] h-[1px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start"
           ></div>
           <div
             data-pencil-name="Nav Chip · Сравнение"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[3px_7px] justify-start items-start bg-[#1E1838] rounded-[999px]"
+            class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[3px_7px] justify-start items-stretch lg:items-start bg-[#1E1838] rounded-[999px]"
           >
             <div
               data-pencil-name="Nav Chip T · Сравнение"
-              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Pro
             </div>
@@ -509,21 +509,21 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Кампании"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Кампании
           </div>
           <div
             data-pencil-name="Nav Sp · Кампании"
-            class="box-border [flex:1_1_0] h-[1px] flex flex-row gap-0 justify-start items-start"
+            class="box-border [flex:1_1_0] h-[1px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start"
           ></div>
           <div
             data-pencil-name="Nav Chip · Кампании"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[3px_7px] justify-start items-start bg-[#1E1838] rounded-[999px]"
+            class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[3px_7px] justify-start items-stretch lg:items-start bg-[#1E1838] rounded-[999px]"
           >
             <div
               data-pencil-name="Nav Chip T · Кампании"
-              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+              class="text-[10px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Pro
             </div>
@@ -549,18 +549,18 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Команда"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Команда
           </div>
         </div>
         <div
           data-pencil-name="Cap ОБЩЕЕ"
-          class="box-border w-full h-fit shrink-0 flex flex-row gap-0 p-[12px_8px_4px_8px] justify-start items-start"
+          class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-0 p-[12px_8px_4px_8px] justify-start items-stretch lg:items-start"
         >
           <div
             data-pencil-name="Cap ОБЩЕЕ T"
-            class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.6px] text-left [white-space:nowrap]"
+            class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.6px] text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             ОБЩЕЕ
           </div>
@@ -585,7 +585,7 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Биржа"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Биржа
           </div>
@@ -610,7 +610,7 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Алерты"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Алерты
           </div>
@@ -635,14 +635,14 @@
           </svg>
           <div
             data-pencil-name="Nav Label · Настройки"
-            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+            class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
           >
             Настройки
           </div>
         </div>
         <div
           data-pencil-name="Spacer"
-          class="box-border w-full [flex:1_1_0] flex flex-row gap-0 justify-start items-start"
+          class="box-border w-full [flex:1_1_0] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start"
         ></div>
         <div
           data-pencil-name="Account"
@@ -668,7 +668,7 @@
             </svg>
             <div
               data-pencil-name="Nav Label · Подписка"
-              class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+              class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
             >
               Подписка
             </div>
@@ -683,7 +683,7 @@
             >
               <div
                 data-pencil-name="Avatar T"
-                class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 DH
               </div>
@@ -694,13 +694,13 @@
             >
               <div
                 data-pencil-name="User Name"
-                class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Denis H.
               </div>
               <div
                 data-pencil-name="User Roles"
-                class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Зритель · Стример · Бренд
               </div>
@@ -724,7 +724,7 @@
       </div>
       <div
         data-pencil-name="Main"
-        class="box-border [flex:1_1_0] h-full flex flex-col gap-0 justify-start items-start bg-[#0B0B0F]"
+        class="box-border [flex:1_1_0] min-w-0 h-auto lg:h-full flex flex-col gap-0 justify-start items-start bg-[#0B0B0F]"
       >
         <div
           data-pencil-name="Topbar"
@@ -732,7 +732,7 @@
         >
           <div
             data-pencil-name="Search"
-            class="box-border w-[480px] shrink-0 h-[40px] flex flex-row gap-[10px] p-[0px_12px] justify-start items-center bg-[#1C1C24] [border:1px_solid_#25252F] rounded-[12px]"
+            class="box-border w-full lg:w-[480px] shrink-0 h-[40px] flex flex-row gap-[10px] p-[0px_12px] justify-start items-center bg-[#1C1C24] [border:1px_solid_#25252F] rounded-[12px]"
           >
             <svg
               data-pencil-name="Search Icon"
@@ -756,11 +756,11 @@
             </div>
             <div
               data-pencil-name="Kbd"
-              class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[3px_7px] justify-start items-start bg-[#0B0B0F] [border:1px_solid_#25252F] rounded-[8px]"
+              class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[3px_7px] justify-start items-stretch lg:items-start bg-[#0B0B0F] [border:1px_solid_#25252F] rounded-[8px]"
             >
               <div
                 data-pencil-name="Kbd T"
-                class="text-[11px]/[normal] box-border text-[#5E5E6B] font-['JetBrains_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[11px]/[normal] box-border text-[#5E5E6B] font-['JetBrains_Mono',system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 ⌘K
               </div>
@@ -768,7 +768,7 @@
           </div>
           <div
             data-pencil-name="Right"
-            class="box-border w-fit shrink-0 h-fit flex flex-row gap-[10px] justify-start items-center"
+            class="box-border w-fit shrink-0 h-fit hidden lg:flex flex-row gap-[10px] justify-start items-center"
           >
             <div
               data-pencil-name="Help"
@@ -814,7 +814,7 @@
             </div>
             <div
               data-pencil-name="Divider"
-              class="box-border w-[1px] shrink-0 h-[24px] flex flex-row gap-0 justify-start items-start bg-[#25252F]"
+              class="box-border w-[1px] shrink-0 h-[24px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25252F]"
             ></div>
             <div
               data-pencil-name="TB Avatar"
@@ -822,7 +822,7 @@
             >
               <div
                 data-pencil-name="TB Avatar T"
-                class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 DH
               </div>
@@ -831,11 +831,11 @@
         </div>
         <div
           data-pencil-name="Content"
-          class="box-border w-full [flex:1_1_0] flex flex-col gap-[22px] p-[26px_40px_40px_40px] justify-start items-start bg-[#0B0B0F]"
+          class="box-border w-full [flex:1_1_0] min-w-0 flex flex-col gap-[22px] p-[16px] lg:p-[26px_40px_40px_40px] justify-start items-start bg-[#0B0B0F]"
         >
           <div
             data-pencil-name="Breadcrumb"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-0 justify-between items-center"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[12px] lg:gap-0 justify-between items-start lg:items-center"
           >
             <div
               data-pencil-name="BC Left"
@@ -857,7 +857,7 @@
               </svg>
               <div
                 data-pencil-name="BC Home"
-                class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Главная
               </div>
@@ -877,14 +877,14 @@
               </svg>
               <div
                 data-pencil-name="BC Cur"
-                class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Карточка канала
               </div>
             </div>
             <div
               data-pencil-name="BC Right"
-              class="box-border w-fit shrink-0 h-fit flex flex-row gap-[10px] justify-start items-center"
+              class="box-border w-fit shrink-0 h-fit flex flex-row flex-wrap gap-[10px] justify-start items-center"
             >
               <div
                 data-pencil-name="Free Pill"
@@ -906,14 +906,14 @@
                 </svg>
                 <div
                   data-pencil-name="Free T"
-                  class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Бесплатно · без аккаунта
                 </div>
               </div>
               <div
                 data-pencil-name="Updated"
-                class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 обновлено 8 сек назад
               </div>
@@ -921,7 +921,7 @@
           </div>
           <div
             data-pencil-name="Channel Header"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-[20px] p-[18px_22px] justify-start items-center bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[20px] p-[18px_22px] justify-start items-start lg:items-center bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
           >
             <div
               data-pencil-name="H Avatar"
@@ -929,7 +929,7 @@
             >
               <div
                 data-pencil-name="H Avatar T"
-                class="text-[26px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                class="text-[26px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Bu
               </div>
@@ -944,7 +944,7 @@
               >
                 <div
                   data-pencil-name="H Name"
-                  class="text-[26px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                  class="text-[26px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Buster
                 </div>
@@ -968,7 +968,7 @@
                   </svg>
                   <div
                     data-pencil-name="H Verified T"
-                    class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Подтверждён в HimRate
                   </div>
@@ -983,7 +983,7 @@
                   ></div>
                   <div
                     data-pencil-name="H Live T"
-                    class="text-[10px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.5px] text-left [white-space:nowrap]"
+                    class="text-[10px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.5px] text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     В ЭФИРЕ
                   </div>
@@ -991,7 +991,7 @@
               </div>
               <div
                 data-pencil-name="H Meta"
-                class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 twitch.tv/buster · Dota 2 · в эфире 3 ч 12 мин
               </div>
@@ -1020,7 +1020,7 @@
                 </svg>
                 <div
                   data-pencil-name="H Share T"
-                  class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[13px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Поделиться проверкой
                 </div>
@@ -1045,7 +1045,7 @@
                 </svg>
                 <div
                   data-pencil-name="H Follow T"
-                  class="text-[13px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[13px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Следить
                 </div>
@@ -1058,7 +1058,7 @@
           >
             <div
               data-pencil-name="L1 Top"
-              class="box-border w-full h-fit shrink-0 flex flex-row gap-0 justify-between items-start"
+              class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-0 justify-between items-stretch lg:items-start"
             >
               <div
                 data-pencil-name="L1 LCol"
@@ -1066,7 +1066,7 @@
               >
                 <div
                   data-pencil-name="L1 Label"
-                  class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[1px] text-left [white-space:nowrap]"
+                  class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[1px] text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   РЕАЛЬНЫЕ ЗРИТЕЛИ СЕЙЧАС
                 </div>
@@ -1076,17 +1076,17 @@
                 >
                   <div
                     data-pencil-name="L1 Real"
-                    class="text-[60px]/[normal] box-border text-[#25D9A4] font-['JetBrains_Mono',system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[60px]/[normal] box-border text-[#25D9A4] font-['JetBrains_Mono',system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     4 200
                   </div>
                   <div
                     data-pencil-name="L1 SlashSp"
-                    class="box-border w-[1px] shrink-0 h-[18px] flex flex-row gap-0 justify-start items-start"
+                    class="box-border w-[1px] shrink-0 h-[18px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start"
                   ></div>
                   <div
                     data-pencil-name="L1 Shown"
-                    class="text-[19px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[19px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     / 5 000 показано
                   </div>
@@ -1115,7 +1115,7 @@
                     </svg>
                     <div
                       data-pencil-name="L1 D1 T"
-                      class="text-[13px]/[normal] box-border text-[#FB4E55] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13px]/[normal] box-border text-[#FB4E55] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       −800 скрытая разница
                     </div>
@@ -1126,7 +1126,7 @@
                   >
                     <div
                       data-pencil-name="L1 D2 T"
-                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       −16% от показанных
                     </div>
@@ -1147,7 +1147,7 @@
                   ></div>
                   <div
                     data-pencil-name="L1 Rep T"
-                    class="text-[14px]/[normal] box-border text-[#4FA9FF] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[14px]/[normal] box-border text-[#4FA9FF] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Надёжность: Стабильная
                   </div>
@@ -1172,14 +1172,14 @@
                   </svg>
                   <div
                     data-pencil-name="L1 Anom T"
-                    class="text-[12px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[12px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Аномалия онлайна: лёгкий всплеск 21:40
                   </div>
                 </div>
                 <div
                   data-pencil-name="L1 Window"
-                  class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                  class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   окно репутации: 30 стримов
                 </div>
@@ -1191,15 +1191,15 @@
             >
               <div
                 data-pencil-name="L1 Track"
-                class="box-border w-full h-[16px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#1C1C24] rounded-[999px] overflow-hidden"
+                class="box-border w-full h-[16px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#1C1C24] rounded-[999px] overflow-hidden"
               >
                 <div
                   data-pencil-name="L1 Real Seg"
-                  class="box-border w-[874px] shrink-0 h-[16px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                  class="box-border w-[84%] shrink-0 h-[16px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                 ></div>
                 <div
                   data-pencil-name="L1 Bot Seg"
-                  class="box-border w-[166px] shrink-0 h-[16px] flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                  class="box-border w-[16%] shrink-0 h-[16px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                 ></div>
               </div>
               <div
@@ -1220,7 +1220,7 @@
                     ></div>
                     <div
                       data-pencil-name="Leg T real"
-                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Реальные 4 200 · 84%
                     </div>
@@ -1235,7 +1235,7 @@
                     ></div>
                     <div
                       data-pencil-name="Leg T bot"
-                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                      class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Скрытая разница 800 · 16%
                     </div>
@@ -1243,7 +1243,7 @@
                 </div>
                 <div
                   data-pencil-name="L1 Total"
-                  class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                  class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Всего показано Twitch: 5 000
                 </div>
@@ -1260,24 +1260,24 @@
             >
               <div
                 data-pencil-name="L2 Title"
-                class="text-[19px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                class="text-[19px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Live-разбор — почему этим цифрам можно верить
               </div>
               <div
                 data-pencil-name="L2 Sub"
-                class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 11 живых сигналов · 7 ключевых проверок · обновляется в реальном времени · бесплатно
               </div>
             </div>
             <div
               data-pencil-name="L2 RowA"
-              class="box-border w-full h-fit shrink-0 flex flex-row gap-[20px] justify-start items-start"
+              class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[20px] justify-start items-stretch lg:items-start"
             >
               <div
                 data-pencil-name="Checks Card"
-                class="box-border w-[444px] shrink-0 h-fit flex flex-col gap-[6px] p-[18px_20px] justify-start items-start bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
+                class="box-border w-full lg:w-[444px] shrink-0 h-fit flex flex-col gap-[6px] p-[18px_20px] justify-start items-start bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
               >
                 <div
                   data-pencil-name="Checks Title Row"
@@ -1285,13 +1285,13 @@
                 >
                   <div
                     data-pencil-name="Checks Title"
-                    class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     7 проверок «почему»
                   </div>
                   <div
                     data-pencil-name="Checks Pass"
-                    class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     5 из 7 в норме
                   </div>
@@ -1325,24 +1325,24 @@
                   >
                     <div
                       data-pencil-name="Chk Nm 1"
-                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Соотношение чат / зрители
                     </div>
                     <div
                       data-pencil-name="Chk Vl 1"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       1 : 5,2 — в пределах нормы
                     </div>
                   </div>
                   <div
                     data-pencil-name="Chk Pl 1"
-                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[4px_10px] justify-start items-start bg-[#10271F] rounded-[999px]"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[4px_10px] justify-start items-stretch lg:items-start bg-[#10271F] rounded-[999px]"
                   >
                     <div
                       data-pencil-name="Chk Pl T 1"
-                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       норма
                     </div>
@@ -1377,24 +1377,24 @@
                   >
                     <div
                       data-pencil-name="Chk Nm 2"
-                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Прирост онлайна
                     </div>
                     <div
                       data-pencil-name="Chk Vl 2"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       +1 200 за 35 с в 21:40
                     </div>
                   </div>
                   <div
                     data-pencil-name="Chk Pl 2"
-                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[4px_10px] justify-start items-start bg-[#2A2008] rounded-[999px]"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[4px_10px] justify-start items-stretch lg:items-start bg-[#2A2008] rounded-[999px]"
                   >
                     <div
                       data-pencil-name="Chk Pl T 2"
-                      class="text-[11px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       внимание
                     </div>
@@ -1429,24 +1429,24 @@
                   >
                     <div
                       data-pencil-name="Chk Nm 3"
-                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       География трафика
                     </div>
                     <div
                       data-pencil-name="Chk Vl 3"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       органическая · RU 78%
                     </div>
                   </div>
                   <div
                     data-pencil-name="Chk Pl 3"
-                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[4px_10px] justify-start items-start bg-[#10271F] rounded-[999px]"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[4px_10px] justify-start items-stretch lg:items-start bg-[#10271F] rounded-[999px]"
                   >
                     <div
                       data-pencil-name="Chk Pl T 3"
-                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       норма
                     </div>
@@ -1481,24 +1481,24 @@
                   >
                     <div
                       data-pencil-name="Chk Nm 4"
-                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Доля «молчаливых» зрителей
                     </div>
                     <div
                       data-pencil-name="Chk Vl 4"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       71% — выше обычного
                     </div>
                   </div>
                   <div
                     data-pencil-name="Chk Pl 4"
-                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[4px_10px] justify-start items-start bg-[#2A2008] rounded-[999px]"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[4px_10px] justify-start items-stretch lg:items-start bg-[#2A2008] rounded-[999px]"
                   >
                     <div
                       data-pencil-name="Chk Pl T 4"
-                      class="text-[11px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       внимание
                     </div>
@@ -1533,24 +1533,24 @@
                   >
                     <div
                       data-pencil-name="Chk Nm 5"
-                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Повтор аккаунтов в чате
                     </div>
                     <div
                       data-pencil-name="Chk Vl 5"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       2,1% — низкий
                     </div>
                   </div>
                   <div
                     data-pencil-name="Chk Pl 5"
-                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[4px_10px] justify-start items-start bg-[#10271F] rounded-[999px]"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[4px_10px] justify-start items-stretch lg:items-start bg-[#10271F] rounded-[999px]"
                   >
                     <div
                       data-pencil-name="Chk Pl T 5"
-                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       норма
                     </div>
@@ -1585,24 +1585,24 @@
                   >
                     <div
                       data-pencil-name="Chk Nm 6"
-                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Возраст аккаунтов
                     </div>
                     <div
                       data-pencil-name="Chk Vl 6"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       медиана 14 мес
                     </div>
                   </div>
                   <div
                     data-pencil-name="Chk Pl 6"
-                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[4px_10px] justify-start items-start bg-[#10271F] rounded-[999px]"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[4px_10px] justify-start items-stretch lg:items-start bg-[#10271F] rounded-[999px]"
                   >
                     <div
                       data-pencil-name="Chk Pl T 6"
-                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       норма
                     </div>
@@ -1637,24 +1637,24 @@
                   >
                     <div
                       data-pencil-name="Chk Nm 7"
-                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Engagement-rate (ERV)
                     </div>
                     <div
                       data-pencil-name="Chk Vl 7"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       выше медианы Dota 2
                     </div>
                   </div>
                   <div
                     data-pencil-name="Chk Pl 7"
-                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[4px_10px] justify-start items-start bg-[#10271F] rounded-[999px]"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[4px_10px] justify-start items-stretch lg:items-start bg-[#10271F] rounded-[999px]"
                   >
                     <div
                       data-pencil-name="Chk Pl T 7"
-                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       норма
                     </div>
@@ -1675,7 +1675,7 @@
                   >
                     <div
                       data-pencil-name="CCV Title"
-                      class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                      class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Онлайн (CCV) · последние 60 минут
                     </div>
@@ -1693,7 +1693,7 @@
                         ></div>
                         <div
                           data-pencil-name="CL T r"
-                          class="text-[12px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                          class="text-[12px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                         >
                           реальные
                         </div>
@@ -1708,7 +1708,7 @@
                         ></div>
                         <div
                           data-pencil-name="CL T f"
-                          class="text-[12px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                          class="text-[12px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                         >
                           отфильтровано
                         </div>
@@ -1725,11 +1725,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 0"
-                        class="box-border w-full h-[7px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[7px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 0"
-                        class="box-border w-full h-[78px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[78px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1738,11 +1738,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 1"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 1"
-                        class="box-border w-full h-[85px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[85px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1751,11 +1751,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 2"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 2"
-                        class="box-border w-full h-[90px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[90px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1764,11 +1764,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 3"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 3"
-                        class="box-border w-full h-[94px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[94px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1777,11 +1777,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 4"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 4"
-                        class="box-border w-full h-[96px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[96px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1790,11 +1790,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 5"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 5"
-                        class="box-border w-full h-[95px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[95px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1803,11 +1803,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 6"
-                        class="box-border w-full h-[7px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[7px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 6"
-                        class="box-border w-full h-[92px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[92px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1816,11 +1816,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 7"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 7"
-                        class="box-border w-full h-[87px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[87px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1829,11 +1829,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 8"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 8"
-                        class="box-border w-full h-[83px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[83px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1842,11 +1842,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 9"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 9"
-                        class="box-border w-full h-[78px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[78px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1855,11 +1855,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 10"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 10"
-                        class="box-border w-full h-[75px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[75px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1868,11 +1868,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 11"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 11"
-                        class="box-border w-full h-[73px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[73px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1881,11 +1881,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 12"
-                        class="box-border w-full h-[7px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[7px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 12"
-                        class="box-border w-full h-[74px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[74px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1894,11 +1894,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 13"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 13"
-                        class="box-border w-full h-[76px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[76px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1907,11 +1907,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 14"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 14"
-                        class="box-border w-full h-[81px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[81px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1920,11 +1920,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 15"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 15"
-                        class="box-border w-full h-[87px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[87px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1933,11 +1933,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 16"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 16"
-                        class="box-border w-full h-[92px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[92px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1946,11 +1946,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 17"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 17"
-                        class="box-border w-full h-[97px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[97px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1959,11 +1959,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 18"
-                        class="box-border w-full h-[7px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[7px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 18"
-                        class="box-border w-full h-[100px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[100px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1972,11 +1972,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 19"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 19"
-                        class="box-border w-full h-[101px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[101px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1985,11 +1985,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 20"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 20"
-                        class="box-border w-full h-[99px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[99px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -1998,11 +1998,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 21"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 21"
-                        class="box-border w-full h-[96px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[96px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -2011,11 +2011,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 22"
-                        class="box-border w-full h-[16px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[16px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 22"
-                        class="box-border w-full h-[91px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[91px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -2024,11 +2024,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 23"
-                        class="box-border w-full h-[54px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[54px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 23"
-                        class="box-border w-full h-[85px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[85px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -2037,11 +2037,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 24"
-                        class="box-border w-full h-[38px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[38px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 24"
-                        class="box-border w-full h-[79px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[79px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -2050,11 +2050,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 25"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 25"
-                        class="box-border w-full h-[75px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[75px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -2063,11 +2063,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 26"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 26"
-                        class="box-border w-full h-[73px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[73px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -2076,11 +2076,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 27"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 27"
-                        class="box-border w-full h-[73px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[73px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -2089,11 +2089,11 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 28"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 28"
-                        class="box-border w-full h-[76px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[76px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                     <div
@@ -2102,33 +2102,33 @@
                     >
                       <div
                         data-pencil-name="CCV Bot 29"
-                        class="box-border w-full h-[3px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#FB4E55]"
+                        class="box-border w-full h-[3px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#FB4E55]"
                       ></div>
                       <div
                         data-pencil-name="CCV Real 29"
-                        class="box-border w-full h-[80px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#25D9A4]"
+                        class="box-border w-full h-[80px] shrink-0 flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4]"
                       ></div>
                     </div>
                   </div>
                   <div
                     data-pencil-name="CCV Axis"
-                    class="box-border w-full h-fit shrink-0 flex flex-row gap-0 justify-between items-start"
+                    class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-0 justify-between items-stretch lg:items-start"
                   >
                     <div
                       data-pencil-name="CCV Ax1"
-                      class="text-[11px]/[normal] box-border text-[#5E5E6B] font-['JetBrains_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#5E5E6B] font-['JetBrains_Mono',system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       20:52
                     </div>
                     <div
                       data-pencil-name="CCV Ax2"
-                      class="text-[11px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       ⚠ 21:40 аномальный всплеск
                     </div>
                     <div
                       data-pencil-name="CCV Ax3"
-                      class="text-[11px]/[normal] box-border text-[#5E5E6B] font-['JetBrains_Mono',system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#5E5E6B] font-['JetBrains_Mono',system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       21:52 · сейчас
                     </div>
@@ -2140,7 +2140,7 @@
                 >
                   <div
                     data-pencil-name="ERV Title"
-                    class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Вовлечённость (ERV) — этот канал против медианы категории
                   </div>
@@ -2150,17 +2150,17 @@
                   >
                     <div
                       data-pencil-name="ERV L ch"
-                      class="text-[13px]/[normal] box-border w-[150px] shrink-0 text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left"
+                      class="text-[13px]/[normal] box-border w-full lg:w-[150px] shrink-0 text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left"
                     >
                       Этот канал
                     </div>
                     <div
                       data-pencil-name="ERV Tr ch"
-                      class="box-border [flex:1_1_0] h-[12px] flex flex-row gap-0 justify-start items-start bg-[#1C1C24] rounded-[999px] overflow-hidden"
+                      class="box-border [flex:1_1_0] h-[12px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#1C1C24] rounded-[999px] overflow-hidden"
                     >
                       <div
                         data-pencil-name="ERV Fl ch"
-                        class="box-border w-[300px] shrink-0 h-[12px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[999px]"
+                        class="box-border w-full lg:w-[300px] shrink-0 h-[12px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[999px]"
                       ></div>
                     </div>
                     <div
@@ -2176,17 +2176,17 @@
                   >
                     <div
                       data-pencil-name="ERV L md"
-                      class="text-[13px]/[normal] box-border w-[150px] shrink-0 text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left"
+                      class="text-[13px]/[normal] box-border w-full lg:w-[150px] shrink-0 text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left"
                     >
                       Медиана Dota 2
                     </div>
                     <div
                       data-pencil-name="ERV Tr md"
-                      class="box-border [flex:1_1_0] h-[12px] flex flex-row gap-0 justify-start items-start bg-[#1C1C24] rounded-[999px] overflow-hidden"
+                      class="box-border [flex:1_1_0] h-[12px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#1C1C24] rounded-[999px] overflow-hidden"
                     >
                       <div
                         data-pencil-name="ERV Fl md"
-                        class="box-border w-[188px] shrink-0 h-[12px] flex flex-row gap-0 justify-start items-start bg-[#5E5E6B] rounded-[999px]"
+                        class="box-border w-full lg:w-[188px] shrink-0 h-[12px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#5E5E6B] rounded-[999px]"
                       ></div>
                     </div>
                     <div
@@ -2227,7 +2227,7 @@
                   </svg>
                   <div
                     data-pencil-name="BR Title"
-                    class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Цепочка bot-raid (live)
                   </div>
@@ -2252,7 +2252,7 @@
                   </svg>
                   <div
                     data-pencil-name="BR Status T"
-                    class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[12px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     обнаружено и обезврежено
                   </div>
@@ -2287,19 +2287,19 @@
                   </div>
                   <div
                     data-pencil-name="BR Step Lb 1"
-                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:nowrap]"
+                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     ВСПЛЕСК
                   </div>
                   <div
                     data-pencil-name="BR Step Vl 1"
-                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     +1 200 за 35 с
                   </div>
                   <div
                     data-pencil-name="BR Step Sb 1"
-                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     21:40
                   </div>
@@ -2348,19 +2348,19 @@
                   </div>
                   <div
                     data-pencil-name="BR Step Lb 2"
-                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:nowrap]"
+                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     ИСТОЧНИК
                   </div>
                   <div
                     data-pencil-name="BR Step Vl 2"
-                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     1 внешний канал
                   </div>
                   <div
                     data-pencil-name="BR Step Sb 2"
-                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     raid-трафик
                   </div>
@@ -2409,19 +2409,19 @@
                   </div>
                   <div
                     data-pencil-name="BR Step Lb 3"
-                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:nowrap]"
+                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     ПАТТЕРН
                   </div>
                   <div
                     data-pencil-name="BR Step Vl 3"
-                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     новые аккаунты &lt;7 дн
                   </div>
                   <div
                     data-pencil-name="BR Step Sb 3"
-                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     без истории чата
                   </div>
@@ -2470,19 +2470,19 @@
                   </div>
                   <div
                     data-pencil-name="BR Step Lb 4"
-                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:nowrap]"
+                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     ДЕЙСТВИЕ
                   </div>
                   <div
                     data-pencil-name="BR Step Vl 4"
-                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     отфильтровано 800
                   </div>
                   <div
                     data-pencil-name="BR Step Sb 4"
-                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     аномалии исключены
                   </div>
@@ -2531,19 +2531,19 @@
                   </div>
                   <div
                     data-pencil-name="BR Step Lb 5"
-                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:nowrap]"
+                    class="text-[10.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.8px] text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     ИТОГ
                   </div>
                   <div
                     data-pencil-name="BR Step Vl 5"
-                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     реальных 4 200
                   </div>
                   <div
                     data-pencil-name="BR Step Sb 5"
-                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[11.5px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     84% аудитории
                   </div>
@@ -2561,28 +2561,28 @@
             >
               <div
                 data-pencil-name="L3 Title"
-                class="text-[19px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                class="text-[19px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Репутация надёжности и тренд реальной аудитории
               </div>
               <div
                 data-pencil-name="L3 Sub"
-                class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 Окно 30 стримов · отвечает на вопрос «всегда так или разово» · бесплатно зрителю
               </div>
             </div>
             <div
               data-pencil-name="L3 RowC"
-              class="box-border w-full h-fit shrink-0 flex flex-row gap-[20px] justify-start items-start"
+              class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[20px] justify-start items-stretch lg:items-start"
             >
               <div
                 data-pencil-name="Band Card"
-                class="box-border w-[470px] shrink-0 h-fit flex flex-col gap-[10px] p-[18px_20px] justify-start items-start bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
+                class="box-border w-full lg:w-[470px] shrink-0 h-fit flex flex-col gap-[10px] p-[18px_20px] justify-start items-start bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
               >
                 <div
                   data-pencil-name="Band Title"
-                  class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                  class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Уровень надёжности
                 </div>
@@ -2600,13 +2600,13 @@
                   >
                     <div
                       data-pencil-name="Lv Nm 1"
-                      class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                      class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Безупречная
                     </div>
                     <div
                       data-pencil-name="Lv Desc 1"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       реальная аудитория почти не меняется
                     </div>
@@ -2626,24 +2626,24 @@
                   >
                     <div
                       data-pencil-name="Lv Nm 2"
-                      class="text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                      class="text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Стабильная
                     </div>
                     <div
                       data-pencil-name="Lv Desc 2"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       небольшие колебания, без разовых аномалий
                     </div>
                   </div>
                   <div
                     data-pencil-name="Lv Cur 2"
-                    class="box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[4px_10px] justify-start items-start bg-[#4FA9FF] rounded-[999px]"
+                    class="box-border w-fit shrink-0 h-fit flex flex-col lg:flex-row gap-0 p-[4px_10px] justify-start items-stretch lg:items-start bg-[#4FA9FF] rounded-[999px]"
                   >
                     <div
                       data-pencil-name="Lv Cur T 2"
-                      class="text-[11px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                      class="text-[11px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       текущий
                     </div>
@@ -2663,13 +2663,13 @@
                   >
                     <div
                       data-pencil-name="Lv Nm 3"
-                      class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                      class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Изменчивая
                     </div>
                     <div
                       data-pencil-name="Lv Desc 3"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       заметные скачки реальной доли
                     </div>
@@ -2689,13 +2689,13 @@
                   >
                     <div
                       data-pencil-name="Lv Nm 4"
-                      class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                      class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       Нестабильная
                     </div>
                     <div
                       data-pencil-name="Lv Desc 4"
-                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                      class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                     >
                       частые разовые аномалии
                     </div>
@@ -2712,13 +2712,13 @@
                 >
                   <div
                     data-pencil-name="Trend Title"
-                    class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Доля реальной аудитории по стримам, %
                   </div>
                   <div
                     data-pencil-name="Trend Avg"
-                    class="text-[13px]/[normal] box-border text-[#9A9AA9] font-['JetBrains_Mono',system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[13px]/[normal] box-border text-[#9A9AA9] font-['JetBrains_Mono',system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     среднее 83%
                   </div>
@@ -2729,144 +2729,144 @@
                 >
                   <div
                     data-pencil-name="Tr B 1"
-                    class="box-border w-[15px] shrink-0 h-[75px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[75px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 2"
-                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 3"
-                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 4"
-                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 5"
-                    class="box-border w-[15px] shrink-0 h-[71px] flex flex-row gap-0 justify-start items-start bg-[#4FA9FF] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[71px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#4FA9FF] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 6"
-                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 7"
-                    class="box-border w-[15px] shrink-0 h-[88px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[88px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 8"
-                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 9"
-                    class="box-border w-[15px] shrink-0 h-[65px] flex flex-row gap-0 justify-start items-start bg-[#4FA9FF] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[65px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#4FA9FF] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 10"
-                    class="box-border w-[15px] shrink-0 h-[75px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[75px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 11"
-                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 12"
-                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 13"
-                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 14"
-                    class="box-border w-[15px] shrink-0 h-[88px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[88px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 15"
-                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 16"
-                    class="box-border w-[15px] shrink-0 h-[71px] flex flex-row gap-0 justify-start items-start bg-[#4FA9FF] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[71px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#4FA9FF] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 17"
-                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 18"
-                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 19"
-                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 20"
-                    class="box-border w-[15px] shrink-0 h-[75px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[75px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 21"
-                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 22"
-                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 23"
-                    class="box-border w-[15px] shrink-0 h-[48px] flex flex-row gap-0 justify-start items-start bg-[#F6A823] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[48px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#F6A823] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 24"
-                    class="box-border w-[15px] shrink-0 h-[68px] flex flex-row gap-0 justify-start items-start bg-[#4FA9FF] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[68px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#4FA9FF] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 25"
-                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 26"
-                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 27"
-                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[82px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 28"
-                    class="box-border w-[15px] shrink-0 h-[88px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[88px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 29"
-                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[78px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                   <div
                     data-pencil-name="Tr B 30"
-                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-row gap-0 justify-start items-start bg-[#25D9A4] rounded-[3px]"
+                    class="box-border w-[15px] shrink-0 h-[85px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25D9A4] rounded-[3px]"
                   ></div>
                 </div>
                 <div
                   data-pencil-name="Trend Axis"
-                  class="box-border w-full h-fit shrink-0 flex flex-row gap-0 justify-between items-start"
+                  class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-0 justify-between items-stretch lg:items-start"
                 >
                   <div
                     data-pencil-name="Tr Ax1"
-                    class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     30 стримов назад
                   </div>
                   <div
                     data-pencil-name="Tr Ax2"
-                    class="text-[11px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[11px]/[normal] box-border text-[#F6A823] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     ⚠ 1 разовый дип 74% (raid)
                   </div>
                   <div
                     data-pencil-name="Tr Ax3"
-                    class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+                    class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     последний стрим
                   </div>
@@ -2891,7 +2891,7 @@
                   </svg>
                   <div
                     data-pencil-name="Trend Concl T"
-                    class="text-[13px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[13px]/[normal] box-border text-[#25D9A4] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Вывод: высокая доля реальных держится стабильно — это «всегда так», а не разовая
                     аномалия.
@@ -2906,7 +2906,7 @@
           >
             <div
               data-pencil-name="Gate Line L"
-              class="box-border [flex:1_1_0] h-[1px] flex flex-row gap-0 justify-start items-start bg-[#25252F]"
+              class="box-border [flex:1_1_0] h-[1px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25252F]"
             ></div>
             <div
               data-pencil-name="Gate Lab"
@@ -2928,19 +2928,19 @@
               </svg>
               <div
                 data-pencil-name="Gate Lab T"
-                class="text-[12px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.6px] text-left [white-space:nowrap]"
+                class="text-[12px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold tracking-[0.6px] text-left [white-space:normal] lg:[white-space:nowrap]"
               >
                 РОЛЕВОЙ ГЕЙТ · ДАЛЬШЕ ПЛАТНО, ТОЛЬКО В КАБИНЕТЕ
               </div>
             </div>
             <div
               data-pencil-name="Gate Line R"
-              class="box-border [flex:1_1_0] h-[1px] flex flex-row gap-0 justify-start items-start bg-[#25252F]"
+              class="box-border [flex:1_1_0] h-[1px] flex flex-col lg:flex-row gap-0 justify-start items-stretch lg:items-start bg-[#25252F]"
             ></div>
           </div>
           <div
             data-pencil-name="Gate Card"
-            class="box-border w-full h-fit shrink-0 flex flex-row gap-[24px] p-[28px] justify-start items-start bg-[#141419] [border:1px_solid_#7B5CFA] rounded-[20px]"
+            class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[24px] p-[28px] justify-start items-stretch lg:items-start bg-[#141419] [border:1px_solid_#7B5CFA] rounded-[20px]"
           >
             <div
               data-pencil-name="Gate Left"
@@ -2975,13 +2975,13 @@
                 >
                   <div
                     data-pencil-name="Gate Title"
-                    class="text-[20px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    class="text-[20px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Период-история и глубина канала
                   </div>
                   <div
                     data-pencil-name="Gate Sub"
-                    class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                    class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Слой 4–5 · платно · живёт в кабинете
                   </div>
@@ -3024,7 +3024,7 @@
                   </div>
                   <div
                     data-pencil-name="GFeat T 1"
-                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Drill в конкретные прошлые стримы
                   </div>
@@ -3054,7 +3054,7 @@
                   </div>
                   <div
                     data-pencil-name="GFeat T 2"
-                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Движение аудитории · когорты по неделям
                   </div>
@@ -3084,7 +3084,7 @@
                   </div>
                   <div
                     data-pencil-name="GFeat T 3"
-                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     География и язык — глубокий разрез
                   </div>
@@ -3114,7 +3114,7 @@
                   </div>
                   <div
                     data-pencil-name="GFeat T 4"
-                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                    class="text-[13.5px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:normal] lg:[white-space:nowrap]"
                   >
                     Транскрипция, нарезки клипов и экспорт
                   </div>
@@ -3123,7 +3123,7 @@
             </div>
             <div
               data-pencil-name="Gate Right"
-              class="box-border w-[360px] shrink-0 h-fit flex flex-col gap-[12px] p-[20px] justify-start items-start bg-[#1C1C24] [border:1px_solid_#25252F] rounded-[16px]"
+              class="box-border w-full lg:w-[360px] shrink-0 h-fit flex flex-col gap-[12px] p-[20px] justify-start items-start bg-[#1C1C24] [border:1px_solid_#25252F] rounded-[16px]"
             >
               <div
                 data-pencil-name="Gate CTA1"
@@ -3131,7 +3131,7 @@
               >
                 <div
                   data-pencil-name="Gate CTA1 T"
-                  class="text-[14px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[14px]/[normal] box-border text-[#FFFFFF] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Открыть в кабинете
                 </div>
@@ -3170,7 +3170,7 @@
                 </svg>
                 <div
                   data-pencil-name="Gate CTA2 T"
-                  class="text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+                  class="text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal] lg:[white-space:nowrap]"
                 >
                   Разовый отчёт за период
                 </div>
