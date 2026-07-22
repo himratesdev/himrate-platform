@@ -35,6 +35,11 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(described_class.build(stream)[:recent_raids]).to be_empty
     end
 
+    it "G2: a recent (≤5min) raid still suppresses (regression guard against swinging the gate back)" do
+      create(:raid_attribution, stream: stream, timestamp: 4.minutes.ago)
+      expect(described_class.build(stream)[:recent_raids].size).to eq(1)
+    end
+
     it "G3: a raid-query error fails CLOSED — a non-bot sentinel so raid_window suppresses (not fail-open)" do
       allow(stream).to receive(:raid_attributions).and_raise(ActiveRecord::StatementInvalid.new("boom"))
       raids = described_class.send(:fetch_recent_raids, stream)

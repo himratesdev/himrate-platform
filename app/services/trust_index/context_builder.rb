@@ -249,12 +249,16 @@ module TrustIndex
         []
       end
 
-      # G2 (pre-flip): 10.minutes, NOT 5. raid_window suppresses the inflation corroborator (l4_emit
-      # c_inflation) + F_self, and the corroborator's signal (CcvChatCorrelation) measures a 10-minute
-      # delta (ccv_series_10min/chat_rate_10min). A 5-min raid gate left an organic/bot raid that ended
-      # 6-10min ago still showing CCV↑∧chat-flat INSIDE the divergence window while raid_window had already
-      # expired → c_inflation would false-fire on the honest raid tail (and a botter could hide an injection
-      # in the 5-10min shadow). The raid gate MUST cover the same window the corroborator reads.
+      # G2 (pre-flip): 10.minutes, NOT 5. raid_window suppresses the (dormant) inflation corroborator
+      # (l4_emit c_inflation) + F_self, AND — this is a LIVE effect today, not dormant — the v1
+      # CcvStepFunction raid-dampening (`combined *= 0.2 if recent_raids.any?`), which still runs post-v2-
+      # cutover via Registry.compute_all → AnomalyAlerter. The corroborator's signal (CcvChatCorrelation)
+      # measures a 10-minute delta (ccv_series_10min/chat_rate_10min). A 5-min raid gate left an organic/bot
+      # raid that ended 6-10min ago still showing CCV↑∧chat-flat INSIDE the divergence window while
+      # raid_window had already expired → c_inflation would false-fire on the honest raid tail (and a
+      # ccv_step anomaly could fire on the same raid-explained spike). The raid gate MUST cover the same
+      # 10-min window the CCV signals read. NET LIVE effect: a real raid legitimately dampens a CCV-step
+      # anomaly for the full 10min it plausibly explains — the safe, not-false-alarming direction.
       RAID_WINDOW_MINUTES = 10
       def fetch_recent_raids(stream)
         stream.raid_attributions
@@ -264,11 +268,14 @@ module TrustIndex
       rescue ActiveRecord::StatementInvalid => e
         Rails.logger.warn("ContextBuilder: recent_raids failed (#{e.message}) — failing CLOSED (assume raid window)")
         # G3 (pre-flip): fail CLOSED. An empty list makes raid_window=false → c_inflation is free to fire
-        # + F_self loses raid suppression, so a DB hiccup DURING a genuine raid would false-accuse. Every
-        # other builder rescue fails neutral; the raid gate must fail toward NOT accusing. Return a non-bot
-        # sentinel raid → raid_window=true (suppress). Only raid_window#any? + ccv_step_function#any? read
-        # this key (both suppress-direction); RaidAttribution reads a different key (:raids) so is_bot_raid:false
-        # keeps it neutral there — the sentinel never manufactures a bot-raid penalty.
+        # + F_self loses raid suppression + ccv_step fires full-strength, so a DB hiccup DURING a genuine
+        # raid would false-alarm. Every other builder rescue fails neutral; the raid gate must fail toward
+        # NOT accusing. Return a non-bot sentinel raid → raid_window=true (suppress). Only raid_window#any?
+        # + ccv_step_function#any? read this key (both suppress-direction); RaidAttribution reads a different
+        # key (:raids) so is_bot_raid:false keeps it neutral there — the sentinel never manufactures a
+        # bot-raid penalty. Scope note: only StatementInvalid (incl. StatementTimeout) hits the sentinel;
+        # connection-class errors (ConnectionNotEstablished/PG::ConnectionBad) propagate → the whole build
+        # fails → Sidekiq retry, no verdict emitted = non-false-accusing by a different, also-safe path.
         [ { timestamp: Time.current, is_bot_raid: false, raid_viewers_count: 0, error_sentinel: true } ]
       end
 
