@@ -1,0 +1,103 @@
+name: ti-v2-account-profile-dsv
+# BUG-B DSV (Data Source Verification): before wiring the account-profile L0 arm, prove the
+# per-chatter profile-flag data ACTUALLY exists for live-stream chatters (post BUG-C enrichment)
+# AND is discriminative (honest streams should have FEW ≥3-flag chatters; suspected-manipulation
+# streams more). Answers: (1) roster coverage scored%/profiled%, (2) per-chatter profile-flag
+# histogram (0/1/2/≥3 flags), (3) individual flag prevalence, (4) honest-vs-suspected contrast.
+# READ-ONLY, $0. No server load beyond a few PG reads + one CH roster query per sampled stream.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      min_ccv:
+        required: false
+        type: string
+        default: "100"
+      sample_streams:
+        required: false
+        type: string
+        default: "6"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          cat > /tmp/apdsv.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          MIN_CCV = ENV["MIN_CCV"].to_i
+          N = ENV["SAMPLE_STREAMS"].to_i.clamp(1, 20)
+          PROFILE_KEYS = %w[followers_zero account_age_7d account_age_30d follows_zero follows_excessive]
+
+          # Pick currently-live RU streams with ccv>=MIN_CCV, most recent latest_ccv snapshot.
+          live = Stream.where(ended_at: nil).where(language: "ru").order(started_at: :desc).limit(400).to_a
+          def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
+          scored_streams = live.map { |s| [s, latest_ccv(s)] }.select { |(_, c)| c >= MIN_CCV }
+                               .sort_by { |(_, c)| -c }.first(N)
+          puts "live RU streams (ccv>=#{MIN_CCV}): sampling #{scored_streams.size} of #{live.size} live"
+
+          scored_streams.each do |(s, ccv)|
+            ch = s.channel
+            roster = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            next if roster.empty?
+            rows = PerUserBotScore.where(stream_id: s.id, username: roster)
+                     .pluck(:username, :classification, :components)
+            profiled = rows.count { |(_, _, c)| c.is_a?(Hash) && (c.key?("profile_present") || c.key?(:profile_present)) }
+            # per-chatter profile-flag count histogram
+            hist = Hash.new(0)
+            flag_prev = Hash.new(0)
+            rows.each do |(_, _, c)|
+              next unless c.is_a?(Hash)
+              present = PROFILE_KEYS.count { |k| c.key?(k) || c.key?(k.to_sym) }
+              bucket = present >= 3 ? "3+" : present.to_s
+              hist[bucket] += 1
+              PROFILE_KEYS.each { |k| flag_prev[k] += 1 if c.key?(k) || c.key?(k.to_sym) }
+            end
+            cls = rows.group_by { |(_, c, _)| c }.transform_values(&:size)
+            # v2 headline for honest-vs-suspected context
+            tih = (TrustIndexHistory.where(channel_id: ch.id, engine_version: "v2")
+                     .order(calculated_at: :desc).first rescue nil)
+            band = tih ? "#{tih.try(:band_color)}/#{tih.try(:band_row)} auth=#{tih.try(:authenticity)}" : "n/a"
+            puts "\n== #{ch.login} (ccv #{ccv}, #{ch.broadcaster_type.presence || 'none'}) stream=#{s.id[0,8]} v2=#{band}"
+            puts "   roster=#{roster.size} scored=#{rows.size} (#{(100.0*rows.size/[roster.size,1].max).round}%) profiled=#{profiled} (#{(100.0*profiled/[roster.size,1].max).round}%)"
+            puts "   classifications: #{cls.inspect}"
+            puts "   profile-flag histogram (of profiled #{profiled}): #{PROFILE_KEYS.map { |k| nil }; hist.sort.to_h.inspect}"
+            deno = [profiled, 1].max
+            puts "   flag prevalence: " + flag_prev.map { |k, v| "#{k}=#{v}(#{(100.0*v/deno).round}%)" }.join("  ")
+          end
+
+          puts "\n===== INTERPRETATION ====="
+          puts "  discriminative if: honest/high-ccv streams have LOW '3+' flag counts, suspected (AMBER/RED)"
+          puts "  or tiny-ccv-active-chat streams have HIGHER '3+'. followers_zero+account_age_7d together"
+          puts "  = the matvey-class fresh single-channel fake. profiled%=0 → BUG-C not covering this cohort."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/apdsv.rb) lines)"
+
+      - name: Run probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/apdsv.rb ${TARGET}:/tmp/apdsv.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/apdsv.rb ${CONTAINER}:/tmp/apdsv.rb && docker exec -e MIN_CCV='${{ inputs.min_ccv || '100' }}' -e SAMPLE_STREAMS='${{ inputs.sample_streams || '6' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/apdsv.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
