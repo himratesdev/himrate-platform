@@ -91,7 +91,7 @@ jobs:
           end
 
           # ===== parse shadow lines → per-stream samples =====
-          samples = Hash.new { |h, k| h[k] = { rho: [], v: [] } }
+          samples = Hash.new { |h, k| h[k] = { rho: [], v: [], div: [] } }
           total = 0; usable = 0; skipped_conv = 0
           File.foreach("/tmp/shadow_lines.txt") do |line|
             total += 1
@@ -106,6 +106,8 @@ jobs:
             next unless sid
             samples[sid][:rho] << rho.to_f
             samples[sid][:v] << j["v2_v"].to_f if j["v2_v"]
+            # phi_inflation calibration: the corroborator (CcvChatCorrelation) value per SCW cycle.
+            samples[sid][:div] << j["v2_ccv_chat_divergence"].to_f if j["v2_ccv_chat_divergence"]
             usable += 1
           end
           puts "convention filter: WANTED=#{WANTED_CONV} (skipped #{skipped_conv} other-convention lines)"
@@ -114,6 +116,7 @@ jobs:
           # ===== honest-anchor filter (mirrors ti-v2-rho-build hygiene) =====
           cell_rho = Hash.new { |h, k| h[k] = [] }
           all_rho = []
+          anchor_div_max = [] # phi_inflation: per-honest-anchor MAX ccv_chat_divergence (C_inflation fires on the moment)
           kept = 0; rejected = { not_found: 0, not_partner: 0, few_streams: 0, low_ti: 0, anomaly: 0, spam: 0, no_roster: 0 }
           samples.each do |sid, data|
             s = Stream.find_by(id: sid)
@@ -140,7 +143,12 @@ jobs:
             cell = [ cat, vbucket(v_med), chat_mode(ch.channel_protection_config), (s.language.presence || "default") ].join("|")
             cell_rho[cell] << rho_med
             all_rho << rho_med
-            puts format("RAW %s %s %.5f (n_samples=%d)", ch.login, cell, rho_med, data[:rho].size)
+            # phi_inflation: the honest anchor's PEAK divergence over the window (0 if the corroborator
+            # never signalled). C_inflation fires on the transient max, so the max — not the median — is
+            # what phi_inflation must clear on honest channels.
+            dmax = data[:div].max
+            anchor_div_max << dmax if dmax
+            puts format("RAW %s %s %.5f (n_samples=%d) div_max=%.4f", ch.login, cell, rho_med, data[:rho].size, dmax || 0.0)
             kept += 1
           rescue => e
             nil
@@ -157,6 +165,27 @@ jobs:
           end
           puts "\nGLOBAL: n=#{all_rho.size} ρ_lo=#{pct(all_rho, 0.10)&.round(4)} ρ*=#{pct(all_rho, 0.50)&.round(4)} ρ_hi=#{pct(all_rho, 0.90)&.round(4)}"
           puts "→ update _tasks/T1-074/gate0-seed.rb CELLS with the n>=8 rows above."
+
+          # ===== phi_inflation calibration: honest-anchor divergence distribution =====
+          # The inflation corroborator (dormant) fires when ccv_chat_divergence >= phi_inflation (∧ ¬raid).
+          # Honest anchors have natural non-raid CCV surges with flat chat (embeds / front-page) → nonzero
+          # divergence. phi_inflation must sit ABOVE the honest P99-of-max so honest channels ~never trip.
+          puts "\n===== HONEST-ANCHOR ccv_chat_divergence DISTRIBUTION (phi_inflation calibration) ====="
+          nz = anchor_div_max.reject(&:zero?)
+          puts "  honest anchors: #{anchor_div_max.size} | with any divergence (>0): #{nz.size}"
+          if anchor_div_max.any?
+            puts format("  per-anchor MAX divergence: P50=%.4f P90=%.4f P95=%.4f P99=%.4f max=%.4f",
+                        pct(anchor_div_max, 0.50) || 0, pct(anchor_div_max, 0.90) || 0, pct(anchor_div_max, 0.95) || 0,
+                        pct(anchor_div_max, 0.99) || 0, anchor_div_max.max || 0)
+            [ 0.2, 0.3, 0.5 ].each do |phi|
+              trip = anchor_div_max.count { |d| d >= phi }
+              puts format("  phi_inflation=%.2f → %d/%d honest anchors TRIP C_inflation (%.1f%% honest false-positive)",
+                          phi, trip, anchor_div_max.size, 100.0 * trip / anchor_div_max.size)
+            end
+            puts "  → set phi_inflation ABOVE honest P99; bring to PO before the flip."
+          else
+            puts "  no honest-anchor divergence samples yet (need accrued shadow lines carrying v2_ccv_chat_divergence)"
+          end
           RUBY_EOF
           echo "Built ($(wc -l < /tmp/mine.rb) lines)"
 
