@@ -32,7 +32,7 @@ on:
 jobs:
   mine:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35 # mining BOTH conventions on the schedule doubles the honest-anchor filter pass
     steps:
       - name: Set up SSH
         run: |
@@ -192,8 +192,16 @@ jobs:
       - name: Run miner on ${{ inputs.target || 'hostkey' }}
         run: |
           TARGET="${{ inputs.target || 'hostkey' }}"
-          CONV="${{ inputs.convention || 'cumulative' }}" # P0.5: which ρ_obs convention to pool (empty on schedule → cumulative)
+          # On the hourly SCHEDULE (inputs empty) mine BOTH conventions so the windowed ρ_obs corpus is
+          # captured before docker json-logs rotate (~30min) — the P2 re-seed needs windowed samples and
+          # they can't be recovered once rotated. On manual dispatch, mine just the requested convention.
+          CONV_IN="${{ inputs.convention }}"
+          if [ -z "$CONV_IN" ]; then CONVS="cumulative windowed"; else CONVS="$CONV_IN"; fi
           scp /tmp/mine.rb ${TARGET}:/tmp/mine.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
-          echo "container: ${CONTAINER} | convention: ${CONV}"
-          ssh ${TARGET} "docker cp /tmp/shadow_lines.txt ${CONTAINER}:/tmp/shadow_lines.txt && docker cp /tmp/mine.rb ${CONTAINER}:/tmp/mine.rb && docker exec -e MINE_CONV=\"${CONV}\" ${CONTAINER} sh -c 'bin/rails runner /tmp/mine.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
+          echo "container: ${CONTAINER} | conventions: ${CONVS}"
+          ssh ${TARGET} "docker cp /tmp/shadow_lines.txt ${CONTAINER}:/tmp/shadow_lines.txt && docker cp /tmp/mine.rb ${CONTAINER}:/tmp/mine.rb"
+          for c in $CONVS; do
+            echo "===================== MINING convention=$c ====================="
+            ssh ${TARGET} "docker exec -e MINE_CONV=\"$c\" ${CONTAINER} sh -c 'bin/rails runner /tmp/mine.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
+          done
