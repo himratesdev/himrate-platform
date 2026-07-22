@@ -154,6 +154,16 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Brand creator discovery (screen 60) — faithful export host wired by landing/brand_creators.js
+  # to the EXISTING brand streamer search (GET /api/v1/brand/streamers/search — real 30-day audience,
+  # already scale-correct to ~10k channels). Result card → the cross-platform blogger profile
+  # (screen 61, /app/blogger/:login). No new backend. Fraud elements (fake-%, price, social-ER) and the
+  # social-platform / topic filter chips (need a footprint index / taxonomy) are stripped / deferred.
+  def brand_creators
+    @page = "brand_creators"
+    @brand_dashboard = true
+  end
+
   # Legal pages (Privacy Policy + Terms). Own minimal readable layout (no Pencil JS).
   # Required for Chrome Web Store submission + footer trust links.
   def privacy
