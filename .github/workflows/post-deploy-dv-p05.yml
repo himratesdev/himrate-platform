@@ -45,8 +45,9 @@ jobs:
           puts "  rho_convention column: present=#{!col.nil?} type=#{col&.sql_type} null=#{col&.null}  (expect present/varchar(12)/true)"
 
           puts "\n===== 2. DORMANCY FLAGS ====="
-          puts "  ti_v2_engine         = #{Flipper.enabled?(:ti_v2_engine)}  (expect true)"
-          puts "  ti_v2_cowindowed_rho = #{Flipper.enabled?(:ti_v2_cowindowed_rho)}  (expect FALSE — P0.5 dormant)"
+          puts "  ti_v2_engine           = #{Flipper.enabled?(:ti_v2_engine)}  (expect true)"
+          puts "  ti_v2_cowindowed_rho   = #{Flipper.enabled?(:ti_v2_cowindowed_rho)}  (expect FALSE — P0.5 / BUG-A verdict dormant)"
+          puts "  ti_v2_cowindowed_shadow= #{Flipper.enabled?(:ti_v2_cowindowed_shadow)}  (expect FALSE — P1 accrual dormant until deliberate enable)"
 
           puts "\n===== 3. STAMP WRITES LIVE (currently-live RU stream) ====="
           live = Stream.where(ended_at: nil).where("lower(language) = 'ru'").order(started_at: :desc).limit(300).to_a
@@ -90,7 +91,8 @@ jobs:
           puts "  windowed rows=#{windowed} (expect 0) | unexpected-value rows=#{unexpected} (expect 0)"
           puts "  → byte-identical iff both 0 (#{windowed.zero? && unexpected.zero? ? 'OK' : 'CHECK'})"
 
-          ok = !col.nil? && Flipper.enabled?(:ti_v2_engine) && !Flipper.enabled?(:ti_v2_cowindowed_rho)
+          ok = !col.nil? && Flipper.enabled?(:ti_v2_engine) &&
+               !Flipper.enabled?(:ti_v2_cowindowed_rho) && !Flipper.enabled?(:ti_v2_cowindowed_shadow)
           puts "\nVERDICT: #{ok ? '🟢 DV OK — migration applied, dormant, stamp writing cumulative' : '🔴 DV FAIL — check above'}"
           RUBY_EOF
           echo "Built ($(wc -l < /tmp/p05dv.rb) lines)"
