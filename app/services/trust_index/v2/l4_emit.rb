@@ -53,8 +53,11 @@ module TrustIndex
       # accusatory ratio during a viewbot spike (V_inst≫V_W) → leaked fraud recall (the red-team seam).
       # Display surfaces (ERV, authenticity, Result.a_hat) keep instant V via ratio(). Dormant (v_w nil)
       # → v_band == @c.v → ratio_band == ratio → byte-identical band decisions.
+      # G1 (young-ramp decay guard): min(V_W, V_inst) — the band ratios divide by the SAME capped V the
+      # L2 deficit used (l2_presume), so a decaying young stream (V_W > V_inst) can't manufacture an
+      # inflated accusatory ratio. Sustained injection has V_W ≈ V_inst → min ≈ either (recall preserved).
       def v_band
-        @c.v_w || @c.v
+        @c.v_w ? [ @c.v_w, @c.v ].min : @c.v
       end
 
       def ratio_band(x)

@@ -61,4 +61,16 @@ RSpec.describe TrustIndex::V2::L2Presume do
     expect(win.f_soft).to be_within(1.0).of(2800 - 5 / 0.03)
     expect(win.rho_obs).to be_within(1e-6).of(5 / 2800.0) # ρ_obs = EIHC_W / V_W (both windowed)
   end
+
+  it "G1: a decaying young stream (V_W > V_inst) caps the deficit V at instant online — no false deficit" do
+    raw = Array.new(30) { |i| chatter("h#{i}") }         # thin honest chat, EIHC 30
+    windowed = Set.new(raw.map(&:username))              # young: window == whole roster (EIHC unchanged)
+    flat = L2PresumeSpecDoubles::Cell.new(rho_star: 0.03, rho_lo: 0.03, rho_hi: 0.03)
+    # Early spike then decay: windowed median V_W=1500 (stale-high) but current instant online V_inst=300.
+    # Uncapped V_W: max(0, 1500 − 30/0.03) = 500 FALSE deficit. Capped min(1500,300)=300: max(0, 300 − 1000) = 0.
+    win = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 300, cell: flat, k: k,
+                               windowed_usernames: windowed, v_w: 1500)
+    expect(win.f_soft).to eq(0.0)                          # decay FP removed — a falling online hides no injection
+    expect(win.rho_obs).to be_within(1e-6).of(30 / 300.0)  # ρ_obs = EIHC_W / min(V_W, V_inst)
+  end
 end
