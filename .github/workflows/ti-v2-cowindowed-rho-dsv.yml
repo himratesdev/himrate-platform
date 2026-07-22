@@ -1,0 +1,106 @@
+name: ti-v2-cowindowed-rho-dsv
+# BUG-A DSV (PO-requested proof-before-code 2026-07-22): prove co-windowed ρ_obs actually DEMASKS the
+# duration-confound before investing in the phased migration. For each live RU stream (young + mature)
+# compute BOTH definitions side-by-side:
+#   ρ_cumulative = |cumulative roster since start| / instant CCV        (as-built, the confounded one)
+#   ρ_windowed   = |roster last 60min| / median CCV last 60min          (BUG-A fix)
+# Expect: MATURE streams → ρ_win < ρ_cum (early departed chatters no longer whiten current online →
+# deficit surfaces). YOUNG/ramping streams → denominator (median vs instant) corrects false-AMBER.
+# Uses raw unique-chatter count as an EIHC proxy (B_hard-strip + weights are secondary to the roster
+# window effect this probe isolates). READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      min_ccv:
+        required: false
+        type: string
+        default: "100"
+      sample:
+        required: false
+        type: string
+        default: "14"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          cat > /tmp/cwrho.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          MIN_CCV = ENV["MIN_CCV"].to_i
+          N = ENV["SAMPLE"].to_i.clamp(1, 24)
+          def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
+          def median_ccv_60(s)
+            vals = s.ccv_snapshots.where("timestamp > ?", 60.minutes.ago).pluck(:ccv_count).compact.sort
+            vals.empty? ? nil : vals[vals.size / 2]
+          end
+          def esc(x) = x.to_s.gsub("'", "''")
+
+          live = Stream.where(ended_at: nil).where("lower(language) = 'ru'").order(started_at: :desc).limit(300).to_a
+          scored = live.map { |s| [s, latest_ccv(s)] }.select { |(_, c)| c >= MIN_CCV }.sort_by { |(_, c)| -c }.first(N)
+          puts "sampling #{scored.size} live RU streams (ccv>=#{MIN_CCV})"
+          puts "login            age   ccv   band      | cum_ch  rho_cum  | win_ch Vmed60 rho_win  | verdict"
+
+          demask = 0; young_fix = 0
+          scored.each do |(s, ccv)|
+            age = ((Time.current - s.started_at) / 60).round
+            cum = (Clickhouse::ChatQueries.stream_chatters(s) rescue []).size
+            win_rows = (Clickhouse.client.select(<<~SQL) rescue [])
+              SELECT DISTINCT username FROM chat_messages
+              WHERE stream_id = '#{esc(s.id)}' AND msg_type = 'privmsg'
+                AND timestamp > now() - INTERVAL 60 MINUTE
+              ORDER BY username LIMIT 500
+            SQL
+            win = win_rows.size
+            vmed = median_ccv_60(s) || ccv
+            rho_cum = ccv.positive? ? (cum.to_f / ccv) : 0.0
+            rho_win = vmed.positive? ? (win.to_f / vmed) : 0.0
+            tih = (TrustIndexHistory.where(channel_id: s.channel_id, engine_version: "v2").order(calculated_at: :desc).first rescue nil)
+            band = tih ? "#{tih.try(:band_color)}/#{tih.try(:band_row)}" : "n/a"
+            # direction of change
+            verdict =
+              if age > 60 && rho_win < rho_cum * 0.9 then demask += 1; "MATURE demask (ρ_win<<ρ_cum)"
+              elsif age <= 60 && rho_win > rho_cum * 1.1 then young_fix += 1; "YOUNG denom-fix (ρ_win>ρ_cum)"
+              else "~same"
+              end
+            printf("%-16s %-4dm %-5d %-9s | %-6d %-8.4f | %-6d %-5d %-8.4f | %s\n",
+              s.channel.login, age, ccv, band, cum, rho_cum, win, vmed, rho_win, verdict)
+          end
+
+          puts "\n===== INTERPRETATION ====="
+          puts "  MATURE-demask count (age>60m, ρ_win dropped >10%): #{demask}  → windowing EXPOSES deficit early-chatters were whitening"
+          puts "  YOUNG denom-fix count (age<=60m, ρ_win rose >10%):  #{young_fix} → median-CCV corrects instant-CCV false-AMBER"
+          puts "  If both ~0 across a healthy sample → windowing changes little (design assumption weak → reconsider before code)."
+          puts "  NOTE: cum/win chatter COUNT is an EIHC proxy; the real fix also re-weights + strips B_hard. This isolates the WINDOW effect."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/cwrho.rb) lines)"
+
+      - name: Run probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/cwrho.rb ${TARGET}:/tmp/cwrho.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/cwrho.rb ${CONTAINER}:/tmp/cwrho.rb && docker exec -e MIN_CCV='${{ inputs.min_ccv || '100' }}' -e SAMPLE='${{ inputs.sample || '14' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/cwrho.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
