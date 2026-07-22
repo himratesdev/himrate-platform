@@ -43,12 +43,12 @@ jobs:
           ap = aps.select { |a| a.try(:provider).to_s.downcase.include?("twitch") }.max_by(&:updated_at)
           unless ap
             puts "NO twitch AuthProvider token on record → cannot test user-token lever. STOP."
-            next rescue exit(0)
+            exit(0)
           end
           token = ap.access_token.to_s
           puts "using AuthProvider ##{ap.id} uid=#{ap.try(:uid)} scope=#{ap.try(:scope).inspect} expires=#{ap.try(:expires_at)} updated=#{ap.updated_at} token_len=#{token.size}"
           if token.empty?
-            puts "token empty after decrypt → STOP"; next rescue exit(0)
+            puts "token empty after decrypt → STOP"; exit(0)
           end
 
           gc = Twitch::GqlClient.new
@@ -56,7 +56,7 @@ jobs:
                     .map { |x| [x, x.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i] }
                     .select { |(_, c)| c >= 100 }.max_by { |(_, c)| c }&.first
           unless s
-            puts "no live stream ccv>=100 → STOP"; next rescue exit(0)
+            puts "no live stream ccv>=100 → STOP"; exit(0)
           end
           ch = s.channel
           prof = gc.bot_check(login: ch.login)
