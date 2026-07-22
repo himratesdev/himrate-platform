@@ -16,6 +16,12 @@
     channel card — layers 1-3 (headline + reputation) are free on any channel per
     access-model v2. Real data is wired client-side by landing/channel_card.js against
     /api/v1/channels/:login/card (headline + reputation). No auth. %>
+<%# Responsive (TASK-060 PR-4a): below lg (<1024) the card reflows to a single fluid column
+    (sidebar + top-bar controls hidden, rows stacked). At >=lg the root is pinned to the origin
+    fixed 1440px frame (lg:w-[1440px] lg:max-w-none) so desktop is byte-identical to origin. This
+    preserves — but does NOT fix — the pre-existing 1024-1439 laptop clipping (the fixed 1440 card
+    is clipped by _head_shared's overflow-x:hidden; origin behaves the same). Making 1024-1439 fully
+    fluid is a deliberate follow-up (fluidize bar/Gate/Search fixed px up to 1440), tracked for PO. %>
 <div
       data-pencil-name="Экран · Карточка канала"
       class="box-border w-full max-w-[1440px] lg:w-[1440px] lg:max-w-none mx-auto h-auto lg:h-[2210px] shrink-0 flex flex-row gap-0 justify-start items-start bg-[#0B0B0F] [border:1px_solid_#34343F] rounded-[16px] overflow-hidden"
@@ -1135,7 +1141,7 @@
               </div>
               <div
                 data-pencil-name="L1 RCol"
-                class="box-border w-fit shrink-0 h-fit flex flex-col gap-[10px] justify-start items-end"
+                class="box-border w-fit shrink-0 h-fit flex flex-col gap-[10px] justify-start items-start lg:items-end"
               >
                 <div
                   data-pencil-name="L1 Rep"
