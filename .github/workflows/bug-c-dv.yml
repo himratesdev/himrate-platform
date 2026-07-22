@@ -1,0 +1,92 @@
+name: bug-c-dv
+# BUG-C DV + PR-C2 state. (A) DV for PR-C1 (prioritized enrichment): are fresh/new accounts on
+# LIVE streams now getting a ChatterProfile? :monitoring queue depth (must not grow). (B) PR-C2
+# state: is LiveBotScoringWorker producing PerUserBotScore for LIVE streams, or is the 300-cap
+# oldest-first starving young streams? READ-ONLY, $0.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  dv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build DV script
+        run: |
+          cat > /tmp/bugcdv.rb <<'RUBY_EOF'
+          $stdout.sync = true
+
+          puts "===== A. ENRICHMENT DV (PR-C1: prioritized selection) ====="
+          [ 5, 15, 60 ].each { |m| puts "  ChatterProfile created last #{m}m: #{ChatterProfile.where('created_at > ?', m.minutes.ago).count}" }
+          [ 5, 15, 60 ].each { |m| puts "  ChatterProfile fetched last #{m}m: #{ChatterProfile.where('fetched_at > ?', m.minutes.ago).count}" }
+          # fresh accounts (twitch_created_at < 30d) newly profiled = the fraud-prior class we were missing
+          fresh_new = ChatterProfile.where("fetched_at > ?", 20.minutes.ago).where("twitch_created_at > ?", 30.days.ago)
+          puts "  → FRESH accounts (<30d old) profiled in last 20m: #{fresh_new.count}"
+          fresh_new.order(fetched_at: :desc).limit(6).each do |c|
+            age_d = c.twitch_created_at ? ((Time.current - c.twitch_created_at) / 86_400.0).round : "?"
+            puts format("    %-24s account_age=%sd followers=%s", c.login.to_s[0, 24], age_d, c.followers_count)
+          end
+
+          puts "\n===== A2. coverage on currently-live streams (are live rosters profiled?) ====="
+          live = Stream.active.where("started_at > ?", 12.hours.ago).order(started_at: :desc).limit(20).pluck(:id, :channel_id)
+          puts "  sampled #{live.size} live streams"
+          covered = []
+          live.first(8).each do |sid, cid|
+            roster = (Clickhouse::ChatQueries.stream_chatters(Stream.find_by(id: sid)) rescue [])
+            next if roster.empty?
+            profiled = ChatterProfile.where(login: roster).count
+            covered << (100.0 * profiled / roster.size)
+            puts format("    %-20s roster=%-4d profiled=%-4d (%.0f%%)", Channel.find_by(id: cid)&.login.to_s[0, 20], roster.size, profiled, 100.0 * profiled / roster.size)
+          end
+          puts "  median live-roster profile coverage: #{covered.empty? ? 'n/a' : covered.sort[covered.size / 2].round}%"
+
+          puts "\n===== B. LIVE-SCORING STATE (PR-C2) ====="
+          require "sidekiq/api"
+          %w[monitoring bot_scoring signal_compute].each do |q|
+            qq = Sidekiq::Queue.new(q)
+            puts "  queue #{q}: size=#{qq.size} latency=#{qq.latency.round}s"
+          end
+          puts "  PerUserBotScore rows last 30m: #{PerUserBotScore.where('created_at > ?', 30.minutes.ago).count rescue 'n/a'}"
+          puts "  PerUserBotScore rows last 5m:  #{PerUserBotScore.where('created_at > ?', 5.minutes.ago).count rescue 'n/a'}"
+          scored_streams = PerUserBotScore.where("created_at > ?", 40.minutes.ago).distinct.count(:stream_id) rescue 0
+          puts "  distinct streams scored last 40m: #{scored_streams} | live streams now: #{Stream.active.count}"
+          puts "  → if scored_streams << live_streams: 300-cap oldest-first starvation (PR-C2 rotation needed)"
+          # is triffon7-like young stream scored? sample youngest live streams
+          young = Stream.active.order(started_at: :desc).limit(5).pluck(:id, :channel_id)
+          young.each do |sid, cid|
+            n = PerUserBotScore.where(stream_id: sid).count
+            age = ((Time.current - (Stream.find_by(id: sid)&.started_at || Time.current)) / 60).round
+            puts format("    young live %-18s age=%-4dmin scored_chatters=%d", Channel.find_by(id: cid)&.login.to_s[0, 18], age, n)
+          end
+          puts "\n  live_bot_scoring flag (vestigial? not referenced in code): #{(Flipper.enabled?(:live_bot_scoring) rescue 'err')} | bot_scoring: #{(Flipper.enabled?(:bot_scoring) rescue 'err')}"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/bugcdv.rb) lines)"
+
+      - name: Run DV on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/bugcdv.rb ${TARGET}:/tmp/bugcdv.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/bugcdv.rb ${CONTAINER}:/tmp/bugcdv.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/bugcdv.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
