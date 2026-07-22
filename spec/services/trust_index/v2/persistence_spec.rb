@@ -8,7 +8,7 @@ module PersistenceSpecDoubles
   Chatter = Data.define(:username, :p_u)
   Result = Data.define(:erv, :erv_lo, :erv_hi, :f_hat, :f_hat_lo, :f_hat_hi, :f_hard, :f_hard_lo, :f_self,
                        :f_soft, :f_soft_lo, :f_soft_hi, :authenticity, :authenticity_lo, :authenticity_hi,
-                       :n_frac, :q_score, :eihc, :rho_obs, :band, :reason_codes, :c_hard, :c_self,
+                       :n_frac, :q_score, :eihc, :rho_obs, :rho_convention, :band, :reason_codes, :c_hard, :c_self,
                        :confirmed_anomaly, :cold_start_tier, :confidence_marker, :b_hard)
 end
 
@@ -22,7 +22,7 @@ RSpec.describe TrustIndex::V2::Persistence do
       f_hard: 290.0, f_hard_lo: 285.0, f_self: 0.0,
       f_soft: 3000.0, f_soft_lo: 2800.0, f_soft_hi: 3200.0,
       authenticity: 40.0, authenticity_lo: 38.0, authenticity_hi: 42.0, n_frac: 0.58, q_score: 0.73,
-      eihc: 45.0, rho_obs: 0.009,
+      eihc: 45.0, rho_obs: 0.009, rho_convention: "cumulative",
       band: PersistenceSpecDoubles::Band.new(row: 1, sub: nil, color: "red"),
       reason_codes: [ PersistenceSpecDoubles::Code.new(code: "HARD_NAMED_FRACTION", params: { n: 2 }) ],
       c_hard: false, c_self: false, confirmed_anomaly: false, cold_start_tier: "full",
@@ -59,6 +59,11 @@ RSpec.describe TrustIndex::V2::Persistence do
     # pre-widening numeric(6,5) overflowed at ρ >= 10 → SCW retry-looped on PG::NumericValueOutOfRange
     # and tiny-V streams never got a v2 row (post-flip incident 2026-07-21). Bound: roster cap 500 / V>=1.
     expect(persist(result(rho_obs: 437.5)).reload.rho_obs).to eq(437.5)
+  end
+
+  it "stamps rho_convention (P0.5) so the self-baseline + ρ* miner segregate cumulative vs windowed" do
+    expect(persist(result).rho_convention).to eq("cumulative")
+    expect(persist(result(rho_convention: "windowed")).rho_convention).to eq("windowed")
   end
 
   it "persists the PR3a soft breakdown + intervals + Q (gap D-3) so /erv erv_breakdown has f_soft" do

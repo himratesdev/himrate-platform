@@ -110,6 +110,7 @@ RSpec.describe SignalComputeWorker do
       expect { worker.perform(stream.id) }.to change(TrustIndexHistory, :count).by(1) # v1 only
       expect(TrustIndexHistory.where(engine_version: "v2").count).to eq(0)
       expect(Rails.logger).to have_received(:info).with(/SCW shadow.*v2_band/)
+      expect(Rails.logger).to have_received(:info).with(/SCW shadow.*v2_rho_conv/) # P0.5 provenance stamp
     end
 
     it "a v2 shadow failure never breaks the v1 live path (shadow safety)" do

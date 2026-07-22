@@ -42,6 +42,7 @@ module TrustIndex
           f_soft: @r.f_soft, f_soft_lo: @r.f_soft_lo, f_soft_hi: @r.f_soft_hi,
           authenticity: @r.authenticity, authenticity_lo: @r.authenticity_lo, authenticity_hi: @r.authenticity_hi,
           n_frac: @r.n_frac, q_score: @r.q_score, eihc: @r.eihc, rho_obs: @r.rho_obs,
+          rho_convention: @r.rho_convention, # P0.5: "cumulative"/"windowed" provenance for the self-baseline + ρ* miner
           band_row: @r.band.row, band_sub: @r.band.sub, band_color: @r.band.color,
           reason_codes: @r.reason_codes.map(&:to_h), c_hard: @r.c_hard, c_self: @r.c_self,
           i_event: @r.c_self, # C_self = (I=1); the i_event column mirrors it (SRS §5.1)
