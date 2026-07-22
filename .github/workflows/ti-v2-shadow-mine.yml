@@ -167,4 +167,4 @@ jobs:
           scp /tmp/mine.rb ${TARGET}:/tmp/mine.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER} | convention: ${CONV}"
-          ssh ${TARGET} "docker cp /tmp/shadow_lines.txt ${CONTAINER}:/tmp/shadow_lines.txt && docker cp /tmp/mine.rb ${CONTAINER}:/tmp/mine.rb && docker exec -e MINE_CONV=${CONV} ${CONTAINER} sh -c 'bin/rails runner /tmp/mine.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
+          ssh ${TARGET} "docker cp /tmp/shadow_lines.txt ${CONTAINER}:/tmp/shadow_lines.txt && docker cp /tmp/mine.rb ${CONTAINER}:/tmp/mine.rb && docker exec -e MINE_CONV=\"${CONV}\" ${CONTAINER} sh -c 'bin/rails runner /tmp/mine.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
