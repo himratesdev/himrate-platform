@@ -24,6 +24,31 @@ RSpec.describe TrustIndex::ContextBuilder do
     expect(context.keys).to match_array(expected_keys)
   end
 
+  describe "raid-window robustness (pre-flip corroborator safety)" do
+    it "G2: the raid gate spans 10min (matches the CcvChatCorrelation divergence window), not 5min" do
+      create(:raid_attribution, stream: stream, timestamp: 7.minutes.ago) # in the old 5-10min shadow
+      expect(described_class.build(stream)[:recent_raids].size).to eq(1) # still suppresses (was dropped by the 5min gate)
+    end
+
+    it "G2: raids older than the 10min window are excluded" do
+      create(:raid_attribution, stream: stream, timestamp: 12.minutes.ago)
+      expect(described_class.build(stream)[:recent_raids]).to be_empty
+    end
+
+    it "G2: a recent (≤5min) raid still suppresses (regression guard against swinging the gate back)" do
+      create(:raid_attribution, stream: stream, timestamp: 4.minutes.ago)
+      expect(described_class.build(stream)[:recent_raids].size).to eq(1)
+    end
+
+    it "G3: a raid-query error fails CLOSED — a non-bot sentinel so raid_window suppresses (not fail-open)" do
+      allow(stream).to receive(:raid_attributions).and_raise(ActiveRecord::StatementInvalid.new("boom"))
+      raids = described_class.send(:fetch_recent_raids, stream)
+      expect(raids).not_to be_empty                  # raid_window#any? → true → suppress fraud escalation
+      expect(raids.first[:is_bot_raid]).to be(false)  # never manufactures a bot-raid penalty
+      expect(raids.first[:error_sentinel]).to be(true)
+    end
+  end
+
   # BUG-251.30: chatters_present_total sourced from ChattersSnapshot.chatters_present_total
   # (populated by StreamMonitorWorker#poll_tier1 via Twitch::GqlClient#community_tab).
   describe "chatters_present_total" do
