@@ -81,13 +81,14 @@ jobs:
           # Single atomic group-by (ONE snapshot) — 3 separate .count queries on a live-writing table
           # race and can't be compared. The invariant: every clean v2 row is NULL or 'cumulative', none
           # 'windowed', none unexpected. flag-OFF scope (NULL|cumulative) then = the full clean set.
-          breakdown = TrustIndexHistory.where(engine_version: "v2", c_hard: false).group(:rho_convention).count
-          pretty = breakdown.transform_keys { |k| k.nil? ? "NULL" : k }
-          windowed = breakdown["windowed"].to_i
-          unexpected = breakdown.reject { |k, _| k.nil? || k == "cumulative" || k == "windowed" }
-          puts "  rho_convention breakdown (atomic): #{pretty.inspect}"
-          puts "  windowed=#{windowed} (expect 0) | unexpected values=#{unexpected.inspect} (expect {})"
-          puts "  → byte-identical iff windowed=0 AND no unexpected values (#{windowed.zero? && unexpected.empty? ? 'OK' : 'CHECK'})"
+          # Two lightweight FILTERED counts (not a GROUP BY) — a group-by hash-agg over the 756k-row
+          # table forks parallel workers that overflow Docker's small /dev/shm ("could not resize shared
+          # memory segment"). Filtered counts stay cheap. Invariant: 0 windowed rows, 0 unexpected values.
+          base = TrustIndexHistory.where(engine_version: "v2", c_hard: false)
+          windowed = base.where(rho_convention: "windowed").count
+          unexpected = base.where("rho_convention IS NOT NULL AND rho_convention NOT IN ('cumulative','windowed')").count
+          puts "  windowed rows=#{windowed} (expect 0) | unexpected-value rows=#{unexpected} (expect 0)"
+          puts "  → byte-identical iff both 0 (#{windowed.zero? && unexpected.zero? ? 'OK' : 'CHECK'})"
 
           ok = !col.nil? && Flipper.enabled?(:ti_v2_engine) && !Flipper.enabled?(:ti_v2_cowindowed_rho)
           puts "\nVERDICT: #{ok ? '🟢 DV OK — migration applied, dormant, stamp writing cumulative' : '🔴 DV FAIL — check above'}"
@@ -97,6 +98,8 @@ jobs:
       - name: Run
         run: |
           TARGET="${{ inputs.target || 'hostkey' }}"
+          echo "=== root-disk sanity (recurring CH-syslog disk-full incident guard) ==="
+          ssh ${TARGET} "df -h / | tail -1; df -h /dev/shm 2>/dev/null | tail -1" || true
           echo "=== staging image SHA (expect f3b8cc0) ==="
           ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Image}}' | head -1" || true
           scp /tmp/p05dv.rb ${TARGET}:/tmp/p05dv.rb   # runner → host (the docker cp below reads it from the host)
