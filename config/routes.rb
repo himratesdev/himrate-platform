@@ -245,4 +245,7 @@ Rails.application.routes.draw do
   # Streamer cross-platform socials (screen 50 «Мои соцсети») — descriptive analytics of the streamer's
   # linked platforms (Twitch socialMedias seed → Telegram/YouTube public metrics). NO fraud verdict.
   get "app/social", to: "pages#my_socials"
+  # Brand-side blogger social profile (screen 61) — descriptive cross-platform view of ANY streamer's
+  # linked platforms (same keyless engine as screen 50). Brand-gated shell; NO fraud verdict on socials.
+  get "app/blogger/:login", to: "pages#blogger_profile", constraints: { login: /[A-Za-z0-9_]+/ }
 end
