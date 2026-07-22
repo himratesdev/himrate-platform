@@ -240,4 +240,7 @@ Rails.application.routes.draw do
   get "app/moments", to: "pages#moments"
   # Streamer grow (screen 13) — game opportunities (Steam novelty × scarcity × distribution).
   get "app/grow", to: "pages#grow"
+  # Streamer cross-platform socials (screen 50 «Мои соцсети») — descriptive analytics of the streamer's
+  # linked platforms (Twitch socialMedias seed → Telegram/YouTube public metrics). NO fraud verdict.
+  get "app/social", to: "pages#my_socials"
 end

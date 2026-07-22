@@ -126,6 +126,16 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Streamer cross-platform socials (screen 50 «Мои соцсети») — faithful export host. Real DESCRIPTIVE
+  # analytics (subs / reach / ER / growth) of the streamer's linked platforms wired client-side by
+  # landing/my_socials.js against GET /api/v1/social/streamers/:login (login = own twitch_login from
+  # /user/me). NO fraud/накрутка verdict on socials (PO 2026-07-21) — Trust-Score/real-audience heroes
+  # are hidden; Telegram + YouTube populate, VK/IG/TT are footprint-known but metrics-deferred.
+  def my_socials
+    @page = "my_socials"
+    @brand_dashboard = true
+  end
+
   # Legal pages (Privacy Policy + Terms). Own minimal readable layout (no Pencil JS).
   # Required for Chrome Web Store submission + footer trust links.
   def privacy

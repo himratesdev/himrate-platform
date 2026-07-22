@@ -18,6 +18,7 @@
     "Nav · Настройки": "/app/settings",
     "Nav · Мой канал": "/app/channel",
     "Nav · Рост": "/app/grow",
+    "Nav · Мои соцсети": "/app/social",
   };
   var ACTIVE_BG = "#19152E";
 
