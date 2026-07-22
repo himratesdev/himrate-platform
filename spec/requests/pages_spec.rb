@@ -17,6 +17,15 @@ RSpec.describe "Public landing", type: :request do
         expect(h1_count).to eq(1), "#{path} must have exactly one <h1>, had #{h1_count}"
       end
     end
+
+    it "home header nav uses real crawlable <a href> links inside a <nav> landmark" do
+      get "/"
+
+      nav = Nokogiri::HTML(response.body).at_css("nav[aria-label]")
+      expect(nav).to be_present
+      expect(nav.css("a[href]").map { |a| a["href"] })
+        .to match_array(%w[/streamers /brands /viewers /methodology /methodology])
+    end
   end
 
   describe "every page renders" do
