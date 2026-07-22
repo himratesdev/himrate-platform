@@ -55,6 +55,8 @@ Rails.application.routes.draw do
 
       # EPIC Social Analytics: streamer cross-platform social profile (public, descriptive).
       get "social/streamers/:login", to: "social/streamers#show", constraints: { login: /[A-Za-z0-9_]+/ }
+      # Descriptive Twitch → socials funnel (value-roadmap C2) — temporal correlation, not causation.
+      get "social/streamers/:login/attribution", to: "social/attribution#show", constraints: { login: /[A-Za-z0-9_]+/ }
       post "lk/notify", to: "lk#notify"
 
       # TASK-031: User profile
