@@ -25,13 +25,16 @@ module TrustIndex
       Context = Data.define(
         :v, :raw_chatters, :cell, :rho_self_lo, :clean_self_history, :self_history_stable,
         :i_event, :raid_window, :n_chat_eff, :q, :cold_start_tier, :chatter_quality_high,
-        :stream_count, :unattributed_surge, :thin_sample, :reputation, :cps
+        :stream_count, :unattributed_surge, :thin_sample, :reputation, :cps,
+        # TI v2.1: CcvChatCorrelation value (0-1, CCV↑ ∧ chat-flat = silent-injection signature).
+        # Feeds L4's C_inflation corroborator. 0.0 = no signature / dormant. Names nobody (CCV-shape).
+        :ccv_chat_divergence
       )
 
       SelfCtx = Data.define(:eligible, :v, :eihc, :rho_self_lo)
       EmitCtx = Data.define(:v, :n_chat_eff, :q, :i_event, :raid_window, :cold_start_tier,
                             :named_count, :self_history_stable, :chatter_quality_high,
-                            :stream_count, :unattributed_surge, :thin_sample)
+                            :stream_count, :unattributed_surge, :thin_sample, :ccv_chat_divergence)
 
       Result = Data.define(:erv, :erv_lo, :erv_hi, :authenticity, :a_hat, :n_frac, :band,
                            :reason_codes, :confirmed_anomaly, :cold_start_tier, :confidence_marker,
@@ -107,7 +110,8 @@ module TrustIndex
                     raid_window: @ctx.raid_window, cold_start_tier: @ctx.cold_start_tier,
                     named_count: post.b_hard.size, self_history_stable: @ctx.self_history_stable,
                     chatter_quality_high: @ctx.chatter_quality_high, stream_count: @ctx.stream_count,
-                    unattributed_surge: @ctx.unattributed_surge, thin_sample: @ctx.thin_sample)
+                    unattributed_surge: @ctx.unattributed_surge, thin_sample: @ctx.thin_sample,
+                    ccv_chat_divergence: @ctx.ccv_chat_divergence)
       end
 
       def extras(post, hard, soft, fraud, emit)

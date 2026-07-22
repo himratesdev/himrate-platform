@@ -42,6 +42,20 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(c.reputation).to eq({ band: "stable", tier: "full", stream_count: 20 })
     end
 
+    # TI v2.1 inflation corroborator input: build_v2 reuses the calibrated v1 CcvChatCorrelation
+    # signal to compute ccv_chat_divergence (CCV↑ ∧ chat-flat = silent-injection signature).
+    it "wires ccv_chat_divergence from CcvChatCorrelation when CCV rises with flat chat" do
+      h = ctx_hash(chatters: %w[a]).merge(
+        ccv_series_10min: [ { ccv: 100, timestamp: 10.minutes.ago }, { ccv: 200, timestamp: Time.current } ],
+        chat_rate_10min: [ { msg_count: 10, timestamp: 10.minutes.ago }, { msg_count: 10, timestamp: Time.current } ]
+      )
+      expect(described_class.build_v2(stream, h).ccv_chat_divergence).to be > 0.0
+    end
+
+    it "ccv_chat_divergence is 0.0 (neutral) when the ccv/chat series are absent — dormant-safe" do
+      expect(described_class.build_v2(stream, ctx_hash(chatters: %w[a])).ccv_chat_divergence).to eq(0.0)
+    end
+
     it "wires temporal_recurrence R for fraud tiers (spam AND unknown); only the utility allowlist is excluded" do
       flagged = {
         "botspam" => { bot_flag_tier: "confirmed", bot_type: "spam", event_count: 9, max_concurrent_channels: 12 },
@@ -160,7 +174,8 @@ RSpec.describe TrustIndex::ContextBuilder do
       k = Calibration::Registry::K.new(
         pi0: 0.02, tau_hard: 0.90, tau_delta: 0.05, phi_yellow: 0.10, phi_red: 0.35,
         q_mid: 0.50, q_hi: 0.80, llr_temporal_r2: 1.10, llr_temporal_r3: 2.20,
-        llr_temporal_r4: 2.90, llr_temporal_r7: 4.60, llr_per_user_bot_score: 3.90, llr_known_bot: 3.40
+        llr_temporal_r4: 2.90, llr_temporal_r7: 4.60, llr_per_user_bot_score: 3.90, llr_known_bot: 3.40,
+        phi_inflation: 0.30, inflation_corrob_enabled: 0.0 # TI v2.1 dormant
       )
       r = TrustIndex::V2::Engine.compute(context: c, k: k)
       expect(r.b_hard.map(&:username)).to include("megabot")

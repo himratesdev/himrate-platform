@@ -87,7 +87,8 @@ module TrustIndex
         unattributed_surge: false, # paired with I-event provenance branch = follow-up
         thin_sample: chatters.size < THIN_SAMPLE_MIN,
         reputation: v2_reputation(channel),
-        cps: context_hash[:channel_protection_config]&.channel_protection_score&.to_f
+        cps: context_hash[:channel_protection_config]&.channel_protection_score&.to_f,
+        ccv_chat_divergence: v2_ccv_chat_divergence(context_hash)
       )
     end
 
@@ -292,6 +293,24 @@ module TrustIndex
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: v2 known_bot batch failed (#{e.message})")
         {}
+      end
+
+      # TI v2.1 inflation corroborator (BUG-A/B pivot): REUSE the calibrated v1 CcvChatCorrelation
+      # signal (CCV↑ ∧ chat-flat over 10min = silent-viewbot injection — a CCV-SHAPE signature, names
+      # nobody). Returns its value (0-1) only when the baseline is confident (ccv_old≥50 ∧ chat_old≥5 →
+      # confidence 1.0); low-confidence / insufficient / ccv-decrease → 0.0 (neutral). This feeds L4's
+      # C_inflation, the INDEPENDENT second corroborator that lets F_soft's deficit escalate past AMBER
+      # (breaking the C_hard monoculture). NOT re-derived — invokes the same signal the v1 registry
+      # calibrates (inherits ~5 battle-tested calibration fixes), zero new CH scan (reads the ccv/chat
+      # series already in context_hash).
+      def v2_ccv_chat_divergence(context_hash)
+        res = Signals::CcvChatCorrelation.new.calculate(context_hash)
+        return 0.0 unless res && res.confidence.to_f >= 0.5 && res.value
+
+        res.value.to_f
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 ccv_chat_divergence failed (#{e.message})")
+        0.0
       end
 
       # cell = category × V-bucket × chat-mode × language → per-cell ρ* baseline, EC-18 coarsest fallback.

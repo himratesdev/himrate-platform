@@ -6,7 +6,7 @@ require "rails_helper"
 # dynamic-constant-assignment; namespaced to avoid global collisions).
 module BandClassifierSpecDoubles
   Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
-                        :c_hard, :c_self, :raid_window, :cold_start_tier)
+                        :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier)
   Thresholds = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi)
 end
 
@@ -16,7 +16,8 @@ RSpec.describe TrustIndex::V2::BandClassifier do
 
   def drivers(**over)
     base = { n_frac: 0.0, f_self_ratio: 0.0, f_soft_lo_ratio: 0.0, a_hat: 0.0, q: 0.9,
-             i_event: false, c_hard: false, c_self: false, raid_window: false, cold_start_tier: "full" }
+             i_event: false, c_hard: false, c_self: false, c_inflation: false,
+             raid_window: false, cold_start_tier: "full" }
     BandClassifierSpecDoubles::Drivers.new(**base.merge(over))
   end
 
@@ -67,6 +68,24 @@ RSpec.describe TrustIndex::V2::BandClassifier do
   it "soft deficit ≥ 0.50 WITH corroboration escalates to row 1 (not amber)" do
     b = classify(f_soft_lo_ratio: 0.60, c_hard: true, a_hat: 0.60)
     expect(b.row).to eq(1)
+  end
+
+  # TI v2.1 — C_inflation is the INDEPENDENT third corroboration source (CCV-shape silent-injection
+  # signature) that breaks the C_hard monoculture: a soft deficit that today dead-ends at AMBER can
+  # now escalate when the CCV rose without a matching chat-rate rise.
+  it "soft deficit ≥ 0.20 corroborated by C_inflation escalates AMBER→YELLOW (monoculture break)" do
+    b = classify(f_soft_lo_ratio: 0.25, c_inflation: true, a_hat: 0.25)
+    expect([ b.row, b.color ]).to eq([ 2, "yellow" ])
+  end
+
+  it "soft deficit ≥ 0.50 corroborated by C_inflation escalates to row 1 RED" do
+    b = classify(f_soft_lo_ratio: 0.60, c_inflation: true, a_hat: 0.60)
+    expect(b.row).to eq(1)
+  end
+
+  it "C_inflation WITHOUT a soft deficit never accuses (the deficit AND-corroboration gate holds)" do
+    b = classify(f_soft_lo_ratio: 0.0, c_inflation: true, a_hat: 0.05, q: 0.9, cold_start_tier: "full")
+    expect(b.row).to be > 2 # green/amber, not row 1/2
   end
 
   it "first-match precedence — RED wins even when green-ish â is low" do

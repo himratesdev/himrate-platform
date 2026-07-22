@@ -205,7 +205,11 @@ class SignalComputeWorker
       v2_n_frac: v2.n_frac, v2_confirmed_anomaly: v2.confirmed_anomaly,
       # rho_star&.to_f — a DB-resolved cell yields BigDecimal (decimal 6,5) which to_json's as a
       # STRING; keep the mining line type-stable (JSON number) pre- and post-GATE-0 seed (CR N1).
-      v2_v: v2c.v, v2_rho_obs: v2.rho_obs, v2_eihc: v2.eihc, v2_rho_star: v2c.cell&.rho_star&.to_f
+      v2_v: v2c.v, v2_rho_obs: v2.rho_obs, v2_eihc: v2.eihc, v2_rho_star: v2c.cell&.rho_star&.to_f,
+      # TI v2.1: CcvChatCorrelation value (silent-injection signature) — mined to calibrate
+      # phi_inflation on the honest-anchor firing rate BEFORE the dormant C_inflation corroborator is
+      # flipped on. Emitted whether or not the corroborator is enabled (observability accrual).
+      v2_ccv_chat_divergence: v2c.ccv_chat_divergence
     }
     Rails.logger.info("SCW shadow #{diff.to_json}")
   end
