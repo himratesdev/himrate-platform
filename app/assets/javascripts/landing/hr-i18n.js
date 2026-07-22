@@ -742,10 +742,13 @@ window.HR_TRANS = {
   "💎 ГЛАВНОЕ · BRAND ATTRIBUTION": "💎 KEY · BRAND ATTRIBUTION"
 };
 
-/* ---- self-contained i18n fallback ----
-   On pages that load hr-shared.js (02–05), that script owns the RU/EN switch.
-   This block only activates on pages WITHOUT it (e.g. 01-glavnaya) — it builds
-   the same RU/EN toggle in the header and swaps leaf-node text. */
+/* ---- canonical RU/EN translator ----
+   The single implementation of the language swap, exposed as window.__hrApplyI18n;
+   hr-shared.js and mobile-nav.js delegate to it. Both are included AFTER this file
+   in layouts/landing.html.erb, so it is always defined first (a request spec guards
+   that order). This block also self-boots the header toggle on pages WITHOUT
+   hr-shared.js (e.g. index); on pages with it, hr-shared owns the switch and this
+   block's boot() returns early. */
 (function(){
   var RE=/[А-Яа-яЁё]/;
   function $all(s,r){ return Array.prototype.slice.call((r||document).querySelectorAll(s)); }
@@ -767,6 +770,9 @@ window.HR_TRANS = {
     try{ document.documentElement.setAttribute('lang', lang==='en'?'en':'ru'); }catch(e){}
     $all('[data-hr-lang-btn]').forEach(function(b){ var on=b.getAttribute('data-hr-lang-btn')===lang; b.style.background=on?'#FFFFFF1A':'transparent'; b.style.color=on?'#F5F2EC':'#8E8A9A'; });
   }
+  // Single canonical translator. hr-i18n loads before hr-shared/mobile-nav on every
+  // page, so exposing it here lets those delegate instead of maintaining copies.
+  window.__hrApplyI18n = apply;
   function buildSwitch(){
     var actions=document.querySelector('[data-pencil-name="Actions"]');
     if(!actions || actions.querySelector('[data-hr-lang]')) return;
