@@ -41,18 +41,18 @@
         "@graph": [
           {
             "@type": "Organization",
-            "@id": "https://himrate.com/#organization",
+            "@id": "<%= canonical_host %>/#organization",
             "name": "HimRate",
-            "url": "https://himrate.com/",
+            "url": "<%= canonical_host %>/",
             "logo": "<%= canonical_asset_url("brand/logo-square-gradient.svg") %>",
             "description": "Аналитика реальности аудитории Twitch: Trust Index, ERV и репутация стримеров."
           },
           {
             "@type": "WebSite",
-            "@id": "https://himrate.com/#website",
-            "url": "https://himrate.com/",
+            "@id": "<%= canonical_host %>/#website",
+            "url": "<%= canonical_host %>/",
             "name": "HimRate",
-            "publisher": { "@id": "https://himrate.com/#organization" },
+            "publisher": { "@id": "<%= canonical_host %>/#organization" },
             "inLanguage": "ru"
           }
         ]

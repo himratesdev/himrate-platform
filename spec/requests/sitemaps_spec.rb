@@ -13,8 +13,8 @@ RSpec.describe "Sitemap + robots", type: :request do
       expect(response.media_type).to eq("application/xml")
     end
 
-    it "lists every indexable marketing page on the canonical apex host" do
-      %w[/ /streamers /brands /viewers /methodology].each do |path|
+    it "lists every indexable marketing + legal page on the canonical apex host" do
+      %w[/ /streamers /brands /viewers /methodology /privacy /terms].each do |path|
         expect(response.body).to include("<loc>https://himrate.com#{path}</loc>")
       end
     end

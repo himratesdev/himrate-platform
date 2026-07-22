@@ -90,9 +90,13 @@
 
     setT(document, "Real Num", fmt(real));
     setT(document, "Shown Num", "/ " + fmt(shown));
-    var bots = real != null && shown != null ? shown - real : null;
-    var botPct = erv != null ? Math.round(100 - erv) : null;
-    if (bots != null && bots > 0) setT(document, "Chip Bots T", "−" + fmt(bots) + " ботов · −" + botPct + "% накрутки");
+    var diff = real != null && shown != null ? shown - real : null;
+    var diffPct = erv != null ? Math.round(100 - erv) : null;
+    // Legal-safe wording (v3 doctrine, matches channel_card.js): the app UI states the
+    // neutral "скрытая разница … от показанных" — never "боты/накрутка" as a public
+    // accusation. "Chip Bots T"/"Chip Bots" are Pencil DOM node names (the design
+    // contract), NOT variable names — do NOT rename them or q() breaks.
+    if (diff != null && diff > 0) setT(document, "Chip Bots T", "−" + fmt(diff) + " скрытая разница · −" + diffPct + "% от показанных");
     else hide(q(document, "Chip Bots"));
     if (ervCount != null) setT(document, "Chip ERV T", "ERV " + fmt(ervCount) + " вовлечены");
     else hide(q(document, "Chip ERV"));

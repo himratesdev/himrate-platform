@@ -126,7 +126,11 @@
   function renderError() {
     setText("H Name", login);
     setText("H Meta", "Канал не найден или ещё не проанализирован");
-    ["L1 Real", "L1 Shown", "L1 D1 T", "L1 D2 T", "L1 Total"].forEach(function (p) {
+    // Reset the legend rows too ("Leg T bot"/"Leg T real") — otherwise the error state
+    // leaves the static mock ("Скрытая разница 800 · 16%") under the graph on the PUBLIC
+    // /c/:login page, attached to a real streamer's name. Happy-path overwrites them
+    // (setText above), error-path must clear them.
+    ["L1 Real", "L1 Shown", "L1 D1 T", "L1 D2 T", "L1 Total", "Leg T bot", "Leg T real"].forEach(function (p) {
       setText(p, "—");
     });
   }

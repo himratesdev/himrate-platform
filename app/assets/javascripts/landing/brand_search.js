@@ -149,11 +149,13 @@
     setText(card, "Shown", "из " + fmt(s.shown_avg_viewers) + " показано");
 
     // Delta — audience-correction %. Hide when there is effectively no correction.
+    // Legal-safe wording (v3 doctrine, matches channel_card.js): neutral "от показанных",
+    // never "накрутка" as a public accusation about a searched streamer.
     var corr = s.bot_correction_pct == null ? null : Math.abs(s.bot_correction_pct);
     if (corr == null || corr < 1) {
       hide(card, "Delta");
     } else {
-      setText(card, "DT", Math.round(corr) + "% накрутки");
+      setText(card, "DT", "−" + Math.round(corr) + "% от показанных");
     }
 
     // Reality bar — real % of shown.

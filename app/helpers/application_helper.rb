@@ -19,6 +19,13 @@ module ApplicationHelper
     request.host == CANONICAL_HOST_NAME
   end
 
+  # The canonical apex origin (https://himrate.com) as a view-friendly reader, so
+  # templates reference one source of truth instead of re-typing the literal host
+  # (e.g. the JSON-LD @id/url fields). Keeps CANONICAL_HOST the single definition.
+  def canonical_host
+    CANONICAL_HOST
+  end
+
   # Self-referencing canonical URL for the current request: apex host + path, with
   # the query string dropped (canonical URLs must not carry per-request params).
   def canonical_url
