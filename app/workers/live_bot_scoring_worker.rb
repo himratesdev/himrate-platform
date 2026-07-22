@@ -17,24 +17,28 @@ class LiveBotScoringWorker
   # behind the :signals backlog. See sidekiq.yml + bot_scoring_worker.rb for rationale.
   sidekiq_options queue: "bot_scoring", retry: 1
 
-  # Bound per run; cron re-runs. Follow-up at scale (thousands of concurrent live streams): a
-  # Stream#bot_scored_at column to rotate fairly (least-recently-scored first) + incremental/windowed
-  # scoring. That also fixes oldest-first starvation AND a zombie stream (un-closed ended_at) that
-  # would otherwise permanently top the queue and re-score static chat.
+  # Bound per run; cron re-runs. BUG-C PR-C2 (2026-07-22): rotate by least-recently-scored
+  # (bot_scored_at ASC NULLS FIRST) instead of oldest-started-first, so at >MAX_STREAMS_PER_RUN
+  # concurrent live streams the NEWEST streams (where a streamer starts botting) aren't starved,
+  # and a zombie (un-closed ended_at) stream can't permanently top the queue — once scored, its
+  # bot_scored_at moves it to the back of the rotation.
   MAX_STREAMS_PER_RUN = 300
 
   def perform
     return unless Flipper.enabled?(:stream_monitor) && Flipper.enabled?(:bot_scoring)
 
-    stream_ids = Stream.active.order(:started_at).limit(MAX_STREAMS_PER_RUN).pluck(:id)
+    # Least-recently-scored first (NULLS FIRST = never-scored young streams get priority). Stamp at
+    # enqueue so the next run rotates onward — over ceil(live/MAX) runs every live stream is scored.
+    stream_ids = Stream.active.order(Arel.sql("bot_scored_at ASC NULLS FIRST")).limit(MAX_STREAMS_PER_RUN).pluck(:id)
+    return if stream_ids.empty?
+
+    Stream.where(id: stream_ids).update_all(bot_scored_at: Time.current)
     # BotScoringWorker skips streams with 0 chatters, so no need to pre-filter on chat here.
     stream_ids.each { |stream_id| BotScoringWorker.perform_async(stream_id) }
 
-    # Make the cap binding observable: past MAX_STREAMS_PER_RUN some live streams are skipped this
-    # run (oldest-first), which is the trigger to implement Stream#bot_scored_at rotation (follow-up).
     if stream_ids.size == MAX_STREAMS_PER_RUN
-      Rails.logger.warn("LiveBotScoringWorker: MAX_STREAMS_PER_RUN=#{MAX_STREAMS_PER_RUN} cap reached — newer live streams skipped this run; add Stream#bot_scored_at rotation (TASK-251.8 follow-up)")
+      Rails.logger.warn("LiveBotScoringWorker: MAX_STREAMS_PER_RUN=#{MAX_STREAMS_PER_RUN} cap bound — the least-recently-scored #{MAX_STREAMS_PER_RUN} live streams scored this run; the rest rotate in next run")
     end
-    Rails.logger.info("LiveBotScoringWorker: enqueued bot-scoring for #{stream_ids.size} live streams")
+    Rails.logger.info("LiveBotScoringWorker: enqueued bot-scoring for #{stream_ids.size} live streams (least-recently-scored rotation)")
   end
 end

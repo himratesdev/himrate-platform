@@ -44,15 +44,28 @@ RSpec.describe LiveBotScoringWorker do
     expect(BotScoringWorker).not_to have_received(:perform_async)
   end
 
-  it "bounds streams per run (oldest-started first) and warns when the cap binds" do
+  # BUG-C PR-C2: rotation by least-recently-scored (bot_scored_at ASC NULLS FIRST) instead of
+  # oldest-started-first — never-scored (young) streams get priority so they aren't starved at
+  # >MAX_STREAMS_PER_RUN concurrent live streams.
+  it "bounds streams per run (least-recently-scored first) and warns when the cap binds" do
     stub_const("LiveBotScoringWorker::MAX_STREAMS_PER_RUN", 1)
-    older = create(:stream, ended_at: nil, started_at: 3.hours.ago)
-    create(:stream, ended_at: nil, started_at: 10.minutes.ago)
+    scored = create(:stream, ended_at: nil, started_at: 3.hours.ago, bot_scored_at: 1.minute.ago)
+    never = create(:stream, ended_at: nil, started_at: 10.minutes.ago, bot_scored_at: nil)
     expect(Rails.logger).to receive(:warn).with(/MAX_STREAMS_PER_RUN/)
 
     worker.perform
 
-    expect(BotScoringWorker).to have_received(:perform_async).with(older.id).once
+    expect(BotScoringWorker).to have_received(:perform_async).with(never.id).once
     expect(BotScoringWorker).to have_received(:perform_async).exactly(1).time
+    expect(scored.reload.bot_scored_at).to be_within(2.seconds).of(1.minute.ago) # not re-scored this run
+  end
+
+  it "stamps bot_scored_at on the enqueued streams so the rotation advances next run" do
+    s = create(:stream, ended_at: nil, bot_scored_at: nil)
+    freeze_time do
+      worker.perform
+      expect(s.reload.bot_scored_at).to eq(Time.current)
+    end
+    expect(BotScoringWorker).to have_received(:perform_async).with(s.id)
   end
 end
