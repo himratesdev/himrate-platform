@@ -52,17 +52,20 @@ jobs:
           [ -z "$CID_CH" ] && { echo "no channelID — abort"; exit 0; }
 
           echo ""
-          echo "== 2. chatters via community_tab (first few viewers) =="
-          BODY=$(jq -nc --arg l "$CH" '{query:"query($login:String!){channel(name:$login){chatters{viewers{login} count}}}",variables:{login:$l}}')
+          echo "== 2. chatters via community_tab (viewers + MODS/VIPS = definite followers) =="
+          BODY=$(jq -nc --arg l "$CH" '{query:"query($login:String!){channel(name:$login){chatters{viewers{login} moderators{login} vips{login} count}}}",variables:{login:$l}}')
           C=$(gql "$BODY")
           echo "count=$(echo "$C" | jq -r '.data.channel.chatters.count // "?"') errors=$(echo "$C" | jq -c '.errors//empty')"
-          VIEWERS=$(echo "$C" | jq -r '.data.channel.chatters.viewers[]?.login' | head -8)
+          VIEWERS=$(echo "$C" | jq -r '.data.channel.chatters.viewers[]?.login' | head -5)
+          # mods + vips definitionally follow the channel — the clean auth-gating disambiguator
+          MODVIP=$(echo "$C" | jq -r '(.data.channel.chatters.moderators[]?.login),(.data.channel.chatters.vips[]?.login)' | grep -v '^$' | head -6)
           echo "sample viewers:"; echo "$VIEWERS"
+          echo "sample MODS/VIPS (definite followers):"; echo "$MODVIP"
 
           echo ""
-          echo "== 3. THE TEST: user.relationship(targetUserID: channelID).followedAt per chatter =="
-          echo "   (this is the exact hover-card 'Отслеживает N минут' field)"
-          for V in $VIEWERS; do
+          echo "== 3. THE TEST: user.relationship(targetUserID: channelID).followedAt =="
+          echo "   (exact hover-card 'Отслеживает N минут' field — testing viewers AND definite-follower mods/vips)"
+          for V in $VIEWERS $MODVIP; do
             BODY=$(jq -nc --arg l "$V" --arg cid "$CID_CH" '{query:"query($login:String!,$cid:ID!){user(login:$login){login createdAt relationship(targetUserID:$cid){followedAt subscriptionBenefit{tier}}}}",variables:{login:$l,cid:$cid}}')
             R=$(gql "$BODY")
             FA=$(echo "$R" | jq -r '.data.user.relationship.followedAt // "null"')
