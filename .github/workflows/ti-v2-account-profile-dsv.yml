@@ -49,13 +49,27 @@ jobs:
           MIN_CCV = ENV["MIN_CCV"].to_i
           N = ENV["SAMPLE_STREAMS"].to_i.clamp(1, 20)
           PROFILE_KEYS = %w[followers_zero account_age_7d account_age_30d follows_zero follows_excessive]
-
-          # Pick currently-live RU streams with ccv>=MIN_CCV, most recent latest_ccv snapshot.
-          live = Stream.where(ended_at: nil).where(language: "ru").order(started_at: :desc).limit(400).to_a
           def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
-          scored_streams = live.map { |s| [s, latest_ccv(s)] }.select { |(_, c)| c >= MIN_CCV }
-                               .sort_by { |(_, c)| -c }.first(N)
-          puts "live RU streams (ccv>=#{MIN_CCV}): sampling #{scored_streams.size} of #{live.size} live"
+
+          # Diagnostics: how many live streams exist at all, and their language mix.
+          live_all = Stream.where(ended_at: nil).order(started_at: :desc).limit(600).to_a
+          langs = live_all.group_by { |s| s.language.presence || "(blank)" }.transform_values(&:size)
+          puts "live streams total (ended_at IS NULL): #{live_all.size} | language mix: #{langs.sort_by { |_, v| -v }.first(8).to_h.inspect}"
+
+          # Sample live streams by highest recent ccv (ANY language — print it). Fall back to
+          # recently-ended (<3h) if too few live: PerUserBotScore persists post-stream, so flag
+          # coverage/discriminativeness is still measurable on just-ended streams.
+          live_scored = live_all.map { |s| [s, latest_ccv(s)] }.select { |(_, c)| c >= MIN_CCV }.sort_by { |(_, c)| -c }
+          source = "live"
+          scored_streams = live_scored.first(N)
+          if scored_streams.size < N
+            ended = Stream.where.not(ended_at: nil).where("ended_at > ?", 3.hours.ago)
+                          .order(ended_at: :desc).limit(300).to_a
+            ended_scored = ended.map { |s| [s, latest_ccv(s)] }.select { |(_, c)| c >= MIN_CCV }.sort_by { |(_, c)| -c }
+            scored_streams = (scored_streams + ended_scored).uniq { |(s, _)| s.id }.first(N)
+            source = "live+recent-ended"
+          end
+          puts "sampling #{scored_streams.size} streams (ccv>=#{MIN_CCV}, source=#{source})"
 
           scored_streams.each do |(s, ccv)|
             ch = s.channel
@@ -79,7 +93,8 @@ jobs:
             tih = (TrustIndexHistory.where(channel_id: ch.id, engine_version: "v2")
                      .order(calculated_at: :desc).first rescue nil)
             band = tih ? "#{tih.try(:band_color)}/#{tih.try(:band_row)} auth=#{tih.try(:authenticity)}" : "n/a"
-            puts "\n== #{ch.login} (ccv #{ccv}, #{ch.broadcaster_type.presence || 'none'}) stream=#{s.id[0,8]} v2=#{band}"
+            state = s.ended_at.nil? ? "LIVE" : "ended #{((Time.current - s.ended_at) / 60).round}m ago"
+            puts "\n== #{ch.login} (ccv #{ccv}, #{ch.broadcaster_type.presence || 'none'}, #{s.language.presence || 'blank'}, #{state}) stream=#{s.id[0,8]} v2=#{band}"
             puts "   roster=#{roster.size} scored=#{rows.size} (#{(100.0*rows.size/[roster.size,1].max).round}%) profiled=#{profiled} (#{(100.0*profiled/[roster.size,1].max).round}%)"
             puts "   classifications: #{cls.inspect}"
             puts "   profile-flag histogram (of profiled #{profiled}): #{PROFILE_KEYS.map { |k| nil }; hist.sort.to_h.inspect}"
