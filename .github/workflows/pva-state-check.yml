@@ -1,0 +1,82 @@
+name: pva-state-check
+# PVA root-cause verify (2026-07-22): the :pva flag is ON on hostkey + queues drained + 0 dead jobs
+# (pva-diag), yet PVA reported stuck. So it's NOT the flag alone. This READ-ONLY probe answers: how
+# many enrollment rows are done vs stuck, what do stuck rows' per-source cells say, what does the REAL
+# API path (StateStore.read_state) return for a stuck user, and do users have the user:read:follows
+# scope source_1 needs. Corrects pva-diag's jsonb-LIKE crash + wrong StateStore method names.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe
+        run: |
+          cat > /tmp/pvastate.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          puts "flag :pva = #{Flipper.enabled?(:pva)}"
+
+          puts "\n== enrollment distribution =="
+          puts "total rows: #{PvaEnrollmentBackfillState.count}"
+          PvaEnrollmentBackfillState.group(:overall_status).count.sort_by { |_, c| -c }.each { |s, c| puts "  #{s}: #{c}" }
+          puts "stuck (pending/in_progress/partial, oauth>10min ago): #{PvaEnrollmentBackfillState.stuck.count}"
+          puts "most recent oauth_linked: #{PvaEnrollmentBackfillState.maximum(:oauth_linked_at)}"
+          puts "most recent DONE completed: #{PvaEnrollmentBackfillState.where(overall_status: 'done').maximum(:completed_at)}"
+
+          puts "\n== sample stuck rows (per-source cells) =="
+          PvaEnrollmentBackfillState.pending_or_in_progress.order(oauth_linked_at: :desc).limit(6).each do |r|
+            puts "  user=#{r.user_id.to_s[0, 8]} overall=#{r.overall_status} oauth=#{r.oauth_linked_at&.strftime('%m-%d %H:%M')}"
+            puts "     s1=#{r.source_1.inspect} s2=#{r.source_2.inspect} s5=#{r.source_5.inspect} failed=#{r.try(:failed_sources).inspect}"
+          end
+
+          puts "\n== REAL API path: StateStore.read_state for a stuck user =="
+          uid = PvaEnrollmentBackfillState.pending_or_in_progress.order(oauth_linked_at: :desc).limit(1).pick(:user_id)
+          uid ||= PvaEnrollmentBackfillState.order(oauth_linked_at: :desc).limit(1).pick(:user_id)
+          if uid
+            st = (PersonalAnalytics::Enrollment::StateStore.read_state(user_id: uid) rescue "ERR: #{$!.class}: #{$!.message}")
+            puts "  user #{uid.to_s[0, 8]}: #{st.inspect[0, 500]}"
+          else
+            puts "  no enrollment rows at all"
+          end
+
+          puts "\n== scope coverage (source_1 Helix follows needs user:read:follows) =="
+          begin
+            aps = AuthProvider.where(provider: "twitch").order(created_at: :desc).limit(8)
+            puts "  twitch auth_providers: #{AuthProvider.where(provider: 'twitch').count}"
+            aps.each { |a| puts "    #{a.user_id.to_s[0, 8]} created=#{a.created_at.to_date} scope=#{a.try(:scope).inspect[0, 140]}" }
+          rescue => e
+            puts "  scope check failed: #{e.class}: #{e.message}"
+          end
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/pvastate.rb) lines)"
+
+      - name: Run
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/pvastate.rb ${TARGET}:/tmp/pvastate.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/pvastate.rb ${CONTAINER}:/tmp/pvastate.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/pvastate.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
