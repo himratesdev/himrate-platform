@@ -146,9 +146,10 @@ RSpec.describe TrustIndex::V2::L4Emit do
     expect(r.authenticity).to be_within(0.5).of(82.5)           # display = instant: 100·(1−350/2000)
   end
 
-  it "BUG-A dormant (v_w nil): the same deficit stays AMBER — instant-V band frame, byte-identical" do
+  it "BUG-A dormant (v_w nil): the same deficit reads GREEN — the instant-V band frame is more lenient" do
     r = emit(hard: hard(0.0), soft: soft(350.0), fraud: fraud(350.0), v: 2000,
              ccv_chat_divergence: 0.5, k_override: L4EmitSpecDoubles::K_INFLATION_ON)
-    expect(r.band.row).to eq(6) # 350/2000=0.175 < 0.20 → no row-2 → AMBER (frame is instant V when dormant)
+    # instant frame: â = 350/2000 = 0.175 ≤ 0.20 + high Q → GREEN row4 (vs the windowed YELLOW row2 above)
+    expect([ r.band.row, r.band.color ]).to eq([ 4, "green" ])
   end
 end
