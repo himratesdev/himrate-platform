@@ -94,6 +94,7 @@ jobs:
           TARGET="${{ inputs.target || 'hostkey' }}"
           echo "=== staging image SHA (expect f3b8cc0) ==="
           ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Image}}' | head -1" || true
+          scp /tmp/p05dv.rb ${TARGET}:/tmp/p05dv.rb   # runner → host (the docker cp below reads it from the host)
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER}"
           ssh ${TARGET} "docker cp /tmp/p05dv.rb ${CONTAINER}:/tmp/p05dv.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/p05dv.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
