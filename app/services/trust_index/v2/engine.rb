@@ -28,13 +28,23 @@ module TrustIndex
         :stream_count, :unattributed_surge, :thin_sample, :reputation, :cps,
         # TI v2.1: CcvChatCorrelation value (0-1, CCV↑ ∧ chat-flat = silent-injection signature).
         # Feeds L4's C_inflation corroborator. 0.0 = no signature / dormant. Names nobody (CCV-shape).
-        :ccv_chat_divergence
+        :ccv_chat_divergence,
+        # TI v2.1 BUG-A (co-windowed ρ_obs): the trailing-60min L2 inputs. Both NIL when the
+        # ti_v2_cowindowed_rho flag is OFF → the engine reproduces today's cumulative-roster / instant-V
+        # behavior byte-for-byte (dormant). l2_roster_usernames = the windowed chatter Set (a subset of
+        # raw_chatters used for the EIHC numerator); v_w = median CCV over the same 60min (the deficit
+        # denominator). Cumulative raw_chatters still drives L0 B_hard + cross-channel; instant :v still
+        # drives ERV/authenticity display.
+        :l2_roster_usernames, :v_w
       )
 
       SelfCtx = Data.define(:eligible, :v, :eihc, :rho_self_lo)
       EmitCtx = Data.define(:v, :n_chat_eff, :q, :i_event, :raid_window, :cold_start_tier,
                             :named_count, :self_history_stable, :chatter_quality_high,
-                            :stream_count, :unattributed_surge, :thin_sample, :ccv_chat_divergence)
+                            :stream_count, :unattributed_surge, :thin_sample, :ccv_chat_divergence,
+                            # TI v2.1 BUG-A: windowed V_W (nil dormant) — L4 divides band-driver ratios
+                            # by V_W (deficit frame) while ERV/authenticity keep instant :v (display).
+                            :v_w)
 
       Result = Data.define(:erv, :erv_lo, :erv_hi, :authenticity, :a_hat, :n_frac, :band,
                            :reason_codes, :confirmed_anomaly, :cold_start_tier, :confidence_marker,
@@ -79,8 +89,9 @@ module TrustIndex
         post = L0Identity.call(@ctx.raw_chatters, k: @k)
         hard = L1Subtract.call(post)
         soft = L2Presume.call(raw: @ctx.raw_chatters, b_hard_usernames: names(post),
-                              v: @ctx.v, cell: @ctx.cell, k: @k)
-        fraud = L3Fuse.call(hard: hard, soft: soft, self_ctx: self_ctx(soft))
+                              v: @ctx.v, cell: @ctx.cell, k: @k,
+                              windowed_usernames: @ctx.l2_roster_usernames, v_w: @ctx.v_w)
+        fraud = L3Fuse.call(hard: hard, soft: soft, self_ctx: self_ctx(soft), sum_disjoint: windowed?)
         emit = L4Emit.call(hard: hard, soft: soft, fraud: fraud, ctx: emit_ctx(post), k: @k)
         Result.new(**emit.to_h, **extras(post, hard, soft, fraud, emit))
       end
@@ -100,9 +111,16 @@ module TrustIndex
         post.b_hard.map(&:username).to_set
       end
 
+      # TI v2.1 BUG-A: co-windowed mode is active iff ContextBuilder populated v_w (flag ON). Drives
+      # the L2 deficit frame, the L3 disjoint-sum, and the L4 band-driver V frame. Nil ⇒ dormant.
+      def windowed?
+        !@ctx.v_w.nil?
+      end
+
       def self_ctx(soft)
         eligible = @ctx.clean_self_history && @ctx.i_event && !@ctx.raid_window
-        SelfCtx.new(eligible: eligible, v: @ctx.v, eihc: soft.eihc, rho_self_lo: @ctx.rho_self_lo)
+        # F_self shares the deficit frame: windowed V_W when co-windowed, else instant V (unchanged).
+        SelfCtx.new(eligible: eligible, v: @ctx.v_w || @ctx.v, eihc: soft.eihc, rho_self_lo: @ctx.rho_self_lo)
       end
 
       def emit_ctx(post)
@@ -111,7 +129,7 @@ module TrustIndex
                     named_count: post.b_hard.size, self_history_stable: @ctx.self_history_stable,
                     chatter_quality_high: @ctx.chatter_quality_high, stream_count: @ctx.stream_count,
                     unattributed_surge: @ctx.unattributed_surge, thin_sample: @ctx.thin_sample,
-                    ccv_chat_divergence: @ctx.ccv_chat_divergence)
+                    ccv_chat_divergence: @ctx.ccv_chat_divergence, v_w: @ctx.v_w)
       end
 
       def extras(post, hard, soft, fraud, emit)

@@ -46,6 +46,20 @@ module TrustIndex
         @c.v.positive? ? x / @c.v.to_f : 0.0
       end
 
+      # TI v2.1 BUG-A: the BAND-decision frame divides by V_W (the windowed deficit denominator) when
+      # co-windowed, so the f_soft_lo / f_self / â ratios that GATE the band are judged against the SAME
+      # V the deficit was computed on. Dividing a V_W-based deficit by INSTANT V would dilute the
+      # accusatory ratio during a viewbot spike (V_inst≫V_W) → leaked fraud recall (the red-team seam).
+      # Display surfaces (ERV, authenticity, Result.a_hat) keep instant V via ratio(). Dormant (v_w nil)
+      # → v_band == @c.v → ratio_band == ratio → byte-identical band decisions.
+      def v_band
+        @c.v_w || @c.v
+      end
+
+      def ratio_band(x)
+        v_band.positive? ? x / v_band.to_f : 0.0
+      end
+
       def clamp0(x)
         [ x, 0.0 ].max
       end
@@ -90,8 +104,8 @@ module TrustIndex
 
       def band_drivers
         BandClassifier::Drivers.new(
-          n_frac: n_frac, f_self_ratio: ratio(@f.f_self), f_soft_lo_ratio: ratio(@soft.f_soft_lo),
-          a_hat: a_hat, q: @c.q, i_event: @c.i_event, c_hard: c_hard, c_self: c_self,
+          n_frac: n_frac, f_self_ratio: ratio_band(@f.f_self), f_soft_lo_ratio: ratio_band(@soft.f_soft_lo),
+          a_hat: ratio_band(@f.f_hat), q: @c.q, i_event: @c.i_event, c_hard: c_hard, c_self: c_self,
           c_inflation: c_inflation, raid_window: @c.raid_window, cold_start_tier: @c.cold_start_tier
         )
       end

@@ -127,6 +127,29 @@ RSpec.describe Clickhouse::ChatQueries do
     end
   end
 
+  # TI v2.1 BUG-A: the trailing-window roster (cumulative stream_chatters + timestamp filter).
+  describe ".stream_chatters_windowed" do
+    it "adds the trailing-window timestamp filter to the deterministic roster query" do
+      since = Time.utc(2026, 7, 22, 5, 0, 0)
+      expect(ch).to receive(:select).with(
+        a_string_matching(/SELECT DISTINCT username/)
+          .and(a_string_matching(/stream_id = '#{stream.id}'/))
+          .and(a_string_matching(/timestamp > toDateTime\('2026-07-22 05:00:00'\)/))
+          .and(a_string_matching(/ORDER BY username/))
+          .and(a_string_matching(/LIMIT 500/))
+      ).and_return([ { "username" => "alice" } ])
+
+      expect(described_class.stream_chatters_windowed(stream, since: since)).to eq(%w[alice])
+    end
+
+    it "returns [] (and logs) on a CH error" do
+      expect(ch).to receive(:select).and_raise(Clickhouse::QueryError.new("CH down"))
+      expect(Rails.logger).to receive(:warn).with(/stream_chatters_windowed failed/)
+
+      expect(described_class.stream_chatters_windowed(stream, since: Time.utc(2026, 7, 22, 5, 0, 0))).to eq([])
+    end
+  end
+
   describe "integration (real ClickHouse)", :clickhouse do
     let(:real_client) { Clickhouse.client }
     let(:t) { Time.current.utc }

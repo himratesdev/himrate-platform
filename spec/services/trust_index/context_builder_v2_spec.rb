@@ -42,6 +42,12 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(c.reputation).to eq({ band: "stable", tier: "full", stream_count: 20 })
     end
 
+    it "BUG-A: co-windowed L2 inputs are nil when ti_v2_cowindowed_rho is OFF (dormant, no added scan)" do
+      c = described_class.build_v2(stream, ctx_hash(chatters: %w[a b]))
+      expect(c.l2_roster_usernames).to be_nil
+      expect(c.v_w).to be_nil
+    end
+
     # TI v2.1 inflation corroborator input: build_v2 reuses the calibrated v1 CcvChatCorrelation
     # signal to compute ccv_chat_divergence (CCV↑ ∧ chat-flat = silent-injection signature).
     it "wires ccv_chat_divergence from CcvChatCorrelation when CCV rises with flat chat" do
