@@ -8,6 +8,7 @@
 module TrustIndex
   class ContextBuilder
     CCV_SERIES_LIMIT = 30 # max snapshots for 30min window
+    COWINDOW_MINUTES = 60 # TI v2.1 BUG-A trailing window for co-windowed ρ_obs (= chatters window)
 
     # T1-074 (TI v2) build_v2 constants.
     THIN_SAMPLE_MIN = 30 # < this many present chatters → thin_sample (wider interval, provisional)
@@ -71,6 +72,9 @@ module TrustIndex
       # Track the calibrated q_mid rather than a literal so the descriptive "high quality" reason-code
       # stays consistent with the band gate (band_classifier uses k.q_mid) after GATE-0 recalibration.
       q_mid = CalibrationConstant.value_for("q_mid", fallback: 0.5).to_f
+      # TI v2.1 BUG-A: the co-windowed L2 inputs (both nil when the ti_v2_cowindowed_rho flag is OFF →
+      # zero added CH/PG work, engine runs cumulative/instant exactly as today).
+      l2_roster, v_w = v2_cowindowed_inputs(stream)
 
       TrustIndex::V2::Engine::Context.new(
         v: v,
@@ -88,7 +92,9 @@ module TrustIndex
         thin_sample: chatters.size < THIN_SAMPLE_MIN,
         reputation: v2_reputation(channel),
         cps: context_hash[:channel_protection_config]&.channel_protection_score&.to_f,
-        ccv_chat_divergence: v2_ccv_chat_divergence(context_hash)
+        ccv_chat_divergence: v2_ccv_chat_divergence(context_hash),
+        l2_roster_usernames: l2_roster,
+        v_w: v_w
       )
     end
 
@@ -311,6 +317,45 @@ module TrustIndex
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: v2 ccv_chat_divergence failed (#{e.message})")
         0.0
+      end
+
+      # TI v2.1 BUG-A: the trailing-60min L2 inputs — [windowed_roster_Set, V_W] — for co-windowed ρ_obs.
+      # Returns [nil, nil] when the ti_v2_cowindowed_rho flag is OFF (dormant → NO extra CH scan / PG read,
+      # engine runs cumulative/instant). The window floor is max(started_at, 60min-ago): a stream <60min
+      # old windows to its whole (short) length → windowed roster == cumulative → identical to legacy for
+      # young streams (which is why they stop false-AMBERing — the window isn't padded by chatters that
+      # left). One bounded stream_chatters_windowed CH round-trip + one ccv_snapshots PG read, flag-ON only.
+      def v2_cowindowed_inputs(stream)
+        return [ nil, nil ] unless cowindowed_rho_enabled?
+
+        since = [ stream.started_at, COWINDOW_MINUTES.minutes.ago ].max
+        # CR must-fix: the roster filter and the V_W denominator MUST flip together. Chat (IRC) and CCV
+        # snapshots are separate pipelines, so a stream can have recent chat but a >60min CCV-snapshot
+        # gap → v_w nil. Returning [Set, nil] there would half-window (windowed EIHC over an INSTANT-V
+        # denominator = an inflated false deficit — the cross-frame confound from the other side, while
+        # engine#windowed? reads false). Compute V_W first; if it's absent, stay FULLY dormant.
+        v_w = v2_median_ccv_windowed(stream, since)
+        return [ nil, nil ] if v_w.nil?
+
+        roster = Clickhouse::ChatQueries.stream_chatters_windowed(stream, since: since).to_set
+        [ roster, v_w ]
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 cowindowed inputs failed (#{e.message})")
+        [ nil, nil ]
+      end
+
+      def cowindowed_rho_enabled?
+        Flipper.enabled?(:ti_v2_cowindowed_rho)
+      rescue StandardError
+        false
+      end
+
+      # V_W = median of the CCV snapshots over the same trailing window (the deficit denominator).
+      def v2_median_ccv_windowed(stream, since)
+        vals = stream.ccv_snapshots.where("timestamp > ?", since).pluck(:ccv_count).compact.sort
+        return nil if vals.empty?
+
+        vals[vals.size / 2]
       end
 
       # cell = category × V-bucket × chat-mode × language → per-cell ρ* baseline, EC-18 coarsest fallback.

@@ -8,7 +8,7 @@ module L4EmitSpecDoubles
   Fraud = Data.define(:f_hat, :f_hat_lo, :f_hat_hi, :f_self)
   Ctx = Data.define(:v, :n_chat_eff, :q, :i_event, :raid_window, :cold_start_tier, :named_count,
                     :self_history_stable, :chatter_quality_high, :stream_count, :unattributed_surge,
-                    :thin_sample, :ccv_chat_divergence)
+                    :thin_sample, :ccv_chat_divergence, :v_w)
   K = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi).new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8)
   # TI v2.1 — K variant with the inflation corroborator ENABLED (for the escalation test). The
   # dormant default (enabled 0.0) is exercised by the base K above, which lacks the keys entirely →
@@ -30,7 +30,7 @@ RSpec.describe TrustIndex::V2::L4Emit do
     ctx_base = { v: 5000, n_chat_eff: 500, q: 0.9, i_event: false, raid_window: false,
                  cold_start_tier: "full", named_count: 0, self_history_stable: false,
                  chatter_quality_high: false, stream_count: 20, unattributed_surge: false,
-                 thin_sample: false, ccv_chat_divergence: 0.0 }
+                 thin_sample: false, ccv_chat_divergence: 0.0, v_w: nil }
     described_class.call(hard: hard, soft: soft, fraud: fraud,
                          ctx: L4EmitSpecDoubles::Ctx.new(**ctx_base.merge(ctx_over)), k: k_override || k)
   end
@@ -133,5 +133,23 @@ RSpec.describe TrustIndex::V2::L4Emit do
              ccv_chat_divergence: 0.5, raid_window: true, k_override: L4EmitSpecDoubles::K_INFLATION_ON)
     expect(r.band.row).to eq(6) # stays AMBER — raid excluded from the corroborator
     expect(r.confirmed_anomaly).to be(false)
+  end
+
+  # TI v2.1 BUG-A V-frame split (red-team fix): band-driver ratios divide by V_W (deficit frame),
+  # display (authenticity/ERV) by instant V. f_soft_lo=350: instant 350/2000=0.175 MISSES row-2
+  # (≥0.20) but windowed 350/1400=0.25 FIRES — so a viewbot spike (V_inst≫V_W) can no longer dilute
+  # the accusatory ratio out of range.
+  it "BUG-A: band ratios use V_W while authenticity uses instant V (co-windowed)" do
+    r = emit(hard: hard(0.0), soft: soft(350.0), fraud: fraud(350.0), v: 2000, v_w: 1400,
+             ccv_chat_divergence: 0.5, k_override: L4EmitSpecDoubles::K_INFLATION_ON)
+    expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ]) # 350/1400=0.25 ≥ 0.20 + corroborated
+    expect(r.authenticity).to be_within(0.5).of(82.5)           # display = instant: 100·(1−350/2000)
+  end
+
+  it "BUG-A dormant (v_w nil): the same deficit reads GREEN — the instant-V band frame is more lenient" do
+    r = emit(hard: hard(0.0), soft: soft(350.0), fraud: fraud(350.0), v: 2000,
+             ccv_chat_divergence: 0.5, k_override: L4EmitSpecDoubles::K_INFLATION_ON)
+    # instant frame: â = 350/2000 = 0.175 ≤ 0.20 + high Q → GREEN row4 (vs the windowed YELLOW row2 above)
+    expect([ r.band.row, r.band.color ]).to eq([ 4, "green" ])
   end
 end

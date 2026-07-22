@@ -126,6 +126,30 @@ module Clickhouse
       []
     end
 
+    # TI v2.1 BUG-A (co-windowed ρ_obs): the TRAILING-WINDOW roster — chatters who posted in the last
+    # `window` (default 60min, = StreamMonitorWorker chatters window). Identical to stream_chatters +
+    # `AND timestamp > since` so early-departed chatters fall OUT → they stop whitening the current
+    # online (the duration-confound the cumulative roster causes on long streams; DSV-confirmed the
+    # cumulative roster carries 3-20× more chatters than the last hour on mature streams). Same
+    # deterministic ORDER BY username + LIMIT. The CUMULATIVE stream_chatters is retained for L0 B_hard
+    # + cross-channel/temporal (they need full history); this windowed set feeds ONLY the L2 EIHC
+    # numerator. Returns a subset of stream_chatters (windowed ⊆ cumulative).
+    def stream_chatters_windowed(stream, since:)
+      since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT DISTINCT username
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
+          AND timestamp > toDateTime('#{since_ts}')
+        ORDER BY username
+        LIMIT #{CROSS_CHANNEL_CHATTER_LIMIT}
+      SQL
+      rows.map { |r| r["username"] }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: stream_chatters_windowed failed (#{e.class})")
+      []
+    end
+
     # T1-057 FR-A: overlap edge-ledger source query. One row per (username, channel_login) over the
     # rolling 24h window, for the OVERLAP COHORT only — users present in 2..max_channels distinct
     # channels (single-channel chatters carry no overlap edge; users above the cap are bots/omnipresent

@@ -38,4 +38,27 @@ RSpec.describe TrustIndex::V2::L2Presume do
                              cell: L2PresumeSpecDoubles::Cell.new(rho_star: 0.05, rho_lo: 0.05, rho_hi: 0.08), k: k)
     expect(sb.f_soft_lo).to eq(0.0)
   end
+
+  # TI v2.1 BUG-A co-windowed ρ_obs.
+  it "dormant (windowed_usernames/v_w nil) is byte-identical to the legacy cumulative call" do
+    raw = Array.new(45) { |i| chatter("h#{i}") }
+    legacy = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 5000, cell: cell, k: k)
+    dormant = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 5000, cell: cell, k: k,
+                                   windowed_usernames: nil, v_w: nil)
+    expect(dormant.to_h).to eq(legacy.to_h)
+  end
+
+  it "co-windowed: a cumulative-CLEAN mature stream surfaces the deficit its departed chatters whitened" do
+    raw = Array.new(100) { |i| chatter("h#{i}") }        # 100 cumulative chatters
+    windowed = Set.new(Array.new(5) { |i| "h#{i}" })     # only 5 active in the last 60min
+    flat = L2PresumeSpecDoubles::Cell.new(rho_star: 0.03, rho_lo: 0.03, rho_hi: 0.03)
+    # Cumulative (dormant): EIHC 100, V 3000 → 100/0.03 = 3333 ≥ 3000 → F_soft 0 (whitened clean).
+    dormant = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 3000, cell: flat, k: k)
+    expect(dormant.f_soft).to eq(0.0)
+    # Co-windowed: EIHC 5 (subset), V_W 2800 → 2800 − 5/0.03 ≈ 2633 deficit surfaces.
+    win = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 3000, cell: flat, k: k,
+                               windowed_usernames: windowed, v_w: 2800)
+    expect(win.f_soft).to be_within(1.0).of(2800 - 5 / 0.03)
+    expect(win.rho_obs).to be_within(1e-6).of(5 / 2800.0) # ρ_obs = EIHC_W / V_W (both windowed)
+  end
 end
