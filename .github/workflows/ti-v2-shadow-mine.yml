@@ -22,6 +22,12 @@ on:
         required: false
         type: string
         default: "6"
+      convention:
+        description: "ρ_obs convention to pool (P0.5). 'cumulative' pre-FLIP (today); 'windowed' for the re-seed after ti_v2_cowindowed_rho is ON — never mix the two."
+        required: false
+        type: choice
+        options: [cumulative, windowed]
+        default: cumulative
 
 jobs:
   mine:
@@ -56,6 +62,10 @@ jobs:
           require "json"
           require "set"
 
+          # P0.5: pool ONLY one ρ_obs convention (cumulative vs windowed) — mixing corrupts ρ*. Pre-P0.5
+          # shadow lines have no v2_rho_conv key → treated as "cumulative" (they predate the flag).
+          WANTED_CONV = ENV.fetch("MINE_CONV", "cumulative")
+
           def pct(a, p)
             return nil if a.nil? || a.empty?
             s = a.sort
@@ -82,7 +92,7 @@ jobs:
 
           # ===== parse shadow lines → per-stream samples =====
           samples = Hash.new { |h, k| h[k] = { rho: [], v: [] } }
-          total = 0; usable = 0
+          total = 0; usable = 0; skipped_conv = 0
           File.foreach("/tmp/shadow_lines.txt") do |line|
             total += 1
             i = line.index("SCW shadow ")
@@ -90,12 +100,15 @@ jobs:
             j = JSON.parse(line[(i + 11)..]) rescue next
             rho = j["v2_rho_obs"]
             next if rho.nil? || rho.to_f <= 0 # pre-#384 lines / offline streams — skip
+            conv = j["v2_rho_conv"] || "cumulative" # P0.5: nil = pre-stamp line = cumulative
+            (skipped_conv += 1; next) unless conv == WANTED_CONV
             sid = j["stream_id"]
             next unless sid
             samples[sid][:rho] << rho.to_f
             samples[sid][:v] << j["v2_v"].to_f if j["v2_v"]
             usable += 1
           end
+          puts "convention filter: WANTED=#{WANTED_CONV} (skipped #{skipped_conv} other-convention lines)"
           puts "shadow lines: #{total} total, #{usable} usable, #{samples.size} distinct streams"
 
           # ===== honest-anchor filter (mirrors ti-v2-rho-build hygiene) =====
@@ -150,7 +163,8 @@ jobs:
       - name: Run miner on ${{ inputs.target || 'hostkey' }}
         run: |
           TARGET="${{ inputs.target || 'hostkey' }}"
+          CONV="${{ inputs.convention || 'cumulative' }}" # P0.5: which ρ_obs convention to pool (empty on schedule → cumulative)
           scp /tmp/mine.rb ${TARGET}:/tmp/mine.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
-          echo "container: ${CONTAINER}"
-          ssh ${TARGET} "docker cp /tmp/shadow_lines.txt ${CONTAINER}:/tmp/shadow_lines.txt && docker cp /tmp/mine.rb ${CONTAINER}:/tmp/mine.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/mine.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
+          echo "container: ${CONTAINER} | convention: ${CONV}"
+          ssh ${TARGET} "docker cp /tmp/shadow_lines.txt ${CONTAINER}:/tmp/shadow_lines.txt && docker cp /tmp/mine.rb ${CONTAINER}:/tmp/mine.rb && docker exec -e MINE_CONV=${CONV} ${CONTAINER} sh -c 'bin/rails runner /tmp/mine.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true

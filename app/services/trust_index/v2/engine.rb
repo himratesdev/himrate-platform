@@ -54,6 +54,10 @@ module TrustIndex
                            # deficit + interval, authenticity interval, Q. Persisted for /erv
                            # erv_breakdown{f_hard,f_soft,f_hat} (Surface 2) + richer shadow diff.
                            :f_soft, :f_soft_lo, :f_soft_hi, :authenticity_lo, :authenticity_hi, :q_score,
+                           # TI v2.1 P0.5 — provenance stamp for rho_obs: "cumulative" (instant-V, flag OFF)
+                           # or "windowed" (V_W, flag ON). Persisted so the self-baseline + ρ* miner segregate
+                           # conventions across the 90-day horizon (nil when rho_obs is nil, e.g. V≤0).
+                           :rho_convention,
                            :b_hard, :engine_version) do
         # DEC-7 adapter — the engine maps its own fields to the publish payload; SCW calls this.
         def to_headline_payload
@@ -71,6 +75,7 @@ module TrustIndex
         c_hard: false, c_self: false, axes: nil, eihc: nil, rho_obs: nil, f_hat: nil, f_hat_lo: nil,
         f_hat_hi: nil, f_hard: nil, f_hard_lo: nil, f_self: nil,
         f_soft: nil, f_soft_lo: nil, f_soft_hi: nil, authenticity_lo: nil, authenticity_hi: nil, q_score: nil,
+        rho_convention: nil, # V≤0 short-circuit → rho_obs nil → no convention applies
         b_hard: [], engine_version: "v2"
       }.freeze
 
@@ -145,6 +150,8 @@ module TrustIndex
           # authenticity interval mirrors the ERV interval: MORE fraud (f_hat_hi) → LOWER authenticity.
           authenticity_lo: authenticity_pct(fraud.f_hat_hi, v), authenticity_hi: authenticity_pct(fraud.f_hat_lo, v),
           q_score: @ctx.q,
+          # P0.5: stamp which ρ_obs convention this row used (windowed? = flag-ON co-windowed frame).
+          rho_convention: (windowed? ? "windowed" : "cumulative"),
           b_hard: post.b_hard, engine_version: "v2" }
       end
 

@@ -350,6 +350,18 @@ module TrustIndex
         false
       end
 
+      # P0.5: constrain the self-baseline rows to the ρ_obs convention matching the CURRENT compute
+      # mode (same flag that drives v2_cowindowed_inputs). Flag ON → "windowed" rows only. Flag OFF →
+      # "cumulative"; NULL (pre-P0.5 rows) reads as cumulative — every pre-P0.5 v2 row predates the
+      # flag, so with the flag OFF the selected set is byte-identical to the pre-P0.5 query.
+      def self_history_convention_scope(scope)
+        if cowindowed_rho_enabled?
+          scope.where(rho_convention: "windowed")
+        else
+          scope.where("rho_convention IS NULL OR rho_convention = ?", "cumulative")
+        end
+      end
+
       # V_W = median of the CCV snapshots over the same trailing window (the deficit denominator).
       def v2_median_ccv_windowed(stream, since)
         vals = stream.ccv_snapshots.where("timestamp > ?", since).pluck(:ccv_count).compact.sort
@@ -406,9 +418,12 @@ module TrustIndex
       # (DEC-2-sanctioned). F_self also requires I=1 (fail-safe 0 in PR2b) so this is dormant regardless,
       # but the query is the real one for when the I-event computation lands.
       def v2_self_history(channel)
-        rows = TrustIndexHistory
+        # P0.5: ρ_self_lo must be built from rows of the SAME ρ_obs convention as the current compute —
+        # pooling cumulative + windowed samples corrupts the baseline (see self_history_convention_scope).
+        scope = TrustIndexHistory
           .where(channel_id: channel.id, engine_version: "v2", c_hard: false)
           .where("calculated_at > ?", SELF_HISTORY_WINDOW_DAYS.days.ago)
+        rows = self_history_convention_scope(scope)
           .order(calculated_at: :desc)
           .limit(SELF_HISTORY_WINDOW_STREAMS)
           .pluck(:rho_obs)

@@ -76,6 +76,18 @@ RSpec.describe TrustIndex::V2::Engine do
     expect(r.q_score).to eq(0.9) # Q passthrough from context (helper sets q: 0.9)
   end
 
+  it "P0.5: stamps rho_convention 'cumulative' by default, 'windowed' when co-windowed inputs present" do
+    chatters = Array.new(150) { |i| chatter("h#{i}") }
+    cumulative = described_class.compute(context: context(chatters, n_chat_eff: 150), k: k)
+    expect(cumulative.rho_convention).to eq("cumulative") # v_w nil → dormant/instant frame
+    windowed = described_class.compute(
+      context: context(chatters, n_chat_eff: 150,
+                       l2_roster_usernames: chatters.map(&:username).to_set, v_w: 4800),
+      k: k
+    )
+    expect(windowed.rho_convention).to eq("windowed") # flag-ON co-windowed frame
+  end
+
   it "EC-15/TC-017: V≤0 (null CCV) short-circuits to GREY with null ERV — never a headline number" do
     r = described_class.compute(context: context([ chatter("a") ], v: 0, n_chat_eff: 0), k: k)
     expect(r.erv).to be_nil

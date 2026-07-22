@@ -135,6 +135,21 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(c.rho_self_lo).to be_within(0.001).of(0.02)
     end
 
+    it "P0.5: self-baseline segregates by ρ_obs convention — flag ON ignores cumulative rows (no mixing)" do
+      # 3 cumulative rows exist (the pre-flip corpus). With the co-windowed flag ON the current compute
+      # is 'windowed', so the baseline must NOT be built from cumulative samples → stays dormant.
+      3.times do |i|
+        create(:trust_index_history, channel: channel, stream: create(:stream, channel: channel),
+                                     engine_version: "v2", c_hard: false, rho_obs: 0.02 + (i * 0.01),
+                                     rho_convention: "cumulative", calculated_at: (i + 1).days.ago)
+      end
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_cowindowed_rho).and_return(true)
+      c = described_class.build_v2(stream, ctx_hash(chatters: %w[a]))
+      expect(c.clean_self_history).to be(false)
+      expect(c.rho_self_lo).to be_nil
+    end
+
     it "i_event fail-safe false; raid_window derived from recent_raids" do
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a], raids: [ { timestamp: Time.current } ]))
       expect(c.i_event).to be(false)
