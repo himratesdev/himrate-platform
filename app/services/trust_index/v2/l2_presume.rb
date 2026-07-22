@@ -26,7 +26,12 @@ module TrustIndex
         # authenticity hit on an honestly-shrinking audience. A FALLING online cannot hide a fresh injection
         # (that's V_inst > V_W → min picks V_W, unchanged), so capping V at instant is safe for recall:
         # a sustained injection has V_W ≈ V_inst (min ≈ either, still fires); only the decay FP is removed.
-        # Dormant: v_w nil → v (byte-identical).
+        # VERDICT path: dormant (ti_v2_cowindowed_rho OFF → v_w nil → v, byte-identical). SHADOW path is
+        # NOT dormant: accrue_windowed_shadow (ti_v2_cowindowed_shadow ON via ALL_FLAGS) computes with a
+        # real v_w, so this changes the LIVE emitted ρ_obs for decaying streams (EIHC_W/V_W → EIHC_W/min).
+        # That is INTENDED: the windowed corpus must reflect the same capped frame the engine will use at
+        # verdict time post-flip, so the P2 re-seed calibrates ρ* on the right definition. Pre-G1 windowed
+        # samples (few hours) re-base to the capped frame on deploy — the P2 re-seed uses post-G1 samples.
         v_eff = v_w ? [ v_w, v ].min : v
         eihc = EihcWeigher.eihc(humans, tau_delta: k.tau_delta)
         SoftBound.new(

@@ -88,6 +88,21 @@ RSpec.describe TrustIndex::V2::Engine do
     expect(windowed.rho_convention).to eq("windowed") # flag-ON co-windowed frame
   end
 
+  it "G1: a decaying young stream (V_W > V_inst) keeps high authenticity — the stale median makes no false deficit" do
+    chatters = Array.new(30) { |i| chatter("h#{i}") } # thin honest chat, EIHC 30
+    # decay: current instant online V_inst=300, windowed median V_W=1500 is stale-high (early spike).
+    # Uncapped V_W → f_soft = max(0, 1500 − 30/0.03) = 500 → F̂ 500 → authenticity clamps to 0 (FALSE hit).
+    # G1 caps V at min(1500,300)=300 → f_soft = max(0, 300 − 1000) = 0 → authenticity stays ~100.
+    r = described_class.compute(
+      context: context(chatters, v: 300, n_chat_eff: 30,
+                       l2_roster_usernames: chatters.map(&:username).to_set, v_w: 1500),
+      k: k
+    )
+    expect(r.f_soft).to eq(0.0)
+    expect(r.authenticity).to be > 90
+    expect(r.band.color).not_to eq("red")
+  end
+
   it "EC-15/TC-017: V≤0 (null CCV) short-circuits to GREY with null ERV — never a headline number" do
     r = described_class.compute(context: context([ chatter("a") ], v: 0, n_chat_eff: 0), k: k)
     expect(r.erv).to be_nil
