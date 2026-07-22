@@ -97,9 +97,11 @@
       var ti = l2h.authenticity != null ? l2h.authenticity : l2h.ti_score;
       if (big) big.style.color = tiColor(ti);
       setText(document, "HL2", "из " + fmt(l1.shown_avg_viewers) + " на витрине Twitch");
+      // Legal-safe wording (v3 doctrine, matches channel_card.js / brand_search.js):
+      // neutral "от показанных", never "бот-коррекция" as a verdict about a streamer.
       var corr = l1.bot_correction_pct == null ? null : Math.abs(l1.bot_correction_pct);
       if (corr == null || corr < 1) hide(document, "Delta");
-      else setText(document, "DT", "−" + Math.round(corr) + "% бот-коррекция");
+      else setText(document, "DT", "−" + Math.round(corr) + "% от показанных");
     }
 
     // Anomaly banner — real layer-5. Hide when there are none.

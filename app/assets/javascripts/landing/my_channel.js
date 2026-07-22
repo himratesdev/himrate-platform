@@ -93,8 +93,10 @@
     var diff = real != null && shown != null ? shown - real : null;
     var diffPct = erv != null ? Math.round(100 - erv) : null;
     // Legal-safe wording (v3 doctrine, matches channel_card.js): the app UI states the
-    // neutral "скрытая разница" — never "боты/накрутка" as a public accusation.
-    if (diff != null && diff > 0) setT(document, "Chip Bots T", "−" + fmt(diff) + " скрытая разница · −" + diffPct + "%");
+    // neutral "скрытая разница … от показанных" — never "боты/накрутка" as a public
+    // accusation. "Chip Bots T"/"Chip Bots" are Pencil DOM node names (the design
+    // contract), NOT variable names — do NOT rename them or q() breaks.
+    if (diff != null && diff > 0) setT(document, "Chip Bots T", "−" + fmt(diff) + " скрытая разница · −" + diffPct + "% от показанных");
     else hide(q(document, "Chip Bots"));
     if (ervCount != null) setT(document, "Chip ERV T", "ERV " + fmt(ervCount) + " вовлечены");
     else hide(q(document, "Chip ERV"));
