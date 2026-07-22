@@ -314,12 +314,21 @@ module Api
       # runs the production env over HTTPS); relaxed in dev/test so specs/local can read them.
       def set_web_session_cookies(access_token, refresh_token)
         secure = Rails.env.production?
+        domain = session_cookie_domain
         cookies.encrypted[:hr_session] = {
-          value: access_token, httponly: true, secure: secure, same_site: :lax, expires: 1.hour
+          value: access_token, httponly: true, secure: secure, same_site: :lax, expires: 1.hour, domain: domain
         }
         cookies.encrypted[:hr_refresh] = {
-          value: refresh_token, httponly: true, secure: secure, same_site: :lax, expires: 7.days
+          value: refresh_token, httponly: true, secure: secure, same_site: :lax, expires: 7.days, domain: domain
         }
+      end
+
+      # Share the session across the himrate.com subdomains (apex ↔ app.himrate.com ↔ staging) so a web
+      # login on any of them authenticates all of them. Returns nil (host-only cookie) off himrate.com
+      # (localhost/dev) — a ".himrate.com" domain cookie would be rejected there. Must match the domain
+      # used to CLEAR the cookie on logout (Web::AuthController#logout).
+      def session_cookie_domain
+        request.host.to_s.end_with?("himrate.com") ? ".himrate.com" : nil
       end
 
       # Only same-origin relative paths (open-redirect guard) — never an absolute/protocol URL.
