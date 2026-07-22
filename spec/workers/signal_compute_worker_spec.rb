@@ -209,7 +209,8 @@ RSpec.describe SignalComputeWorker do
       allow(worker).to receive(:windowed_shadow_due?).and_return(true)
       allow(TrustIndex::ContextBuilder).to receive(:windowed_inputs).and_return([ Set.new(%w[u1 u2]), 400 ])
       allow(Rails.logger).to receive(:info)
-      worker.perform(stream.id)
+      # verdict-neutral: the windowed accrual persists NOTHING — exactly the one cutover verdict row lands.
+      expect { worker.perform(stream.id) }.to change(TrustIndexHistory.where(engine_version: "v2"), :count).by(1)
       expect(Rails.logger).to have_received(:info).with(/SCW shadow.*"v2_rho_conv":"windowed"/)
     end
 

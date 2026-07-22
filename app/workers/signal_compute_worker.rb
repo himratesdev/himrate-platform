@@ -197,7 +197,8 @@ class SignalComputeWorker
 
   # OFF by default (flag unregistered/disabled) → byte-identical, no windowed compute. When enabled, each
   # stream is windowed-shadowed once every DUTY SCW cycles, staggered across streams by a deterministic
-  # shard so the added CH/PG load spreads evenly (DSV: even always-on is PG +1.5% / CH +13.7%; duty 1/4 →
+  # shard so the added CH/PG load spreads (deterministically, roughly evenly) across cycles rather than
+  # synchronizing (DSV: even always-on is PG +1.5% / CH +13.7%; duty 1/4 →
   # PG +0.4% / CH +3.4%). Duty is a CalibrationConstant (DB-tunable without deploy; fallback 4).
   def windowed_shadow_due?(stream)
     return false unless Flipper.enabled?(:ti_v2_cowindowed_shadow)
