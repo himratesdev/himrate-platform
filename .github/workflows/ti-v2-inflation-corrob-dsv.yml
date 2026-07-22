@@ -1,0 +1,98 @@
+name: ti-v2-inflation-corrob-dsv
+# TI v2.1 pivot DSV (2026-07-22): before wiring CcvChatCorrelation/CcvStepFunction as the F_soft
+# corroborator (c_inflation), prove the inflation-shape signal DISCRIMINATES honest-green vs amber
+# on live streams — avoid a second non-discriminative band-aid (the account-profile lesson). For each
+# live stream: build real context, run the two calibrated v1 signals, report value/metadata alongside
+# the v2 band + F_soft deficit + raid_window. READ-ONLY (builds context like SCW does routinely).
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      min_ccv:
+        required: false
+        type: string
+        default: "100"
+      sample_streams:
+        required: false
+        type: string
+        default: "10"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          cat > /tmp/infl.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          MIN_CCV = ENV["MIN_CCV"].to_i
+          N = ENV["SAMPLE_STREAMS"].to_i.clamp(1, 24)
+          def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
+
+          live_all = Stream.where(ended_at: nil).order(started_at: :desc).limit(600).to_a
+          scored = live_all.map { |s| [s, latest_ccv(s)] }.select { |(_, c)| c >= MIN_CCV }
+                          .sort_by { |(_, c)| -c }.first(N)
+          puts "live streams: #{live_all.size} | sampling #{scored.size} (ccv>=#{MIN_CCV})"
+          puts "cols: band | auth | ccvChat.val (ccvΔ% / chatΔ%) | ccvStep.val (z) | raid | verdict"
+
+          rows = []
+          scored.each do |(s, ccv)|
+            ch = s.channel
+            ctx = (TrustIndex::ContextBuilder.build(s) rescue nil)
+            next unless ctx
+            cc = (TrustIndex::Signals::CcvChatCorrelation.new.calculate(ctx) rescue nil)
+            cs = (TrustIndex::Signals::CcvStepFunction.new.calculate(ctx) rescue nil)
+            tih = (TrustIndexHistory.where(channel_id: ch.id, engine_version: "v2").order(calculated_at: :desc).first rescue nil)
+            band = tih ? "#{tih.try(:band_color)}/#{tih.try(:band_row)}" : "n/a"
+            auth = tih&.try(:authenticity)
+            fsoft = tih.respond_to?(:f_soft) ? tih.try(:f_soft) : nil
+            raid = (ctx[:recent_raids] || []).any?
+            ccm = cc&.metadata || {}
+            csm = cs&.metadata || {}
+            ccval = cc&.value
+            fires = (ccval.to_f > 0.0) || (cs&.value.to_f >= 0.5)
+            rows << { login: ch.login, ccv: ccv, band: band, auth: auth, fsoft: fsoft,
+                      ccval: ccval, ccvd: ccm[:ccv_delta_pct], chatd: ccm[:chat_delta_pct],
+                      csval: cs&.value, z: csm[:z_signal], raid: raid, fires: fires }
+            printf("== %-16s ccv=%-6d %-9s auth=%-6s | ccvChat=%-6s (Δccv=%s%% Δchat=%s%%) | ccvStep=%-6s (z=%s) | raid=%s | fires=%s\n",
+              ch.login, ccv, band, auth.inspect, ccval.inspect, ccm[:ccv_delta_pct].inspect, ccm[:chat_delta_pct].inspect,
+              cs&.value.inspect, csm[:z_signal].inspect, raid, fires)
+          end
+
+          puts "\n===== DISCRIMINATIVENESS SUMMARY ====="
+          amber = rows.select { |r| r[:band].to_s.start_with?("amber") || r[:band].to_s.start_with?("yellow") || r[:band].to_s.start_with?("red") }
+          green = rows.select { |r| r[:band].to_s.start_with?("green") }
+          fr = ->(g) { g.empty? ? "n/a" : "#{g.count { |r| r[:fires] }}/#{g.size}" }
+          puts "  inflation-signal FIRES on: amber/yellow/red streams #{fr.call(amber)} | green streams #{fr.call(green)} (excl-raid where flagged)"
+          puts "  DISCRIMINATIVE iff fires-on-amber >> fires-on-green. If both ~0 → steady-inflation snapshot (no recent STEP);"
+          puts "  the corroborator catches STEP-injection, not steady — expected, note snapshot limitation."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/infl.rb) lines)"
+
+      - name: Run probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/infl.rb ${TARGET}:/tmp/infl.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/infl.rb ${CONTAINER}:/tmp/infl.rb && docker exec -e MIN_CCV='${{ inputs.min_ccv || '100' }}' -e SAMPLE_STREAMS='${{ inputs.sample_streams || '10' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/infl.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
