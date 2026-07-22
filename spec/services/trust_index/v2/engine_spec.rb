@@ -11,7 +11,7 @@ module EngineSpecDoubles
   Context = Data.define(:raw_chatters, :v, :cell, :rho_self_lo, :clean_self_history, :i_event,
                         :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
                         :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample,
-                        :cps, :reputation)
+                        :cps, :reputation, :ccv_chat_divergence)
   K = Data.define(:pi0, :tau_hard, :tau_delta, :phi_yellow, :phi_red, :q_mid, :q_hi,
                   :llr_temporal_r2, :llr_temporal_r3, :llr_temporal_r4, :llr_temporal_r7,
                   :llr_per_user_bot_score, :llr_known_bot).new(
@@ -38,7 +38,8 @@ RSpec.describe TrustIndex::V2::Engine do
     base = { raw_chatters: chatters, v: 5000, cell: cell, rho_self_lo: 0.03, clean_self_history: true,
              i_event: false, raid_window: false, n_chat_eff: chatters.size, q: 0.9,
              cold_start_tier: "full", self_history_stable: true, chatter_quality_high: true,
-             stream_count: 20, unattributed_surge: false, thin_sample: false, cps: 70, reputation: "Стабильная" }
+             stream_count: 20, unattributed_surge: false, thin_sample: false, cps: 70,
+             reputation: "Стабильная", ccv_chat_divergence: 0.0 }
     EngineSpecDoubles::Context.new(**base.merge(over))
   end
 

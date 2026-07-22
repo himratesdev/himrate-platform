@@ -42,6 +42,20 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(c.reputation).to eq({ band: "stable", tier: "full", stream_count: 20 })
     end
 
+    # TI v2.1 inflation corroborator input: build_v2 reuses the calibrated v1 CcvChatCorrelation
+    # signal to compute ccv_chat_divergence (CCV↑ ∧ chat-flat = silent-injection signature).
+    it "wires ccv_chat_divergence from CcvChatCorrelation when CCV rises with flat chat" do
+      h = ctx_hash(chatters: %w[a]).merge(
+        ccv_series_10min: [ { ccv: 100, timestamp: 10.minutes.ago }, { ccv: 200, timestamp: Time.current } ],
+        chat_rate_10min: [ { msg_count: 10, timestamp: 10.minutes.ago }, { msg_count: 10, timestamp: Time.current } ]
+      )
+      expect(described_class.build_v2(stream, h).ccv_chat_divergence).to be > 0.0
+    end
+
+    it "ccv_chat_divergence is 0.0 (neutral) when the ccv/chat series are absent — dormant-safe" do
+      expect(described_class.build_v2(stream, ctx_hash(chatters: %w[a])).ccv_chat_divergence).to eq(0.0)
+    end
+
     it "wires temporal_recurrence R for fraud tiers (spam AND unknown); only the utility allowlist is excluded" do
       flagged = {
         "botspam" => { bot_flag_tier: "confirmed", bot_type: "spam", event_count: 9, max_concurrent_channels: 12 },

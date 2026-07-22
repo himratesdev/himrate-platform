@@ -28,7 +28,7 @@ module TrustIndex
 
       # Canonical driver contract (L4 builds this; the class stays duck-typed for isolated tests).
       Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
-                            :c_hard, :c_self, :raid_window, :cold_start_tier)
+                            :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier)
 
       def self.call(drivers:, k:)
         new(drivers, k).call
@@ -50,8 +50,13 @@ module TrustIndex
 
       private
 
+      # C_hard (named-bot fraction) ∨ C_self (self-history inflation event) ∨ C_inflation (TI v2.1:
+      # CCV-shape silent-injection signature — the INDEPENDENT second corroborator that breaks the
+      # single-source monoculture). Only the f_soft_lo_ratio branch of rows 1-2 reads this; the n_frac
+      # branch stays B_hard-only (the publicly-named fraction). C_inflation ships dormant (its L4 gate
+      # keys off inflation_corrob_enabled), so pre-flip corroborated? == c_hard || c_self exactly.
       def corroborated?
-        @d.c_hard || @d.c_self
+        @d.c_hard || @d.c_self || @d.c_inflation
       end
 
       def row1?

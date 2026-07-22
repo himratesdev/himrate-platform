@@ -4,7 +4,7 @@ require "rails_helper"
 
 module ReasonCodeBuilderSpecDoubles
   Band = Data.define(:row, :sub)
-  Ctx = Data.define(:c_hard, :c_self, :named_count, :named_pct, :self_history_stable,
+  Ctx = Data.define(:c_hard, :c_self, :c_inflation, :named_count, :named_pct, :self_history_stable,
                     :chatter_quality_high, :cold_start_tier, :stream_count,
                     :raid_window_suppressed_i, :unattributed_surge, :thin_sample)
 end
@@ -15,9 +15,9 @@ RSpec.describe TrustIndex::V2::ReasonCodeBuilder do
   end
 
   def ctx(**over)
-    base = { c_hard: false, c_self: false, named_count: 0, named_pct: 0.0, self_history_stable: false,
-             chatter_quality_high: false, cold_start_tier: "full", stream_count: 20,
-             raid_window_suppressed_i: false, unattributed_surge: false, thin_sample: false }
+    base = { c_hard: false, c_self: false, c_inflation: false, named_count: 0, named_pct: 0.0,
+             self_history_stable: false, chatter_quality_high: false, cold_start_tier: "full",
+             stream_count: 20, raid_window_suppressed_i: false, unattributed_surge: false, thin_sample: false }
     ReasonCodeBuilderSpecDoubles::Ctx.new(**base.merge(over))
   end
 
@@ -29,6 +29,17 @@ RSpec.describe TrustIndex::V2::ReasonCodeBuilder do
     result = described_class.call(band: band(1), ctx: ctx(c_hard: true, named_count: 290, named_pct: 58.0))
     hnf = result.find { |c| c.code == "HARD_NAMED_FRACTION" }
     expect(hnf.params).to eq({ n: 290, pct: 58.0 })
+  end
+
+  # TI v2.1 — the CCV-shape corroborator surfaces a per-STREAM (never per-person) reason code.
+  it "RED/YELLOW → INFLATION_EVENT_CORROBORATION when C_inflation corroborates the soft deficit" do
+    expect(codes(band(2), c_inflation: true)).to include("INFLATION_EVENT_CORROBORATION")
+  end
+
+  it "suppresses INFLATION_EVENT_CORROBORATION when C_hard already named a fraction (no redundant code)" do
+    result = codes(band(1), c_hard: true, c_inflation: true)
+    expect(result).to include("HARD_NAMED_FRACTION")
+    expect(result).not_to include("INFLATION_EVENT_CORROBORATION")
   end
 
   it "RED/YELLOW → SELF_HISTORY_INFLATION_EVENT when C_self" do

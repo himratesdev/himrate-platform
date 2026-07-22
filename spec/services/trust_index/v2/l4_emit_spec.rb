@@ -7,19 +7,27 @@ module L4EmitSpecDoubles
   Soft = Data.define(:eihc, :rho_obs, :f_soft, :f_soft_lo, :f_soft_hi)
   Fraud = Data.define(:f_hat, :f_hat_lo, :f_hat_hi, :f_self)
   Ctx = Data.define(:v, :n_chat_eff, :q, :i_event, :raid_window, :cold_start_tier, :named_count,
-                    :self_history_stable, :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample)
+                    :self_history_stable, :chatter_quality_high, :stream_count, :unattributed_surge,
+                    :thin_sample, :ccv_chat_divergence)
   K = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi).new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8)
+  # TI v2.1 — K variant with the inflation corroborator ENABLED (for the escalation test). The
+  # dormant default (enabled 0.0) is exercised by the base K above, which lacks the keys entirely →
+  # L4's respond_to? guard makes C_inflation false (byte-identical to pre-v2.1).
+  K_INFLATION_ON = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :inflation_corrob_enabled, :phi_inflation)
+                       .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8,
+                            inflation_corrob_enabled: 1.0, phi_inflation: 0.30)
 end
 
 RSpec.describe TrustIndex::V2::L4Emit do
   let(:k) { L4EmitSpecDoubles::K }
 
-  def emit(hard:, soft:, fraud:, **ctx_over)
+  def emit(hard:, soft:, fraud:, k_override: nil, **ctx_over)
     ctx_base = { v: 5000, n_chat_eff: 500, q: 0.9, i_event: false, raid_window: false,
                  cold_start_tier: "full", named_count: 0, self_history_stable: false,
-                 chatter_quality_high: false, stream_count: 20, unattributed_surge: false, thin_sample: false }
+                 chatter_quality_high: false, stream_count: 20, unattributed_surge: false,
+                 thin_sample: false, ccv_chat_divergence: 0.0 }
     described_class.call(hard: hard, soft: soft, fraud: fraud,
-                         ctx: L4EmitSpecDoubles::Ctx.new(**ctx_base.merge(ctx_over)), k: k)
+                         ctx: L4EmitSpecDoubles::Ctx.new(**ctx_base.merge(ctx_over)), k: k_override || k)
   end
 
   def hard(lo)
@@ -82,5 +90,33 @@ RSpec.describe TrustIndex::V2::L4Emit do
     expect(r.confirmed_anomaly).to be(true)
     expect([ 1, 2 ]).to include(r.band.row)          # accusatory (RED/YELLOW), not AMBER
     expect(r.reason_codes.map(&:code)).to include("SELF_HISTORY_INFLATION_EVENT")
+  end
+
+  # ── TI v2.1 inflation-event corroborator (BUG-A/B pivot) ──
+  # DORMANT default: the base K lacks the inflation constants → respond_to? guard makes C_inflation
+  # false, so even a maximal CCV-shape signature leaves a soft deficit at AMBER (byte-identical to
+  # pre-v2.1). This is the zero-behavior-change proof for merge.
+  it "DORMANT: default K → C_inflation never fires; a max CCV-shape signature leaves the deficit at AMBER" do
+    r = emit(hard: hard(0.0), soft: soft(1250.0), fraud: fraud(1250.0), ccv_chat_divergence: 0.9)
+    expect([ r.band.row, r.band.color ]).to eq([ 6, "amber" ])
+    expect(r.confirmed_anomaly).to be(false)
+    expect(r.reason_codes.map(&:code)).not_to include("INFLATION_EVENT_CORROBORATION")
+  end
+
+  # FLIP (PO-gated, post-BUG-A): with the corroborator enabled, a soft deficit corroborated by the
+  # CCV-shape inflation signature escalates AMBER→YELLOW — the monoculture break, naming nobody.
+  it "ENABLED: soft deficit + inflation signature escalates AMBER→YELLOW + INFLATION_EVENT_CORROBORATION" do
+    r = emit(hard: hard(0.0), soft: soft(1250.0), fraud: fraud(1250.0),
+             ccv_chat_divergence: 0.5, k_override: L4EmitSpecDoubles::K_INFLATION_ON)
+    expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
+    expect(r.confirmed_anomaly).to be(true)
+    expect(r.reason_codes.map(&:code)).to include("INFLATION_EVENT_CORROBORATION")
+  end
+
+  it "ENABLED: an organic raid window suppresses C_inflation (no false escalation)" do
+    r = emit(hard: hard(0.0), soft: soft(1250.0), fraud: fraud(1250.0),
+             ccv_chat_divergence: 0.5, raid_window: true, k_override: L4EmitSpecDoubles::K_INFLATION_ON)
+    expect(r.band.row).to eq(6) # stays AMBER — raid excluded from the corroborator
+    expect(r.confirmed_anomaly).to be(false)
   end
 end

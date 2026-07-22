@@ -10,7 +10,7 @@ module TrustIndex
     class ReasonCodeBuilder
       Code = Data.define(:code, :params)
       # Canonical ctx contract (L4 builds this; the class stays duck-typed for isolated tests).
-      Ctx = Data.define(:c_hard, :c_self, :named_count, :named_pct, :self_history_stable,
+      Ctx = Data.define(:c_hard, :c_self, :c_inflation, :named_count, :named_pct, :self_history_stable,
                         :chatter_quality_high, :cold_start_tier, :stream_count,
                         :raid_window_suppressed_i, :unattributed_surge, :thin_sample)
 
@@ -40,7 +40,11 @@ module TrustIndex
         return [] if @band.row > 2
 
         [ (@ctx.c_hard ? code("HARD_NAMED_FRACTION", { n: @ctx.named_count, pct: @ctx.named_pct }) : nil),
-          (@ctx.c_self ? code("SELF_HISTORY_INFLATION_EVENT") : nil) ]
+          (@ctx.c_self ? code("SELF_HISTORY_INFLATION_EVENT") : nil),
+          # TI v2.1: C_inflation corroborated the soft deficit (CCV rose without a matching chat-rate
+          # rise). Emitted only when it is the corroborator, not when C_hard already named a fraction
+          # (avoids a redundant code). Legal-safe, per-STREAM not per-person (names nobody).
+          (@ctx.c_inflation && !@ctx.c_hard ? code("INFLATION_EVENT_CORROBORATION") : nil) ]
       end
 
       def positive
