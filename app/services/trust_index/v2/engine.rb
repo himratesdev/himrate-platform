@@ -126,8 +126,13 @@ module TrustIndex
 
       def self_ctx(soft)
         eligible = @ctx.clean_self_history && @ctx.i_event && !@ctx.raid_window
-        # F_self shares the deficit frame: windowed V_W when co-windowed, else instant V (unchanged).
-        SelfCtx.new(eligible: eligible, v: @ctx.v_w || @ctx.v, eihc: soft.eihc, rho_self_lo: @ctx.rho_self_lo)
+        # F_self shares the deficit frame: G1 min(V_W, V_inst) when co-windowed (same young-ramp decay
+        # guard as L2/L4 — a falling online can't hide an injection), else instant V (dormant, unchanged).
+        # N-2: in decay this suppresses the F_self convert-from-honest escalation to the smaller current
+        # online — intended: a streamer whose bots LEFT mid-stream shouldn't be flagged via F_self for the
+        # earlier, now-departed inflation (ERV is point-in-time; a shrinking online hosts no live injection).
+        SelfCtx.new(eligible: eligible, v: (@ctx.v_w ? [ @ctx.v_w, @ctx.v ].min : @ctx.v),
+                    eihc: soft.eihc, rho_self_lo: @ctx.rho_self_lo)
       end
 
       def emit_ctx(post)
