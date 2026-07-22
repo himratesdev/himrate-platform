@@ -9,6 +9,16 @@ RSpec.describe "Public landing", type: :request do
   PAGES = { "/" => "Главная", "/streamers" => "Стримерам", "/brands" => "Брендам",
             "/viewers" => "Зрителям", "/methodology" => "Методология" }.freeze
 
+  describe "semantic SEO" do
+    it "gives each marketing page exactly one <h1> (was zero — key SEO signal)" do
+      PAGES.each_key do |path|
+        get path
+        h1_count = response.body.scan(/<h1[\s>]/).size
+        expect(h1_count).to eq(1), "#{path} must have exactly one <h1>, had #{h1_count}"
+      end
+    end
+  end
+
   describe "every page renders" do
     PAGES.each_key do |path|
       it "GET #{path} → 200 public HTML (no auth)" do
