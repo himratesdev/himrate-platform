@@ -9,6 +9,13 @@
 class PagesController < ApplicationController
   layout :resolve_layout
 
+  # Subdomain host canonicalization (301): marketing surfaces belong on the apex (himrate.com,
+  # SEO-indexed); the product / LK belongs on app.himrate.com (noindex). Page requests that land
+  # on the wrong production host get a permanent redirect so every surface has exactly ONE
+  # canonical URL. Scoped to PagesController → API / auth / og / up traffic (other controllers)
+  # is never touched. Skips the staging test host and dev/localhost.
+  before_action :canonicalize_host
+
   PAGES = %w[index streamers brands viewers methodology login].freeze
 
   # One action per page; @page selects the per-page JS bundle in the layout.
@@ -147,6 +154,28 @@ class PagesController < ApplicationController
   end
 
   private
+
+  # A page request is a PRODUCT surface iff its path is the login page or under /app/*. Everything
+  # else PagesController serves (the marketing pages + the public channel card /c/:login) is
+  # marketing. This mirrors #resolve_layout but is PATH-based (not action/@page-based) because the
+  # before_action runs before the action body sets @page — and path rules can't drift out of sync
+  # as new actions are added. Redirect only fires on the real production himrate.com hosts; the
+  # staging test host serves every surface unredirected, and dev/localhost is left alone.
+  APP_HOST  = "app.himrate.com"
+  APEX_HOST = "himrate.com"
+
+  def canonicalize_host
+    host = request.host
+    return unless host == APEX_HOST || host.end_with?(".himrate.com")
+    return if host == "staging.himrate.com"
+
+    product = request.path == "/login" || request.path.start_with?("/app/")
+    target  = product ? APP_HOST : APEX_HOST
+    return if host == target
+
+    redirect_to "https://#{target}#{request.fullpath}",
+                status: :moved_permanently, allow_other_host: true
+  end
 
   # The product surfaces — login + the /app/* dashboards (@brand_dashboard) — render on the `app`
   # layout (noindex, product chrome). Everything else the marketing landing serves — the marketing
