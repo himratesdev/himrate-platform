@@ -171,8 +171,13 @@ module FlipperDefaults
     # ContextBuilder read + TemporalCrossChannel TI signal. OFF by default — zero TI impact while OFF
     # (ContextBuilder returns {} → signal insufficient → excluded from the weighted score). Enable
     # per-env after the worker has populated cross_channel_temporal_flags and weighting is calibrated.
-    saas_lk_live: "LK-BACKEND" # SaaS ЛК visibility gate (screen 71 flag-off). OFF by default —
+    saas_lk_live: "LK-BACKEND", # SaaS ЛК visibility gate (screen 71 flag-off). OFF by default —
     # enable per-env when the personal cabinet launches. GET /api/v1/lk/status reads it per-user actor.
+    ti_v2_cowindowed_shadow: "T1-074" # P1 windowed shadow-compute (BUG-A flip-path). SignalComputeWorker
+    # duty-cycles a WINDOWED-ρ_obs recompute per stream and logs a v2_rho_conv="windowed" shadow line to
+    # accrue samples for the P2 re-seed — the VERDICT stays cumulative (separate flag ti_v2_cowindowed_rho).
+    # OFF by default → no windowed compute, byte-identical. Enable per-env to start accrual after the
+    # cost-DSV (win_pg ~1ms; PG +0.4% at duty 1/4). Duty = CalibrationConstant cowindowed_shadow_duty (fb 4).
   }.freeze
 end
 

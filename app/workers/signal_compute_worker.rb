@@ -173,7 +173,43 @@ class SignalComputeWorker
     TrustIndex::V2::Persistence.call(result: v2, channel: stream.channel, stream: stream,
                                      calculated_at: Time.current, ccv: v2_context.v)
     log_shadow(stream, nil, v2, v2_context)
+    accrue_windowed_shadow(stream, v2_context) if windowed_shadow_due?(stream) # P1: dormant own-flag windowed accrual
     v2
+  end
+
+  # P1 (TI v2.1 BUG-A flip-path): accrue WINDOWED ρ_obs samples for the P2 re-seed WITHOUT touching the
+  # verdict (which stays cumulative until the Phase C flip). Reuses the already-built cumulative context
+  # and only swaps in the trailing-60min L2 inputs via Data#with → the marginal cost is exactly the windowed
+  # fetch measured by ti-v2-cowindowed-cost-dsv (win_ch ~10ms CH + win_pg ~1ms PG), NOT a second full build.
+  # Emits a shadow line with v2_rho_conv="windowed" so ti-v2-shadow-mine (convention=windowed) mines it.
+  # A defect is swallowed — accrual must NEVER perturb the live cutover path.
+  def accrue_windowed_shadow(stream, v2_context)
+    roster, v_w = TrustIndex::ContextBuilder.windowed_inputs(stream)
+    return if v_w.nil? # no CCV snapshots in the window → cannot window (chat & CCV are separate pipelines)
+
+    wctx = v2_context.with(l2_roster_usernames: roster, v_w: v_w)
+    wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+    log_shadow(stream, nil, wres, wctx) # wres.rho_convention == "windowed" (v_w present) → convention=windowed mining
+  rescue StandardError => e
+    Rails.logger.error("SignalComputeWorker: windowed-shadow accrue failed (stream #{stream.id}) — #{e.message}")
+    Sentry.capture_exception(e) if defined?(Sentry)
+  end
+
+  # OFF by default (flag unregistered/disabled) → byte-identical, no windowed compute. When enabled, each
+  # stream is windowed-shadowed once every DUTY SCW cycles, staggered across streams by a deterministic
+  # shard so the added CH/PG load spreads (deterministically, roughly evenly) across cycles rather than
+  # synchronizing (DSV: even always-on is PG +1.5% / CH +13.7%; duty 1/4 →
+  # PG +0.4% / CH +3.4%). Duty is a CalibrationConstant (DB-tunable without deploy; fallback 4).
+  def windowed_shadow_due?(stream)
+    return false unless Flipper.enabled?(:ti_v2_cowindowed_shadow)
+
+    duty = CalibrationConstant.value_for("cowindowed_shadow_duty", fallback: 4).to_i
+    return false if duty <= 0
+
+    shard = stream.id.to_s.bytes.sum % duty  # deterministic per-stream (avoids String#hash's per-process seed)
+    ((Time.current.to_i / 30) % duty) == shard
+  rescue StandardError
+    false
   end
 
   # Run the v2 engine on the live stream (Context reused from the v1 build — no second CH scan) and
