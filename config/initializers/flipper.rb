@@ -119,6 +119,7 @@ module FlipperDefaults
     cleanup_worker
     trends_tab
     trends_aggregation_nightly
+    pva
   ].freeze
 
   # Hooks for upcoming features / transitional kill-switches: flag зарегистрирован,
@@ -137,8 +138,11 @@ module FlipperDefaults
     stale_stream_sweep: "BUG-251.29", # StaleStreamSweepWorker: close Stream rows with ended_at NULL
     # but no CCV activity in last 30 min. OFF by default — operator enables post-deploy after
     # confirming no false-close on legitimately live channels (e.g., dual-check against Helix).
-    pva: "TASK-113", # Personal Viewer Analytics (BE-1..BE-5 + FE). OFF by default — фича шипится
-    # инкрементально и ещё НЕ выпущена; enable per-env только после полного ship + verify (CR SF-3).
+    # pva (TASK-113): PVA is SHIPPED → moved to ALL_FLAGS (auto-enabled every boot) 2026-07-22.
+    # Root cause of the P0: it was add-only here, so a manual Flipper.enable lived only in Redis and
+    # a Redis clear / redeploy reverted it to OFF → all enrollment/aggregation workers no-op'd
+    # (return unless Flipper.enabled?(:pva)) → cold-start sources stuck "в очереди" forever, retry
+    # useless. ALL_FLAGS makes it deploy-proof (the recurring "flags not auto-created" pattern).
     # PR 1e-B (TASK-251.14): chat_messages PG table dropped — 4 chat_* flags removed
     # (chat_writes_clickhouse, chat_backfill_running, chat_reads_clickhouse_dual_read,
     # chat_reads_clickhouse). All paths now CH-only; backfill service deleted. Any future
