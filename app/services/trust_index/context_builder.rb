@@ -329,8 +329,16 @@ module TrustIndex
         return [ nil, nil ] unless cowindowed_rho_enabled?
 
         since = [ stream.started_at, COWINDOW_MINUTES.minutes.ago ].max
+        # CR must-fix: the roster filter and the V_W denominator MUST flip together. Chat (IRC) and CCV
+        # snapshots are separate pipelines, so a stream can have recent chat but a >60min CCV-snapshot
+        # gap → v_w nil. Returning [Set, nil] there would half-window (windowed EIHC over an INSTANT-V
+        # denominator = an inflated false deficit — the cross-frame confound from the other side, while
+        # engine#windowed? reads false). Compute V_W first; if it's absent, stay FULLY dormant.
+        v_w = v2_median_ccv_windowed(stream, since)
+        return [ nil, nil ] if v_w.nil?
+
         roster = Clickhouse::ChatQueries.stream_chatters_windowed(stream, since: since).to_set
-        [ roster, v2_median_ccv_windowed(stream, since) ]
+        [ roster, v_w ]
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: v2 cowindowed inputs failed (#{e.message})")
         [ nil, nil ]

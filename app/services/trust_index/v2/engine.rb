@@ -113,6 +113,8 @@ module TrustIndex
 
       # TI v2.1 BUG-A: co-windowed mode is active iff ContextBuilder populated v_w (flag ON). Drives
       # the L2 deficit frame, the L3 disjoint-sum, and the L4 band-driver V frame. Nil ⇒ dormant.
+      # Pre-FLIP blockers (tracked in _tasks/T1-074/BUG-A-SEMANTICS-SYNTHESIS): rho_convention TIH stamp,
+      # lurker-collapse guard (honest quiet-chat → windowed EIHC→0), sparse-cell variance gate, ρ* re-seed.
       def windowed?
         !@ctx.v_w.nil?
       end

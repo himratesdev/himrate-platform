@@ -15,7 +15,8 @@ module TrustIndex
       # hard — L1 HardFloor (f_hard_lo → N_frac). soft — L2 SoftBound (f_soft_lo → band rows 1-2).
       # fraud — L3 FraudCount. ctx — v, n_chat_eff, q, i_event, raid_window, cold_start_tier,
       #   named_count, self_history_stable, chatter_quality_high, stream_count, unattributed_surge,
-      #   thin_sample. k — thresholds (phi_yellow/phi_red/q_mid/q_hi).
+      #   thin_sample, ccv_chat_divergence, v_w (BUG-A windowed band frame). k — thresholds
+      #   (phi_yellow/phi_red/q_mid/q_hi + inflation_corrob_enabled/phi_inflation).
       def self.call(hard:, soft:, fraud:, ctx:, k:)
         new(hard, soft, fraud, ctx, k).call
       end
