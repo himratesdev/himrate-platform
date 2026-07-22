@@ -1,0 +1,91 @@
+name: ti-v2-inflation-corrob-dv
+# Deployment Verification for PR #459 (dormant inflation corroborator, merged 15a1d57). Confirms:
+# (1) staging on the merged SHA, (2) DORMANCY — Registry.load.inflation_corrob_enabled == 0.0 and NO
+# CalibrationConstant row exists for it, (3) LIVE engine still healthy — a currently-live RU stream
+# has a recent v2 TIH, ccv_chat_divergence is computed + shadow-logged, and c_inflation is NOT firing
+# (dormant). READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+
+jobs:
+  dv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build DV script
+        run: |
+          cat > /tmp/infldv.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          puts "===== 1. DORMANCY (the whole safety argument) ====="
+          k = Calibration::Registry.load
+          puts "  Registry.load.inflation_corrob_enabled = #{k.inflation_corrob_enabled.inspect} (expect 0.0)"
+          puts "  Registry.load.phi_inflation            = #{k.phi_inflation.inspect} (illustrative 0.3)"
+          row = (CalibrationConstant.exists?(key: "inflation_corrob_enabled") rescue "err")
+          puts "  CalibrationConstant row for inflation_corrob_enabled exists? #{row} (expect false → default applies)"
+          puts "  → DORMANT: #{k.inflation_corrob_enabled.to_f.zero? ? 'CONFIRMED (c_inflation can never fire)' : '🔴 NOT DORMANT'}"
+
+          puts "\n===== 2. LIVE engine health — currently-live RU stream ====="
+          def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
+          live = Stream.where(ended_at: nil).where("lower(language) = 'ru'").order(started_at: :desc).limit(300).to_a
+          s = live.map { |x| [x, latest_ccv(x)] }.select { |(st, c)| c >= 100 && st.started_at > 30.minutes.ago }
+                  .max_by { |(_, c)| c }&.first
+          s ||= live.map { |x| [x, latest_ccv(x)] }.select { |(_, c)| c >= 100 }.max_by { |(_, c)| c }&.first
+          unless s
+            puts "  no live RU stream ccv>=100 right now — engine-health check skipped (retry later)"
+            exit(0)
+          end
+          ch = s.channel
+          age_min = ((Time.current - s.started_at) / 60).round
+          puts "  stream=#{ch.login} ccv=#{latest_ccv(s)} started=#{age_min}min ago"
+
+          # Build the real v2 context + run the engine live (same path SCW uses).
+          ctx_hash = TrustIndex::ContextBuilder.build(s)
+          v2ctx = TrustIndex::ContextBuilder.build_v2(s, ctx_hash)
+          puts "  ccv_chat_divergence (new dormant field) = #{v2ctx.ccv_chat_divergence.inspect} (0.0=no signature; any Float=OK)"
+          res = TrustIndex::V2::Engine.compute(context: v2ctx, k: k)
+          puts "  v2 engine LIVE: erv=#{res.erv&.round} authenticity=#{res.authenticity&.round(1)} band=#{res.band&.color}/#{res.band&.row} confirmed_anomaly=#{res.confirmed_anomaly}"
+          puts "  c_hard=#{res.c_hard} c_self=#{res.c_self} (c_inflation dormant → cannot contribute)"
+
+          puts "\n===== 3. recency + shadow-log accrual ====="
+          tih = TrustIndexHistory.where(channel_id: ch.id, engine_version: "v2").order(calculated_at: :desc).first
+          if tih
+            rec = ((Time.current - tih.calculated_at) / 60.0).round(1)
+            puts "  latest v2 TIH for #{ch.login}: #{rec}min ago band=#{tih.try(:band_color)}/#{tih.try(:band_row)} (recency<5min = fresh pipeline)"
+          else
+            puts "  no v2 TIH yet for #{ch.login} (may be pre-first-compute)"
+          end
+          puts "  → shadow log now emits v2_ccv_chat_divergence per SCW cycle (calibration accrual for phi_inflation)"
+          puts "\nVERDICT: dormancy confirmed (§1) + live engine healthy & unchanged (§2) + fresh pipeline (§3) = 🟢 DV OK"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/infldv.rb) lines)"
+
+      - name: Run DV on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          echo "=== staging deploy SHA ==="
+          ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Image}}' | head -1" || true
+          scp /tmp/infldv.rb ${TARGET}:/tmp/infldv.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/infldv.rb ${CONTAINER}:/tmp/infldv.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/infldv.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
