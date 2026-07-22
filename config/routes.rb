@@ -248,4 +248,7 @@ Rails.application.routes.draw do
   # Brand-side blogger social profile (screen 61) — descriptive cross-platform view of ANY streamer's
   # linked platforms (same keyless engine as screen 50). Brand-gated shell; NO fraud verdict on socials.
   get "app/blogger/:login", to: "pages#blogger_profile", constraints: { login: /[A-Za-z0-9_]+/ }
+  # Brand creator discovery (screen 60) — reuses the existing brand streamer search backend
+  # (GET /api/v1/brand/streamers/search), result card → the cross-platform blogger profile (screen 61).
+  get "app/creators", to: "pages#brand_creators"
 end
