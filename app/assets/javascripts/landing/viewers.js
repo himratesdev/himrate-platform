@@ -90,22 +90,6 @@ window.HR = {
     /* ---- d64021b057: drop the three "proof" check-chips from the hero ---- */
     var proofs=q('Proofs'); if(proofs) proofs.style.display='none';
 
-    /* ---- C8: HIMRATE BOT note becomes a placeholder link to the Telegram bot ---- */
-    Array.prototype.slice.call(document.querySelectorAll('.bg-\\[\\#0E1116\\]')).forEach(function(note){
-      if(!/HIMRATE BOT/i.test(note.textContent||'')) return;
-      if(note.__tg) return; note.__tg=1;
-      note.setAttribute('data-hrz-tgbot','');
-      note.setAttribute('role','link');
-      note.setAttribute('title','Открыть бота в Telegram');
-      var hint=document.createElement('div');
-      hint.className='text-[12px]/[normal] box-border w-full text-left';
-      hint.setAttribute('data-hrz-tglink','');
-      hint.style.cssText='font-family:Geist Mono,monospace;letter-spacing:.3px;margin-top:2px;';
-      hint.innerHTML='→ t.me/HimRateBot';
-      note.appendChild(hint);
-      note.addEventListener('click', function(){ /* placeholder: window.open("https://t.me/HimRateBot") */ });
-    });
-
     /* ---- C1/C2: hero headline lines rise in on load, staggered ---- */
     if(hero){ var hl=q('Headline', hero);
       if(hl){ var lines=Array.prototype.slice.call(hl.children);

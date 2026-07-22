@@ -172,13 +172,17 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).not_to match(/<meta name="robots" content="noindex/)
     end
 
-    it "emits Organization + WebSite JSON-LD structured data" do
+    it "emits Organization + WebSite JSON-LD structured data on the canonical apex" do
       get "/"
 
       expect(response.body).to include('<script type="application/ld+json">')
       expect(response.body).to include('"@type": "Organization"')
       expect(response.body).to include('"@type": "WebSite"')
       expect(response.body).to include('"name": "HimRate"')
+      # @id/url are keyed off ApplicationHelper::CANONICAL_HOST (one source of truth) —
+      # guards the DRY refactor: a nil host would emit a bare "/#organization".
+      expect(response.body).to include('"@id": "https://himrate.com/#organization"')
+      expect(response.body).to include('"@id": "https://himrate.com/#website"')
     end
 
     it "noindexes the login page (no public search value)" do

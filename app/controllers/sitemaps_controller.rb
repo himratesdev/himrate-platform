@@ -5,9 +5,11 @@
 # Google. LK app shells (/app/*), /login and API routes are intentionally excluded
 # (noindex + robots Disallow). Public and unauthenticated. (TASK-060 SEO)
 class SitemapsController < ApplicationController
-  # Indexable marketing paths, relative to the canonical apex host. Channel cards
+  # Indexable marketing + legal paths, relative to the canonical apex host. The legal
+  # pages (/privacy, /terms) are self-canonical, footer-linked and required for the
+  # Chrome Web Store listing, so they belong in the discovery set. Channel cards
   # (/c/:login) are deferred — they need a curated real-data set, not every login.
-  PATHS = %w[/ /streamers /brands /viewers /methodology].freeze
+  PATHS = %w[/ /streamers /brands /viewers /methodology /privacy /terms].freeze
 
   def show
     @urls = PATHS.map { |path| "#{ApplicationHelper::CANONICAL_HOST}#{path}" }
