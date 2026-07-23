@@ -1,0 +1,149 @@
+name: ti-v2-ievent-dsv
+# TI v2.1 i_event EPIC — DSV-first (2026-07-23): before wiring InflationEvent (C_self, the 2nd
+# independent corroborator that breaks the C_hard monoculture), PROVE each of the 6 conjunction
+# sub-signals has a LIVE data source on staging — "production data, no mocks". For N live streams,
+# report per sub-signal whether its input is computable now, plus DB-level aggregates for the two
+# load-bearing sources (FollowerSnapshot cadence/coverage, v2 self-baseline coverage). READ-ONLY
+# (builds context like SCW does routinely; reads TIH/FollowerSnapshot/CH; writes nothing).
+#
+# The 6 sub-signals of InflationEvent (all must be true to fire I=1):
+#   1. rho_dropped_vs_baseline   — current ρ_obs < self-baseline (v2_self_history rho_self_lo)
+#   2. v_above_own_trend         — current V above per-channel V-trend (TIH.ccv history)
+#   3. !raid_window              — no recent raid (ContextBuilder recent_raids — ALREADY LIVE)
+#   4. chat_arrival_below_floor  — new-chatter arrival rate below floor (CH unique_chatters windows)
+#   5. no_follower_sub_bump      — no follower/sub bump alongside surge (FollowerSnapshot delta)
+#   6. variance_below_floor_or_plateau — CCV variance below floor / plateau (ccv_snapshots)
+#   + unattributed_surge (suppressor) — provenance-less surge (raids/host/category — attribution map)
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      min_ccv:
+        required: false
+        type: string
+        default: "100"
+      sample_streams:
+        required: false
+        type: string
+        default: "12"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          cat > /tmp/ievent_dsv.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          MIN_CCV = ENV["MIN_CCV"].to_i
+          N = ENV["SAMPLE_STREAMS"].to_i.clamp(1, 24)
+          CB = TrustIndex::ContextBuilder
+          def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
+          def variance(a)
+            a = a.compact.map(&:to_f); return nil if a.size < 2
+            m = a.sum / a.size; a.sum { |x| (x - m)**2 } / (a.size - 1)
+          end
+
+          puts "===== i_event DSV — GLOBAL data availability ====="
+          %i[ti_v2_engine stream_monitor follower_snapshot temporal_cross_channel cross_channel_digest
+             ti_v2_cowindowed_rho ti_v2_cowindowed_shadow].each do |f|
+            puts "  flag #{f}: #{(Flipper.enabled?(f) rescue 'ERR')}"
+          end
+
+          # [5] FollowerSnapshot — small table, GROUP BY safe. Cadence + coverage decide whether
+          # no_follower_sub_bump is computable, and over WHAT window (surge-10min vs conversion-days).
+          fs_total   = (FollowerSnapshot.count rescue -1)
+          fs_chans   = (FollowerSnapshot.distinct.count(:channel_id) rescue -1)
+          fs_48h     = (FollowerSnapshot.where("timestamp > ?", 48.hours.ago).count rescue -1)
+          fs_delta   = (FollowerSnapshot.where.not(new_followers_24h: nil).count rescue -1)
+          fs_ge2     = (FollowerSnapshot.group(:channel_id).having("count(*) >= 2").count.size rescue -1)
+          fs_maxts   = (FollowerSnapshot.maximum(:timestamp) rescue nil)
+          puts "\n[5] no_follower_sub_bump — FollowerSnapshot (source):"
+          puts "  total_rows=#{fs_total} distinct_channels=#{fs_chans} rows_last_48h=#{fs_48h}"
+          puts "  rows_with_new_followers_24h=#{fs_delta} channels_with>=2_rows=#{fs_ge2} latest_ts=#{fs_maxts.inspect}"
+          puts "  NOTE cadence: FollowerSnapshotWorker STALE_AFTER=1.day → at most 1 row/channel/day."
+          puts "  → surge-window(10min) follower-bump = NOT computable at daily cadence."
+          puts "  → conversion-period(days) follower-vs-CCV growth = computable IFF >=2 daily rows exist."
+          puts "  → SUBS: no Helix app-token sub-count source → sub_bump has NO data (follower-only)."
+
+          # Sample N live streams by ccv desc (RU-preferred but not required — data availability is
+          # language-agnostic; live-verify later picks RU).
+          live_all = Stream.where(ended_at: nil).order(started_at: :desc).limit(600).to_a
+          scored = live_all.map { |s| [s, latest_ccv(s)] }.select { |(_, c)| c >= MIN_CCV }
+                          .sort_by { |(_, c)| -c }.first(N)
+          puts "\nlive streams: #{live_all.size} | sampling #{scored.size} (ccv>=#{MIN_CCV})"
+          puts "per-stream sub-signal data availability (Y=computable now, ~=partial/coarse, N=no data):"
+          puts "cols: login ccv | [1]rho_base [2]v_trend [4]chat_arr [5]foll_bump [6]ccv_var | selfHist raid"
+
+          agg = Hash.new(0)
+          scored.each do |(s, ccv)|
+            ch = s.channel
+            ctx  = (CB.build(s) rescue nil)
+            sh   = (CB.send(:v2_self_history, ch) rescue { clean_self_history: false, rho_self_lo: nil, self_history_stable: false })
+            # [1] rho_dropped_vs_baseline: needs a self-baseline (>=3 clean v2 rows) AND current ρ_obs.
+            s1 = sh[:clean_self_history] ? (sh[:self_history_stable] ? "Y" : "~") : "N"
+            # [2] v_above_own_trend: per-channel V-trend from TIH.ccv (v2 rows, bounded pluck).
+            ccv_hist = (TrustIndexHistory.where(channel_id: ch.id, engine_version: "v2")
+                          .where.not(ccv: nil).order(calculated_at: :desc).limit(30).pluck(:ccv) rescue [])
+            s2 = ccv_hist.size >= 10 ? "Y" : (ccv_hist.size >= 3 ? "~" : "N")
+            # [4] chat_arrival_below_floor: new-chatter arrival via CH unique-chatters windows.
+            uc60 = (Clickhouse::ChatQueries.unique_chatters(s, 60.minutes.ago.beginning_of_minute) rescue nil)
+            uc10 = (Clickhouse::ChatQueries.unique_chatters(s, 10.minutes.ago.beginning_of_minute) rescue nil)
+            s4 = (uc60 && uc10) ? "Y" : ((uc60 || uc10) ? "~" : "N")
+            # [5] no_follower_sub_bump: this channel's FollowerSnapshot rows (no has_many on Channel → query directly).
+            fsn  = (FollowerSnapshot.where(channel_id: ch.id).count rescue 0)
+            fsrec = (FollowerSnapshot.where(channel_id: ch.id).where("timestamp > ?", 7.days.ago).count rescue 0)
+            s5 = fsn >= 2 ? "~" : "N"  # best case coarse (daily), never surge-fine
+            # [6] variance_below_floor_or_plateau: ccv_snapshots in 30min window.
+            series30 = ctx ? (ctx[:ccv_series_30min] || []).map { |h| h[:ccv] } : []
+            s6 = series30.size >= 5 ? "Y" : (series30.size >= 2 ? "~" : "N")
+            raidw = ctx ? (ctx[:recent_raids] || []).any? : "?"
+
+            [s1,s2,s4,s5,s6].each_with_index { |v,i| agg["s#{[1,2,4,5,6][i]}_#{v}"] += 1 }
+            printf("== %-16s %-6d | [1]%s [2]%s [4]%s [5]%s [6]%s | selfHist=%s(p10=%s,n_ccv=%d) foll=%d(7d=%d) uc60=%s uc10=%s var30=%s raid=%s\n",
+              ch.login, ccv, s1, s2, s4, s5, s6,
+              sh[:clean_self_history], sh[:rho_self_lo].inspect, ccv_hist.size,
+              fsn, fsrec, uc60.inspect, uc10.inspect, (variance(series30)&.round(1)).inspect, raidw)
+          end
+
+          puts "\n===== SUB-SIGNAL BUILDABILITY VERDICT ====="
+          n = scored.size.to_f
+          pct = ->(k) { n.zero? ? "n/a" : "#{((agg[k]/n)*100).round}%" }
+          puts "  [1] rho_dropped_vs_baseline : Y=#{pct.call('s1_Y')} ~=#{pct.call('s1_~')} N=#{pct.call('s1_N')}  (self-baseline coverage; gated by cold-start tier)"
+          puts "  [2] v_above_own_trend       : Y=#{pct.call('s2_Y')} ~=#{pct.call('s2_~')} N=#{pct.call('s2_N')}  (TIH.ccv per-channel history)"
+          puts "  [4] chat_arrival_below_floor: Y=#{pct.call('s4_Y')} ~=#{pct.call('s4_~')} N=#{pct.call('s4_N')}  (CH unique-chatters windows)"
+          puts "  [5] no_follower_sub_bump    : Y=#{pct.call('s5_Y')} ~=#{pct.call('s5_~')} N=#{pct.call('s5_N')}  (COARSE at best — daily FollowerSnapshot cadence; subs = no source)"
+          puts "  [6] variance_below_floor    : Y=#{pct.call('s6_Y')} ~=#{pct.call('s6_~')} N=#{pct.call('s6_N')}  (ccv_snapshots 30min series)"
+          puts "  [3] raid_window + unattributed_surge : provenance = raid_attributions (LIVE); host/shoutout/category-trend attribution = design-open."
+          puts "\n  LOAD-BEARING RISK: [5] follower cadence is DAILY. If InflationEvent expects a surge-window bump, that source is DEAD →"
+          puts "  either (a) reframe no_follower_sub_bump to conversion-period (days) growth-vs-CCV, or (b) raise follower poll cadence (cost), or (c) drop sub-signal (weakens 6-conjunction)."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/ievent_dsv.rb) lines)"
+
+      - name: Run probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/ievent_dsv.rb ${TARGET}:/tmp/ievent_dsv.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/ievent_dsv.rb ${CONTAINER}:/tmp/ievent_dsv.rb && docker exec -e MIN_CCV='${{ inputs.min_ccv || '100' }}' -e SAMPLE_STREAMS='${{ inputs.sample_streams || '12' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/ievent_dsv.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
