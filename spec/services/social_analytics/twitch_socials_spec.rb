@@ -28,12 +28,17 @@ RSpec.describe SocialAnalytics::TwitchSocials do
     expect(by["rkn"]).to include(analyzable: false)             # gosuslugi → РКН flag
   end
 
-  it "returns [] for a missing channel or a channel with no socials" do
+  it "returns nil when the GQL fetch fails (distinct from «no socials») so callers can retry" do
     allow(gql).to receive(:channel_about).and_return(nil)
-    expect(described_class.call("ghost")).to eq([])
+    expect(described_class.call("ghost")).to be_nil
+  end
 
+  it "returns [] for a channel fetched OK that has no socials" do
     allow(gql).to receive(:channel_about).and_return(social_medias: nil)
     expect(described_class.call("nosocials")).to eq([])
+
+    allow(gql).to receive(:channel_about).and_return(social_medias: [])
+    expect(described_class.call("nosocials2")).to eq([])
   end
 
   it "is empty for blank input without calling Twitch" do

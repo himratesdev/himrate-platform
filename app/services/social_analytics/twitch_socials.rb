@@ -32,12 +32,19 @@ module SocialAnalytics
       @login = login.to_s.strip.downcase
     end
 
-    # → [{ platform:, title:, url:, handle:, analyzable: }] (empty on missing channel / no socials).
+    # → [{ platform:, title:, url:, handle:, analyzable: }].
+    # Contract: `[]` = fetched OK, channel genuinely has no socials; `nil` = the GQL fetch FAILED
+    # (channel_about returned nil after GqlClient's own 429/5xx retries) — callers that persist a
+    # footprint index must distinguish these (stamp on `[]` = «no socials», skip+retry on `nil` = a
+    # transient failure, so a channel that DOES have socials isn't frozen as empty). Existing callers
+    # that do `TwitchSocials.call(...) || []` are unaffected.
     def call
       return [] if @login.blank?
 
       about = Twitch::GqlClient.new.channel_about(channel_login: @login)
-      socials = about && about[:social_medias]
+      return nil if about.nil? # fetch failed (not "no socials") — let the caller decide to retry
+
+      socials = about[:social_medias]
       return [] if socials.blank?
 
       socials.filter_map { |sm| normalize(sm) }
