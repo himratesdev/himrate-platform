@@ -215,6 +215,15 @@ Sidekiq.configure_server do |config|
         "class" => "CrossChannelIntelligenceWorker",
         "queue" => "monitoring",
         "description" => "T1-057: refresh CrossChannelDigest + overlap edges + temporal bot flags from CH (1 cycle/5min). Per-section Flipper-gated."
+      },
+      # SA-2: keep the social-footprint index (channel_social_links) fresh from Twitch socialMedias
+      # (keyless GQL). Bounded ≤100/run once-per-channel-per-7-days (stamped social_synced_at) → clears
+      # the ~640/day backlog in bursts then idles. On :long_running (external GQL). Gated :social_footprint_index.
+      "social_footprint_index" => {
+        "cron" => "*/15 * * * *", # Every 15 minutes
+        "class" => "Social::FootprintIndexWorker",
+        "queue" => "long_running",
+        "description" => "SA-2: refresh channel_social_links from Twitch socialMedias (≤100/run, 7-day cadence, gated :social_footprint_index)"
       }
     }
 

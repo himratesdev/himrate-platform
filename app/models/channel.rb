@@ -8,6 +8,8 @@ class Channel < ApplicationRecord
   has_many :trust_index_histories, dependent: :destroy
   has_one :streamer_reputation, dependent: :destroy
   has_one :channel_protection_config, dependent: :destroy
+  # SA-2 social-footprint index (Twitch socialMedias). delete_all: no callbacks, bounded per channel.
+  has_many :social_links, class_name: "ChannelSocialLink", dependent: :delete_all
   # SF-5 CR iter 2: delete_all vs destroy — aggregate data без callbacks,
   # scale 1825 rows/channel × 100k channels × 5y → single SQL DELETE vs N+1.
   has_many :trends_daily_aggregates, dependent: :delete_all
