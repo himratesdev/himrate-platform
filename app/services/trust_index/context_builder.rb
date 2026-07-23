@@ -137,8 +137,8 @@ module TrustIndex
       fol = v2_follower_series(stream.channel)
       series = (context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f }
       rho_dropped = if wctx.self_history_stable && wctx.rho_self_lo && wres.rho_obs
-                      wres.rho_obs < wctx.rho_self_lo
-                    end
+        wres.rho_obs < wctx.rho_self_lo
+      end
       {
         stream_id: stream.id, channel_id: stream.channel_id,
         rho_obs: wres.rho_obs, rho_self_lo: wctx.rho_self_lo, rho_dropped: rho_dropped,
