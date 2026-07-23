@@ -222,6 +222,28 @@ RSpec.describe SignalComputeWorker do
       worker.perform(stream.id)
       expect(Rails.logger).not_to have_received(:info).with(/"v2_rho_conv":"windowed"/)
     end
+
+    it "PR-i4: when ti_v2_ie_shadow is ON + windowed due, emits a SEPARATE SCW ievt magnitude line (honest-corpus accrual)" do
+      stream.ccv_snapshots.create!(ccv_count: 500, timestamp: 1.minute.ago)
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_cowindowed_shadow).and_return(true)
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_ie_shadow).and_return(true)
+      allow(worker).to receive(:windowed_shadow_due?).and_return(true)
+      allow(TrustIndex::ContextBuilder).to receive(:windowed_inputs).and_return([ Set.new(%w[u1 u2]), 400 ])
+      allow(Rails.logger).to receive(:info)
+      worker.perform(stream.id)
+      expect(Rails.logger).to have_received(:info).with(/SCW ievt.*"rho_conv":"windowed"/)
+    end
+
+    it "PR-i4: NO SCW ievt line when ti_v2_ie_shadow is OFF (zero added cost, dormant)" do
+      stream.ccv_snapshots.create!(ccv_count: 500, timestamp: 1.minute.ago)
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_cowindowed_shadow).and_return(true)
+      # ti_v2_ie_shadow falls through to the general `enabled? → false` stub (before block)
+      allow(worker).to receive(:windowed_shadow_due?).and_return(true)
+      allow(TrustIndex::ContextBuilder).to receive(:windowed_inputs).and_return([ Set.new(%w[u1 u2]), 400 ])
+      allow(Rails.logger).to receive(:info)
+      worker.perform(stream.id)
+      expect(Rails.logger).not_to have_received(:info).with(/SCW ievt/)
+    end
   end
 
   # TASK-039 FR-019: enqueue Trends::AnomalyAttributionWorker per created anomaly ID

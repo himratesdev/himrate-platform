@@ -334,5 +334,25 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(described_class.send(:median_abs_deviation, [ 5, 5, 5, 5 ], 5)).to eq(0)
       expect(described_class.send(:median_abs_deviation, [ 1, 2, 3, 4, 5 ], 3)).to be > 0
     end
+
+    it "i_event_shadow_signals (PR-i4) returns windowed-frame magnitudes for the honest-corpus harvester" do
+      # own_ccv is newest-first (v2_self_history order desc) → high→low = a GROWING channel.
+      allow(described_class).to receive(:v2_self_history).and_return({ own_ccv_history: [ 5000, 5000, 5000, 100, 100, 100 ] })
+      allow(described_class).to receive(:v2_follower_series).and_return([ 1000, 1000 ]) # growing ccv, flat followers
+      stream = instance_double(Stream, id: SecureRandom.uuid, channel_id: channel.id, channel: channel)
+      wctx = Struct.new(:v, :rho_self_lo, :self_history_stable, :raid_window, :cold_start_tier)
+                   .new(5000, 0.03, true, false, "full")
+      wres = Struct.new(:rho_obs, :rho_convention).new(0.01, "windowed")
+      ctx = { chat_username_counts_5min: { "a" => 1 },
+              ccv_series_30min: [ { ccv: 1000 }, { ccv: 1001 }, { ccv: 999 }, { ccv: 1000 }, { ccv: 1000 } ] }
+      sig = described_class.i_event_shadow_signals(stream, ctx, wctx, wres)
+      expect(sig[:rho_obs]).to eq(0.01)                           # [1] WINDOWED rho_obs (baseline derived offline)
+      expect(sig[:rho_conv]).to eq("windowed")
+      expect(sig).not_to have_key(:rho_dropped)                   # CR SF-1: no cross-convention pre-baked boolean
+      expect(sig[:arrival_share]).to eq((1.0 / 5000).round(6))    # [4]
+      expect(sig[:conv]).to eq(0.0)                               # [5] growing, 0 follower growth
+      expect(sig[:cov]).to be_a(Numeric)                          # [6]
+      expect(sig[:self_history_stable]).to be(true)
+    end
   end
 end
