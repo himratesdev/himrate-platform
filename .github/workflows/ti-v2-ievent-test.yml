@@ -1,0 +1,167 @@
+name: ti-v2-ievent-test
+# i_event C_self one-shot controlled-botting calibration test — READ-ONLY probes (readiness_probe.rb).
+# Two modes: `readiness` (GO/NO-GO gates + target baseline; run T-24h + T-30min) and `capture` (the
+# labeled-positive datapoint of record; run at baseline + each ramp level + post-off). Both rails-runner
+# in himrate-web-staging. Field-validated (cell=rho_star/lo/hi only; SignalConfiguration=param_value).
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      mode:
+        required: true
+        type: choice
+        options: [readiness, capture]
+        default: readiness
+      login:
+        required: true
+        type: string
+      ramp_label:
+        required: false
+        type: string
+        default: "baseline"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build readiness script
+        if: ${{ inputs.mode == 'readiness' }}
+        run: |
+          cat > /tmp/ietest.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          LOGIN = ENV.fetch("LOGIN").downcase
+          ch = Channel.find_by("lower(login) = ?", LOGIN)
+          abort "NO CHANNEL for #{LOGIN}" unless ch
+          puts "===== READINESS PROBE #{LOGIN} (channel #{ch.id}) @ #{Time.current.iso8601} ====="
+
+          puts "\n[G-D] is_monitored=#{ch.is_monitored} is_pinned=#{ch.is_pinned} active=#{ch.deleted_at.nil?}  (want true/true/true)"
+
+          puts "\n[G-I] FLAGS"
+          %i[stream_monitor signal_compute ti_v2_engine ti_v2_cowindowed_shadow ti_v2_ie_shadow ti_v2_cowindowed_rho follower_snapshot big_channel_chatter_sweep].each { |f| puts "  #{f} = #{(Flipper.enabled?(f) rescue 'ERR')}" }
+          puts "  const i_event_enabled        = #{CalibrationConstant.value_for('i_event_enabled', fallback: 0.0)}  (want 0.0 = verdict dormant)"
+          puts "  const cowindowed_shadow_duty = #{CalibrationConstant.value_for('cowindowed_shadow_duty', fallback: 4)}"
+
+          # G-C retention override (SignalConfiguration uses param_value, not value)
+          ov = SignalConfiguration.find_by(signal_type: "cleanup", category: "channel:#{ch.id}", param_name: "retention_days")
+          puts "\n[G-C] retention override = #{ov ? "#{ov.param_value} days OK" : 'ABSENT — set param_value=3650 BEFORE stream'}"
+
+          completed = ch.streams.where.not(ended_at: nil).count
+          cold = (TrustIndex::ColdStartGuard.assess(ch) rescue { status: 'ERR' })
+          tier = %w[insufficient].include?(cold[:status]) ? "insufficient" : (%w[provisional_low provisional].include?(cold[:status]) ? "basic" : "full")
+          puts "\n[G-E] completed_streams=#{completed} cold_status=#{cold[:status]} tier=#{tier}  #{tier == 'insufficient' ? 'i_event SUPPRESSED' : 'not suppressed'}"
+
+          sh = TrustIndex::ContextBuilder.send(:v2_self_history, ch)
+          puts "\n[G-A] self_history_stable=#{sh[:self_history_stable]} #{sh[:self_history_stable] ? 'OK' : '[1]/C_self CANNOT fire'}  clean=#{sh[:clean_self_history]} rho_self_lo(CUMULATIVE)=#{sh[:rho_self_lo].inspect} own_ccv_n=#{sh[:own_ccv_history].size}"
+          puts "[G-F] own_ccv_history>=30 for [2]? #{sh[:own_ccv_history].size >= 30 ? 'OK' : '[2] not calibratable'}"
+
+          base = TrustIndexHistory.where(channel_id: ch.id, engine_version: "v2", c_hard: false).where("calculated_at > ?", 90.days.ago)
+          win_persisted = base.where(rho_convention: "windowed").where.not(rho_obs: nil).count
+          puts "\n[G-B] PERSISTED windowed rho_obs TIH rows = #{win_persisted}  (expected ~0 — windowed only LOGS)"
+          recon = 0
+          ch.streams.where.not(ended_at: nil).order(started_at: :desc).limit(40).each do |s|
+            ccv_ok  = s.ccv_snapshots.exists?
+            chat_ok = ((Clickhouse::ChatQueries.chat_activity_batch([s.id], s.started_at)[s.id]&.dig(:total).to_i > 0) rescue false)
+            recon += 1 if ccv_ok && chat_ok
+          end
+          puts "      reconstructable honest streams (ccv_snapshots + chat_messages survive) = #{recon}"
+          puts "      G-B verdict: #{recon >= 10 || win_persisted >= 10 ? 'OK >=10 windowed honest samples available' : '<10 — MUST accrue forward first (delays test)'}"
+
+          recent = ch.streams.where.not(ended_at: nil).order(started_at: :desc).limit(10)
+          peaks  = recent.map { |s| s.ccv_snapshots.maximum(:ccv_count) }.compact
+          puts "\n[BASELINE] normal peak CCV (last 10 max) med=#{peaks.empty? ? nil : peaks.sort[peaks.size/2]} range=#{peaks.min}..#{peaks.max}"
+          own = sh[:own_ccv_history]
+          puts "           rho_self_lo(cumulative)=#{sh[:rho_self_lo].inspect}  own_ccv med=#{own.empty? ? nil : own.sort[own.size/2]}"
+          puts "           BOT-COUNT: inject {0.3, 1.0, 3.0} x peak-CCV-median at ramp levels 1/2/3"
+
+          live = ch.streams.where(ended_at: nil).order(started_at: :desc).first
+          if live
+            cc = live.ccv_snapshots.order(timestamp: :desc).first
+            act = (Clickhouse::ChatQueries.chat_activity_batch([live.id], 5.minutes.ago)[live.id] rescue nil)
+            t = TrustIndexHistory.where(stream_id: live.id, engine_version: "v2").order(calculated_at: :desc).first
+            puts "\n[G-G/H LIVE] stream #{live.id} open"
+            puts "  ccv:  #{cc ? "#{cc.ccv_count} @ #{(Time.current-cc.timestamp).to_i}s ago" : 'NONE'}"
+            puts "  chat: #{act ? "#{act[:total]} msgs / #{act[:unique]} uniq (5min)" : 'ZERO'}  #{act && act[:total].to_i.zero? && cc ? 'WARN CCV nonzero + chat ZERO = IRC GAP' : ''}"
+            puts "  tih:  #{t ? "v2 auth=#{t.authenticity} rho_obs=#{t.rho_obs} conv=#{t.rho_convention} @ #{(Time.current-t.calculated_at).to_i}s ago" : 'NONE'}"
+          else
+            puts "\n[G-G/H LIVE] not live now (run at T-30min while live for feed checks)"
+          end
+          puts "\n==== GO iff: G-A OK, G-B OK, G-C OK, G-D OK, G-E not-suppressed, G-F OK, and (when live) G-G/H feeds fresh ===="
+          RUBY_EOF
+          echo "readiness built ($(wc -l < /tmp/ietest.rb) lines)"
+
+      - name: Build capture script
+        if: ${{ inputs.mode == 'capture' }}
+        run: |
+          cat > /tmp/ietest.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "json"
+          LOGIN = ENV.fetch("LOGIN").downcase
+          LABEL = ENV.fetch("RAMP_LABEL")
+          ch = Channel.find_by("lower(login) = ?", LOGIN); abort "NO CHANNEL" unless ch
+          s  = ch.streams.where(ended_at: nil).order(started_at: :desc).first; abort "NOT LIVE" unless s
+
+          ctx    = TrustIndex::ContextBuilder.build(s)
+          roster, v_w = TrustIndex::ContextBuilder.windowed_inputs(s)
+          abort "V_W nil — no CCV snapshot in 60min window (monitoring gap) — FIX before continuing" if v_w.nil?
+          v2c    = TrustIndex::ContextBuilder.build_v2(s, ctx)
+          wctx   = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+          wres   = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+          cres   = TrustIndex::V2::Engine.compute(context: v2c,  k: Calibration::Registry.load)
+          sig    = TrustIndex::ContextBuilder.i_event_shadow_signals(s, ctx, wctx, wres)
+          cc_sig = (TrustIndex::Signals::CcvChatCorrelation.new.calculate(ctx) rescue nil)
+          sh     = TrustIndex::ContextBuilder.send(:v2_self_history, ch)
+          cell   = v2c.cell
+
+          out = {
+            meta: { ts: Time.current.iso8601, ramp_label: LABEL, stream_id: s.id, channel_id: ch.id, login: LOGIN,
+                    v_w: v_w, v_inst: v2c.v, roster_size: roster.size,
+                    started_at: s.started_at&.iso8601, language: s.language, game_name: s.game_name },
+            i_event: sig,
+            self_history: { rho_self_lo_cumulative: sh[:rho_self_lo], self_history_stable: sh[:self_history_stable],
+                            clean_self_history: sh[:clean_self_history], own_ccv_n: sh[:own_ccv_history].size },
+            f_soft_windowed: { f_soft: wres.f_soft, f_soft_lo: wres.f_soft_lo, f_soft_hi: wres.f_soft_hi,
+                               eihc: wres.eihc, rho_obs: wres.rho_obs, authenticity: wres.authenticity, erv: wres.erv,
+                               band: "#{wres.band&.color}/#{wres.band&.row}", rho_convention: wres.rho_convention },
+            f_soft_cumulative: { f_soft: cres.f_soft, rho_obs: cres.rho_obs, authenticity: cres.authenticity,
+                                 erv: cres.erv, band: "#{cres.band&.color}/#{cres.band&.row}", rho_convention: cres.rho_convention },
+            c_inflation: { divergence: v2c.ccv_chat_divergence, raw_value: cc_sig&.value, confidence: cc_sig&.confidence,
+                           metadata: cc_sig&.metadata },
+            gates: { cold_start_tier: v2c.cold_start_tier, raid_window: v2c.raid_window, unattributed_surge: v2c.unattributed_surge },
+            cell: (cell && { rho_star: cell.rho_star&.to_f, rho_lo: cell.rho_lo&.to_f, rho_hi: cell.rho_hi&.to_f }),
+            raw_confirm: { ccv_last_s: (Time.current - (s.ccv_snapshots.maximum(:timestamp) || Time.at(0))).to_i,
+                           ccv_rows_10m: s.ccv_snapshots.where("timestamp > ?", 10.minutes.ago).count,
+                           chat_5m: (Clickhouse::ChatQueries.chat_activity_batch([s.id], 5.minutes.ago)[s.id] rescue nil),
+                           tih_v2_rows_stream: TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").count,
+                           chatters_present: s.chatters_snapshots.order(timestamp: :desc).limit(1).pluck(:chatters_present_total, :viewers_count_present) }
+          }
+          puts "CAPTURE #{out.to_json}"
+          RUBY_EOF
+          echo "capture built ($(wc -l < /tmp/ietest.rb) lines)"
+
+      - name: Run ${{ inputs.mode }} probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/ietest.rb ${TARGET}:/tmp/ietest.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/ietest.rb ${CONTAINER}:/tmp/ietest.rb && docker exec -e LOGIN='${{ inputs.login }}' -e RAMP_LABEL='${{ inputs.ramp_label || 'baseline' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/ietest.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
