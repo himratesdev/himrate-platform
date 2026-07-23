@@ -510,8 +510,11 @@ module TrustIndex
       # engine-side). GATED on i_event_enabled: DORMANT (0.0) → returns false BEFORE any ccv/follower read
       # → byte-identical cost + result to today. Each conjunct is individually permissive (recall); the
       # honest-FP=0 comes from the 6-way AND geometry + self-referential baselines + the self_history_stable
-      # gate (evaluated only on ≥10 clean own streams). NEVER-FIRE illustrative floors (99.0/0.0/-1.0) mean an
-      # accidental early enabled-flip STILL cannot accuse before honest-corpus calibration writes real values.
+      # gate (evaluated only on ≥10 clean own streams). Accidental-early-flip backstop: [4] chat-share (≥0)
+      # and [6] CoV (≥0) can never be < their 0.0 illustrative floors → the AND can't fire before real floors
+      # are calibrated (⚠ do NOT set a positive [4]/[6] floor before [2]/[5], or this backstop lifts).
+      # NOTE: the i_event_enabled read here mirrors the engine's @k.i_event_enabled (a second, torn-read-safe
+      # gate — BOTH must be enabled to fire); the engine gate (derive_i_event) is the authoritative one.
       def v2_i_event_external(channel, consts, own_ccv_history, context_hash, v)
         return false unless (consts["i_event_enabled"] || 0.0).to_f.positive?
         return false if v.nil? || v <= 0
@@ -531,6 +534,12 @@ module TrustIndex
         p90 = percentile(sorted, 0.90)
         med = percentile(sorted, 0.50)
         mad = median_abs_deviation(sorted, med)
+        # A degenerate (flat) history has MAD=0 → `med + z*mad` collapses to `med` and the z-floor gives
+        # zero protection (any above-median V would fire). No robust outlier threshold exists without spread
+        # → do NOT fire (FP-safe). This also keeps the illustrative z=99 default genuinely never-fire (the
+        # only firing path at z=99 was MAD=0). CR SHOULD-FIX #1.
+        return false unless mad.positive?
+
         z = (consts["ie_v_trend_z"] || 99.0).to_f
         v > p90 && v > med + z * mad
       end
