@@ -1,0 +1,77 @@
+name: ti-v2-ie-shadow-cost-dsv
+# i_event EPIC PR-i4 follow-up — cost-DSV before enabling ti_v2_ie_shadow fleet-wide (red-team #5).
+# accrue_i_event_shadow adds 2 bounded reads on the duty-cycled windowed-shadow path: a 2nd
+# v2_self_history scan (TIH .limit(30), indexed) + v2_follower_series (FollowerSnapshot .limit(8),
+# indexed). Time both on N live channels, report p50/p95 + fleet extrapolation. READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      sample:
+        required: false
+        type: string
+        default: "20"
+
+jobs:
+  dsv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build cost-DSV script
+        run: |
+          cat > /tmp/iecost.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          N = ENV["SAMPLE"].to_i.clamp(1, 40)
+          CB = TrustIndex::ContextBuilder
+          def ms(&b) = ((t = Process.clock_gettime(Process::CLOCK_MONOTONIC); b.call; (Process.clock_gettime(Process::CLOCK_MONOTONIC) - t) * 1000).round(2))
+          def pct(a, p) = a.empty? ? nil : a.sort[((p * (a.size - 1)).round)]
+
+          live = Stream.where(ended_at: nil).order(started_at: :desc).limit(400).to_a
+                       .select { |s| (s.channel rescue nil) }.first(N)
+          puts "sampling #{live.size} live channels — timing the 2 shadow-added bounded reads"
+          sh_t = []; fol_t = []
+          live.each do |s|
+            ch = s.channel
+            sh_t  << ms { CB.send(:v2_self_history, ch) }
+            fol_t << ms { CB.send(:v2_follower_series, ch) }
+          end
+          puts "\n===== ti_v2_ie_shadow marginal-read cost ====="
+          puts "  v2_self_history (2nd scan): p50=#{pct(sh_t,0.5)}ms p95=#{pct(sh_t,0.95)}ms max=#{sh_t.max}ms"
+          puts "  v2_follower_series        : p50=#{pct(fol_t,0.5)}ms p95=#{pct(fol_t,0.95)}ms max=#{fol_t.max}ms"
+          per = (pct(sh_t,0.5).to_f + pct(fol_t,0.5).to_f)
+          puts "  combined per shadow-tick (p50): #{per.round(2)}ms"
+          # The shadow rides the ti_v2_cowindowed_shadow duty (fb 4) — so ~1/4 of ticks. Live-stream count:
+          live_total = Stream.where(ended_at: nil).count
+          puts "  live streams now: #{live_total} | duty 1/4 → ~#{(live_total / 4.0).round} shadow-ticks/cycle"
+          puts "  added PG time/cycle @ duty 1/4 (p50): ~#{((live_total / 4.0) * per).round}ms across the cycle (spread by shard, not synchronous)"
+          puts "\n  VERDICT: SAFE to enable iff p95 both < ~50ms AND added/cycle is a small fraction of the 30s SCW window."
+          puts "  (v2_self_history already runs once/build for the verdict — this is a SECOND call; consider memoizing per-cycle if p95 high.)"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/iecost.rb) lines)"
+
+      - name: Run cost-DSV on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/iecost.rb ${TARGET}:/tmp/iecost.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/iecost.rb ${CONTAINER}:/tmp/iecost.rb && docker exec -e SAMPLE='${{ inputs.sample || '20' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/iecost.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
