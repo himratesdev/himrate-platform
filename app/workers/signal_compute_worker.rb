@@ -173,7 +173,7 @@ class SignalComputeWorker
     TrustIndex::V2::Persistence.call(result: v2, channel: stream.channel, stream: stream,
                                      calculated_at: Time.current, ccv: v2_context.v)
     log_shadow(stream, nil, v2, v2_context)
-    accrue_windowed_shadow(stream, v2_context) if windowed_shadow_due?(stream) # P1: dormant own-flag windowed accrual
+    accrue_windowed_shadow(stream, context, v2_context) if windowed_shadow_due?(stream) # P1: dormant own-flag windowed accrual
     v2
   end
 
@@ -183,15 +183,30 @@ class SignalComputeWorker
   # fetch measured by ti-v2-cowindowed-cost-dsv (win_ch ~10ms CH + win_pg ~1ms PG), NOT a second full build.
   # Emits a shadow line with v2_rho_conv="windowed" so ti-v2-shadow-mine (convention=windowed) mines it.
   # A defect is swallowed — accrual must NEVER perturb the live cutover path.
-  def accrue_windowed_shadow(stream, v2_context)
+  def accrue_windowed_shadow(stream, context, v2_context)
     roster, v_w = TrustIndex::ContextBuilder.windowed_inputs(stream)
     return if v_w.nil? # no CCV snapshots in the window → cannot window (chat & CCV are separate pipelines)
 
     wctx = v2_context.with(l2_roster_usernames: roster, v_w: v_w)
     wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
     log_shadow(stream, nil, wres, wctx) # wres.rho_convention == "windowed" (v_w present) → convention=windowed mining
+    accrue_i_event_shadow(stream, context, wctx, wres) if Flipper.enabled?(:ti_v2_ie_shadow) # PR-i4: own OFF flag
   rescue StandardError => e
     Rails.logger.error("SignalComputeWorker: windowed-shadow accrue failed (stream #{stream.id}) — #{e.message}")
+    Sentry.capture_exception(e) if defined?(Sentry)
+  end
+
+  # i_event EPIC PR-i4 — SHADOW magnitude accrual for the honest-corpus calibration. Rides the WINDOWED
+  # frame (wctx/wres from accrue_windowed_shadow) so [1] rho_dropped is mined on the same frame the engine
+  # will use at verdict time post-flip (red-team #6). Emits a SEPARATE "SCW ievt" line so ti-v2-shadow-mine
+  # (ρ*/phi_inflation) is untouched. OFF by default (ti_v2_ie_shadow HOOK flag) → zero added cost until a
+  # cost-DSV confirms the 2 bounded plucks (own-CCV re-scan + follower) are cheap on the duty-cycled path.
+  # Swallowed — accrual must NEVER perturb the live cutover path.
+  def accrue_i_event_shadow(stream, context, wctx, wres)
+    sig = TrustIndex::ContextBuilder.i_event_shadow_signals(stream, context, wctx, wres)
+    Rails.logger.info("SCW ievt #{sig.to_json}")
+  rescue StandardError => e
+    Rails.logger.error("SignalComputeWorker: i_event-shadow accrue failed (stream #{stream.id}) — #{e.message}")
     Sentry.capture_exception(e) if defined?(Sentry)
   end
 

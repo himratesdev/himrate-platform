@@ -172,8 +172,12 @@ module FlipperDefaults
     # ContextBuilder read + TemporalCrossChannel TI signal. OFF by default — zero TI impact while OFF
     # (ContextBuilder returns {} → signal insufficient → excluded from the weighted score). Enable
     # per-env after the worker has populated cross_channel_temporal_flags and weighting is calibrated.
-    saas_lk_live: "LK-BACKEND" # SaaS ЛК visibility gate (screen 71 flag-off). OFF by default —
+    saas_lk_live: "LK-BACKEND", # SaaS ЛК visibility gate (screen 71 flag-off). OFF by default —
     # enable per-env when the personal cabinet launches. GET /api/v1/lk/status reads it per-user actor.
+    # T1-074 i_event EPIC PR-i4: SCW#accrue_i_event_shadow rides the windowed-shadow duty cycle to log
+    # "SCW ievt" magnitude lines for the honest-corpus floor calibration. OFF by default (HOOK) → zero
+    # added cost until a cost-DSV confirms the 2 bounded plucks are cheap; enable per-env after.
+    ti_v2_ie_shadow: "T1-074-ievent"
     # NB: ti_v2_cowindowed_shadow (P1 windowed shadow-accrual) was PROMOTED to ALL_FLAGS 2026-07-22 —
     # the windowed-ρ_obs corpus for the P2 re-seed must accrue continuously across redeploys (HOOK_FLAGS
     # is Redis-only → reverts OFF on redeploy, PVA lesson). The added load is DSV-verified safe (win_pg

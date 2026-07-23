@@ -120,6 +120,61 @@ module TrustIndex
       compute_windowed_inputs(stream)
     end
 
+    # i_event EPIC PR-i4 — SHADOW magnitude harvester. Computes the i_event sub-signal RAW MAGNITUDES on the
+    # WINDOWED frame (wctx/wres — the frame [1] rho_dropped's honest-late-quieting FP-safety needs), UNGATED
+    # by i_event_enabled, for the honest-corpus calibration that sets the 5 floors above honest-max BEFORE the
+    # flip (the phi_inflation harvester pattern). SHADOW-ONLY — never touches the verdict. Returns a flat Hash
+    # of magnitudes (corpus-agnostic: the miner picks the honest-anchor cohort + sets floors from the
+    # distribution). [1] rho_obs comes from wres (the windowed engine result) so it is on the correct frame.
+    def self.i_event_shadow_signals(stream, context_hash, wctx, wres)
+      own_ccv = (v2_self_history(stream.channel)[:own_ccv_history] || [])
+      sorted = own_ccv.map(&:to_f).sort
+      med = sorted.any? ? percentile(sorted, 0.50) : nil
+      p90 = sorted.any? ? percentile(sorted, 0.90) : nil
+      mad = med ? median_abs_deviation(sorted, med) : nil
+      v = wctx.v.to_f
+      active5 = (context_hash[:chat_username_counts_5min] || {}).size
+      fol = v2_follower_series(stream.channel)
+      series = (context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f }
+      rho_dropped = if wctx.self_history_stable && wctx.rho_self_lo && wres.rho_obs
+                      wres.rho_obs < wctx.rho_self_lo
+                    end
+      {
+        stream_id: stream.id, channel_id: stream.channel_id,
+        rho_obs: wres.rho_obs, rho_self_lo: wctx.rho_self_lo, rho_dropped: rho_dropped,
+        v: wctx.v, ccv_n: own_ccv.size, ccv_med: med, ccv_p90: p90, ccv_mad: mad,
+        v_robust_z: (mad&.positive? && med ? ((v - med) / mad).round(3) : nil),
+        chat_active_5min: active5, arrival_share: (v.positive? ? (active5 / v).round(6) : nil),
+        fol_n: fol.size, conv: i_event_shadow_conv(fol, own_ccv), cov: i_event_shadow_cov(series),
+        raid_window: wctx.raid_window, cold_start_tier: wctx.cold_start_tier,
+        self_history_stable: wctx.self_history_stable, rho_conv: wres.rho_convention
+      }
+    end
+
+    # [5] conversion magnitude (nil when not computable): follower growth per unit mean-CCV growth, growing only.
+    def self.i_event_shadow_conv(fol, own_ccv)
+      return nil if fol.size < 2 || own_ccv.size < 4
+
+      d_fol = fol.first - fol.last
+      half = own_ccv.size / 2
+      recent = own_ccv.first(half).map(&:to_f)
+      older = own_ccv.last(half).map(&:to_f)
+      d_ccv = (recent.sum / recent.size) - (older.sum / older.size)
+      return nil unless d_ccv.positive?
+
+      (d_fol.to_f / d_ccv).round(4)
+    end
+
+    # [6] CoV magnitude (nil when <5 points or zero mean).
+    def self.i_event_shadow_cov(series)
+      return nil if series.size < I_EVENT_VAR_MIN_PTS
+
+      mean = series.sum / series.size
+      return nil unless mean.positive?
+
+      (Math.sqrt(series.sum { |x| (x - mean)**2 } / (series.size - 1)) / mean).round(4)
+    end
+
     class << self
       private
 
