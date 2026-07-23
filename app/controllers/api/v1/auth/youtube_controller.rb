@@ -54,10 +54,13 @@ module Api
           "yt_connect:#{state}"
         end
 
-        # only same-origin relative app paths are valid return targets (no open redirect)
+        # only a plain same-origin /app/ path is a valid return target — rejects `//evil`, `/app/../admin`,
+        # and any control char (belt-and-suspenders over Rack's own header validation).
+        SAFE_RETURN = %r{\A/app/[\w\-/]*\z}
+
         def safe_return(value)
           v = value.to_s
-          v.start_with?("/app/") ? v : DEFAULT_RETURN
+          SAFE_RETURN.match?(v) ? v : DEFAULT_RETURN
         end
       end
     end

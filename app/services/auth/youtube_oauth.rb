@@ -36,11 +36,15 @@ module Auth
     end
 
     # Exchange the code, resolve the connecting YouTube channel id, and persist the connection as a
-    # "youtube" AuthProvider on `user`. Raises Auth::AuthError on token failure; ActiveRecord::RecordNotUnique
-    # if that YouTube channel is already connected to a DIFFERENT HimRate user (the caller surfaces it).
+    # "youtube" AuthProvider on `user`. Raises Auth::AuthError on token/channel failure or when no
+    # channel / no durable refresh token is obtained (we never persist a half-connected state that PR-2
+    # can't poll); ActiveRecord::RecordNotUnique if that YouTube channel is already connected to a
+    # DIFFERENT HimRate user (the caller surfaces it as already_linked).
     def connect!(code:, user:)
       tokens = exchange_code(code)
       channel_id = fetch_channel_id(tokens[:access_token])
+      raise Auth::AuthError, "no YouTube channel on this Google account" if channel_id.blank?
+
       store(user, tokens, channel_id)
     end
 
@@ -58,14 +62,26 @@ module Auth
 
     def fetch_channel_id(access_token)
       response = HTTP.timeout(5).auth("Bearer #{access_token}").get(CHANNEL_URL)
-      return nil unless response.status.success?
+      # Don't swallow a non-2xx as "no channel" — a transient failure must be an error, not a silently
+      # channel-less "connected" state (which PR-2 couldn't poll).
+      raise Auth::AuthError, "YouTube channels lookup failed: #{response.status}" unless response.status.success?
 
       JSON.parse(response.body, symbolize_names: true).dig(:items, 0, :id)
     end
 
+    # find_or_initialize_by(user, provider) → the user's existing youtube row (reconnect) or a new one.
+    # save! is the race/anti-hijack guard, backed by TWO unique indexes: (provider, provider_id) →
+    # RecordNotUnique if this channel is already linked to a DIFFERENT user (never overwrites theirs);
+    # (user_id, provider) → RecordNotUnique on a concurrent same-user double-connect (no dup rows). A
+    # NEW connection MUST carry a refresh token — offline Analytics polling (PR-2) depends on it; without
+    # one we raise rather than persist a dead connection (a reconnect keeps the prior refresh token).
     def store(user, tokens, channel_id)
       provider = AuthProvider.find_or_initialize_by(user: user, provider: PROVIDER)
-      provider.provider_id = channel_id.presence || provider.provider_id.presence || "user:#{user.id}"
+      if provider.new_record? && tokens[:refresh_token].blank?
+        raise Auth::AuthError, "YouTube consent returned no refresh token (re-consent required)"
+      end
+
+      provider.provider_id = channel_id
       provider.access_token = tokens[:access_token]
       provider.refresh_token = tokens[:refresh_token] if tokens[:refresh_token].present?
       provider.expires_at = Time.current + tokens[:expires_in].to_i.seconds

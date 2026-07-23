@@ -81,5 +81,42 @@ RSpec.describe "Api::V1::Auth::Youtube (connect-flow)", type: :request do
       get "/api/v1/auth/youtube/callback", params: { code: "c", state: state }
       expect(response).to redirect_to("/app/social?youtube=already_linked")
     end
+
+    it "surfaces an OAuth failure as ?youtube=error" do
+      state = seed_state
+      oauth = instance_double(Auth::YoutubeOauth)
+      allow(Auth::YoutubeOauth).to receive(:new).and_return(oauth)
+      allow(oauth).to receive(:connect!).and_raise(Auth::AuthError, "boom")
+
+      get "/api/v1/auth/youtube/callback", params: { code: "c", state: state }
+      expect(response).to redirect_to("/app/social?youtube=error")
+    end
+
+    it "rejects a REPLAYED state (single-use) — second callback errors" do
+      state = seed_state
+      oauth = instance_double(Auth::YoutubeOauth)
+      allow(Auth::YoutubeOauth).to receive(:new).and_return(oauth)
+      allow(oauth).to receive(:connect!)
+
+      get "/api/v1/auth/youtube/callback", params: { code: "c", state: state } # consumes state
+      get "/api/v1/auth/youtube/callback", params: { code: "c", state: state } # replay
+      expect(response).to redirect_to("/app/settings?youtube=error")
+    end
+
+    it "binds ONLY to the state's user, never a browser-supplied identity" do
+      owner = user
+      attacker = create(:user)
+      state = "st_#{SecureRandom.hex(4)}"
+      Rails.cache.write("yt_connect:#{state}", { user_id: owner.id, return_to: "/app/social" }, expires_in: 10.minutes)
+
+      oauth = instance_double(Auth::YoutubeOauth)
+      allow(Auth::YoutubeOauth).to receive(:new).and_return(oauth)
+      # even when the request carries the ATTACKER's session, the connection binds to the state's owner
+      expect(oauth).to receive(:connect!).with(code: "c", user: have_attributes(id: owner.id))
+
+      get "/api/v1/auth/youtube/callback",
+          params: { code: "c", state: state },
+          headers: { "Authorization" => "Bearer #{Auth::JwtService.encode_access(attacker.id)}" }
+    end
   end
 end
