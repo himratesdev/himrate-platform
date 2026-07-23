@@ -19,7 +19,17 @@ module Calibration
       # kill-switch: 0.0 (DEFAULT, DORMANT) → C_inflation never fires → band table byte-identical to
       # today. The PO-gated flip (after BUG-A lands + phi_inflation calibrated on the honest-anchor
       # firing rate) is a data update (set enabled→1.0), no redeploy (ADR DEC-3).
-      phi_inflation: 0.30, inflation_corrob_enabled: 0.0
+      phi_inflation: 0.30, inflation_corrob_enabled: 0.0,
+      # TI v2.1 i_event self-history tripwire (C_self / F_self arm — the SECOND independent corroborator,
+      # G-monoculture fix, T1-074 i_event EPIC 2026-07-23). i_event_enabled is a bool-as-float kill-switch:
+      # 0.0 (DEFAULT, DORMANT) => engine derive_i_event returns false before reading any ie_* input =>
+      # i_event=false everywhere => corroborated?, F_self eligibility, band rows all byte-identical to today.
+      # The 4 ie_* floors gate external conjuncts [2/4/5/6]; NEVER-FIRE illustrative defaults (99.0 = V
+      # above 99 MADs never fires; 0.0/-1.0 floors never trip) so an accidental early enabled-flip still
+      # cannot false-accuse before honest-corpus calibration writes real values. PO-gated flip (after the
+      # BUG-A windowing flip + honest-FP=0 calibration) = data update (enabled=>1.0), no redeploy (DEC-3).
+      i_event_enabled: 0.0,
+      ie_v_trend_z: 99.0, ie_arrival_floor_frac: 0.0, ie_conv_floor: -1.0, ie_cv_floor: 0.0
     }.freeze
 
     K = Data.define(*ILLUSTRATIVE.keys)

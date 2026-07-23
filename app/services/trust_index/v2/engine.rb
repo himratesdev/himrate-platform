@@ -24,7 +24,12 @@ module TrustIndex
 
       Context = Data.define(
         :v, :raw_chatters, :cell, :rho_self_lo, :clean_self_history, :self_history_stable,
-        :i_event, :raid_window, :n_chat_eff, :q, :cold_start_tier, :chatter_quality_high,
+        # i_event = the FINAL self-history tripwire (C_self / F_self). The engine DERIVES it (derive_i_event,
+        # after L2) from the L2-internal deficit [1] + i_event_external + raid + enabled-gate; the builder
+        # passes i_event:false (a literal — the engine overrides). i_event_external = the pre-ANDed 5 external
+        # conjuncts [2/4/5/6] the builder computes (bounded PG/context reads), false when i_event_enabled=0.0
+        # (dormant → no fetches). Conjunct [1] rho_dropped needs L2's soft.eihc so it can't live in the builder.
+        :i_event, :i_event_external, :raid_window, :n_chat_eff, :q, :cold_start_tier, :chatter_quality_high,
         :stream_count, :unattributed_surge, :thin_sample, :reputation, :cps,
         # TI v2.1: CcvChatCorrelation value (0-1, CCV↑ ∧ chat-flat = silent-injection signature).
         # Feeds L4's C_inflation corroborator. 0.0 = no signature / dormant. Names nobody (CCV-shape).
@@ -96,8 +101,9 @@ module TrustIndex
         soft = L2Presume.call(raw: @ctx.raw_chatters, b_hard_usernames: names(post),
                               v: @ctx.v, cell: @ctx.cell, k: @k,
                               windowed_usernames: @ctx.l2_roster_usernames, v_w: @ctx.v_w)
-        fraud = L3Fuse.call(hard: hard, soft: soft, self_ctx: self_ctx(soft), sum_disjoint: windowed?)
-        emit = L4Emit.call(hard: hard, soft: soft, fraud: fraud, ctx: emit_ctx(post), k: @k)
+        i_evt = derive_i_event(soft) # i_event EPIC: derived AFTER L2 (needs soft.eihc for [1] rho_dropped)
+        fraud = L3Fuse.call(hard: hard, soft: soft, self_ctx: self_ctx(soft, i_evt), sum_disjoint: windowed?)
+        emit = L4Emit.call(hard: hard, soft: soft, fraud: fraud, ctx: emit_ctx(post, i_evt), k: @k)
         Result.new(**emit.to_h, **extras(post, hard, soft, fraud, emit))
       end
 
@@ -124,19 +130,60 @@ module TrustIndex
         !@ctx.v_w.nil?
       end
 
-      def self_ctx(soft)
-        eligible = @ctx.clean_self_history && @ctx.i_event && !@ctx.raid_window
+      # i_event EPIC (T1-074, C_self / G-monoculture fix): compose the FINAL i_event AFTER L2 (needs
+      # soft.eihc for conjunct [1] rho_dropped, which only exists inside the engine). DORMANT: the
+      # i_event_enabled=0.0 kill-switch short-circuits to false BEFORE reading any ie_* input or the
+      # external partial → byte-identical to the hardcoded-false behavior today (proof: golden spec).
+      # respond_to? keeps isolated-K unit doubles working; the golden/flip specs assert the field is
+      # present so a fumbled K-double can't merge a broken wire green (red-team SHOULD-FIX #4). Delegates
+      # the 6-way AND to InflationEvent.call so the conjunction lives in ONE place. i_event_external is the
+      # builder's pre-ANDed [2]∧[4]∧[5]∧[6]; [1] is engine-internal; [3]/tier read straight from Context.
+      def derive_i_event(soft)
+        return false unless @k.respond_to?(:i_event_enabled) && @k.i_event_enabled.to_f.positive?
+
+        InflationEvent.call(InflationEvent::Conditions.new(
+          rho_dropped_vs_baseline: rho_dropped?(soft),            # [1] ENGINE-INTERNAL (soft.eihc, self_v frame)
+          v_above_own_trend: @ctx.i_event_external,               # [2]∧[4]∧[5]∧[6] pre-ANDed by builder
+          raid_window: @ctx.raid_window,                         # [3] (negated inside InflationEvent)
+          chat_arrival_below_floor: true,                        # folded into i_event_external
+          no_follower_sub_bump: true,                            # folded into i_event_external
+          variance_below_floor_or_plateau: true,                 # folded into i_event_external
+          unattributed_surge: @ctx.unattributed_surge,
+          cold_start_tier: @ctx.cold_start_tier
+        )).i_event
+      end
+
+      # [1] rho_dropped_vs_baseline ⟺ EIHC/V < rho_self_lo ⟺ Deficit(V, EIHC, rho_self_lo) > 0 — the EXACT
+      # F_self quantity on the EXACT frame self_ctx uses (self_v + soft.eihc + rho_self_lo). No baseline
+      # (nil / not-yet-stable self-history) → false: never presume an inflation event without an honest
+      # own-history floor to fall below (matches the clean_self_history/self_history_stable gate). FP-safety
+      # of this conjunct depends on the WINDOWED frame (honest late-quieting drops V+EIHC together on the
+      # windowed roster) — the flip is sequenced AFTER the BUG-A windowing flip (PRE-FLIP-BLOCKER-MAP).
+      def rho_dropped?(soft)
+        return false if @ctx.rho_self_lo.nil? || !@ctx.self_history_stable
+
+        Deficit.call(self_v, soft.eihc, @ctx.rho_self_lo).positive?
+      end
+
+      # Shared deficit frame: G1 min(V_W, V_inst) when co-windowed (a falling online can't hide an
+      # injection), else instant V (dormant, unchanged). self_ctx (F_self) and rho_dropped? [1] MUST
+      # divide by the SAME V or [1] would gate F_self on a different deficit than F_self itself computes.
+      def self_v
+        @ctx.v_w ? [ @ctx.v_w, @ctx.v ].min : @ctx.v
+      end
+
+      def self_ctx(soft, i_evt)
+        eligible = @ctx.clean_self_history && i_evt && !@ctx.raid_window
         # F_self shares the deficit frame: G1 min(V_W, V_inst) when co-windowed (same young-ramp decay
         # guard as L2/L4 — a falling online can't hide an injection), else instant V (dormant, unchanged).
         # N-2: in decay this suppresses the F_self convert-from-honest escalation to the smaller current
         # online — intended: a streamer whose bots LEFT mid-stream shouldn't be flagged via F_self for the
         # earlier, now-departed inflation (ERV is point-in-time; a shrinking online hosts no live injection).
-        SelfCtx.new(eligible: eligible, v: (@ctx.v_w ? [ @ctx.v_w, @ctx.v ].min : @ctx.v),
-                    eihc: soft.eihc, rho_self_lo: @ctx.rho_self_lo)
+        SelfCtx.new(eligible: eligible, v: self_v, eihc: soft.eihc, rho_self_lo: @ctx.rho_self_lo)
       end
 
-      def emit_ctx(post)
-        EmitCtx.new(v: @ctx.v, n_chat_eff: @ctx.n_chat_eff, q: @ctx.q, i_event: @ctx.i_event,
+      def emit_ctx(post, i_evt)
+        EmitCtx.new(v: @ctx.v, n_chat_eff: @ctx.n_chat_eff, q: @ctx.q, i_event: i_evt,
                     raid_window: @ctx.raid_window, cold_start_tier: @ctx.cold_start_tier,
                     named_count: post.b_hard.size, self_history_stable: @ctx.self_history_stable,
                     chatter_quality_high: @ctx.chatter_quality_high, stream_count: @ctx.stream_count,

@@ -40,4 +40,16 @@ RSpec.describe TrustIndex::V2::InflationEvent do
     expect(r.i_event).to be(false)
     expect(r.unattributed_surge).to be(true)
   end
+
+  # i_event EPIC (T1-074): the production Conditions struct is the typed contract derive_i_event builds.
+  it "accepts the production Conditions struct (additive typed contract, same behavior as the duck-type)" do
+    all_hold = TrustIndex::V2::InflationEvent::Conditions.new(
+      rho_dropped_vs_baseline: true, v_above_own_trend: true, raid_window: false,
+      chat_arrival_below_floor: true, no_follower_sub_bump: true,
+      variance_below_floor_or_plateau: true, unattributed_surge: false, cold_start_tier: "full"
+    )
+    expect(described_class.call(all_hold).i_event).to be(true)
+    expect(described_class.call(all_hold.with(raid_window: true)).i_event).to be(false)
+    expect(described_class.call(all_hold.with(cold_start_tier: "insufficient")).i_event).to be(false)
+  end
 end
