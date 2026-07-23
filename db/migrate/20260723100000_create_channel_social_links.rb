@@ -17,7 +17,6 @@ class CreateChannelSocialLinks < ActiveRecord::Migration[8.0]
     create_table :channel_social_links, id: :uuid, if_not_exists: true do |t|
       t.references :channel, type: :uuid, null: false, foreign_key: true, index: false
       t.string :platform, null: false # normalized: telegram/youtube/vk/instagram/tiktok/twitter/discord/rkn/…
-      t.string :name                  # raw Twitch socialMedia.name (pre-normalization, for audit)
       t.string :title
       t.string :url, null: false
       t.string :handle
@@ -34,7 +33,12 @@ class CreateChannelSocialLinks < ActiveRecord::Migration[8.0]
               name: "idx_channel_social_links_platform", algorithm: :concurrently, if_not_exists: true
 
     add_column :channels, :social_synced_at, :datetime unless column_exists?(:channels, :social_synced_at)
+    # PARTIAL + ORDERED to exactly match FootprintIndexWorker#channels_to_sync (WHERE monitored+active,
+    # ORDER social_synced_at ASC NULLS FIRST) — mirrors index_channels_on_followers_synced_at so it stays
+    # smaller/faster than a plain btree as the pool grows to 100k (build-for-scale, no band-aid).
     add_index :channels, :social_synced_at,
+              order: { social_synced_at: "ASC NULLS FIRST" },
+              where: "is_monitored = true AND deleted_at IS NULL",
               name: "idx_channels_social_synced_at", algorithm: :concurrently, if_not_exists: true
   end
 

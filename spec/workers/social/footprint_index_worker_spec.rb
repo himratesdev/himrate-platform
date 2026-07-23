@@ -75,19 +75,35 @@ RSpec.describe Social::FootprintIndexWorker do
     expect(channel.social_links.reload.count).to eq(1)
   end
 
-  it "only picks stale / never-synced monitored channels, bounded and oldest-first" do
+  it "picks only stale/never-synced monitored channels, BOUNDED (MAX_PER_RUN) and OLDEST-first" do
+    stub_const("#{described_class}::MAX_PER_RUN", 2)
+    # eligible (monitored, stale/null), in age order oldest→newest:
+    create(:channel, login: "oldest", is_monitored: true, social_synced_at: 40.days.ago)
+    create(:channel, login: "middle", is_monitored: true, social_synced_at: 20.days.ago)
+    create(:channel, login: "newest_stale", is_monitored: true, social_synced_at: 8.days.ago)
+    # ineligible:
     fresh = create(:channel, login: "fresh", is_monitored: true, social_synced_at: 1.hour.ago)
-    stale = create(:channel, login: "stale", is_monitored: true, social_synced_at: 30.days.ago)
-    unmonitored = create(:channel, login: "unmon", is_monitored: false, social_synced_at: nil)
+    create(:channel, login: "unmon", is_monitored: false, social_synced_at: nil)
 
-    allow(SocialAnalytics::TwitchSocials).to receive(:call).and_return([])
-    expect(SocialAnalytics::TwitchSocials).to receive(:call).with("stale").and_return([]).ordered
-    # fresh + unmonitored must NOT be fetched
-    expect(SocialAnalytics::TwitchSocials).not_to receive(:call).with("fresh")
-    expect(SocialAnalytics::TwitchSocials).not_to receive(:call).with("unmon")
+    fetched = []
+    allow(SocialAnalytics::TwitchSocials).to receive(:call) { |login| fetched << login; [] }
 
     described_class.new.perform
 
+    # bound = 2 (not 3 eligible); order = oldest first; fresh + unmonitored excluded
+    expect(fetched).to eq(%w[oldest middle])
     expect(fresh.reload.social_synced_at).to be_within(2.minutes).of(1.hour.ago)
+  end
+
+  it "prefers never-synced (NULL) channels first (NULLS FIRST)" do
+    create(:channel, login: "has_stamp", is_monitored: true, social_synced_at: 100.days.ago)
+    create(:channel, login: "never", is_monitored: true, social_synced_at: nil)
+
+    fetched = []
+    allow(SocialAnalytics::TwitchSocials).to receive(:call) { |login| fetched << login; [] }
+
+    described_class.new.perform
+
+    expect(fetched.first).to eq("never")
   end
 end

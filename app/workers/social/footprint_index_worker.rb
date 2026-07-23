@@ -33,7 +33,9 @@ module Social
     private
 
     def channels_to_sync
-      Channel.where(is_monitored: true, deleted_at: nil)
+      # `.monitored.active` (not inline where) so the query predicate stays provably in lockstep with the
+      # partial index `idx_channels_social_synced_at` (WHERE is_monitored=true AND deleted_at IS NULL).
+      Channel.monitored.active
              .where("social_synced_at IS NULL OR social_synced_at < ?", STALE_AFTER.ago)
              .order(Arel.sql("social_synced_at ASC NULLS FIRST"))
              .limit(MAX_PER_RUN)
