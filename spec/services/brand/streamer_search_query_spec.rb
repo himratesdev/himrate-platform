@@ -59,6 +59,24 @@ RSpec.describe Brand::StreamerSearchQuery do
     expect(logins(result)).to eq(%w[en_ch])
   end
 
+  it "filters by a linked social platform (SA-2 footprint index)" do
+    tg = make_channel(login: "tg_ch", ccv: 5_000, erv: 80.0)
+    yt = make_channel(login: "yt_ch", ccv: 6_000, erv: 80.0)
+    tg.social_links.create!(platform: "telegram", url: "https://t.me/tg_ch", analyzable: true)
+    yt.social_links.create!(platform: "youtube", url: "https://youtube.com/c/yt", analyzable: true)
+
+    result = described_class.new(platform: "telegram").call
+    expect(logins(result)).to eq(%w[tg_ch])
+  end
+
+  it "ignores an unknown/non-analyzable platform value (unfiltered)" do
+    make_channel(login: "any_ch", ccv: 5_000, erv: 80.0)
+
+    result = described_class.new(platform: "myspace").call
+    expect(logins(result)).to include("any_ch")
+    expect(result[:deferred]).not_to include("platforms") # platform filter is now functional
+  end
+
   it "filters by latest classification" do
     make_channel(login: "clean",  ccv: 5_000, erv: 80.0, classification: "trusted")
     make_channel(login: "sus",    ccv: 9_000, erv: 80.0, classification: "suspicious")
