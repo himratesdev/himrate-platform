@@ -239,6 +239,8 @@ RSpec.describe TrustIndex::ContextBuilder do
   # at i_event_enabled=1.0, which the end-to-end build path never sets). Direct .send tests exercise the
   # crash-safety (nil/empty/degenerate) + FP-safety (never-fire at illustrative floors) claims.
   describe "i_event external-conjunct predicates (crash + FP safety on degenerate data)" do
+    let(:channel) { create(:channel) } # sibling of the .build_v2 group → its own channel let
+
     def consts(over = {})
       { "i_event_enabled" => 1.0, "ie_v_trend_z" => 99.0, "ie_arrival_floor_frac" => 0.0,
         "ie_conv_floor" => -1.0, "ie_cv_floor" => 0.0 }.merge(over)
