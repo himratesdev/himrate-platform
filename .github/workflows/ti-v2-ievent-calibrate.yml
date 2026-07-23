@@ -1,0 +1,144 @@
+name: ti-v2-ievent-calibrate
+# i_event C_self floor calibration ANALYZER — the "tune the weights" tool. Samples the honest-anchor
+# cohort LIVE (GREEN, c_hard=false, self_history_stable, no raid) → per-metric honest distribution →
+# RECOMMENDED floors (honest-tail + margin, the phi_inflation pattern). Optionally recomputes a LABELED-
+# POSITIVE (a live botted stream_id) → recall check (does each metric trip the recommended floor?).
+# READ-ONLY. Outputs the CalibrationConstant values to seed (ie_v_trend_z / ie_arrival_floor_frac /
+# ie_conv_floor / ie_cv_floor) — the operator/PO reviews + approves before the PO-gated flip.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      honest_sample:
+        required: false
+        type: string
+        default: "150"
+      fake_stream_id:
+        required: false
+        type: string
+        default: ""
+      margin:
+        required: false
+        type: string
+        default: "0.20"
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build calibration script
+        run: |
+          cat > /tmp/iecal.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          N = ENV.fetch("HONEST_SAMPLE", "150").to_i.clamp(10, 400)
+          FAKE = ENV["FAKE_STREAM_ID"].to_s
+          MARGIN = ENV.fetch("MARGIN", "0.20").to_f
+          CB = TrustIndex::ContextBuilder
+          K = Calibration::Registry.load
+          def pct(a, p) a = a.compact.sort; a.empty? ? nil : a[((p*(a.size-1)).round)] end
+
+          # Compute the i_event sub-signal magnitudes (windowed frame) for a live stream — the exact
+          # i_event_shadow_signals path, reused so honest + fake are measured identically.
+          def mags(s)
+            ctx = CB.build(s)
+            roster, v_w = CB.windowed_inputs(s)
+            return nil if v_w.nil?
+            v2c = CB.build_v2(s, ctx)
+            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+            wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+            sig = CB.i_event_shadow_signals(s, ctx, wctx, wres)
+            { z: sig[:v_robust_z], share: sig[:arrival_share], cov: sig[:cov], rho_obs: sig[:rho_obs],
+              conv: sig[:conv], stable: sig[:self_history_stable], band: "#{wres.band&.color}/#{wres.band&.row}",
+              f_soft: wres.f_soft, auth: wres.authenticity }
+          rescue => e
+            nil
+          end
+
+          # ---- HONEST cohort: live GREEN + c_hard=false + self_history_stable + no raid ----
+          puts "===== i_event floor calibration (honest_sample<=#{N}, margin=#{MARGIN}) ====="
+          live = Stream.where(ended_at: nil).order(started_at: :desc).limit(600).to_a
+          honest = []; scanned = 0
+          live.each do |s|
+            break if honest.size >= N
+            scanned += 1
+            t = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(calculated_at: :desc).first
+            next unless t && t.c_hard == false && t.band_color.to_s == "green" # GREEN = honest (rows 3/4); c_hard=false excludes named-bot streams
+            m = mags(s)
+            next unless m && m[:stable] # only self_history_stable streams have a valid [1]/C_self frame
+            honest << m
+          end
+          puts "honest cohort: #{honest.size} (scanned #{scanned} live GREEN stable streams)"
+          abort "too few honest samples (#{honest.size}) — widen or retry" if honest.size < 10
+
+          zs   = honest.map { |m| m[:z] }.compact
+          shs  = honest.map { |m| m[:share] }.compact
+          covs = honest.map { |m| m[:cov] }.compact
+          puts "\n--- honest distributions (the floor must NOT fire on these) ---"
+          puts "  [2] v_robust_z : p50=#{pct(zs,0.5)} p90=#{pct(zs,0.9)} p99=#{pct(zs,0.99)} max=#{zs.max}  (n=#{zs.size})"
+          puts "  [4] arrival_share: p1=#{pct(shs,0.01)} p10=#{pct(shs,0.10)} p50=#{pct(shs,0.5)} min=#{shs.min}  (n=#{shs.size})"
+          puts "  [6] cov        : p1=#{pct(covs,0.01)} p10=#{pct(covs,0.10)} p50=#{pct(covs,0.5)} min=#{covs.min}  (n=#{covs.size})"
+
+          # RECOMMENDED floors: [2] fires when z>floor → floor ABOVE honest-p99 (+margin). [4]/[6] fire when
+          # metric<floor → floor BELOW honest-p1 (−margin) so honest never trips; the labeled-positive (low
+          # share / low cov / high z) must sit on the firing side. conv[5] = multi-day, not calibrated here.
+          z_floor   = pct(zs,0.99) ? (pct(zs,0.99) * (1 + MARGIN)).round(2) : 99.0
+          arr_floor = pct(shs,0.01) ? (pct(shs,0.01) * (1 - MARGIN)).round(6) : 0.0
+          cov_floor = pct(covs,0.01) ? (pct(covs,0.01) * (1 - MARGIN)).round(4) : 0.0
+          puts "\n--- RECOMMENDED floors (honest-tail + #{(MARGIN*100).to_i}% margin) ---"
+          puts "  ie_v_trend_z        = #{z_floor}   (fires when robust-z > this)"
+          puts "  ie_arrival_floor_frac = #{arr_floor}  (fires when 5min chat-share < this)"
+          puts "  ie_cv_floor         = #{cov_floor}  (fires when CoV < this)"
+          puts "  ie_conv_floor       = (NOT calibrated — [5] is multi-day; keep -1.0 until a follower series exists)"
+          # honest firing rate at these floors (MUST be ~0)
+          hz = zs.count { |z| z > z_floor }; ha = shs.count { |x| x < arr_floor }; hc = covs.count { |x| x < cov_floor }
+          puts "  honest false-fire @ these floors: [2] #{hz}/#{zs.size}  [4] #{ha}/#{shs.size}  [6] #{hc}/#{covs.size}  (target 0/0/0)"
+
+          # ---- LABELED POSITIVE (optional): a live botted stream_id ----
+          unless FAKE.empty?
+            fs = Stream.find_by(id: FAKE)
+            if fs && fs.ended_at.nil?
+              fm = mags(fs)
+              if fm
+                puts "\n--- LABELED POSITIVE (botted stream #{FAKE}) ---"
+                puts "  [2] z=#{fm[:z].inspect}  [4] share=#{fm[:share].inspect}  [6] cov=#{fm[:cov].inspect}  rho_obs=#{fm[:rho_obs].inspect} band=#{fm[:band]} f_soft=#{fm[:f_soft]} auth=#{fm[:auth]}"
+                r2 = fm[:z] && fm[:z] > z_floor; r4 = fm[:share] && fm[:share] < arr_floor; r6 = fm[:cov] && fm[:cov] < cov_floor
+                puts "  RECALL (does it trip?): [2]=#{r2} [4]=#{r4} [6]=#{r6}  → external-conjunct AND ([2]∧[4]∧[6]) = #{r2 && r4 && r6}"
+                puts "  (i_event also needs [1] rho_dropped windowed-baseline + ¬raid + tier; F_soft deficit=#{fm[:f_soft]} corroborates independently.)"
+              else
+                puts "\n[FAKE] mags nil (V_W nil — no CCV in 60min window) for #{FAKE}"
+              end
+            else
+              puts "\n[FAKE] stream #{FAKE} not found or not live — provide a currently-live botted stream_id"
+            end
+          end
+          puts "\nNEXT: review floors → seed CalibrationConstant (ie_*) → STRICT live-verify → PO-gated flip (i_event_enabled=1.0)."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/iecal.rb) lines)"
+
+      - name: Run calibration on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/iecal.rb ${TARGET}:/tmp/iecal.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/iecal.rb ${CONTAINER}:/tmp/iecal.rb && docker exec -e HONEST_SAMPLE='${{ inputs.honest_sample || '150' }}' -e FAKE_STREAM_ID='${{ inputs.fake_stream_id }}' -e MARGIN='${{ inputs.margin || '0.20' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/iecal.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
