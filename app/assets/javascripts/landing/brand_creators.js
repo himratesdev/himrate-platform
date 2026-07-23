@@ -20,6 +20,13 @@
     { key: "streams_per_week", label: "Частота эфиров" },
   ];
 
+  // SA-2: platform filter chips → the API `platform` param (backed by the channel_social_links footprint
+  // index). Single-select toggle. Topic chips (Бьюти/Гейминг/…) stay deferred (no Twitch-game taxonomy).
+  var PLATFORM_CHIPS = {
+    "Chip · Telegram": "telegram", "Chip · YouTube": "youtube", "Chip · VK": "vk",
+    "Chip · Instagram": "instagram", "Chip · TikTok": "tiktok",
+  };
+
   // ti_avg → colour band, in lockstep with the ERV label the API returns (both derive from ti).
   function tiColor(ti) {
     if (ti == null || isNaN(ti)) return "#9A9AA9";
@@ -52,7 +59,7 @@
 
   function currentParams() {
     var u = new URLSearchParams(window.location.search), p = {};
-    ["category", "language", "min_real", "frequency", "classification", "sort", "page"].forEach(function (k) {
+    ["category", "language", "platform", "min_real", "frequency", "classification", "sort", "page"].forEach(function (k) {
       if (u.get(k)) p[k] = u.get(k);
     });
     if (!p.sort) p.sort = "real_avg";
@@ -177,17 +184,44 @@
   }
 
   // Descriptive rule (PO 2026-07-22): no fake-share verdict on creators. Reword the «bot-corrected»
-  // header, hide the fraud pill + the «Макс. доля фейков» filter block, and disable the social-platform /
-  // topic filter chips (no footprint index / topic taxonomy yet) so they don't look broken.
+  // header, hide the fraud pill + the «Макс. доля фейков» filter block. Platform chips are now WIRED
+  // (SA-2 footprint index, see wirePlatform); only the TOPIC chips stay deferred (no game taxonomy yet).
   function stripAndDefer() {
     setText(document, "H Sub", "База креаторов · ранжирование по реальной аудитории Twitch");
     hide(q(document, "Fraud Pill"));                    // toolbar «Фейки ≤ 10%» pill
     hide(q(document, "Fraud Box"));                     // whole sidebar «FRAUD-DETECTION / Pro / Quality index» scoring panel (fake-share + quality-index filters — no fraud verdict on creators)
     hide(q(document, "Sec · Бюджет за интеграцию, ₽")); // integration-price filter — no pricing model
     Array.prototype.slice.call(document.querySelectorAll('[data-pencil-name^="Chip · "]')).forEach(function (n) {
+      if (PLATFORM_CHIPS[n.getAttribute("data-pencil-name")] != null) return; // platform chip → wired, not deferred
       n.style.opacity = "0.4";
       n.style.pointerEvents = "none";
       n.title = "Скоро";
+    });
+  }
+
+  function chipSelected(node, on) {
+    if (!node) return;
+    node.style.backgroundColor = on ? "#1E1838" : "";
+    node.style.borderColor = on ? "#7B5CFA" : "";
+  }
+
+  // Single-select platform filter → the `platform` API param (backed by channel_social_links).
+  function wirePlatform() {
+    var active = currentParams().platform || null;
+    Object.keys(PLATFORM_CHIPS).forEach(function (anchor) {
+      var node = q(document, anchor);
+      if (!node) return;
+      var value = PLATFORM_CHIPS[anchor];
+      chipSelected(node, active === value);
+      node.style.cursor = "pointer";
+      node.addEventListener("click", function () {
+        var p = currentParams();
+        p.platform = p.platform === value ? null : value; // toggle (single-select)
+        p.page = null;
+        pushParams(p);
+        Object.keys(PLATFORM_CHIPS).forEach(function (a) { chipSelected(q(document, a), PLATFORM_CHIPS[a] === p.platform); });
+        load();
+      });
     });
   }
 
@@ -195,6 +229,7 @@
     if (!captureTemplate()) return; // markup changed — fail safe, leave the design as-is
     wireSort();
     stripAndDefer();
+    wirePlatform();
     load();
   }
 

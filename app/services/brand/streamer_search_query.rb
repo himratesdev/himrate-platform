@@ -19,7 +19,10 @@ module Brand
     # streams-per-week buckets (design: Ежедневно / 3–5 / 1–2)
     FREQUENCY_BUCKETS = { "daily" => [ 7.0, nil ], "3_5" => [ 3.0, 7.0 ], "1_2" => [ 1.0, 3.0 ] }.freeze
     SORTS = { "real_avg" => "real_avg", "real_pct" => "real_pct", "streams_per_week" => "spw" }.freeze
-    DEFERRED = %w[band_filter price platforms format saved_search].freeze
+    DEFERRED = %w[band_filter price format saved_search].freeze
+    # SA-2: creators can now be filtered by a linked social platform, backed by the channel_social_links
+    # footprint index (Social::FootprintIndexWorker). The chip set = the analyzable platforms.
+    PLATFORMS = SocialAnalytics::TwitchSocials::ANALYZABLE
 
     # PR3b (T1-074, M11b): COALESCE = transition-safe mixed-window aggregation — v2 TDA rows carry
     # the native real-viewer count (erv_avg_count) and authenticity_avg; pre-cutover rows fall back
@@ -33,6 +36,7 @@ module Brand
     def initialize(params)
       @category = params[:category].presence
       @language = params[:language].presence
+      @platform = PLATFORMS.include?(params[:platform].to_s) ? params[:platform].to_s : nil
       @min_real = params[:min_real].presence && params[:min_real].to_i
       @frequency = FREQUENCY_BUCKETS.key?(params[:frequency].to_s) ? params[:frequency].to_s : nil
       @classification = params[:classification].to_s.split(",").map(&:strip).select { |c| CLASSIFICATIONS.include?(c) }.presence
@@ -66,6 +70,7 @@ module Brand
       scope = TrendsDailyAggregate.where(date: window)
       scope = scope.where("categories ? :cat", cat: @category) if @category
       scope = scope.where(channel_id: language_channel_ids) if @language
+      scope = scope.where(channel_id: platform_channel_ids) if @platform
       scope = scope.where(channel_id: classification_channel_ids) if @classification
       scope = scope.group(:channel_id)
       scope = scope.having("#{REAL_EXPR} >= ?", @min_real) if @min_real
@@ -86,6 +91,12 @@ module Brand
       when "streams_per_week" then SPW_EXPR
       else REAL_EXPR
       end
+    end
+
+    # channel_ids that link the given social platform (SA-2 footprint index — index-served on
+    # channel_social_links.platform). IN dedupes the (rare) two-links-same-platform case.
+    def platform_channel_ids
+      ChannelSocialLink.on_platform(@platform).select(:channel_id)
     end
 
     # channel_ids whose LATEST stream language matches (DISTINCT ON latest per channel).

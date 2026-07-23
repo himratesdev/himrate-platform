@@ -17,7 +17,7 @@ module Api
         private
 
         def search_params
-          params.permit(:category, :language, :min_real, :frequency, :classification, :sort, :page, :per_page)
+          params.permit(:category, :language, :platform, :min_real, :frequency, :classification, :sort, :page, :per_page)
         end
       end
     end
