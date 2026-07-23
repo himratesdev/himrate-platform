@@ -21,6 +21,11 @@ module TrustIndex
     DEFAULT_CELL_BASELINE = TrustIndex::V2::CellResolver::Baseline.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05)
     V_BUCKETS = [ [ 1_000, "0-1k" ], [ 5_000, "1k-5k" ], [ 20_000, "5k-20k" ] ].freeze
 
+    # i_event EPIC (T1-074) — external-conjunct window/min-sample constants.
+    I_EVENT_TREND_MIN_PTS = 30 # ≥30 clean own-CCV points → [2] v_above_own_trend has a stable distribution
+    I_EVENT_VAR_MIN_PTS   = 5  # ≥5 ccv_series points → [6] CoV meaningful
+    I_EVENT_FOLLOWER_DAYS = 7  # [5] conversion-period window (daily FollowerSnapshot cadence)
+
     # Build context Hash for Registry.compute_all
     def self.build(stream)
       channel = stream.channel
@@ -69,26 +74,35 @@ module TrustIndex
       v = context_hash[:latest_ccv]
       cold = TrustIndex::ColdStartGuard.assess(channel)
       q = v2_chatter_quality(chatters, context_hash)
-      # Track the calibrated q_mid rather than a literal so the descriptive "high quality" reason-code
-      # stays consistent with the band gate (band_classifier uses k.q_mid) after GATE-0 recalibration.
-      q_mid = CalibrationConstant.value_for("q_mid", fallback: 0.5).to_f
+      # ONE batched CalibrationConstant read for all builder-side scalars (q_mid + the i_event gate/floors)
+      # — replaces the prior single q_mid pick with a same-round-trip WHERE-IN (scale-neutral: one PG pick
+      # per build, not N). q_mid tracks the calibrated band gate; the ie_* keys drive the i_event conjuncts.
+      consts = v2_builder_constants
+      q_mid = (consts["q_mid"] || 0.5).to_f
       # TI v2.1 BUG-A: the co-windowed L2 inputs (both nil when the ti_v2_cowindowed_rho flag is OFF →
       # zero added CH/PG work, engine runs cumulative/instant exactly as today).
       l2_roster, v_w = v2_cowindowed_inputs(stream)
+      # i_event EPIC: self-history rows plucked ONCE (rho_obs for the baseline + ccv for [2] v_above_own_trend)
+      # — the ccv column rides the SAME scan v2_self_history already runs every cycle (zero added scan).
+      sh = v2_self_history(channel)
 
       TrustIndex::V2::Engine::Context.new(
         v: v,
         raw_chatters: v2_chatter_signals(chatters, context_hash),
         cell: v2_cell(stream, context_hash, v),
-        **v2_self_history(channel),
-        i_event: false, # FR-013 fail-safe (ambiguous ⇒ I=0); full 6-condition conjunction = follow-up
+        rho_self_lo: sh[:rho_self_lo], clean_self_history: sh[:clean_self_history],
+        self_history_stable: sh[:self_history_stable],
+        i_event: false, # engine derive_i_event composes the FINAL gated i_event (needs L2 soft.eihc for [1])
+        # [2]∧[4]∧[5]∧[6] pre-ANDed here; gated (dormant → false, ZERO added fetches). [1] rho_dropped + [3]
+        # raid + tier are engine-side. Dormant cost: consts gate short-circuits before any ccv/follower read.
+        i_event_external: v2_i_event_external(channel, consts, sh[:own_ccv_history], context_hash, v),
         raid_window: (context_hash[:recent_raids] || []).any?,
         n_chat_eff: chatters.size,
         q: q,
         cold_start_tier: v2_cold_start_tier(cold[:status]),
         chatter_quality_high: q >= q_mid, # descriptive reason-code flag (tracks calibrated q_mid)
         stream_count: cold[:stream_count],
-        unattributed_surge: false, # paired with I-event provenance branch = follow-up
+        unattributed_surge: false, # provenance-source wiring (host/shoutout/category) = follow-up EPIC
         thin_sample: chatters.size < THIN_SAMPLE_MIN,
         reputation: v2_reputation(channel),
         cps: context_hash[:channel_protection_config]&.channel_protection_score&.to_f,
@@ -448,8 +462,13 @@ module TrustIndex
 
       # Rolling-Window self-baseline ρ_self_lo (own-P10 of clean-stream ρ_obs, engine_version='v2').
       # Empty pre-backfill ⇒ dormant (clean_self_history false) — F_self never fires. One PG read
-      # (DEC-2-sanctioned). F_self also requires I=1 (fail-safe 0 in PR2b) so this is dormant regardless,
-      # but the query is the real one for when the I-event computation lands.
+      # (DEC-2-sanctioned). F_self also requires I=1 (dormant while i_event_enabled=0.0) so this is dormant
+      # regardless, but the query is the real one for when the I-event computation lands.
+      # i_event EPIC: also plucks `ccv` on the SAME scan (heap rows already fetched for the c_hard/convention
+      # filter → zero added scan) → own_ccv_history feeds [2] v_above_own_trend. The clean-only (c_hard=false)
+      # + convention-scoped 30-row window means a frequent botter accumulates <10 clean rows → self_history_stable
+      # false → i_event gated off for them (no honest baseline to deviate from — the no-baseline→no-self-accuse
+      # property; they are caught by F_soft/F_hard/C_inflation instead). Intended.
       def v2_self_history(channel)
         # P0.5: ρ_self_lo must be built from rows of the SAME ρ_obs convention as the current compute —
         # pooling cumulative + windowed samples corrupts the baseline (see self_history_convention_scope).
@@ -459,17 +478,128 @@ module TrustIndex
         rows = self_history_convention_scope(scope)
           .order(calculated_at: :desc)
           .limit(SELF_HISTORY_WINDOW_STREAMS)
-          .pluck(:rho_obs)
-          .compact
-          .map(&:to_f)
-        return { rho_self_lo: nil, clean_self_history: false, self_history_stable: false } if rows.size < SELF_HISTORY_MIN_CLEAN
+          .pluck(:rho_obs, :ccv)
+        rho = rows.filter_map { |r, _| r&.to_f }
+        own_ccv = rows.filter_map { |_, c| c&.to_i } # clean-only, convention-scoped own-CCV history for [2]
+        return { rho_self_lo: nil, clean_self_history: false, self_history_stable: false, own_ccv_history: own_ccv } if rho.size < SELF_HISTORY_MIN_CLEAN
 
-        { rho_self_lo: percentile(rows.sort, 0.10),
+        { rho_self_lo: percentile(rho.sort, 0.10),
           clean_self_history: true,
-          self_history_stable: rows.size >= SELF_HISTORY_STABLE_MIN }
+          self_history_stable: rho.size >= SELF_HISTORY_STABLE_MIN,
+          own_ccv_history: own_ccv }
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: v2 self-history failed (#{e.message})")
-        { rho_self_lo: nil, clean_self_history: false, self_history_stable: false }
+        { rho_self_lo: nil, clean_self_history: false, self_history_stable: false, own_ccv_history: [] }
+      end
+
+      # === i_event EPIC (T1-074) — the 5 EXTERNAL conjuncts [2/4/5/6] + shared constant read ===
+
+      # ONE WHERE-IN read of all builder-side calibration scalars (q_mid + the i_event gate/floors) so the
+      # hot path does ONE pick per build (scale-neutral vs the prior single q_mid pick), not N value_for
+      # round-trips. Missing keys fall back at the read site.
+      def v2_builder_constants
+        CalibrationConstant
+          .where(key: %w[q_mid i_event_enabled ie_v_trend_z ie_arrival_floor_frac ie_conv_floor ie_cv_floor])
+          .pluck(:key, :value).to_h
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: builder constants load failed (#{e.message})")
+        {}
+      end
+
+      # The 5 EXTERNAL conjuncts [2]∧[4]∧[5]∧[6] ANDed into one boolean ([1] rho_dropped + [3] raid are
+      # engine-side). GATED on i_event_enabled: DORMANT (0.0) → returns false BEFORE any ccv/follower read
+      # → byte-identical cost + result to today. Each conjunct is individually permissive (recall); the
+      # honest-FP=0 comes from the 6-way AND geometry + self-referential baselines + the self_history_stable
+      # gate (evaluated only on ≥10 clean own streams). Accidental-early-flip backstop: [4] chat-share (≥0)
+      # and [6] CoV (≥0) can never be < their 0.0 illustrative floors → the AND can't fire before real floors
+      # are calibrated (⚠ do NOT set a positive [4]/[6] floor before [2]/[5], or this backstop lifts).
+      # NOTE: the i_event_enabled read here mirrors the engine's @k.i_event_enabled (a second, torn-read-safe
+      # gate — BOTH must be enabled to fire); the engine gate (derive_i_event) is the authoritative one.
+      def v2_i_event_external(channel, consts, own_ccv_history, context_hash, v)
+        return false unless (consts["i_event_enabled"] || 0.0).to_f.positive?
+        return false if v.nil? || v <= 0
+
+        v2_v_above_own_trend?(v, own_ccv_history, consts) &&
+          v2_chat_arrival_below_floor?(context_hash, v, consts) &&
+          v2_no_follower_conversion?(channel, own_ccv_history, consts) &&
+          v2_variance_below_floor?(context_hash, consts)
+      end
+
+      # [2] instant V above the channel's OWN clean-CCV distribution. Robust: MAD not σ (a previously-botted
+      # channel has a σ-poisoned history; MAD around the median resists the tail). Needs ≥30 clean points.
+      def v2_v_above_own_trend?(v, own_ccv, consts)
+        return false if own_ccv.size < I_EVENT_TREND_MIN_PTS
+
+        sorted = own_ccv.map(&:to_f).sort
+        p90 = percentile(sorted, 0.90)
+        med = percentile(sorted, 0.50)
+        mad = median_abs_deviation(sorted, med)
+        # A degenerate (flat) history has MAD=0 → `med + z*mad` collapses to `med` and the z-floor gives
+        # zero protection (any above-median V would fire). No robust outlier threshold exists without spread
+        # → do NOT fire (FP-safe). This also keeps the illustrative z=99 default genuinely never-fire (the
+        # only firing path at z=99 was MAD=0). CR SHOULD-FIX #1.
+        return false unless mad.positive?
+
+        z = (consts["ie_v_trend_z"] || 99.0).to_f
+        v > p90 && v > med + z * mad
+      end
+
+      # [4] recent (5min) distinct active chatters as a share of V below floor. Silent injection: V surges,
+      # bots don't post → short-window chat-share collapses. Reuses the ALREADY-fetched chat_username_counts_5min
+      # (zero new CH scan). Floor default 0.0 → share < 0 impossible → never fires (dormant-safe).
+      def v2_chat_arrival_below_floor?(context_hash, v, consts)
+        active5 = (context_hash[:chat_username_counts_5min] || {}).size
+        (active5.to_f / v) < (consts["ie_arrival_floor_frac"] || 0.0).to_f
+      end
+
+      # [5] no_follower_sub_bump → CONVERSION-PERIOD (daily FollowerSnapshot cadence; subs have no Helix
+      # app-token source → follower-only). Fires when the channel is GAINING ccv (Δmean_ccv > 0 — the FP
+      # defense: a plateaued honest channel is vacuously excluded) AND follower growth per unit ccv growth is
+      # below floor (a bought-CCV jump pulls no real followers). conv_floor default -1.0 → never fires (dormant).
+      def v2_no_follower_conversion?(channel, own_ccv, consts)
+        fol = v2_follower_series(channel)
+        return false if fol.size < 2 || own_ccv.size < 4
+
+        d_fol = fol.first - fol.last # newest − oldest (desc order)
+        half = own_ccv.size / 2
+        recent = own_ccv.first(half).map(&:to_f)
+        older  = own_ccv.last(half).map(&:to_f)
+        d_ccv = (recent.sum / recent.size) - (older.sum / older.size)
+        return false unless d_ccv.positive? # only a growing channel can under-convert (FP defense)
+
+        (d_fol.to_f / d_ccv) < (consts["ie_conv_floor"] || -1.0).to_f
+      end
+
+      # [6] CoV (stddev/mean) of the 30min CCV series below floor OR flat plateau. A viewbot service holds a
+      # target CCV → the injected component is near-constant → total CoV compresses. Needs ≥5 points.
+      # cv_floor default 0.0 → CoV < 0 impossible → never fires (dormant-safe).
+      def v2_variance_below_floor?(context_hash, consts)
+        series = (context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f }
+        return false if series.size < I_EVENT_VAR_MIN_PTS
+
+        mean = series.sum / series.size
+        return false unless mean.positive?
+
+        cov = Math.sqrt(series.sum { |x| (x - mean)**2 } / (series.size - 1)) / mean
+        cov < (consts["ie_cv_floor"] || 0.0).to_f
+      end
+
+      # Bounded per-channel daily follower counts over the conversion window (newest-first), for [5].
+      def v2_follower_series(channel)
+        FollowerSnapshot.where(channel_id: channel.id)
+                        .where("timestamp > ?", I_EVENT_FOLLOWER_DAYS.days.ago)
+                        .order(timestamp: :desc)
+                        .limit(I_EVENT_FOLLOWER_DAYS + 1)
+                        .pluck(:followers_count)
+                        .compact
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 follower series failed (#{e.message})")
+        []
+      end
+
+      # Median absolute deviation around a given median (robust spread; resists a botted-history tail).
+      def median_abs_deviation(sorted_values, med)
+        (percentile(sorted_values.map { |x| (x - med).abs }.sort, 0.50) || 0.0)
       end
 
       # Nearest-rank percentile on a pre-sorted ascending array (p ∈ [0,1]).

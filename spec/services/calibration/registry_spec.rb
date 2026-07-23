@@ -26,7 +26,9 @@ RSpec.describe Calibration::Registry do
       :pi0, :tau_hard, :tau_delta, :phi_yellow, :phi_red, :q_mid, :q_hi,
       :llr_temporal_r2, :llr_temporal_r3, :llr_temporal_r4, :llr_temporal_r7,
       :llr_per_user_bot_score, :llr_known_bot,
-      :phi_inflation, :inflation_corrob_enabled # TI v2.1 inflation corroborator (dormant)
+      :phi_inflation, :inflation_corrob_enabled, # TI v2.1 inflation corroborator (dormant)
+      # TI v2.1 i_event self-history tripwire (C_self / F_self arm — dormant)
+      :i_event_enabled, :ie_v_trend_z, :ie_arrival_floor_frac, :ie_conv_floor, :ie_cv_floor
     )
   end
 end

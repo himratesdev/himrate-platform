@@ -9,16 +9,16 @@ module EngineSpecDoubles
                         :cluster_delta_k, :cluster_size, :age_gate, :recurrence_gate)
   Cell = Data.define(:rho_star, :rho_lo, :rho_hi)
   Context = Data.define(:raw_chatters, :v, :cell, :rho_self_lo, :clean_self_history, :i_event,
-                        :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
+                        :i_event_external, :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
                         :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample,
                         :cps, :reputation, :ccv_chat_divergence, :l2_roster_usernames, :v_w)
   K = Data.define(:pi0, :tau_hard, :tau_delta, :phi_yellow, :phi_red, :q_mid, :q_hi,
                   :llr_temporal_r2, :llr_temporal_r3, :llr_temporal_r4, :llr_temporal_r7,
-                  :llr_per_user_bot_score, :llr_known_bot).new(
+                  :llr_per_user_bot_score, :llr_known_bot, :i_event_enabled).new(
                     pi0: 0.02, tau_hard: 0.9, tau_delta: 0.5, phi_yellow: 0.10, phi_red: 0.35,
                     q_mid: 0.5, q_hi: 0.8, llr_temporal_r2: 1.1, llr_temporal_r3: 2.2,
                     llr_temporal_r4: 2.9, llr_temporal_r7: 4.6, llr_per_user_bot_score: 3.9,
-                    llr_known_bot: 3.4
+                    llr_known_bot: 3.4, i_event_enabled: 0.0 # DORMANT default (mirror Registry)
                   )
 end
 
@@ -36,7 +36,7 @@ RSpec.describe TrustIndex::V2::Engine do
 
   def context(chatters, **over)
     base = { raw_chatters: chatters, v: 5000, cell: cell, rho_self_lo: 0.03, clean_self_history: true,
-             i_event: false, raid_window: false, n_chat_eff: chatters.size, q: 0.9,
+             i_event: false, i_event_external: false, raid_window: false, n_chat_eff: chatters.size, q: 0.9,
              cold_start_tier: "full", self_history_stable: true, chatter_quality_high: true,
              stream_count: 20, unattributed_surge: false, thin_sample: false, cps: 70,
              reputation: "Стабильная", ccv_chat_divergence: 0.0, l2_roster_usernames: nil, v_w: nil }
@@ -101,6 +101,54 @@ RSpec.describe TrustIndex::V2::Engine do
     expect(r.f_soft).to eq(0.0)
     expect(r.authenticity).to be > 90
     expect(r.band.color).not_to eq("red")
+  end
+
+  describe "i_event EPIC (C_self wiring) — dormant by default, fires only when enabled + fixture screams" do
+    # "Screaming inflation" fixture: thin honest chat (EIHC≈30) but V=5000 → Deficit huge → rho_dropped [1]
+    # true; the 5 external conjuncts pre-ANDed true (i_event_external); clean+stable self-history; no raid.
+    def firing_ctx(**over)
+      context(Array.new(30) { |i| chatter("h#{i}") }, v: 5000, n_chat_eff: 30,
+              rho_self_lo: 0.03, clean_self_history: true, self_history_stable: true,
+              i_event_external: true, raid_window: false, cold_start_tier: "full", **over)
+    end
+
+    it "red-team #4: K carries i_event_enabled present (the flip spec is load-bearing only if it does)" do
+      expect(k.i_event_enabled).to eq(0.0)
+      expect(k.with(i_event_enabled: 1.0).i_event_enabled).to eq(1.0)
+    end
+
+    it "DORMANT (enabled=0.0): i_event=false regardless of fixture → f_self=0, c_self=false, no accusation" do
+      r = described_class.compute(context: firing_ctx, k: k)
+      expect(r.c_self).to be(false)
+      expect(r.f_self).to eq(0.0)
+      expect(r.confirmed_anomaly).to be(false)
+      expect([ 1, 2 ]).not_to include(r.band.row) # not an accusatory row (F_soft alone → AMBER row 6)
+    end
+
+    it "GOLDEN byte-identical: at enabled=0.0, i_event_external true vs false yield identical Results" do
+      on  = described_class.compute(context: firing_ctx(i_event_external: true), k: k)
+      off = described_class.compute(context: firing_ctx(i_event_external: false), k: k)
+      expect(on.to_h).to eq(off.to_h) # the +i_event_external field is inert while dormant (read only in derive_i_event)
+    end
+
+    it "FLIP proves the wire is REAL: enabled=1.0 + screaming fixture → i_event fires → c_self, confirmed_anomaly, f_self>0, band≤2" do
+      r = described_class.compute(context: firing_ctx, k: k.with(i_event_enabled: 1.0))
+      expect(r.c_self).to be(true)
+      expect(r.f_self).to be > 0
+      expect(r.confirmed_anomaly).to be(true)
+      expect(r.band.row).to be <= 2 # C_self corroborates → F_soft/F_self escalate past AMBER
+    end
+
+    it "FLIP still safe with NO baseline: enabled=1.0 but self_history_stable=false → rho_dropped [1] false → i_event false" do
+      r = described_class.compute(context: firing_ctx(self_history_stable: false), k: k.with(i_event_enabled: 1.0))
+      expect(r.c_self).to be(false)
+      expect(r.f_self).to eq(0.0)
+    end
+
+    it "FLIP suppressed by raid: enabled=1.0 + screaming fixture but raid_window=true → i_event false (provenance)" do
+      r = described_class.compute(context: firing_ctx(raid_window: true), k: k.with(i_event_enabled: 1.0))
+      expect(r.c_self).to be(false)
+    end
   end
 
   it "EC-15/TC-017: V≤0 (null CCV) short-circuits to GREY with null ERV — never a headline number" do
