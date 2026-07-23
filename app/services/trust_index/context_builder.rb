@@ -120,59 +120,35 @@ module TrustIndex
       compute_windowed_inputs(stream)
     end
 
-    # i_event EPIC PR-i4 — SHADOW magnitude harvester. Computes the i_event sub-signal RAW MAGNITUDES on the
-    # WINDOWED frame (wctx/wres — the frame [1] rho_dropped's honest-late-quieting FP-safety needs), UNGATED
-    # by i_event_enabled, for the honest-corpus calibration that sets the 5 floors above honest-max BEFORE the
-    # flip (the phi_inflation harvester pattern). SHADOW-ONLY — never touches the verdict. Returns a flat Hash
-    # of magnitudes (corpus-agnostic: the miner picks the honest-anchor cohort + sets floors from the
-    # distribution). [1] rho_obs comes from wres (the windowed engine result) so it is on the correct frame.
+    # i_event EPIC PR-i4 — SHADOW magnitude harvester. Logs the i_event sub-signal RAW MAGNITUDES on live
+    # honest streams (the windowed frame — wctx/wres), UNGATED by i_event_enabled, for the honest-corpus
+    # calibration that sets the 5 floors above honest-max BEFORE the flip (the phi_inflation harvester
+    # pattern). SHADOW-ONLY — never touches the verdict. Uses the SAME metric helpers the verdict-path gate
+    # predicates use (single source → gate/harvester never drift). Corpus-agnostic: the miner picks the
+    # honest-anchor cohort + sets floors from the distribution.
+    #   [1] CR SF-1: rho_obs is WINDOWED (wres). The baseline is NOT pre-baked here — a cumulative rho_self_lo
+    #   (v2_self_history is cumulative-scoped while ti_v2_cowindowed_rho is OFF) vs a windowed rho_obs is the
+    #   P0.5 cross-convention hazard (windowed ρ runs structurally lower → a false rho_dropped that over-fires).
+    #   The miner derives [1] from the accrued WINDOWED rho_obs corpus (per-channel P10, same convention);
+    #   i_event's flip is gated after the windowing flip anyway, so the windowed baseline exists by then.
     def self.i_event_shadow_signals(stream, context_hash, wctx, wres)
       own_ccv = (v2_self_history(stream.channel)[:own_ccv_history] || [])
-      sorted = own_ccv.map(&:to_f).sort
-      med = sorted.any? ? percentile(sorted, 0.50) : nil
-      p90 = sorted.any? ? percentile(sorted, 0.90) : nil
-      mad = med ? median_abs_deviation(sorted, med) : nil
-      v = wctx.v.to_f
-      active5 = (context_hash[:chat_username_counts_5min] || {}).size
       fol = v2_follower_series(stream.channel)
       series = (context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f }
-      rho_dropped = if wctx.self_history_stable && wctx.rho_self_lo && wres.rho_obs
-        wres.rho_obs < wctx.rho_self_lo
-      end
+      r = i_event_robust_z(wctx.v, own_ccv) || {} # [2] components (z/p90/med/mad) or {} when insufficient
+      share = i_event_arrival_share(context_hash, wctx.v) # [4]
       {
         stream_id: stream.id, channel_id: stream.channel_id,
-        rho_obs: wres.rho_obs, rho_self_lo: wctx.rho_self_lo, rho_dropped: rho_dropped,
-        v: wctx.v, ccv_n: own_ccv.size, ccv_med: med, ccv_p90: p90, ccv_mad: mad,
-        v_robust_z: (mad&.positive? && med ? ((v - med) / mad).round(3) : nil),
-        chat_active_5min: active5, arrival_share: (v.positive? ? (active5 / v).round(6) : nil),
-        fol_n: fol.size, conv: i_event_shadow_conv(fol, own_ccv), cov: i_event_shadow_cov(series),
+        rho_obs: wres.rho_obs, rho_conv: wres.rho_convention, # [1] windowed rho_obs (baseline derived offline)
+        v: wctx.v, ccv_n: own_ccv.size, ccv_med: r[:med], ccv_p90: r[:p90], ccv_mad: r[:mad],
+        v_robust_z: r[:z]&.round(3), # [2]
+        chat_active_5min: (context_hash[:chat_username_counts_5min] || {}).size,
+        arrival_share: share&.round(6), # [4]
+        fol_n: fol.size, conv: i_event_conv_metric(fol, own_ccv)&.round(4), # [5]
+        cov: i_event_cov_metric(series)&.round(4), # [6]
         raid_window: wctx.raid_window, cold_start_tier: wctx.cold_start_tier,
-        self_history_stable: wctx.self_history_stable, rho_conv: wres.rho_convention
+        self_history_stable: wctx.self_history_stable
       }
-    end
-
-    # [5] conversion magnitude (nil when not computable): follower growth per unit mean-CCV growth, growing only.
-    def self.i_event_shadow_conv(fol, own_ccv)
-      return nil if fol.size < 2 || own_ccv.size < 4
-
-      d_fol = fol.first - fol.last
-      half = own_ccv.size / 2
-      recent = own_ccv.first(half).map(&:to_f)
-      older = own_ccv.last(half).map(&:to_f)
-      d_ccv = (recent.sum / recent.size) - (older.sum / older.size)
-      return nil unless d_ccv.positive?
-
-      (d_fol.to_f / d_ccv).round(4)
-    end
-
-    # [6] CoV magnitude (nil when <5 points or zero mean).
-    def self.i_event_shadow_cov(series)
-      return nil if series.size < I_EVENT_VAR_MIN_PTS
-
-      mean = series.sum / series.size
-      return nil unless mean.positive?
-
-      (Math.sqrt(series.sum { |x| (x - mean)**2 } / (series.size - 1)) / mean).round(4)
     end
 
     class << self
@@ -580,63 +556,87 @@ module TrustIndex
           v2_variance_below_floor?(context_hash, consts)
       end
 
-      # [2] instant V above the channel's OWN clean-CCV distribution. Robust: MAD not σ (a previously-botted
-      # channel has a σ-poisoned history; MAD around the median resists the tail). Needs ≥30 clean points.
-      def v2_v_above_own_trend?(v, own_ccv, consts)
-        return false if own_ccv.size < I_EVENT_TREND_MIN_PTS
+      # === Shared raw-metric computers (CR N-1) — the SINGLE source for the i_event sub-signal magnitudes,
+      # used by BOTH the verdict-path gate predicates (metric < calibrated floor) AND the shadow harvester
+      # (i_event_shadow_signals, logs the raw metric). One implementation each so the gate and the harvester
+      # can never drift → the honest-corpus floors stay comparable to what the gate actually evaluates.
+
+      # [2] robust-z components of instant V above the OWN clean-CCV distribution. MAD not σ (a previously-
+      # botted channel has a σ-poisoned history; MAD around the median resists the tail). nil when <30 points
+      # OR a degenerate flat history (MAD=0 → med+z·MAD collapses to med, z-floor gives zero protection → no
+      # robust threshold exists → FP-safe non-fire; also keeps z=99 genuinely never-fire). Returns
+      # { z:, p90:, med:, mad: } — the gate needs z AND p90, the harvester logs all four. CR SHOULD-FIX #1.
+      def i_event_robust_z(v, own_ccv)
+        return nil if own_ccv.size < I_EVENT_TREND_MIN_PTS
 
         sorted = own_ccv.map(&:to_f).sort
-        p90 = percentile(sorted, 0.90)
         med = percentile(sorted, 0.50)
         mad = median_abs_deviation(sorted, med)
-        # A degenerate (flat) history has MAD=0 → `med + z*mad` collapses to `med` and the z-floor gives
-        # zero protection (any above-median V would fire). No robust outlier threshold exists without spread
-        # → do NOT fire (FP-safe). This also keeps the illustrative z=99 default genuinely never-fire (the
-        # only firing path at z=99 was MAD=0). CR SHOULD-FIX #1.
-        return false unless mad.positive?
+        return nil unless mad.positive?
 
-        z = (consts["ie_v_trend_z"] || 99.0).to_f
-        v > p90 && v > med + z * mad
+        { z: (v.to_f - med) / mad, p90: percentile(sorted, 0.90), med: med, mad: mad }
       end
 
-      # [4] recent (5min) distinct active chatters as a share of V below floor. Silent injection: V surges,
+      # [4] recent (5min) distinct active chatters as a share of V (nil when V≤0). Silent injection: V surges,
       # bots don't post → short-window chat-share collapses. Reuses the ALREADY-fetched chat_username_counts_5min
-      # (zero new CH scan). Floor default 0.0 → share < 0 impossible → never fires (dormant-safe).
-      def v2_chat_arrival_below_floor?(context_hash, v, consts)
-        active5 = (context_hash[:chat_username_counts_5min] || {}).size
-        (active5.to_f / v) < (consts["ie_arrival_floor_frac"] || 0.0).to_f
+      # (zero new CH scan).
+      def i_event_arrival_share(context_hash, v)
+        return nil unless v.to_f.positive?
+
+        (context_hash[:chat_username_counts_5min] || {}).size / v.to_f
       end
 
-      # [5] no_follower_sub_bump → CONVERSION-PERIOD (daily FollowerSnapshot cadence; subs have no Helix
-      # app-token source → follower-only). Fires when the channel is GAINING ccv (Δmean_ccv > 0 — the FP
-      # defense: a plateaued honest channel is vacuously excluded) AND follower growth per unit ccv growth is
-      # below floor (a bought-CCV jump pulls no real followers). conv_floor default -1.0 → never fires (dormant).
-      def v2_no_follower_conversion?(channel, own_ccv, consts)
-        fol = v2_follower_series(channel)
-        return false if fol.size < 2 || own_ccv.size < 4
+      # [5] conversion metric (nil when not computable): follower growth per unit mean-CCV growth, GROWING only
+      # (Δmean_ccv > 0 — the FP defense: a plateaued honest channel is vacuously excluded). Daily FollowerSnapshot
+      # cadence; subs have no Helix app-token source → follower-only. own_ccv is newest-first (desc).
+      def i_event_conv_metric(fol, own_ccv)
+        return nil if fol.size < 2 || own_ccv.size < 4
 
-        d_fol = fol.first - fol.last # newest − oldest (desc order)
+        d_fol = fol.first - fol.last # newest − oldest
         half = own_ccv.size / 2
         recent = own_ccv.first(half).map(&:to_f)
-        older  = own_ccv.last(half).map(&:to_f)
+        older = own_ccv.last(half).map(&:to_f)
         d_ccv = (recent.sum / recent.size) - (older.sum / older.size)
-        return false unless d_ccv.positive? # only a growing channel can under-convert (FP defense)
+        return nil unless d_ccv.positive?
 
-        (d_fol.to_f / d_ccv) < (consts["ie_conv_floor"] || -1.0).to_f
+        d_fol.to_f / d_ccv
       end
 
-      # [6] CoV (stddev/mean) of the 30min CCV series below floor OR flat plateau. A viewbot service holds a
-      # target CCV → the injected component is near-constant → total CoV compresses. Needs ≥5 points.
-      # cv_floor default 0.0 → CoV < 0 impossible → never fires (dormant-safe).
-      def v2_variance_below_floor?(context_hash, consts)
-        series = (context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f }
-        return false if series.size < I_EVENT_VAR_MIN_PTS
+      # [6] CoV (stddev/mean) of the 30min CCV series (nil when <5 points or zero mean). A viewbot service
+      # holds a target CCV → the injected component is near-constant → total CoV compresses.
+      def i_event_cov_metric(series)
+        return nil if series.size < I_EVENT_VAR_MIN_PTS
 
         mean = series.sum / series.size
-        return false unless mean.positive?
+        return nil unless mean.positive?
 
-        cov = Math.sqrt(series.sum { |x| (x - mean)**2 } / (series.size - 1)) / mean
-        cov < (consts["ie_cv_floor"] || 0.0).to_f
+        Math.sqrt(series.sum { |x| (x - mean)**2 } / (series.size - 1)) / mean
+      end
+
+      # [2] gate: V is a robust outlier above the own distribution. z-floor default 99.0 → un-fireable for a
+      # realistic surge; only permissive-not-safe (see the backstop note above — [4]/[6] carry the dormancy).
+      def v2_v_above_own_trend?(v, own_ccv, consts)
+        r = i_event_robust_z(v, own_ccv)
+        !r.nil? && v > r[:p90] && r[:z] > (consts["ie_v_trend_z"] || 99.0).to_f
+      end
+
+      # [4] gate: short-window chat-share below floor. Floor default 0.0 → share ≥ 0 never < 0 → never fires.
+      def v2_chat_arrival_below_floor?(context_hash, v, consts)
+        share = i_event_arrival_share(context_hash, v)
+        !share.nil? && share < (consts["ie_arrival_floor_frac"] || 0.0).to_f
+      end
+
+      # [5] gate: a growing channel under-converts followers. conv_floor default -1.0 → recall-permissive.
+      def v2_no_follower_conversion?(channel, own_ccv, consts)
+        conv = i_event_conv_metric(v2_follower_series(channel), own_ccv)
+        !conv.nil? && conv < (consts["ie_conv_floor"] || -1.0).to_f
+      end
+
+      # [6] gate: CCV variance pinned below floor. cv_floor default 0.0 → CoV ≥ 0 never < 0 → never fires.
+      def v2_variance_below_floor?(context_hash, consts)
+        series = (context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f }
+        cov = i_event_cov_metric(series)
+        !cov.nil? && cov < (consts["ie_cv_floor"] || 0.0).to_f
       end
 
       # Bounded per-channel daily follower counts over the conversion window (newest-first), for [5].

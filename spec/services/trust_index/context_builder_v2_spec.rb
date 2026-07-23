@@ -342,12 +342,13 @@ RSpec.describe TrustIndex::ContextBuilder do
       stream = instance_double(Stream, id: SecureRandom.uuid, channel_id: channel.id, channel: channel)
       wctx = Struct.new(:v, :rho_self_lo, :self_history_stable, :raid_window, :cold_start_tier)
                    .new(5000, 0.03, true, false, "full")
-      wres = Struct.new(:rho_obs, :rho_convention).new(0.01, "windowed") # rho_obs 0.01 < rho_self_lo 0.03
+      wres = Struct.new(:rho_obs, :rho_convention).new(0.01, "windowed")
       ctx = { chat_username_counts_5min: { "a" => 1 },
               ccv_series_30min: [ { ccv: 1000 }, { ccv: 1001 }, { ccv: 999 }, { ccv: 1000 }, { ccv: 1000 } ] }
       sig = described_class.i_event_shadow_signals(stream, ctx, wctx, wres)
-      expect(sig[:rho_dropped]).to be(true)                       # [1] on the WINDOWED frame (wres.rho_obs)
+      expect(sig[:rho_obs]).to eq(0.01)                           # [1] WINDOWED rho_obs (baseline derived offline)
       expect(sig[:rho_conv]).to eq("windowed")
+      expect(sig).not_to have_key(:rho_dropped)                   # CR SF-1: no cross-convention pre-baked boolean
       expect(sig[:arrival_share]).to eq((1.0 / 5000).round(6))    # [4]
       expect(sig[:conv]).to eq(0.0)                               # [5] growing, 0 follower growth
       expect(sig[:cov]).to be_a(Numeric)                          # [6]
