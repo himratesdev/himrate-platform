@@ -1,0 +1,83 @@
+name: post-deploy-dv-ievent
+# DV for the i_event dormant wire (PR #496, e5e34b8). Confirms the deployed v2 engine + build_v2
+# (with the new derive_i_event + i_event_external Context field) computes healthily on LIVE streams
+# and that i_event is DORMANT live (i_event_enabled resolves to 0.0). READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      expect_sha:
+        required: false
+        type: string
+        default: ""
+
+jobs:
+  dv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build DV script
+        run: |
+          cat > /tmp/dvie.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          puts "===== i_event DV (post-deploy #496) ====="
+          # 1. i_event dormant live?
+          enabled = (CalibrationConstant.value_for("i_event_enabled", fallback: 0.0).to_f rescue -1)
+          puts "1. i_event_enabled (live) = #{enabled}  #{enabled.zero? ? 'DORMANT ✅' : '⚠ NON-ZERO'}"
+          k = Calibration::Registry.load
+          puts "   K responds i_event_enabled? #{k.respond_to?(:i_event_enabled)} = #{k.i_event_enabled rescue 'ERR'} | ie_v_trend_z=#{k.ie_v_trend_z rescue 'ERR'}"
+
+          # 2. SCW healthy — recent v2 TIH rows written?
+          recent = TrustIndexHistory.where(engine_version: "v2").where("calculated_at > ?", 5.minutes.ago).count
+          puts "2. v2 TIH rows written last 5min = #{recent}  #{recent.positive? ? 'SCW HEALTHY ✅' : '⚠ NONE (check SCW)'}"
+
+          # 3. Full v2 compute on 3 live streams — engine + build_v2 (new i_event_external field) healthy?
+          def latest_ccv(s) = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count).to_i
+          live = Stream.where(ended_at: nil).order(started_at: :desc).limit(400).to_a
+                       .map { |s| [s, latest_ccv(s)] }.select { |(_, c)| c >= 100 }.sort_by { |(_, c)| -c }.first(3)
+          puts "3. full v2 compute on #{live.size} live streams:"
+          live.each do |(s, ccv)|
+            ctx = TrustIndex::ContextBuilder.build(s)
+            v2c = TrustIndex::ContextBuilder.build_v2(s, ctx)
+            r = TrustIndex::V2::Engine.compute(context: v2c, k: k)
+            printf("   %-16s ccv=%-6d band=%s/%s erv=%s auth=%s i_event_external=%s c_self=%s rho_conv=%s\n",
+              s.channel.login, ccv, r.band&.color, r.band&.row, r.erv.inspect, r.authenticity.inspect,
+              v2c.i_event_external.inspect, r.c_self.inspect, r.rho_convention.inspect)
+          rescue => e
+            puts "   #{s.channel.login} COMPUTE ERROR: #{e.class} #{e.message}"
+          end
+
+          puts "\nVERDICT: DV OK iff (1) enabled=0.0 dormant + (2) recent v2 rows>0 + (3) all 3 compute clean with c_self=false"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/dvie.rb) lines)"
+
+      - name: Run DV on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/dvie.rb ${TARGET}:/tmp/dvie.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          if [ -n "${{ inputs.expect_sha }}" ]; then
+            RUNNING=$(ssh ${TARGET} "docker inspect ${CONTAINER} --format '{{ index .Config.Labels \"service.git.sha\" }}' 2>/dev/null || echo unknown")
+            echo "container SHA label: ${RUNNING} (expect ${{ inputs.expect_sha }})"
+          fi
+          ssh ${TARGET} "docker cp /tmp/dvie.rb ${CONTAINER}:/tmp/dvie.rb && docker exec ${CONTAINER} sh -c 'bin/rails runner /tmp/dvie.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
