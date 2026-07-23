@@ -43,6 +43,10 @@ Rails.application.routes.draw do
       get "auth/twitch/callback", to: "auth#twitch_callback"
       post "auth/google", to: "auth#google"
       get "auth/google/callback", to: "auth#google_callback"
+      # YouTube connect-flow (SA-2 demographics) — incremental OAuth (yt-analytics.readonly) for a
+      # logged-in streamer; attaches a "youtube" AuthProvider. Browser 302 flow, not JSON.
+      get "auth/youtube/connect", to: "auth/youtube#connect"
+      get "auth/youtube/callback", to: "auth/youtube#callback"
       post "auth/refresh", to: "auth#refresh"
       delete "auth/logout", to: "auth#logout"
 
