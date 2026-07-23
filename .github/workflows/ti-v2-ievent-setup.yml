@@ -1,0 +1,98 @@
+name: ti-v2-ievent-setup
+# i_event C_self one-shot test — WRITE ops (pre-stream setup), separated from the read-only probes.
+# actions: retention (per-channel raw-data retention override, G-C), enroll (monitor+pin target, G-D),
+# enable_shadow / disable_shadow (ti_v2_ie_shadow HOOK flag, G-I). All reversible. Field-validated:
+# SignalConfiguration.param_value (decimal); cleanup supports per-channel category (cleanup_worker.rb:253).
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      action:
+        required: true
+        type: choice
+        options: [retention, enroll, enable_shadow, disable_shadow]
+      login:
+        required: false
+        type: string
+      twitch_id:
+        required: false
+        type: string
+      retention_days:
+        required: false
+        type: string
+        default: "3650"
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build setup script
+        run: |
+          cat > /tmp/iesetup.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          ACTION = ENV.fetch("ACTION")
+          LOGIN  = ENV["LOGIN"].to_s.downcase
+          TID    = ENV["TWITCH_ID"].to_s
+          DAYS   = ENV.fetch("RETENTION_DAYS", "3650").to_i
+          puts "===== SETUP action=#{ACTION} login=#{LOGIN.inspect} @ #{Time.current.iso8601} ====="
+
+          case ACTION
+          when "enable_shadow"
+            Flipper.enable(:ti_v2_ie_shadow)
+            puts "ti_v2_ie_shadow enabled = #{Flipper.enabled?(:ti_v2_ie_shadow)}  (SCW ievt lines will now log on the duty-cycled windowed path)"
+          when "disable_shadow"
+            Flipper.disable(:ti_v2_ie_shadow)
+            puts "ti_v2_ie_shadow enabled = #{Flipper.enabled?(:ti_v2_ie_shadow)}  (disabled)"
+          when "enroll"
+            abort "login required" if LOGIN.empty?
+            ch = Channel.find_by("lower(login) = ?", LOGIN)
+            if ch
+              ch.update!(is_monitored: true, is_pinned: true)
+              puts "EXISTING channel #{ch.id} → is_monitored=#{ch.is_monitored} is_pinned=#{ch.is_pinned}"
+            else
+              abort "channel not found for #{LOGIN} and no twitch_id given — pass twitch_id to CREATE" if TID.empty?
+              ch = Channel.create!(twitch_id: TID, login: LOGIN, is_monitored: true, is_pinned: true)
+              puts "CREATED channel #{ch.id} (twitch_id=#{TID}) → monitored+pinned"
+            end
+          when "retention"
+            abort "login required" if LOGIN.empty?
+            ch = Channel.find_by("lower(login) = ?", LOGIN); abort "NO CHANNEL #{LOGIN}" unless ch
+            c = SignalConfiguration.find_or_initialize_by(signal_type: "cleanup", category: "channel:#{ch.id}", param_name: "retention_days")
+            c.param_value = DAYS
+            c.save!
+            puts "retention override channel:#{ch.id} → param_value=#{c.param_value} days (ccv_snapshots + chatters_snapshots preserved)"
+            puts "NOTE: chat_messages is ClickHouse-side (MergeTree TTL) — NOT covered by this PG override → do the CH partition export (R-7) separately."
+          else
+            abort "unknown action #{ACTION}"
+          end
+          puts "OK"
+          RUBY_EOF
+          echo "built"
+
+      - name: Run setup on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/iesetup.rb ${TARGET}:/tmp/iesetup.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/iesetup.rb ${CONTAINER}:/tmp/iesetup.rb && docker exec -e ACTION='${{ inputs.action }}' -e LOGIN='${{ inputs.login }}' -e TWITCH_ID='${{ inputs.twitch_id }}' -e RETENTION_DAYS='${{ inputs.retention_days || '3650' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/iesetup.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
