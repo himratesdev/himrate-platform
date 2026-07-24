@@ -1,0 +1,106 @@
+name: ti-v2-ccv-lag-probe
+# Battle-mode P1.3 (bug #1): quantify CCV lag. For the top-N live streams, compare our latest STORED
+# ccv_snapshot (value + age) against a FRESH GQL stream_metadata viewersCount (the monitor's PRIMARY
+# source) and a FRESH Helix viewer_count (fallback). Distinguishes lag sources:
+#   stored stale (age > cadence) & fresh_gql ≈ stored → OUR 60s cadence is the lag.
+#   fresh_gql ≈ fresh_helix but both diverge from Twitch-displayed → SOURCE (GQL/Helix) latency.
+#   fresh_gql ≫ fresh_helix → GQL fresher than Helix (monitor already prefers GQL — good).
+# READ-ONLY (two fresh API reads per stream, no writes).
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      top_n:
+        description: "How many top-CCV live streams to probe"
+        required: false
+        type: string
+        default: "8"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build probe script
+        run: |
+          cat > /tmp/ccvlag.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          TOP_N = ENV.fetch("TOP_N", "8").to_i
+          now = Time.current
+          puts "===== CCV LAG PROBE @ #{now.iso8601} (top #{TOP_N} live by stored CCV) ====="
+
+          # latest stored ccv per active stream → pick top-N
+          active = Stream.where(ended_at: nil).includes(:channel)
+          rows = active.map do |s|
+            snap = s.ccv_snapshots.order(timestamp: :desc).first
+            next nil unless snap
+            { s: s, login: s.channel.login, stored: snap.ccv_count.to_i, age: (now - snap.timestamp).to_i }
+          end.compact.sort_by { |r| -r[:stored] }.first(TOP_N)
+
+          gql = Twitch::GqlClient.new
+          helix = Twitch::HelixClient.new
+
+          puts sprintf("%-22s %10s %8s %10s %10s %10s %10s", "login", "stored", "age_s", "fresh_gql", "fresh_helix", "d_gql", "d_helix")
+          agg = { age: [], d_gql: [], d_helix: [], gql_vs_helix: [] }
+          rows.each do |r|
+            login = r[:login]
+            fresh_gql = begin
+              res = gql.batch([ { query: Twitch::GqlClient::QUERIES[:stream_metadata], variables: { login: login } } ])
+              res&.first&.dig("data", "user", "stream", "viewersCount")&.to_i
+            rescue => e
+              nil
+            end
+            fresh_helix = begin
+              (helix.get_streams(user_logins: [ login ]) || []).first&.dig("viewer_count")&.to_i
+            rescue => e
+              nil
+            end
+            d_gql = (fresh_gql && r[:stored]) ? fresh_gql - r[:stored] : nil
+            d_helix = (fresh_helix && r[:stored]) ? fresh_helix - r[:stored] : nil
+            agg[:age] << r[:age]
+            agg[:d_gql] << d_gql.abs if d_gql
+            agg[:d_helix] << d_helix.abs if d_helix
+            agg[:gql_vs_helix] << (fresh_gql - fresh_helix).abs if fresh_gql && fresh_helix
+            puts sprintf("%-22s %10d %8d %10s %10s %10s %10s", login, r[:stored], r[:age],
+                         fresh_gql.inspect, fresh_helix.inspect, d_gql.inspect, d_helix.inspect)
+          end
+
+          def mean(a) = a.empty? ? 0 : (a.sum.to_f / a.size).round(1)
+          def med(a) = a.empty? ? 0 : a.sort[a.size/2]
+          puts "\n--- AGGREGATES (abs deltas) ---"
+          puts "  snapshot age_s:  mean=#{mean(agg[:age])} med=#{med(agg[:age])} max=#{agg[:age].max}   (cadence target ~60s)"
+          puts "  |stored - fresh_gql|:   mean=#{mean(agg[:d_gql])} med=#{med(agg[:d_gql])}   (how much our stored trails a fresh GQL read)"
+          puts "  |stored - fresh_helix|: mean=#{mean(agg[:d_helix])} med=#{med(agg[:d_helix])}"
+          puts "  |fresh_gql - fresh_helix|: mean=#{mean(agg[:gql_vs_helix])} med=#{med(agg[:gql_vs_helix])}   (source disagreement, both fresh)"
+          puts "\nINTERPRETATION: large age_s + small |stored-fresh_gql| ⇒ lag is OUR 60s CADENCE (a fresh read would be current)."
+          puts "                small age_s + large |stored-fresh_gql| ⇒ GQL viewersCount itself moved fast (source volatility)."
+          puts "                large |fresh_gql - fresh_helix| ⇒ the two Twitch sources disagree even when both fresh."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/ccvlag.rb) lines)"
+
+      - name: Run probe on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/ccvlag.rb ${TARGET}:/tmp/ccvlag.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/ccvlag.rb ${CONTAINER}:/tmp/ccvlag.rb && docker exec -e TOP_N='${{ inputs.top_n }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/ccvlag.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
