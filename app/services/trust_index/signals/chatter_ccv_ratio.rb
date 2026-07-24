@@ -53,14 +53,19 @@
 #
 # Zero-vs-nil philosophy (Option A per PO directive 2026-06-04 — full decision
 # rationale in PR #278 description / commit message): this signal ABSTAINS on
-# `unique_chatters_60min = 0`. **Sibling signal `auth_ratio` (PR #220 / BUG-251.30)
-# does the OPPOSITE** — fires MAX bot on `chatters_present_total = 0`. Both are
-# locally correct per their data-source reliability: BSW CommunityTab (auth_ratio
-# source) is high-reliability post-Tier-2 fix, so zero there is a strong viewbot
-# signature; CH `mv_stream_minute_target` (this signal's source) has known IRC-
-# capacity / late-subscribe failure modes where zero often means "ingest gap"
-# rather than "no humans". If CH ingest reliability ever improves to BSW-level
-# (or BSW reliability degrades), we re-audit per-source.
+# `unique_chatters_60min = 0` (CH `mv_stream_minute_target` has known IRC-capacity /
+# late-subscribe failure modes where zero often means "ingest gap" rather than
+# "no humans").
+#
+# Sibling signal `auth_ratio` originally took the OPPOSITE stance — firing MAX bot on
+# `chatters_present_total = 0` on the premise that BSW CommunityTab was high-reliability
+# so a literal zero was a strong viewbot signature. The 2026-07-24 botting test DISPROVED
+# that premise: an empty CommunityTab roster (count 0, all role arrays empty) on a LIVE
+# stream is an enumeration gap, not a real empty room (the broadcaster is always present).
+# Fixed at the write boundary (`StreamMonitorWorker#fetch_ccv_and_chatters_batch`): an empty
+# roster is now DROPPED, not persisted as 0 → a literal zero no longer reaches auth_ratio
+# for live data. So both signals now converge: a zero from either source is treated as
+# "no signal" (abstain / carry-last), not "confirmed bots".
 
 module TrustIndex
   module Signals

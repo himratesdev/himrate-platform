@@ -132,9 +132,23 @@ class StreamMonitorWorker
       staff = parse_chatters_array(chatters["staff"])
       viewers = parse_chatters_array(chatters["viewers"])
       sum_present = bcasters.size + mods.size + vips.size + staff.size + viewers.size
+      total_present = chatters["count"]&.to_i || sum_present
+
+      # BUG (botting-test 2026-07-24, dariya_willis): an empty CommunityTab roster
+      # (total_present == 0, every role array empty) while the stream is live is an
+      # ENUMERATION GAP, not a real empty room — the broadcaster is always present in their
+      # own live chat presence, so a genuine stream's presence is never literally zero.
+      # Persisting 0 made AuthRatio (#1) flap to false-MAX-bot (honest dariya flapped 243↔0).
+      # Treat total_present == 0 like a per-item failure: leave the login out of the map →
+      # save_chatters_snapshot persists nil → ContextBuilder#fetch_chatters_present_total
+      # carries the last good presence. A real video-only viewbot still shows
+      # broadcasters_count ≥ 1 (total ≥ 1) → the depressed-but-nonzero ratio fires the signal
+      # without relying on a literal zero. (chatters_present_total feeds ONLY the v1 AuthRatio
+      # signal — the v2 F_soft verdict uses the EIHC chat roster — so this is verdict-neutral.)
+      next if total_present.zero?
 
       chatters_present[login] = {
-        total_present: chatters["count"]&.to_i || sum_present,
+        total_present: total_present,
         broadcasters_count: bcasters.size,
         moderators_count: mods.size,
         vips_count: vips.size,
