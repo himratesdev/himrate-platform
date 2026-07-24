@@ -1,0 +1,91 @@
+name: ti-v2-chatters
+# Qualitative chatter-level snapshot for a live channel — who is in chat: account age, followers/follows,
+# subscriber status, recent messages, returning/vip, new arrivals. Distinguishes the REAL audience +
+# organic newcomers (who chat, have histories) from SILENT viewbots (invisible to chat → seen only via
+# the CCV-vs-chatters deficit). READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      login:
+        required: true
+        type: string
+
+jobs:
+  chatters:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build chatter script
+        run: |
+          cat > /tmp/iechat.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          LOGIN = ENV.fetch("LOGIN").downcase
+          ch = Channel.find_by("lower(login) = ?", LOGIN); abort "NO CHANNEL" unless ch
+          s  = ch.streams.where(ended_at: nil).order(started_at: :desc).first; abort "NOT LIVE" unless s
+          ccv = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count)
+          puts "===== CHATTERS #{LOGIN} CCV(ours)=#{ccv} stream=#{s.id} @ #{Time.current.iso8601} ====="
+
+          agg = (Clickhouse::ChatQueries.chatter_aggregations(s) rescue {})
+          usernames = agg.keys
+          puts "distinct chatters (CH agg)=#{usernames.size} | CCV=#{ccv} → chat/ccv=#{ccv.to_i.positive? ? (usernames.size.to_f/ccv).round(4) : 'n/a'}"
+          puts "SILENT-BOT DEFICIT: #{ccv.to_i} online vs #{usernames.size} distinct chatters — the gap = viewers who never chat (bots + lurkers)"
+
+          # subscriber status distribution (subs among chatters)
+          subs = agg.count { |_, v| v.dig(:irc_tags, :subscriber_status).to_s != "" && v.dig(:irc_tags, :subscriber_status).to_s != "0" }
+          ret  = agg.count { |_, v| v.dig(:irc_tags, :returning_chatter) }
+          vip  = agg.count { |_, v| v.dig(:irc_tags, :vip) }
+          puts "SUBS among chatters=#{subs} | returning=#{ret} | vip=#{vip}"
+
+          # account-age + follow profile join
+          profs = ChatterProfile.where(login: usernames).index_by(&:login)
+          now = Time.current
+          with_prof = usernames.count { |u| profs[u] }
+          ages = usernames.filter_map { |u| p = profs[u]; p&.twitch_created_at ? ((now - p.twitch_created_at)/86400).to_i : nil }
+          young7  = ages.count { |d| d < 7 }
+          young30 = ages.count { |d| d < 30 }
+          fol0    = usernames.count { |u| p = profs[u]; p && p.followers_count.to_i.zero? }
+          puts "\n--- CHATTER PROFILES (n=#{usernames.size}, with_profile=#{with_prof}) ---"
+          puts "  account age: <7d=#{young7} <30d=#{young30} | median_age_days=#{ages.empty? ? 'n/a' : ages.sort[ages.size/2]} | followers_zero=#{fol0}"
+
+          puts "\n--- SAMPLE CHATTERS (up to 25: age_days / followers / follows / sub / msgs / last-msg) ---"
+          raw = (Clickhouse::ChatQueries.chatter_raw_data(s) rescue {})
+          usernames.first(25).each do |u|
+            p = profs[u]; t = agg[u][:irc_tags] || {}
+            age = p&.twitch_created_at ? ((now - p.twitch_created_at)/86400).to_i : nil
+            msg = (raw[u] && raw[u][:messages] && raw[u][:messages].last).to_s[0, 40]
+            printf("  %-18s age=%-6s fol=%-7s flw=%-6s sub=%-3s msgs=%-4s | %s\n",
+              u[0,18], age.inspect, p&.followers_count.inspect, p&.follows_count.inspect,
+              (t[:subscriber_status].to_s == "" ? "-" : t[:subscriber_status]), agg[u][:chat_stats][:message_count], msg)
+          end
+          puts "\nNOTE: silent viewbots are NOT in this list (they never chat). This is the REAL audience + organic newcomers."
+          puts "The bot peak = CCV(#{ccv}) minus this real chatting audience, sustained = the F_soft deficit."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/iechat.rb) lines)"
+
+      - name: Run chatters on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/iechat.rb ${TARGET}:/tmp/iechat.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/iechat.rb ${CONTAINER}:/tmp/iechat.rb && docker exec -e LOGIN='${{ inputs.login }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/iechat.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
