@@ -1,0 +1,89 @@
+name: ti-v2-fullsystem
+# Full-system snapshot for a live channel — runs ALL 12 v1 signals (Registry.compute_all) + the full
+# v2 L0-L4 engine breakdown + registered-% (AuthRatio) + chat + CCV source, so the operator sees the
+# WHOLE detection state (what is live / neutral / dormant / no-data), not just the i_event slice.
+# READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      login:
+        required: true
+        type: string
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build snapshot script
+        run: |
+          cat > /tmp/iefull.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          LOGIN = ENV.fetch("LOGIN").downcase
+          ch = Channel.find_by("lower(login) = ?", LOGIN); abort "NO CHANNEL" unless ch
+          s  = ch.streams.where(ended_at: nil).order(started_at: :desc).first; abort "NOT LIVE" unless s
+          puts "===== FULL SYSTEM SNAPSHOT #{LOGIN} stream=#{s.id} @ #{Time.current.iso8601} ====="
+
+          ctx = TrustIndex::ContextBuilder.build(s)
+          ccv = ctx[:latest_ccv]
+          puts "CCV(Helix)=#{ccv} | unique_chatters_60min=#{ctx[:unique_chatters_60min]} | chatters_present_total(registered)=#{ctx[:chatters_present_total].inspect}"
+          puts "chat_rate_10min rows=#{(ctx[:chat_rate_10min]||[]).size} | chat_username_counts_5min distinct=#{(ctx[:chat_username_counts_5min]||{}).size} | bot_scores=#{(ctx[:bot_scores]||[]).size}"
+
+          puts "\n--- 12 v1 SIGNALS (Registry.compute_all) — value / confidence / key-meta ---"
+          results = TrustIndex::Signals::Registry.compute_all(ctx)
+          results.each do |type, r|
+            live = r.confidence.to_f > 0 && !r.value.nil?
+            puts sprintf("  %-24s val=%-10s conf=%-5s %s %s", type, r.value.inspect, r.confidence.inspect,
+                         (live ? "LIVE" : "insufficient/neutral"), (r.metadata || {}).reject { |k,_| k == :reason }.first(3).to_h.inspect)
+          end
+
+          puts "\n--- v2 ENGINE L0-L4 (the verdict) ---"
+          v2c = TrustIndex::ContextBuilder.build_v2(s, ctx)
+          v2  = TrustIndex::V2::Engine.compute(context: v2c, k: Calibration::Registry.load)
+          puts "  L0/L1 identity: b_hard(named bots)=#{v2.b_hard.size} n_frac=#{v2.n_frac.round(4)} f_hard=#{v2.f_hard} c_hard=#{v2.c_hard}"
+          puts "  L2 presume    : eihc=#{v2.eihc} rho_obs=#{v2.rho_obs&.round(4)} f_soft=#{v2.f_soft&.round(1)} (cell rho_star=#{v2c.cell&.rho_star})"
+          puts "  L3 fuse       : f_self=#{v2.f_self} f_hat=#{v2.f_hat&.round(1)}"
+          puts "  L4 emit       : band=#{v2.band&.color}/#{v2.band&.row} authenticity=#{v2.authenticity&.round(1)} erv=#{v2.erv&.round(1)} c_self=#{v2.c_self} confirmed_anomaly=#{v2.confirmed_anomaly}"
+          puts "  reason_codes  : #{v2.reason_codes.map { |rc| rc.respond_to?(:code) ? rc.code : rc }.inspect}"
+
+          puts "\n--- WIRED vs NEUTRAL (v2 L0 per-chatter sources) ---"
+          rc = v2c.raw_chatters
+          if rc.any?
+            c = rc.first
+            puts "  temporal_recurrence WIRED (#{rc.count { |x| x.temporal_recurrence }}/#{rc.size} flagged) | known_bot_hit WIRED (#{rc.count(&:known_bot_hit)}/#{rc.size})"
+            puts "  account_profile_llr=#{c.account_profile_llr} anti_bot_llr=#{c.anti_bot_llr} cluster_delta_k=#{c.cluster_delta_k} age_gate=#{c.age_gate}  <- NEUTRAL (GATE-0 pending)"
+          end
+
+          puts "\n--- CALIBRATION FLAGS ---"
+          puts "  i_event_enabled=#{CalibrationConstant.value_for('i_event_enabled', fallback: 0.0)} (C_self verdict) | inflation_corrob_enabled=#{CalibrationConstant.value_for('inflation_corrob_enabled', fallback: 0.0)} (C_inflation)"
+          puts "  ti_v2_cowindowed_rho=#{Flipper.enabled?(:ti_v2_cowindowed_rho)} (windowing verdict) | ti_v2_ie_shadow=#{Flipper.enabled?(:ti_v2_ie_shadow)} (accrual)"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/iefull.rb) lines)"
+
+      - name: Run snapshot on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/iefull.rb ${TARGET}:/tmp/iefull.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/iefull.rb ${CONTAINER}:/tmp/iefull.rb && docker exec -e LOGIN='${{ inputs.login }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/iefull.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
