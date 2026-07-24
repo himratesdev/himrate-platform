@@ -169,6 +169,35 @@ RSpec.describe StreamMonitorWorker do
     expect(snapshot.auth_ratio).to be_nil # no IRC typers
   end
 
+  # BUG (botting-test 2026-07-24, honest dariya_willis): an empty CommunityTab roster (count 0,
+  # every role array empty) while the stream is live is an ENUMERATION GAP, not a real empty room —
+  # the broadcaster is always present in their own live chat presence. It must NOT be persisted as
+  # chatters_present_total: 0 (which made AuthRatio #1 flap to false-MAX-bot, dariya 243↔0). The
+  # login is dropped so the row carries a NULL present-count and
+  # ContextBuilder#fetch_chatters_present_total carries the last good value.
+  it "treats an empty CommunityTab roster (total_present 0) as an enumeration gap → persists nil, not 0" do
+    allow(gql).to receive(:batch).and_return(
+      [
+        { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } },
+        { "data" => { "channel" => { "chatters" => {
+          "broadcasters" => [], "moderators" => [], "vips" => [], "staff" => [], "viewers" => [],
+          "count" => 0
+        } } } }
+      ]
+    )
+    # IRC chat present → a ChattersSnapshot is still written (active-typer columns), with a NULL
+    # present-count rather than a bogus 0.
+    allow(Clickhouse::ChatQueries).to receive(:chat_activity_batch)
+      .with([ stream.id ], anything)
+      .and_return(stream.id => { unique: 3, total: 12 })
+
+    expect { worker.perform }.to change { stream.chatters_snapshots.count }.by(1)
+
+    snapshot = stream.chatters_snapshots.order(timestamp: :desc).first
+    expect(snapshot.chatters_present_total).to be_nil # empty roster dropped, not persisted as 0
+    expect(snapshot.unique_chatters_count).to eq(3)   # IRC typer columns still written
+  end
+
   # BUG-251.30: CommunityTab data nil (per-item partial fail) does NOT break CCV persistence.
   # After CR-iter1 Should-1 refactor, there's no separate community_tab batch call — instead
   # the COMBINED batch returns metadata-ok + chatters-nil, and the worker writes the snapshot

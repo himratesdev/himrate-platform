@@ -33,14 +33,24 @@
 # Zero-vs-nil philosophy (Option A per PO directive 2026-06-04 — full decision
 # rationale in PR #278 description / commit message): the `chatters_present.nil?`
 # guard in `#calculate` fires ONLY on missing data, NOT on zero. When
-# `chatters_present_total = 0` with `ccv > 0`, the signal intentionally PROCEEDS
-# to ratio math → value = 1.0 (MAX bot). Rationale: viewbots that ONLY join the
-# video stream (skip IRC entirely) depress chatters_present to literal zero; a
-# legitimate stream nearly always has *some* presence — broadcaster + mods + a
-# few viewers — in the 60s polling window. Source
-# `ChattersSnapshot.chatters_present_total` is populated by BSW (Twitch GQL
-# CommunityTab) with high reliability post-PR #221+#223 (Android Client-ID +
-# Tier-2 stability), so zero is a strong signal not an ingest gap.
+# `chatters_present_total = 0` with `ccv > 0`, the signal PROCEEDS to ratio math
+# → value = 1.0 (MAX bot).
+#
+# CORRECTION (botting-test 2026-07-24, honest dariya_willis): Option A's original
+# premise — "a legitimate live stream nearly always has *some* presence, so a
+# literal zero is a strong viewbot signal not an ingest gap" — was empirically
+# DISPROVEN. On an honest stream with 100+ real chatters the CommunityTab
+# enumeration intermittently returned an EMPTY roster, so the persisted
+# `chatters_present_total` flapped 243↔0 → this signal flapped clean↔false-MAX-bot.
+# Root cause: the broadcaster is ALWAYS present in their own live chat presence, so
+# a genuine stream's present-count is never literally zero — a `total_present == 0`
+# is an enumeration gap, full stop. Fix lives at the write boundary
+# (`StreamMonitorWorker#fetch_ccv_and_chatters_batch`): an empty roster is no longer
+# persisted as 0 — it is dropped so ContextBuilder carries the last good presence.
+# A real video-only viewbot still shows broadcasters_count ≥ 1 (total ≥ 1) → the
+# depressed-but-nonzero ratio fires the signal WITHOUT a literal zero. Net: the
+# `value = 1.0 on zero` branch below is now defensive/unreachable for live data
+# (kept for historical rows + belt-and-suspenders). Behavior on a real 0 unchanged.
 # **Contrast with sibling signal `chatter_ccv_ratio` (PR #276, Phase 4 J PR-E):**
 # that signal DOES abstain on `unique_chatters_60min = 0` because its source
 # (CH `mv_stream_minute_target` ← IRC monitor) has known capacity issues
