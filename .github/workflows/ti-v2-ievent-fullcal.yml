@@ -1,0 +1,140 @@
+name: ti-v2-ievent-fullcal
+# Battle-mode P2.1 — FULL i_event floor calibration analyzer. Superset of ti-v2-ievent-calibrate:
+# samples the honest cohort, computes ALL FOUR floor distributions ([2] v_robust_z / [4] arrival_share /
+# [5] conv / [6] cov), recommends floors, and — the key upgrade — evaluates the FULL 6-conjunct AND
+# per honest stream (the AND geometry) so we prove honest FULL-AND-firing = 0, NOT just per-conjunct.
+# Rationale (botting test 2026-07-24): quiet honest streams bottom [4]/[6] at ~0, so a per-conjunct
+# "floor below honest-min" is un-fireable (floor 0) → no botter recall. FP-safety instead comes from
+# the AND: an honest quiet stream trips [4]∧[6] but NEVER [1] (ρ_obs not below its OWN baseline) ∧ [2]
+# (no V-surge). This analyzer confirms that. READ-ONLY. Outputs floors to seed (PO-gated flip).
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      honest_sample: { required: false, type: string, default: "150" }
+      margin: { required: false, type: string, default: "0.20" }
+
+jobs:
+  fullcal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build full-calibration script
+        run: |
+          cat > /tmp/iefullcal.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          N = ENV.fetch("HONEST_SAMPLE", "150").to_i.clamp(10, 400)
+          MARGIN = ENV.fetch("MARGIN", "0.20").to_f
+          CB = TrustIndex::ContextBuilder
+          def pct(a, p) a = a.compact.sort; a.empty? ? nil : a[((p*(a.size-1)).round)] end
+
+          # Per-stream i_event conjunct inputs (windowed frame) — mirrors i_event_shadow_signals + the
+          # extra Context fields the 6-AND reads ([1] rho_self_lo, [3] raid, suppressors).
+          def facts(s)
+            ctx = CB.build(s)
+            roster, v_w = CB.windowed_inputs(s)
+            return nil if v_w.nil?
+            v2c = CB.build_v2(s, ctx)
+            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+            wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+            sig = CB.i_event_shadow_signals(s, ctx, wctx, wres)
+            {
+              z: sig[:v_robust_z], share: sig[:arrival_share], cov: sig[:cov], conv: sig[:conv],
+              rho_obs: sig[:rho_obs], rho_self_lo: wctx.rho_self_lo, stable: wctx.self_history_stable,
+              raid: wctx.raid_window, tier: wctx.cold_start_tier, surge: wctx.unattributed_surge,
+              band: "#{wres.band&.color}/#{wres.band&.row}", f_soft: wres.f_soft, auth: wres.authenticity
+            }
+          rescue => e
+            nil
+          end
+
+          # Evaluate the FULL 6-AND (InflationEvent semantics) at candidate floors. [2] uses z>floor as a
+          # CONSERVATIVE proxy (drops the extra v>p90 gate → over-counts honest [2] → if honest AND=0 here
+          # it's 0 with the real stricter gate). [1] rho_dropped ⟺ ρ_obs < rho_self_lo on the self frame.
+          def conjuncts(m, zf, af, cf, vf)
+            c1 = !!(m[:stable] && m[:rho_self_lo] && m[:rho_obs] && m[:rho_obs] < m[:rho_self_lo])
+            c2 = !!(m[:z] && m[:z] > zf)
+            c3 = !m[:raid]
+            c4 = !!(m[:share] && m[:share] < af)
+            c5 = !!(m[:conv] && m[:conv] < cf)
+            c6 = !!(m[:cov] && m[:cov] < vf)
+            supp = (m[:tier].to_s == "insufficient") || m[:surge]
+            { c1: c1, c2: c2, c3: c3, c4: c4, c5: c5, c6: c6,
+              fired: (!supp && c1 && c2 && c3 && c4 && c5 && c6) }
+          end
+
+          puts "===== i_event FULL calibration (honest<=#{N}, margin=#{MARGIN}) ====="
+          live = Stream.where(ended_at: nil).order(started_at: :desc).limit(700).to_a
+          honest = []; scanned = 0
+          live.each do |s|
+            break if honest.size >= N
+            scanned += 1
+            t = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(calculated_at: :desc).first
+            next unless t && t.c_hard == false && t.band_color.to_s == "green"
+            m = facts(s)
+            next unless m && m[:stable]
+            honest << m
+          end
+          puts "honest cohort: #{honest.size} (scanned #{scanned})"
+          abort "too few honest (#{honest.size})" if honest.size < 10
+
+          zs = honest.map { |m| m[:z] }.compact; shs = honest.map { |m| m[:share] }.compact
+          cvs = honest.map { |m| m[:cov] }.compact; cos = honest.map { |m| m[:conv] }.compact
+          puts "\n--- honest distributions ---"
+          puts "  [2] v_robust_z : p50=#{pct(zs,0.5)} p90=#{pct(zs,0.9)} p99=#{pct(zs,0.99)} max=#{zs.max} (n=#{zs.size})"
+          puts "  [4] arrival_sh : p1=#{pct(shs,0.01)} p10=#{pct(shs,0.1)} p50=#{pct(shs,0.5)} min=#{shs.min} (n=#{shs.size})"
+          puts "  [5] conv       : p1=#{pct(cos,0.01)} p10=#{pct(cos,0.1)} p50=#{pct(cos,0.5)} min=#{cos.min} (n=#{cos.size} of #{honest.size} have conv)"
+          puts "  [6] cov        : p1=#{pct(cvs,0.01)} p10=#{pct(cvs,0.1)} p50=#{pct(cvs,0.5)} min=#{cvs.min} (n=#{cvs.size})"
+
+          # Recommended floors: [2] ABOVE honest-p99; [4]/[5]/[6] BELOW honest-p1 (−margin). Where honest-p1
+          # is ~0 the floor collapses to ~0 (un-fireable per-conjunct) — that's expected; the AND carries it.
+          zf = pct(zs,0.99) ? (pct(zs,0.99)*(1+MARGIN)).round(2) : 99.0
+          af = pct(shs,0.01) ? (pct(shs,0.01)*(1-MARGIN)).round(6) : 0.0
+          cf = pct(cos,0.01) ? (pct(cos,0.01)*(1-MARGIN)).round(4) : -1.0
+          vf = pct(cvs,0.01) ? (pct(cvs,0.01)*(1-MARGIN)).round(4) : 0.0
+          puts "\n--- RECOMMENDED floors (honest-tail #{(MARGIN*100).to_i}%) ---"
+          puts "  ie_v_trend_z=#{zf}  ie_arrival_floor_frac=#{af}  ie_conv_floor=#{cf}  ie_cv_floor=#{vf}"
+
+          # Per-conjunct honest true-rate (diagnosis) + FULL-6-AND honest firing (the FP-safety number).
+          fired = 0; pc = Hash.new(0)
+          honest.each do |m|
+            r = conjuncts(m, zf, af, cf, vf)
+            %i[c1 c2 c3 c4 c5 c6].each { |k| pc[k] += 1 if r[k] }
+            fired += 1 if r[:fired]
+          end
+          puts "\n--- honest conjunct true-rate (per-conjunct, at recommended floors) ---"
+          puts "  [1]rho_dropped=#{pc[:c1]}/#{honest.size}  [2]v_z=#{pc[:c2]}  [3]not_raid=#{pc[:c3]}  [4]arr=#{pc[:c4]}  [5]conv=#{pc[:c5]}  [6]cov=#{pc[:c6]}"
+          puts "  >>> honest FULL-6-AND firing = #{fired}/#{honest.size}  (MUST be 0 for the flip) <<<"
+          if fired > 0
+            puts "  !! #{fired} honest streams trip ALL 6 — floors too loose OR a real inflation-shaped honest pattern. Investigate before flip."
+          else
+            puts "  OK — no honest stream trips the full conjunction at these floors → C_self FP-safe on this cohort."
+          end
+          puts "\nNOTE: [5] conv computable only for #{cos.size}/#{honest.size} honest (needs ≥2 FollowerSnapshot + growing Δccv)."
+          puts "RECALL (dariya labeled-positive) requires OFFLINE recompute (her stream ended) — separate probe."
+          puts "NEXT: review floors + honest-AND=0 → PO-gated seed (ie_*) → windowing flip → i_event flip → re-bot verify."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/iefullcal.rb) lines)"
+
+      - name: Run on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/iefullcal.rb ${TARGET}:/tmp/iefullcal.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/iefullcal.rb ${CONTAINER}:/tmp/iefullcal.rb && docker exec -e HONEST_SAMPLE='${{ inputs.honest_sample || '150' }}' -e MARGIN='${{ inputs.margin || '0.20' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/iefullcal.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
