@@ -1,0 +1,66 @@
+name: ti-v2-poststream
+# Post-stream trajectory — reconstruct the FULL arc of a (possibly ended) stream from persisted data:
+# ccv_snapshots time-series + v2 TIH (authenticity / rho_obs / ccv / band) over time. Shows baseline →
+# botted ramp → peak → decline (bot-off) → end. READ-ONLY.
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        required: true
+        type: choice
+        options: [hostkey]
+        default: hostkey
+      login:
+        required: true
+        type: string
+jobs:
+  arc:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+      - name: Build arc script
+        run: |
+          cat > /tmp/iearc.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          LOGIN = ENV.fetch("LOGIN").downcase
+          ch = Channel.find_by("lower(login) = ?", LOGIN); abort "NO CHANNEL" unless ch
+          s = ch.streams.order(started_at: :desc).first; abort "NO STREAM" unless s
+          puts "===== POST-STREAM ARC #{LOGIN} stream=#{s.id} started=#{s.started_at} ended=#{s.ended_at.inspect} ====="
+
+          ccv = s.ccv_snapshots.order(:timestamp).pluck(:timestamp, :ccv_count)
+          puts "ccv_snapshots: #{ccv.size} points | min=#{ccv.map(&:last).min} max(PEAK)=#{ccv.map(&:last).max} first=#{ccv.first&.last} last=#{ccv.last&.last}"
+          # CCV arc — sample ~20 evenly across the stream
+          step = [ ccv.size / 20, 1 ].max
+          puts "\n--- CCV ARC (every ~#{step}th snapshot) ---"
+          ccv.each_slice(step) { |sl| t, v = sl.first; puts "  #{t.strftime('%H:%M')}  #{'#' * (v.to_i / 15)} #{v}" }
+
+          tih = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(:calculated_at)
+                                 .pluck(:calculated_at, :authenticity, :rho_obs, :ccv, :band_color)
+          puts "\n--- v2 TIH ARC: authenticity trajectory (#{tih.size} rows) ---"
+          tstep = [ tih.size / 20, 1 ].max
+          tih.each_slice(tstep) { |sl| t, a, r, c, b = sl.first; printf("  %s  auth=%-6s rho_obs=%-8s ccv=%-5s %s\n", t.strftime('%H:%M'), a.inspect, r&.round(3).inspect, c.inspect, b) }
+          auths = tih.map { |r| r[1] }.compact
+          puts "\n  authenticity: baseline≈#{auths.first} → MIN(worst)=#{auths.min} → last=#{auths.last}   (drop during botting, recovery after bot-off)"
+          puts "  ccv: peak=#{ccv.map(&:last).max} vs baseline≈#{ccv.first&.last} → inflation ratio ≈ #{ccv.first&.last.to_i.positive? ? (ccv.map(&:last).max.to_f / ccv.first.last).round(2) : 'n/a'}x"
+          RUBY_EOF
+          echo "Built"
+      - name: Run arc on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/iearc.rb ${TARGET}:/tmp/iearc.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh ${TARGET} "docker cp /tmp/iearc.rb ${CONTAINER}:/tmp/iearc.rb && docker exec -e LOGIN='${{ inputs.login }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/iearc.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
