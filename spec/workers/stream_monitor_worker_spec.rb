@@ -198,6 +198,24 @@ RSpec.describe StreamMonitorWorker do
     expect(snapshot.unique_chatters_count).to eq(3)   # IRC typer columns still written
   end
 
+  # CR N-1: empty roster AND no IRC chat → save_chatters_snapshot guard is `(chat || present) && ccv`;
+  # with the empty roster dropped (present nil) and no IRC chat, NO chatters_snapshot is written at all
+  # (CCV snapshot still persists). Locks the "nothing to record this cycle" behavior.
+  it "writes no chatters_snapshot when an empty roster is dropped AND there is no IRC chat" do
+    allow(gql).to receive(:batch).and_return(
+      [
+        { "data" => { "user" => { "stream" => { "viewersCount" => 500 } } } },
+        { "data" => { "channel" => { "chatters" => {
+          "broadcasters" => [], "moderators" => [], "vips" => [], "staff" => [], "viewers" => [],
+          "count" => 0
+        } } } }
+      ]
+    )
+    # default chat_activity_batch stub returns {} (no IRC chat)
+    expect { worker.perform }.to change { stream.ccv_snapshots.count }.by(1)
+      .and change { stream.chatters_snapshots.count }.by(0)
+  end
+
   # BUG-251.30: CommunityTab data nil (per-item partial fail) does NOT break CCV persistence.
   # After CR-iter1 Should-1 refactor, there's no separate community_tab batch call — instead
   # the COMBINED batch returns metadata-ok + chatters-nil, and the worker writes the snapshot

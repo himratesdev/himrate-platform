@@ -51,6 +51,9 @@
 # depressed-but-nonzero ratio fires the signal WITHOUT a literal zero. Net: the
 # `value = 1.0 on zero` branch below is now defensive/unreachable for live data
 # (kept for historical rows + belt-and-suspenders). Behavior on a real 0 unchanged.
+# Pre-fix rows that already persisted a literal 0 are NOT backfilled/scrubbed (out of
+# scope); on recompute they still read value 1.0 until a fresh non-nil row supersedes
+# them (≤ 1 monitor cycle, since the read carries the latest non-nil presence).
 # **Contrast with sibling signal `chatter_ccv_ratio` (PR #276, Phase 4 J PR-E):**
 # that signal DOES abstain on `unique_chatters_60min = 0` because its source
 # (CH `mv_stream_minute_target` ← IRC monitor) has known capacity issues
