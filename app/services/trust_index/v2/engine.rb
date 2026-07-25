@@ -151,13 +151,11 @@ module TrustIndex
       end
 
       # i_event EPIC (T1-074, C_self / G-monoculture fix): compose the FINAL i_event AFTER L2 (needs
-      # soft.eihc for conjunct [1] rho_dropped, which only exists inside the engine). DORMANT: the
-      # i_event_enabled=0.0 kill-switch short-circuits to false BEFORE reading any ie_* input or the
-      # external partial → byte-identical to the hardcoded-false behavior today (proof: golden spec).
-      # respond_to? keeps isolated-K unit doubles working; the golden/flip specs assert the field is
-      # present so a fumbled K-double can't merge a broken wire green (red-team SHOULD-FIX #4). Delegates
-      # the 6-way AND to InflationEvent.call so the conjunction lives in ONE place. i_event_external is the
-      # builder's pre-ANDed [2]∧[4]∧[5]∧[6]; [1] is engine-internal; [3]/tier read straight from Context.
+      # soft.eihc for conjunct [1] rho_dropped, which only exists inside the engine) as the disjunction of
+      # TWO independently-gated self-history arms — the abrupt-STEP 6-AND (legacy_i_event) OR the HELD-
+      # plateau C_self^SP (sustained_plateau?). Both dormant by default via their OWN kill-switches, so
+      # i_event stays byte-identical to today at defaults. @i_event_sustained records whether the fire is
+      # sustained-ONLY (no concurrent step) — the band caps such a single deficit-family signal at YELLOW.
       def derive_i_event(soft)
         legacy    = legacy_i_event(soft)     # the abrupt-STEP 6-AND arm (own i_event_enabled gate)
         sustained = sustained_plateau?(soft) # the HELD-plateau C_self^SP arm (own csustained_enabled gate)
@@ -167,6 +165,13 @@ module TrustIndex
         legacy || sustained
       end
 
+      # The abrupt-STEP arm (convert-from-honest inflation). DORMANT: the i_event_enabled=0.0 kill-switch
+      # short-circuits to false BEFORE reading any ie_* input or the external partial → byte-identical to
+      # the hardcoded-false behavior today (proof: golden spec). respond_to? keeps isolated-K unit doubles
+      # working; the golden/flip specs assert the field is present so a fumbled K-double can't merge a
+      # broken wire green (red-team SHOULD-FIX #4). Delegates the 6-way AND to InflationEvent.call so the
+      # conjunction lives in ONE place. i_event_external is the builder's pre-ANDed [2]∧[4]∧[5]∧[6]; [1] is
+      # engine-internal; [3]/tier read straight from Context.
       def legacy_i_event(soft)
         return false unless @k.respond_to?(:i_event_enabled) && @k.i_event_enabled.to_f.positive?
 

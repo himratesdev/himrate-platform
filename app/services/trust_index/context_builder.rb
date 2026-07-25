@@ -560,11 +560,16 @@ module TrustIndex
       # TI v2.1 C_self^SP durability ledger — the CURRENT stream's LEADING run of consecutive windowed
       # elevated-deficit TIH windows. The append-only history IS the ledger (NO new table/column/counter).
       # DORMANT: csustained_enabled≤0 → 0 with NO read (byte-identical cost). Live: ONE bounded index-ordered
-      # read (idx_tih_stream_calculated_id) of the newest ≤N rows for THIS stream. f_soft_lo>0 collapses
-      # "[P1] rho_dropped ∧ ¬G5-floored" into a single persisted column (G5 writes f_soft_lo=0 when it
-      # floors), band_color=green is the HARD RESET (an honest window breaks the run → bot-off recovery
-      # clears it within one cycle). Convention-scoped so the run resets cleanly at the windowing-flip
-      # boundary (fail-safe: under-count across the boundary). The current cycle's row isn't persisted yet
+      # read (idx_tih_stream_calculated_id) of the newest ≤N rows for THIS stream. Per-window survival proxy =
+      # (band_color≠green ∧ f_soft_lo>0): band_color=green is the HARD RESET (an honest window breaks the run
+      # → bot-off recovery clears it within one cycle); f_soft_lo>0 marks a surviving-deficit ¬G5-floored
+      # window (G5 writes f_soft_lo=0 when it floors). NOTE (CR SF): f_soft_lo is the deficit vs the CELL
+      # ρ_lo — a RELATED but broader proxy for the live [P1] rho_dropped (which is vs the channel's OWN
+      # rho_self_lo). This proxy only gates the durability COUNT; the current window always re-checks the
+      # exact [P1]∧[P2]∧[P3] predicate, so a proxy≠cell_t divergence can at most over/under-count N. ⚠ N
+      # (csustained_n_windows) MUST therefore be calibrated on THIS persisted proxy population, not the
+      # idealized cell_t. Convention-scoped so the run resets cleanly at the windowing-flip boundary
+      # (fail-safe: under-count across the boundary). The current cycle's row isn't persisted yet
       # (persistence runs after compute) → this counts the PRIOR run; the engine adds +1 for the live window.
       def v2_sustained_count(stream, consts)
         return 0 unless (consts["csustained_enabled"] || 0.0).to_f.positive?

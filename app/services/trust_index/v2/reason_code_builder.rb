@@ -2,8 +2,8 @@
 
 module TrustIndex
   module V2
-    # Maps the active L4 band + drivers to the reason-code enum array (SRS FR-009/FR-010, §10A — 12
-    # codes). Pure function. Legal-safe: the codes and their §10A i18n strings never say
+    # Maps the active L4 band + drivers to the reason-code enum array (SRS FR-009/FR-010, §10A — the code
+    # set grows as corroborators are added). Pure function. Legal-safe: the codes and their §10A i18n strings never say
     # "bot/fraud/fake"; each carries params ({n}, {pct}) the frontend interpolates. Accusatory codes
     # (rows 1-2 / plashka) only when C_hard ∨ C_self ∨ C_inflation (TI v2.1 CCV-shape corroborator, a
     # per-STREAM code that names nobody); a soft deficit alone surfaces the non-accusatory
