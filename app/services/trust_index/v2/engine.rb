@@ -44,7 +44,12 @@ module TrustIndex
         # G5 (lurker-collapse guard): the channel's own honest CCV baseline (median of clean,
         # convention-scoped own-CCV history). nil when history is too thin. L2 uses it to distinguish an
         # elevated-online injection (keep deficit) from stable-online honest quieting (floor deficit).
-        :own_ccv_baseline
+        :own_ccv_baseline,
+        # TI v2.1 C_self^SP (Sustained-Plateau self-corroborator): sustained_count = the CURRENT stream's
+        # leading run of consecutive windowed elevated-deficit TIH windows (builder-reconstructed from
+        # append-only history; 0 + no read when csustained_enabled≤0). ccv_cov = CoV of the trailing-30min
+        # CCV series (the flat-and-high plateau shape [P3]). Both inert unless csustained_enabled>0.
+        :sustained_count, :ccv_cov
       )
 
       SelfCtx = Data.define(:eligible, :v, :eihc, :rho_self_lo)
@@ -56,7 +61,11 @@ module TrustIndex
                             :v_w,
                             # moat-audit: whether the per-cell ρ* is a real GATE-0 cell — the f_soft
                             # accusatory branch never fires off an uncalibrated/DEFAULT cell.
-                            :cell_calibrated)
+                            :cell_calibrated,
+                            # TI v2.1 C_self^SP: i_event was set by the SUSTAINED-plateau arm and NOT the
+                            # legacy 6-AND step → a single deficit-family signal → capped at YELLOW (row2);
+                            # public RED requires an independent corroborator (C_hard/C_inflation).
+                            :i_event_sustained)
 
       Result = Data.define(:erv, :erv_lo, :erv_hi, :authenticity, :a_hat, :n_frac, :band,
                            :reason_codes, :confirmed_anomaly, :cold_start_tier, :confidence_marker,
@@ -98,6 +107,7 @@ module TrustIndex
       def initialize(context, k)
         @ctx = context
         @k = k
+        @i_event_sustained = false # set by derive_i_event; read by emit_ctx (single compute() pass)
       end
 
       def compute
@@ -149,6 +159,15 @@ module TrustIndex
       # the 6-way AND to InflationEvent.call so the conjunction lives in ONE place. i_event_external is the
       # builder's pre-ANDed [2]∧[4]∧[5]∧[6]; [1] is engine-internal; [3]/tier read straight from Context.
       def derive_i_event(soft)
+        legacy    = legacy_i_event(soft)     # the abrupt-STEP 6-AND arm (own i_event_enabled gate)
+        sustained = sustained_plateau?(soft) # the HELD-plateau C_self^SP arm (own csustained_enabled gate)
+        # A sustained-ONLY fire (no concurrent step) is a single deficit-family signal → it caps at YELLOW
+        # downstream; the legacy step, when present, IS the independent second signal → RED path unchanged.
+        @i_event_sustained = sustained && !legacy
+        legacy || sustained
+      end
+
+      def legacy_i_event(soft)
         return false unless @k.respond_to?(:i_event_enabled) && @k.i_event_enabled.to_f.positive?
 
         InflationEvent.call(InflationEvent::Conditions.new(
@@ -161,6 +180,44 @@ module TrustIndex
           unattributed_surge: @ctx.unattributed_surge,
           cold_start_tier: @ctx.cold_start_tier
         )).i_event
+      end
+
+      # TI v2.1 C_self^SP (Sustained-Plateau self-corroborator) — the DURABLE self-history arm that catches a
+      # HELD silent-viewbot plateau where the legacy 6-AND step detector is dead ([2] v-surge z→0 once the
+      # injection is held, [5] follower-conv confounded by co-arriving real humans). Every predicate is a
+      # LEVEL/shape comparison that PERSISTS across the plateau. DORMANT: csustained_enabled=0.0 short-
+      # circuits at the first guard, BEFORE reading sustained_count / ccv_cov → i_event byte-identical to
+      # the legacy arm alone (golden spec). FP-safety is structural & multi-guard (each honest case is blocked
+      # by a DIFFERENT live predicate): honest quiet-chat → [P2] online_elevated false (same G5 discriminator);
+      # honest good-day → [P1] rho_dropped false (proportional chat); honest viral onset → [P3] plateau_shape
+      # false (rising = high CoV) AND the run clears before N. Thin-history → [P6] full-tier. Windowed frame
+      # (self_v = min(V_W,V_inst)) carries [P1]/[P2] so a decaying online can't manufacture a false deficit.
+      def sustained_plateau?(soft)
+        return false unless @k.respond_to?(:csustained_enabled) && @k.csustained_enabled.to_f.positive?
+        return false if @ctx.rho_self_lo.nil? || !@ctx.self_history_stable # no honest windowed baseline to fall below
+        return false unless @ctx.cold_start_tier == "full"                 # [P6] G4 — never accuse a thin-history channel
+        return false if @ctx.raid_window || @ctx.unattributed_surge        # [P4]/[P5] provenance exclusions
+        return false unless rho_dropped?(soft)                             # [P1] persistent windowed chat-share deficit (reuse)
+        return false unless online_elevated?                              # [P2] online held above own honest baseline (G5-inverse)
+        return false unless plateau_shape?                                # [P3] flat-and-high CCV (a rising viral surge → high CoV → excluded)
+
+        (@ctx.sustained_count.to_i + 1) >= @k.csustained_n_windows.to_f   # durability: this window + the persisted leading run ≥ N
+      end
+
+      # [P2] G5-INVERSE: the online is HELD above the channel's own honest CCV baseline (an injection to
+      # presume), on the SAME G1-capped frame [P1]/F_self use (self_v). An honest quiet-chat stream (stable,
+      # not elevated online) is excluded here by the exact discriminator G5 floors the deficit on.
+      def online_elevated?
+        b = @ctx.own_ccv_baseline
+        b.to_f.positive? && self_v > b.to_f * (1 + @k.csustained_elevated_margin.to_f)
+      end
+
+      # [P3] plateau_shape: the trailing-30min CCV CoV is compressed (a viewbot service holds a target count
+      # → the injected component is near-constant → total CoV collapses). Separates a HELD botted plateau
+      # from a RISING honest surge (high CoV while ramping). ccv_cov nil (<5 pts) → not flat → no fire.
+      def plateau_shape?
+        cov = @ctx.ccv_cov
+        !cov.nil? && cov < @k.csustained_cov_ceiling.to_f
       end
 
       # [1] rho_dropped_vs_baseline ⟺ EIHC/V < rho_self_lo ⟺ Deficit(V, EIHC, rho_self_lo) > 0 — the EXACT
@@ -201,7 +258,10 @@ module TrustIndex
                     ccv_chat_divergence: @ctx.ccv_chat_divergence, v_w: @ctx.v_w,
                     # respond_to? keeps isolated cell-doubles working (mirrors the i_event/lurker guards);
                     # nil/absent → treated as uncalibrated → f_soft branch cannot publicly accuse.
-                    cell_calibrated: (@ctx.cell.calibrated if @ctx.cell.respond_to?(:calibrated)))
+                    cell_calibrated: (@ctx.cell.calibrated if @ctx.cell.respond_to?(:calibrated)),
+                    # TI v2.1 C_self^SP: set by derive_i_event (called just above in compute) — a sustained-
+                    # only self-history inflation caps the band at YELLOW unless independently corroborated.
+                    i_event_sustained: @i_event_sustained)
       end
 
       def extras(post, hard, soft, fraud, emit)

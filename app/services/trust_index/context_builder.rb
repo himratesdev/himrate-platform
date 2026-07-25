@@ -116,7 +116,12 @@ module TrustIndex
         v_w: v_w,
         # G5 (lurker-collapse guard): the channel's own honest CCV baseline (from the same self-history
         # scan). nil when history is too thin → guard inert. Rides the sh already computed above.
-        own_ccv_baseline: v2_own_ccv_baseline(sh[:own_ccv_history])
+        own_ccv_baseline: v2_own_ccv_baseline(sh[:own_ccv_history]),
+        # TI v2.1 C_self^SP: the sustained-plateau durability ledger + CCV plateau shape. sustained_count is
+        # reconstructed from append-only TIH (0 + NO read when csustained_enabled≤0 → dormant cost). ccv_cov
+        # = CoV of the already-fetched 30min CCV series (zero new scan; the [P3] plateau_shape input).
+        sustained_count: v2_sustained_count(stream, consts),
+        ccv_cov: i_event_cov_metric((context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f })
       )
     end
 
@@ -552,6 +557,34 @@ module TrustIndex
         { rho_self_lo: nil, clean_self_history: false, self_history_stable: false, own_ccv_history: [] }
       end
 
+      # TI v2.1 C_self^SP durability ledger — the CURRENT stream's LEADING run of consecutive windowed
+      # elevated-deficit TIH windows. The append-only history IS the ledger (NO new table/column/counter).
+      # DORMANT: csustained_enabled≤0 → 0 with NO read (byte-identical cost). Live: ONE bounded index-ordered
+      # read (idx_tih_stream_calculated_id) of the newest ≤N rows for THIS stream. f_soft_lo>0 collapses
+      # "[P1] rho_dropped ∧ ¬G5-floored" into a single persisted column (G5 writes f_soft_lo=0 when it
+      # floors), band_color=green is the HARD RESET (an honest window breaks the run → bot-off recovery
+      # clears it within one cycle). Convention-scoped so the run resets cleanly at the windowing-flip
+      # boundary (fail-safe: under-count across the boundary). The current cycle's row isn't persisted yet
+      # (persistence runs after compute) → this counts the PRIOR run; the engine adds +1 for the live window.
+      def v2_sustained_count(stream, consts)
+        return 0 unless (consts["csustained_enabled"] || 0.0).to_f.positive?
+
+        n = (consts["csustained_n_windows"] || 999.0).to_f.to_i.clamp(1, 60)
+        rows = self_history_convention_scope(
+          TrustIndexHistory.where(stream_id: stream.id, engine_version: "v2")
+        ).order(calculated_at: :desc, id: :desc).limit(n).pluck(:band_color, :f_soft_lo)
+        streak = 0
+        rows.each do |band_color, f_soft_lo|
+          break if band_color == "green"        # HARD RESET on any honest window
+          break unless f_soft_lo.to_f.positive? # a surviving windowed deficit (¬G5-floored) — else run broken
+          streak += 1
+        end
+        streak
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 sustained_count failed (#{e.message})")
+        0
+      end
+
       # === i_event EPIC (T1-074) — the 5 EXTERNAL conjuncts [2/4/5/6] + shared constant read ===
 
       # ONE WHERE-IN read of all builder-side calibration scalars (q_mid + the i_event gate/floors) so the
@@ -559,7 +592,8 @@ module TrustIndex
       # round-trips. Missing keys fall back at the read site.
       def v2_builder_constants
         CalibrationConstant
-          .where(key: %w[q_mid i_event_enabled ie_v_trend_z ie_arrival_floor_frac ie_conv_floor ie_cv_floor])
+          .where(key: %w[q_mid i_event_enabled ie_v_trend_z ie_arrival_floor_frac ie_conv_floor ie_cv_floor
+                         csustained_enabled csustained_n_windows])
           .pluck(:key, :value).to_h
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: builder constants load failed (#{e.message})")

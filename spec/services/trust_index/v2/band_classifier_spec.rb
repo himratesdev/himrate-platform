@@ -6,7 +6,8 @@ require "rails_helper"
 # dynamic-constant-assignment; namespaced to avoid global collisions).
 module BandClassifierSpecDoubles
   Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
-                        :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier, :cell_calibrated)
+                        :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier, :cell_calibrated,
+                        :i_event_sustained)
   Thresholds = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi)
 end
 
@@ -17,7 +18,8 @@ RSpec.describe TrustIndex::V2::BandClassifier do
   def drivers(**over)
     base = { n_frac: 0.0, f_self_ratio: 0.0, f_soft_lo_ratio: 0.0, a_hat: 0.0, q: 0.9,
              i_event: false, c_hard: false, c_self: false, c_inflation: false,
-             raid_window: false, cold_start_tier: "full", cell_calibrated: true }
+             raid_window: false, cold_start_tier: "full", cell_calibrated: true,
+             i_event_sustained: false }
     BandClassifierSpecDoubles::Drivers.new(**base.merge(over))
   end
 
@@ -138,6 +140,54 @@ RSpec.describe TrustIndex::V2::BandClassifier do
   it "moat-audit control: the SAME corroborated soft deficit on a CALIBRATED cell IS accused (RED)" do
     b = classify(f_soft_lo_ratio: 0.60, c_inflation: true, a_hat: 0.60, cell_calibrated: true)
     expect([ b.row, b.color ]).to eq([ 1, "red" ])
+  end
+
+  # TI v2.1 C_self^SP row2-cap: a SUSTAINED-only self-history inflation (the held-plateau arm) is a single
+  # deficit-family signal → it accuses but caps at YELLOW (row2). Public RED needs a SECOND, INDEPENDENT
+  # corroborator (C_hard/C_inflation). The legacy step arm (i_event_sustained=false) keeps its RED path.
+  describe "C_self^SP sustained-plateau row2-cap" do
+    it "sustained-only i_event + F_self/V ≥ 0.50 caps at YELLOW (row2), NOT RED" do
+      b = classify(i_event: true, c_self: true, i_event_sustained: true, f_self_ratio: 0.55, a_hat: 0.55)
+      expect([ b.row, b.color ]).to eq([ 2, "yellow" ])
+    end
+
+    it "sustained i_event WITH C_hard escalates to RED (independent second corroborator present)" do
+      b = classify(i_event: true, c_self: true, i_event_sustained: true, f_self_ratio: 0.55, a_hat: 0.55,
+                   c_hard: true, n_frac: 0.05) # n_frac below φ_yellow → the RED comes from the self branch, not n_frac
+      expect(b.row).to eq(1)
+    end
+
+    it "sustained i_event WITH a CCV-step (C_inflation) escalates to RED" do
+      b = classify(i_event: true, c_self: true, i_event_sustained: true, f_self_ratio: 0.55, a_hat: 0.55,
+                   c_inflation: true)
+      expect(b.row).to eq(1)
+    end
+
+    it "control: a LEGACY-step i_event (i_event_sustained=false) + F_self/V ≥ 0.50 still reaches RED" do
+      b = classify(i_event: true, c_self: true, i_event_sustained: false, f_self_ratio: 0.55, a_hat: 0.55)
+      expect(b.row).to eq(1)
+    end
+
+    # A sustained-only C_self shares F_soft's deficit shape → it must NOT self-corroborate the F_soft RED
+    # branch (deficit corroborating deficit). A legacy C_self (carries the step conjuncts) still can.
+    it "sustained-only C_self does NOT self-corroborate the F_soft RED branch (stays row2 YELLOW)" do
+      b = classify(f_soft_lo_ratio: 0.60, c_self: true, i_event: true, i_event_sustained: true,
+                   f_self_ratio: 0.0, a_hat: 0.60)
+      # f_self branch capped (sustained-only) AND the f_soft branch's only corroborator is the sustained
+      # C_self → independently_corroborated? false → f_soft RED branch blocked → YELLOW via f_soft ≥ 0.20.
+      expect([ b.row, b.color ]).to eq([ 2, "yellow" ])
+    end
+
+    it "a LEGACY-step C_self (i_event_sustained=false) DOES corroborate the F_soft RED branch" do
+      b = classify(f_soft_lo_ratio: 0.60, c_self: true, i_event: true, i_event_sustained: false,
+                   f_self_ratio: 0.0, a_hat: 0.60)
+      expect(b.row).to eq(1)
+    end
+
+    it "sustained-only F_soft ≥ 0.20 still reaches YELLOW (an accusation, the intended sustained level)" do
+      b = classify(f_soft_lo_ratio: 0.30, c_self: true, i_event: true, i_event_sustained: true, a_hat: 0.30)
+      expect([ b.row, b.color ]).to eq([ 2, "yellow" ])
+    end
   end
 
   describe ".label_key_for (surface-audit sweep — the ONE reader-side derivation point)" do

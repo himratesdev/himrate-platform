@@ -43,7 +43,26 @@ module Calibration
       # -1.0 = DORMANT (L2Presume treats ≤0 as OFF → byte-identical). Calibrated positive (≈0.2-0.3) on a
       # silent-lurker honest cohort BEFORE the windowing flip so honest quiet streams read GREEN while a
       # sustained botter (online elevated vs baseline) keeps its deficit.
-      lurker_collapse_ratio: -1.0
+      lurker_collapse_ratio: -1.0,
+      # TI v2.1 C_self^SP (Sustained-Plateau self-corroborator, battle-mode 2026-07-25). The legacy 6-AND
+      # i_event is a STEP detector — it dies at a SUSTAINED plateau ([2] v-surge robust-z→0 once the
+      # injection is held, [5] follower-conv confounded by co-arriving real humans). C_self^SP adds a
+      # durable OR-arm that catches a HELD silent-viewbot plateau: a flat-and-high CCV (plateau_shape [P3])
+      # + a persistent windowed chat-share deficit (rho_dropped [P1]) at an online held above the channel's
+      # own honest baseline (G5-inverse [P2]), sustained over N consecutive TIH windows. A sustained-ONLY
+      # fire caps at YELLOW (row2 — single deficit-family signal); public RED needs a second INDEPENDENT
+      # corroborator (C_hard/C_inflation). csustained_enabled is a bool-as-float kill-switch: 0.0 (DEFAULT,
+      # DORMANT) → engine sustained_plateau? returns false BEFORE any TIH/CoV read → i_event byte-identical
+      # to the legacy arm alone (golden spec). DEFENSE-IN-DEPTH backstops (the arm cannot accuse even if
+      # enabled is flipped early, before calibration writes real values): csustained_n_windows=999
+      # (sustained_count clamps ≤60 → +1 never reaches 999) AND csustained_cov_ceiling=0.0 (CoV ≥ 0 is
+      # never < 0 → plateau_shape? never true). ⚠ Do NOT calibrate a positive cov_ceiling before N is set,
+      # or that backstop lifts. Calibrated on the WINDOWED convention (dariya labeled-positive plateau CoV
+      # 0.014-0.017 vs honest-cohort p10 0.031) → PO-gated flip = data update (enabled=>1.0), no redeploy.
+      csustained_enabled: 0.0,
+      csustained_n_windows: 999.0,
+      csustained_elevated_margin: 0.30,
+      csustained_cov_ceiling: 0.0
     }.freeze
 
     K = Data.define(*ILLUSTRATIVE.keys)
