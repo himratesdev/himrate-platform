@@ -28,7 +28,8 @@ RSpec.describe Calibration::Registry do
       :llr_per_user_bot_score, :llr_known_bot,
       :phi_inflation, :inflation_corrob_enabled, # TI v2.1 inflation corroborator (dormant)
       # TI v2.1 i_event self-history tripwire (C_self / F_self arm — dormant)
-      :i_event_enabled, :ie_v_trend_z, :ie_arrival_floor_frac, :ie_conv_floor, :ie_cv_floor
+      :i_event_enabled, :ie_v_trend_z, :ie_arrival_floor_frac, :ie_conv_floor, :ie_cv_floor,
+      :lurker_collapse_ratio # G5 lurker-collapse guard (dormant)
     )
   end
 end

@@ -34,7 +34,16 @@ module Calibration
       # backstop. PO-gated flip (after the BUG-A windowing flip + honest-FP=0 calibration) = data update
       # (enabled=>1.0), no redeploy (DEC-3).
       i_event_enabled: 0.0,
-      ie_v_trend_z: 99.0, ie_arrival_floor_frac: 0.0, ie_conv_floor: -1.0, ie_cv_floor: 0.0
+      ie_v_trend_z: 99.0, ie_arrival_floor_frac: 0.0, ie_conv_floor: -1.0, ie_cv_floor: 0.0,
+      # G5 (lurker-collapse "no-injection floor", battle-mode 2026-07-25). ONLY active co-windowed
+      # (ti_v2_cowindowed_rho): an honest stream whose viewers stopped typing (music/ASMR/watch-party)
+      # collapses windowed EIHC with a STABLE online → false F_soft deficit. The guard floors the deficit
+      # when the online is NOT elevated above the channel's own honest CCV baseline (no injection to
+      # presume). lurker_collapse_ratio = the elevation margin: floor when V ≤ baseline·(1+ratio). DEFAULT
+      # -1.0 = DORMANT (L2Presume treats ≤0 as OFF → byte-identical). Calibrated positive (≈0.2-0.3) on a
+      # silent-lurker honest cohort BEFORE the windowing flip so honest quiet streams read GREEN while a
+      # sustained botter (online elevated vs baseline) keeps its deficit.
+      lurker_collapse_ratio: -1.0
     }.freeze
 
     K = Data.define(*ILLUSTRATIVE.keys)

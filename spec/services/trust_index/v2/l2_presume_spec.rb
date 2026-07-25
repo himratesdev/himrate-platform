@@ -73,4 +73,50 @@ RSpec.describe TrustIndex::V2::L2Presume do
     expect(win.f_soft).to eq(0.0)                          # decay FP removed — a falling online hides no injection
     expect(win.rho_obs).to be_within(1e-6).of(30 / 300.0)  # ρ_obs = EIHC_W / min(V_W, V_inst)
   end
+
+  # G5 lurker-collapse "no-injection floor". Shared setup: 100 cumulative chatters, only 5 active in the
+  # last 60min (windowed) — the collapsed-chat signature. flat cell rho_star 0.03.
+  let(:g5_raw) { Array.new(100) { |i| chatter("h#{i}") } }
+  let(:g5_windowed) { Set.new(Array.new(5) { |i| "h#{i}" }) }
+  let(:g5_cell) { L2PresumeSpecDoubles::Cell.new(rho_star: 0.03, rho_lo: 0.03, rho_hi: 0.03) }
+
+  it "G5 dormant (lurker_collapse_ratio ≤ 0) is byte-identical to the guardless windowed call" do
+    guardless = described_class.call(raw: g5_raw, b_hard_usernames: Set.new, v: 2800, cell: g5_cell, k: k,
+                                     windowed_usernames: g5_windowed, v_w: 2800)
+    dormant = described_class.call(raw: g5_raw, b_hard_usernames: Set.new, v: 2800, cell: g5_cell, k: k,
+                                   windowed_usernames: g5_windowed, v_w: 2800,
+                                   own_ccv_baseline: 3000, lurker_collapse_ratio: -1.0)
+    expect(dormant.to_h).to eq(guardless.to_h)
+    expect(dormant.f_soft).to be_within(1.0).of(2800 - 5 / 0.03) # deficit intact (~2633) when guard off
+  end
+
+  it "G5 floors the deficit when the online is NOT elevated above the channel baseline (honest quieting)" do
+    # V_eff 2800 ≤ baseline 3000 · (1 + 0.3) = 3900 → stable online, viewers just went quiet → no injection.
+    sb = described_class.call(raw: g5_raw, b_hard_usernames: Set.new, v: 2800, cell: g5_cell, k: k,
+                              windowed_usernames: g5_windowed, v_w: 2800,
+                              own_ccv_baseline: 3000, lurker_collapse_ratio: 0.3)
+    expect(sb.f_soft).to eq(0.0)
+    expect(sb.f_soft_lo).to eq(0.0)
+    expect(sb.f_soft_hi).to eq(0.0)
+    expect(sb.rho_obs).to be_within(1e-6).of(5 / 2800.0) # ρ_obs preserved (the low share is real; only the presumption is suppressed)
+  end
+
+  it "G5 KEEPS the deficit when the online IS elevated above baseline (sustained injection)" do
+    # V_eff 6000 > baseline 3000 · 1.3 = 3900 → online elevated → possible injection → deficit stands.
+    sb = described_class.call(raw: g5_raw, b_hard_usernames: Set.new, v: 6000, cell: g5_cell, k: k,
+                              windowed_usernames: g5_windowed, v_w: 6000,
+                              own_ccv_baseline: 3000, lurker_collapse_ratio: 0.3)
+    expect(sb.f_soft).to be_within(1.0).of(6000 - 5 / 0.03) # ≈ 5833 deficit preserved
+  end
+
+  it "G5 is inert in cumulative mode (v_w nil) even with a positive ratio — keys on the windowed frame only" do
+    # Load-bearing (CR N1): use a THIN cumulative roster (5 chatters) so the cumulative deficit is POSITIVE
+    # (2800 − 5/0.03 ≈ 2633). If the guard wrongly ignored the nil v_w and fired (2800 ≤ 3000·1.3), f_soft
+    # would floor to 0 — a value that DIFFERS from the correct positive deficit. Asserting the positive
+    # deficit proves the `v_w &&` short-circuit keeps G5 off in cumulative mode.
+    thin = Array.new(5) { |i| chatter("h#{i}") }
+    sb = described_class.call(raw: thin, b_hard_usernames: Set.new, v: 2800, cell: g5_cell, k: k,
+                              own_ccv_baseline: 3000, lurker_collapse_ratio: 0.3) # v_w nil (cumulative)
+    expect(sb.f_soft).to be_within(1.0).of(2800 - 5 / 0.03) # ≈2633 positive → guard did NOT floor
+  end
 end

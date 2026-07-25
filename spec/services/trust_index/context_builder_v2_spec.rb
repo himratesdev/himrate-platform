@@ -218,7 +218,8 @@ RSpec.describe TrustIndex::ContextBuilder do
         llr_temporal_r4: 2.90, llr_temporal_r7: 4.60, llr_per_user_bot_score: 3.90, llr_known_bot: 3.40,
         phi_inflation: 0.30, inflation_corrob_enabled: 0.0, # TI v2.1 dormant
         i_event_enabled: 0.0, ie_v_trend_z: 99.0, ie_arrival_floor_frac: 0.0, # i_event dormant
-        ie_conv_floor: -1.0, ie_cv_floor: 0.0
+        ie_conv_floor: -1.0, ie_cv_floor: 0.0,
+        lurker_collapse_ratio: -1.0 # G5 dormant
       )
       r = TrustIndex::V2::Engine.compute(context: c, k: k)
       expect(r.b_hard.map(&:username)).to include("megabot")

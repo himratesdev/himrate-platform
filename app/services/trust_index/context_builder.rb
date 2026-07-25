@@ -108,8 +108,21 @@ module TrustIndex
         cps: context_hash[:channel_protection_config]&.channel_protection_score&.to_f,
         ccv_chat_divergence: v2_ccv_chat_divergence(context_hash),
         l2_roster_usernames: l2_roster,
-        v_w: v_w
+        v_w: v_w,
+        # G5 (lurker-collapse guard): the channel's own honest CCV baseline (from the same self-history
+        # scan). nil when history is too thin → guard inert. Rides the sh already computed above.
+        own_ccv_baseline: v2_own_ccv_baseline(sh[:own_ccv_history])
       )
+    end
+
+    # G5 median "typical online" for the channel from clean, convention-scoped own-CCV history. Used by
+    # L2Presume's lurker-collapse guard to tell an elevated-online injection from stable-online quieting.
+    # nil below SELF_HISTORY_MIN_CLEAN samples (too thin to trust a baseline → guard stays inert).
+    def self.v2_own_ccv_baseline(own_ccv_history)
+      vals = (own_ccv_history || []).map(&:to_i).reject(&:zero?).sort
+      return nil if vals.size < SELF_HISTORY_MIN_CLEAN
+
+      vals[vals.size / 2] # median
     end
 
     # P1 (TI v2.1 BUG-A flip-path): the trailing-60min L2 inputs computed UNCONDITIONALLY (no verdict-flag

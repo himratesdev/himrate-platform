@@ -17,7 +17,8 @@ module TrustIndex
       #   after B_hard strip) and the ρ_obs/F_soft denominator is the windowed V_W (median CCV over the
       #   same 60min). This makes ρ_obs = EIHC_W/V_W a same-window chat-share (kills the cumulative-EIHC /
       #   instant-V duration-confound that lets a long stream's departed chatters whiten a late injection).
-      def self.call(raw:, b_hard_usernames:, v:, cell:, k:, windowed_usernames: nil, v_w: nil)
+      def self.call(raw:, b_hard_usernames:, v:, cell:, k:, windowed_usernames: nil, v_w: nil,
+                    own_ccv_baseline: nil, lurker_collapse_ratio: nil)
         humans = raw.reject { |c| b_hard_usernames.include?(c.username) }
         humans = humans.select { |c| windowed_usernames.include?(c.username) } if windowed_usernames
         # G1 (young-ramp decay guard): the deficit denominator is min(V_W, V_inst), NOT V_W alone. A young
@@ -34,9 +35,27 @@ module TrustIndex
         # samples (few hours) re-base to the capped frame on deploy — the P2 re-seed uses post-G1 samples.
         v_eff = v_w ? [ v_w, v ].min : v
         eihc = EihcWeigher.eihc(humans, tau_delta: k.tau_delta)
+        rho_obs = v_eff.positive? ? eihc / v_eff.to_f : 0.0
+
+        # G5 (lurker-collapse "no-injection floor"): a windowed deficit PRESUMES an injection — fake
+        # viewers inflating V beyond what the honest chat explains. But an honest stream whose viewers
+        # simply STOPPED TYPING (music / ASMR / watch-party) collapses windowed EIHC while the online
+        # stays STABLE → a false deficit / authenticity hit. The discriminator is injection-evidence: a
+        # real injection ELEVATES the online above the channel's OWN honest baseline; honest quieting does
+        # not. So when co-windowed AND V is NOT elevated above the channel's own-CCV baseline, floor the
+        # deficit (there is no injection to presume). A sustained botter keeps its deficit (its online IS
+        # elevated vs baseline); the CCV-SURGE lurker (viral/front-page onset) is left to phi_inflation,
+        # NOT this guard. DORMANT: lurker_collapse_ratio ≤ 0 (default -1.0) → guard off → byte-identical;
+        # also inert in cumulative mode (v_w nil) or when the channel has no baseline. rho_obs is preserved
+        # for observability (the low windowed share is real — the guard only suppresses the fraud PRESUMPTION).
+        if v_w && own_ccv_baseline.to_f.positive? && lurker_collapse_ratio.to_f.positive? &&
+           v_eff <= own_ccv_baseline.to_f * (1 + lurker_collapse_ratio.to_f)
+          return SoftBound.new(eihc: eihc, rho_obs: rho_obs, f_soft: 0.0, f_soft_lo: 0.0, f_soft_hi: 0.0)
+        end
+
         SoftBound.new(
           eihc: eihc,
-          rho_obs: v_eff.positive? ? eihc / v_eff.to_f : 0.0,
+          rho_obs: rho_obs,
           f_soft: Deficit.call(v_eff, eihc, cell.rho_star),
           f_soft_lo: Deficit.call(v_eff, eihc, cell.rho_lo),   # lenient ρ_lo → smaller deficit → gates label
           f_soft_hi: Deficit.call(v_eff, eihc, cell.rho_hi)

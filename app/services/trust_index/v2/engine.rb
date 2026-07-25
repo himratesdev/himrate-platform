@@ -40,7 +40,11 @@ module TrustIndex
         # raw_chatters used for the EIHC numerator); v_w = median CCV over the same 60min (the deficit
         # denominator). Cumulative raw_chatters still drives L0 B_hard + cross-channel; instant :v still
         # drives ERV/authenticity display.
-        :l2_roster_usernames, :v_w
+        :l2_roster_usernames, :v_w,
+        # G5 (lurker-collapse guard): the channel's own honest CCV baseline (median of clean,
+        # convention-scoped own-CCV history). nil when history is too thin. L2 uses it to distinguish an
+        # elevated-online injection (keep deficit) from stable-online honest quieting (floor deficit).
+        :own_ccv_baseline
       )
 
       SelfCtx = Data.define(:eligible, :v, :eihc, :rho_self_lo)
@@ -100,7 +104,10 @@ module TrustIndex
         hard = L1Subtract.call(post)
         soft = L2Presume.call(raw: @ctx.raw_chatters, b_hard_usernames: names(post),
                               v: @ctx.v, cell: @ctx.cell, k: @k,
-                              windowed_usernames: @ctx.l2_roster_usernames, v_w: @ctx.v_w)
+                              windowed_usernames: @ctx.l2_roster_usernames, v_w: @ctx.v_w,
+                              own_ccv_baseline: @ctx.own_ccv_baseline,
+                              # respond_to? keeps isolated-K unit doubles green (mirrors derive_i_event)
+                              lurker_collapse_ratio: (@k.lurker_collapse_ratio if @k.respond_to?(:lurker_collapse_ratio)))
         i_evt = derive_i_event(soft) # i_event EPIC: derived AFTER L2 (needs soft.eihc for [1] rho_dropped)
         fraud = L3Fuse.call(hard: hard, soft: soft, self_ctx: self_ctx(soft, i_evt), sum_disjoint: windowed?)
         emit = L4Emit.call(hard: hard, soft: soft, fraud: fraud, ctx: emit_ctx(post, i_evt), k: @k)
