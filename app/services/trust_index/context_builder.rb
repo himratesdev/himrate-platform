@@ -89,7 +89,12 @@ module TrustIndex
       TrustIndex::V2::Engine::Context.new(
         v: v,
         raw_chatters: v2_chatter_signals(chatters, context_hash),
-        cell: v2_cell(stream, context_hash, v),
+        # moat-audit (frame consistency): resolve the ρ* cell's V-bucket on the SAME windowed frame the L2
+        # deficit uses (v_eff = min(V_W, V_inst) — mirrors l2_presume/self_v G1 cap), not instant V. A
+        # botted stream whose instant V lands in a higher (looser-ρ*) bucket while its windowed V_W is a
+        # lower bucket would otherwise be judged against the wrong, more-lenient cell. Dormant when v_w nil
+        # (cowindowed OFF / no 60min window) → v_eff == v → byte-identical cell lookup. Display/ERV keep instant v.
+        cell: v2_cell(stream, context_hash, (v_w && v ? [ v_w, v ].min : v)),
         rho_self_lo: sh[:rho_self_lo], clean_self_history: sh[:clean_self_history],
         self_history_stable: sh[:self_history_stable],
         i_event: false, # engine derive_i_event composes the FINAL gated i_event (needs L2 soft.eihc for [1])

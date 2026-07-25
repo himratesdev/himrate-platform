@@ -42,6 +42,19 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(c.reputation).to eq({ band: "stable", tier: "full", stream_count: 20 })
     end
 
+    it "moat-audit: resolves the ρ* cell on the WINDOWED v_eff frame, not instant V (boundary-crossing stream)" do
+      # instant V=6000 → 5k-20k bucket, but windowed V_W=900 → 0-1k bucket. v_eff=min(900,6000)=900 must
+      # resolve the 0-1k (higher-ρ*) cell so a botted stream isn't judged against the looser high-V cell.
+      CalibrationCellBaseline.create!(category: "esports", v_bucket: "5k-20k", chat_mode: "open", language: "ru",
+                                      rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: true, sample_size: 50)
+      CalibrationCellBaseline.create!(category: "esports", v_bucket: "0-1k", chat_mode: "open", language: "ru",
+                                      rho_star: 0.30, rho_lo: 0.15, rho_hi: 0.50, calibrated: true, sample_size: 50)
+      allow(described_class).to receive(:v2_cowindowed_inputs).and_return([ Set.new(%w[a]), 900 ]) # V_W=900 → 0-1k
+      c = described_class.build_v2(stream, ctx_hash(chatters: %w[a b], ccv: 6000))
+      expect(c.cell.rho_star).to eq(0.30) # 0-1k cell via v_eff, NOT the 5k-20k 0.03 cell (instant V)
+      expect(c.v).to eq(6000)             # display/ERV V unchanged (instant)
+    end
+
     it "BUG-A: co-windowed L2 inputs are nil when ti_v2_cowindowed_rho is OFF (dormant, no added scan)" do
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a b]))
       expect(c.l2_roster_usernames).to be_nil
