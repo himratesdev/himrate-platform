@@ -1,0 +1,115 @@
+name: ti-v2-cinflation-flip
+# C_inflation corroborator flip (battle-mode P3.2). Enables inflation_corrob_enabled=1.0 so a windowed
+# F_soft deficit corroborated by ccv_chat_divergence (CCV↑ ∧ chat-flat, the abrupt-injection signature)
+# escalates AMBER→YELLOW/RED. Validated: dariya botted step divergence 0.67 vs honest steady 0.0.
+#   mode=dryrun : report the honest ccv_chat_divergence distribution + simulate the honest cohort's band
+#                 with the corroborator ON (in a rolled-back txn) → confirm ~0 honest RED/YELLOW.
+#   mode=apply  : set phi_inflation + inflation_corrob_enabled=1.0 (STAGING CalibrationConstant, prod
+#                 unaffected) + honest verify with AUTO-ROLLBACK if any honest stream is accused.
+# STAGING-ONLY (the constant lives in the staging DB). Reversible: inflation_corrob_enabled → 0.0.
+# The RED-firing side (a live botter → RED) is validated by the PO's re-bot acceptance test (4.2).
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      mode: { required: true, type: choice, options: [dryrun, apply], default: dryrun }
+      phi: { description: "phi_inflation threshold (honest-max ~0.27, botted step 0.67)", required: false, type: string, default: "0.30" }
+
+jobs:
+  flip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build flip script
+        run: |
+          cat > /tmp/ciflip.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          MODE = ENV.fetch("MODE", "dryrun")
+          PHI = ENV.fetch("PHI", "0.30").to_f
+          CB = TrustIndex::ContextBuilder
+          def pct(a, p) a = a.compact.sort; a.empty? ? nil : a[((p*(a.size-1)).round)] end
+
+          def set_consts!(phi)
+            [ [ "phi_inflation", phi ], [ "inflation_corrob_enabled", 1.0 ] ].each do |k, v|
+              c = CalibrationConstant.find_or_initialize_by(key: k)
+              c.update!(value: v, calibrated: true, source: "cinflation_flip_2026-07-25")
+            end
+          end
+
+          # Honest cohort band + divergence with the corroborator applied via Registry.load (reads consts).
+          def honest_scan(n_target)
+            live = Stream.where(ended_at: nil).order(started_at: :desc).limit(500).to_a
+            bands = Hash.new(0); divs = []; n = 0; accused = []
+            live.each do |s|
+              break if n >= n_target
+              ctx = CB.build(s)
+              roster, v_w = CB.windowed_inputs(s)
+              v2c = CB.build_v2(s, ctx)
+              next if v2c.v.nil? || v2c.v <= 0
+              wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w) : v2c
+              res = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+              next unless res.c_hard == false
+              divs << v2c.ccv_chat_divergence.to_f
+              b = "#{res.band&.color}/#{res.band&.row}"
+              bands[b] += 1; n += 1
+              accused << "#{s.channel.login} #{b} div=#{v2c.ccv_chat_divergence&.round(3)} auth=#{res.authenticity&.round}" if %w[red yellow].include?(res.band&.color)
+            end
+            [ bands, divs, n, accused ]
+          end
+
+          puts "===== C_inflation flip MODE=#{MODE} phi=#{PHI} @ #{Time.current.iso8601} ====="
+          puts "current: inflation_corrob_enabled=#{CalibrationConstant.value_for('inflation_corrob_enabled', fallback: 0.0)} phi_inflation=#{CalibrationConstant.value_for('phi_inflation', fallback: 0.30)}"
+
+          if MODE == "dryrun"
+            ActiveRecord::Base.transaction do
+              set_consts!(PHI)
+              bands, divs, n, accused = honest_scan(60)
+              nz = divs.reject(&:zero?)
+              puts "\n-- honest ccv_chat_divergence (n=#{n}, nonzero=#{nz.size}) --"
+              puts "  P50=#{pct(divs,0.5)&.round(4)} P90=#{pct(divs,0.9)&.round(4)} P99=#{pct(divs,0.99)&.round(4)} max=#{divs.max&.round(4)}"
+              puts "  honest tripping phi=#{PHI}: #{divs.count { |d| d >= PHI }}/#{n}  (botted step ref=0.67)"
+              puts "-- honest band mix WITH corroborator ON (simulated, rolls back): #{bands.sort_by { |_, v| -v }.to_h}"
+              puts "-- honest ACCUSED (red/yellow) — MUST be ~0: #{accused.size}"
+              accused.first(10).each { |x| puts "     #{x}" }
+              raise ActiveRecord::Rollback
+            end
+            puts "\n-- rolled back. If honest accused ~0 AND honest div-max < phi → safe to apply. --"
+          else
+            set_consts!(PHI)
+            puts "\n-- APPLIED: inflation_corrob_enabled=1.0 phi_inflation=#{PHI} (staging) --"
+            bands, divs, n, accused = honest_scan(60)
+            puts "-- POST-FLIP honest band mix: #{bands.sort_by { |_, v| -v }.to_h}"
+            puts "-- honest ACCUSED (red/yellow): #{accused.size}"
+            accused.first(10).each { |x| puts "     #{x}" }
+            if accused.size > [ (0.05 * n).ceil, 1 ].max
+              CalibrationConstant.find_by(key: "inflation_corrob_enabled")&.update!(value: 0.0)
+              puts "\n== 🔴 AUTO-ROLLBACK: #{accused.size} honest accused > threshold → inflation_corrob_enabled=0.0 (disabled). Investigate. =="
+            else
+              puts "\n== 🟢 C_inflation LIVE: honest accused=#{accused.size} (~0). RED-firing side validated by PO re-bot (4.2). =="
+            end
+          end
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/ciflip.rb) lines)"
+
+      - name: Run on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/ciflip.rb ${TARGET}:/tmp/ciflip.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/ciflip.rb ${CONTAINER}:/tmp/ciflip.rb && docker exec -e MODE='${{ inputs.mode }}' -e PHI='${{ inputs.phi || '0.30' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/ciflip.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
