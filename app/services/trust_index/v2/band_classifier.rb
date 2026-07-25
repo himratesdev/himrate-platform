@@ -29,7 +29,8 @@ module TrustIndex
 
       # Canonical driver contract (L4 builds this; the class stays duck-typed for isolated tests).
       Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
-                            :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier)
+                            :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier,
+                            :cell_calibrated)
 
       def self.call(drivers:, k:)
         new(drivers, k).call
@@ -63,13 +64,24 @@ module TrustIndex
       def row1?
         @d.n_frac >= @k.phi_red ||
           (accusable_tier? && @d.i_event && @d.f_self_ratio >= 0.50 && !@d.raid_window) ||
-          (accusable_tier? && @d.f_soft_lo_ratio >= 0.50 && corroborated?)
+          (accusable_tier? && cell_calibrated? && @d.f_soft_lo_ratio >= 0.50 && corroborated?)
       end
 
       def row2?
         @d.n_frac >= @k.phi_yellow ||
           (accusable_tier? && @d.i_event && @d.f_self_ratio >= 0.20 && !@d.raid_window) ||
-          (accusable_tier? && @d.f_soft_lo_ratio >= 0.20 && corroborated?)
+          (accusable_tier? && cell_calibrated? && @d.f_soft_lo_ratio >= 0.20 && corroborated?)
+      end
+
+      # moat-audit (uncovered-cell safety): the f_soft/C_inflation accusatory branch escalates off the
+      # per-cell ρ* deficit, which is only trustworthy on a REAL GATE-0 cell. Only ~10 RU cells are seeded;
+      # the rest of the fleet resolves to the illustrative DEFAULT_CELL_BASELINE (ρ*=0.03) — a wrong-
+      # convention, uncalibrated constant that could false-accuse a legitimately low-chat cell OR let a
+      # botter escape. NEVER publicly RED/YELLOW off an uncalibrated cell. The n_frac (named-bot) and
+      # i_event/C_self (self-history, cell-independent) branches are unaffected. nil (isolated doubles) →
+      # false → conservative (no cell-driven accusation).
+      def cell_calibrated?
+        @d.cell_calibrated == true
       end
 
       # G4 (pre-flip, C_inflation): the SOFT-corroborator accusatory branches (i_event/C_self + f_soft/

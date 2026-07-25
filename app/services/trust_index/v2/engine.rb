@@ -53,7 +53,10 @@ module TrustIndex
                             :stream_count, :unattributed_surge, :thin_sample, :ccv_chat_divergence,
                             # TI v2.1 BUG-A: windowed V_W (nil dormant) — L4 divides band-driver ratios
                             # by V_W (deficit frame) while ERV/authenticity keep instant :v (display).
-                            :v_w)
+                            :v_w,
+                            # moat-audit: whether the per-cell ρ* is a real GATE-0 cell — the f_soft
+                            # accusatory branch never fires off an uncalibrated/DEFAULT cell.
+                            :cell_calibrated)
 
       Result = Data.define(:erv, :erv_lo, :erv_hi, :authenticity, :a_hat, :n_frac, :band,
                            :reason_codes, :confirmed_anomaly, :cold_start_tier, :confidence_marker,
@@ -195,7 +198,10 @@ module TrustIndex
                     named_count: post.b_hard.size, self_history_stable: @ctx.self_history_stable,
                     chatter_quality_high: @ctx.chatter_quality_high, stream_count: @ctx.stream_count,
                     unattributed_surge: @ctx.unattributed_surge, thin_sample: @ctx.thin_sample,
-                    ccv_chat_divergence: @ctx.ccv_chat_divergence, v_w: @ctx.v_w)
+                    ccv_chat_divergence: @ctx.ccv_chat_divergence, v_w: @ctx.v_w,
+                    # respond_to? keeps isolated cell-doubles working (mirrors the i_event/lurker guards);
+                    # nil/absent → treated as uncalibrated → f_soft branch cannot publicly accuse.
+                    cell_calibrated: (@ctx.cell.calibrated if @ctx.cell.respond_to?(:calibrated)))
       end
 
       def extras(post, hard, soft, fraud, emit)

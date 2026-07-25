@@ -110,7 +110,8 @@ module TrustIndex
         BandClassifier::Drivers.new(
           n_frac: n_frac, f_self_ratio: ratio_band(@f.f_self), f_soft_lo_ratio: ratio_band(@soft.f_soft_lo),
           a_hat: ratio_band(@f.f_hat), q: @c.q, i_event: @c.i_event, c_hard: c_hard, c_self: c_self,
-          c_inflation: c_inflation, raid_window: @c.raid_window, cold_start_tier: @c.cold_start_tier
+          c_inflation: c_inflation, raid_window: @c.raid_window, cold_start_tier: @c.cold_start_tier,
+          cell_calibrated: @c.cell_calibrated
         )
       end
 

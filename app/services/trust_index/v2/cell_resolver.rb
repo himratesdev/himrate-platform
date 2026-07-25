@@ -7,7 +7,10 @@ module TrustIndex
     # "default" category, then up the parent_cell chain for a sparse/uncalibrated cell (hierarchical
     # shrinkage). Returns the resolved baseline or nil (caller decides cold-start / conservative default).
     class CellResolver
-      Baseline = Data.define(:rho_star, :rho_lo, :rho_hi)
+      # calibrated = whether the RESOLVED baseline is a real GATE-0 cell (true) vs an uncalibrated/
+      # illustrative fallback (false). Threaded to L4/BandClassifier so the moat never PUBLICLY ACCUSES
+      # (RED/YELLOW) off an uncalibrated per-cell ρ* — the deficit is only trustworthy on a calibrated cell.
+      Baseline = Data.define(:rho_star, :rho_lo, :rho_hi, :calibrated)
 
       def self.call(category:, v_bucket:, chat_mode:, language:)
         cell = CalibrationCellBaseline.for_cell(
@@ -18,7 +21,7 @@ module TrustIndex
         return nil unless cell
 
         r = cell.resolved
-        Baseline.new(rho_star: r.rho_star, rho_lo: r.rho_lo, rho_hi: r.rho_hi)
+        Baseline.new(rho_star: r.rho_star, rho_lo: r.rho_lo, rho_hi: r.rho_hi, calibrated: !!r.calibrated)
       end
     end
   end
