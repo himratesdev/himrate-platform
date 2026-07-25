@@ -124,6 +124,16 @@ module FlipperDefaults
     ti_v2_ie_shadow
   ].freeze
 
+  # Verdict-flip flags that must be DEPLOY-PROOF on staging (survive a kamal-setup Redis flush) but stay
+  # OFF on PRODUCTION until the PO-gated production rollout — enabling the windowed verdict on prod against
+  # its still-cumulative ρ* cells would mismatch conventions fleet-wide. Auto-enabled ONLY on staging +
+  # development (the boot loop skips production AND test — test specs assume the cumulative/dormant
+  # verdict, so the flag must not flip in RAILS_ENV=test). Prod rollout = seed prod windowed cells + move
+  # the flag to ALL_FLAGS (or drop the env guard). Battle-mode windowing flip 2026-07-25.
+  STAGING_ALL_FLAGS = %i[
+    ti_v2_cowindowed_rho
+  ].freeze
+
   # Hooks for upcoming features / transitional kill-switches: flag зарегистрирован,
   # но НЕ auto-enabled. Production state управляется отдельно (миграция / admin UI /
   # rake task). Каждая запись = namespaced :flag => "TASK-XXX reference" для traceability.
@@ -210,6 +220,22 @@ unless ENV["SECRET_KEY_BASE_DUMMY"].present?
       Rails.logger.info("Flipper: pause-override active for #{flag} (reason: #{pause_reason.inspect}) — skipping auto-enable")
     else
       Flipper.enable(flag)
+    end
+  end
+
+  # STAGING-only deploy-proof flags: auto-enable on staging + development only (prod rollout is PO-gated
+  # and must seed prod windowed cells first; test stays cumulative so specs are unaffected). Same add +
+  # pause-override + enable semantics as ALL_FLAGS.
+  if Rails.env.staging? || Rails.env.development?
+    FlipperDefaults::STAGING_ALL_FLAGS.each do |flag|
+      Flipper.add(flag)
+      pause_reason = FlipperDefaults.pause_override_reason(flag, redis_instance)
+      if pause_reason
+        Flipper.disable(flag)
+        Rails.logger.info("Flipper: pause-override active for #{flag} (reason: #{pause_reason.inspect}) — skipping auto-enable")
+      else
+        Flipper.enable(flag)
+      end
     end
   end
 
