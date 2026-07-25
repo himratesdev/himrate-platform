@@ -9,7 +9,8 @@ module TrustIndex
     # dead-zone). (C_inflation ships dormant — its L4 gate keys off inflation_corrob_enabled.)
     #
     # drivers — responds to: n_frac, f_self_ratio (F_self/V), f_soft_lo_ratio (F_soft_lo/V), a_hat (F̂/V),
-    #   q, i_event, c_hard, c_self, c_inflation, raid_window, cold_start_tier.
+    #   q, i_event, c_hard, c_self, c_inflation, c_pop, raid_window, cold_start_tier, cell_calibrated,
+    #   i_event_sustained.
     # k — calibration thresholds: phi_yellow, phi_red, q_mid, q_hi.
     class BandClassifier
       Band = Data.define(:row, :color, :label_key, :sub)

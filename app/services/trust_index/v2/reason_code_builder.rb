@@ -15,9 +15,9 @@ module TrustIndex
                         :self_history_stable, :chatter_quality_high, :cold_start_tier, :stream_count,
                         :raid_window_suppressed_i, :unattributed_surge, :thin_sample)
 
-      # band — BandClassifier::Band (row, sub). ctx — responds to: c_hard, c_self, named_count,
-      #   named_pct, self_history_stable, chatter_quality_high, cold_start_tier, stream_count,
-      #   raid_window_suppressed_i, unattributed_surge, thin_sample.
+      # band — BandClassifier::Band (row, sub). ctx — responds to: c_hard, c_self, c_inflation, c_pop,
+      #   i_event_sustained, named_count, named_pct, self_history_stable, chatter_quality_high,
+      #   cold_start_tier, stream_count, raid_window_suppressed_i, unattributed_surge, thin_sample.
       def self.call(band:, ctx:)
         new(band, ctx).call
       end
