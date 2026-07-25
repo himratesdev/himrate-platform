@@ -1,0 +1,166 @@
+name: ti-v2-csustained-calibrate
+# [skip ci] ops-probe. Battle-mode: calibrate the 3 C_self^SP (sustained-plateau self-corroborator)
+# constants — csustained_cov_ceiling [P3], csustained_elevated_margin [P2], csustained_n_windows (N) —
+# on the LIVE honest RU cohort + (if available) the dariya labeled-positive. READ-ONLY: it NEVER writes
+# a CalibrationConstant or flips csustained_enabled; it re-derives the sustained_plateau? predicate in the
+# runner (mirroring engine.rb) and reports the distributions + the honest FULL-arm firing count (the flip
+# gate = 0/N_honest). ⚠ Meaningful ONLY after the windowed ρ* re-seed (P1.1): [P1] rho_dropped is vs the
+# own-history rho_self_lo, so with illustrative ρ* honest [P1] over-fires and the FULL-arm count won't be 0
+# — the harness will SHOW that (per-conjunct breakdown), confirming the reseed dependency empirically.
+# Output = the recommended 3 constants + honest firing rate for PO review before the PO-gated flip.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      honest_sample: { required: false, type: string, default: "200" }
+      # Candidate constants to SIMULATE the FULL sustained_plateau firing on the honest cohort (the 0/N gate).
+      # Defaults from the design doc (dariya plateau CoV 0.014-0.017 vs honest p10 0.031 → ~0.022).
+      cand_cov_ceiling: { required: false, type: string, default: "0.022" }
+      cand_elevated_margin: { required: false, type: string, default: "0.30" }
+      cand_n_windows: { required: false, type: string, default: "6" }
+      # Optional dariya (labeled-positive) stream id to report the botted plateau's CoV/excess/run-length.
+      dariya_stream_id: { required: false, type: string, default: "" }
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build calibration script
+        run: |
+          cat > /tmp/csustcal.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          N          = ENV.fetch("HONEST_SAMPLE", "200").to_i.clamp(20, 500)
+          COV_CEIL   = ENV.fetch("CAND_COV_CEILING", "0.022").to_f
+          ELEV_MARG  = ENV.fetch("CAND_ELEVATED_MARGIN", "0.30").to_f
+          NWIN       = ENV.fetch("CAND_N_WINDOWS", "6").to_f
+          DARIYA_ID  = ENV.fetch("DARIYA_STREAM_ID", "")
+          CB = TrustIndex::ContextBuilder
+          def pct(a, p) a = a.compact.sort; a.empty? ? nil : a[((p * (a.size - 1)).round)] end
+          # CoV of the trailing-30min CCV series (mirrors ContextBuilder#i_event_cov_metric — the [P3] input).
+          def cov30(s)
+            vals = s.ccv_snapshots.where("timestamp > ?", 30.minutes.ago).order(:timestamp).pluck(:ccv_count).compact.map(&:to_f)
+            return nil if vals.size < 5
+            mean = vals.sum / vals.size
+            return nil unless mean.positive?
+            Math.sqrt(vals.sum { |x| (x - mean)**2 } / (vals.size - 1)) / mean
+          end
+          # CURRENT-stream leading run of consecutive non-green f_soft_lo>0 windows (mirrors v2_sustained_count).
+          def run_len(sid)
+            rows = TrustIndexHistory.where(stream_id: sid, engine_version: "v2")
+                     .order(calculated_at: :desc, id: :desc).limit(60).pluck(:band_color, :f_soft_lo)
+            streak = 0
+            rows.each { |bc, fsl| break if bc.to_s == "green"; break unless fsl.to_f > 0; streak += 1 }
+            streak
+          end
+          # Re-derive the sustained_plateau? conjuncts READ-ONLY (mirrors engine.rb; no flag write).
+          def probe(s)
+            ctx = CB.build(s)
+            roster, v_w = CB.windowed_inputs(s)
+            return nil if v_w.nil?
+            v2c  = CB.build_v2(s, ctx)
+            base = v2c.own_ccv_baseline
+            return nil if base.nil? || base.to_f <= 0 || v2c.rho_self_lo.nil? || !v2c.self_history_stable
+            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+            wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+            v_eff = [ v_w, v2c.v ].min.to_f
+            eihc  = wres.eihc.to_f
+            cov   = cov30(s)
+            p1 = v2c.rho_self_lo.to_f > 0 && v_eff > eihc / v2c.rho_self_lo.to_f     # [P1] rho_dropped (vs own rho_self_lo)
+            p2 = v_eff > base.to_f * (1 + ELEV_MARG)                                 # [P2] online_elevated
+            p3 = !cov.nil? && cov < COV_CEIL                                         # [P3] plateau_shape
+            dur = (run_len(s.id) + 1) >= NWIN                                        # durability
+            tier_ok = v2c.cold_start_tier == "full" && !v2c.raid_window && !v2c.unattributed_surge
+            { excess: v_eff / base.to_f - 1.0, cov: cov, runlen: run_len(s.id),
+              p1: p1, p2: p2, p3: p3, dur: dur, tier_ok: tier_ok,
+              full: (p1 && p2 && p3 && dur && tier_ok), band: "#{wres.band&.color}/#{wres.band&.row}" }
+          rescue => e
+            nil
+          end
+
+          puts "===== C_self^SP calibration (honest<=#{N}) — cand cov_ceiling=#{COV_CEIL} elev_margin=#{ELEV_MARG} N=#{NWIN.to_i} ====="
+          live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(1000).to_a
+          honest = []; scanned = 0
+          live.each do |s|
+            break if honest.size >= N
+            scanned += 1
+            t = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(calculated_at: :desc).first
+            next unless t && t.c_hard == false && t.band_color.to_s == "green"
+            m = probe(s); next unless m
+            honest << m
+          end
+          puts "honest cohort: #{honest.size} (scanned #{scanned})"
+          abort "too few (#{honest.size})" if honest.size < 20
+
+          covs = honest.map { |m| m[:cov] }.compact
+          exs  = honest.map { |m| m[:excess] }
+          runs = honest.map { |m| m[:runlen] }
+          puts "\n--- [P3] CCV CoV (honest) — set csustained_cov_ceiling BETWEEN botted-max (~0.017) and honest-p10 ---"
+          puts "  n=#{covs.size} min=#{covs.min&.round(4)} p10=#{pct(covs,0.10)&.round(4)} p25=#{pct(covs,0.25)&.round(4)} p50=#{pct(covs,0.50)&.round(4)} max=#{covs.max&.round(4)}"
+          puts "\n--- [P2] excess_elevation = v_eff/own_baseline − 1 (honest) — margin excludes honest quiet (not elevated) ---"
+          puts "  n=#{exs.size} p50=#{pct(exs,0.50)&.round(3)} p90=#{pct(exs,0.90)&.round(3)} p95=#{pct(exs,0.95)&.round(3)} max=#{exs.max&.round(3)}"
+          puts "\n--- durability run-length (honest leading run, TIH proxy) — set N ABOVE honest-max ---"
+          puts "  n=#{runs.size} p50=#{pct(runs,0.50)} p90=#{pct(runs,0.90)} p95=#{pct(runs,0.95)} max=#{runs.max}"
+
+          # Per-conjunct honest firing (the AND geometry) + the FULL-arm gate.
+          pc = ->(k) { honest.count { |m| m[k] } }
+          puts "\n--- honest per-conjunct firing (of #{honest.size}) ---"
+          puts "  [P1] rho_dropped=#{pc.(:p1)}  [P2] elevated=#{pc.(:p2)}  [P3] flat=#{pc.(:p3)}  durability=#{pc.(:dur)}  tier_ok=#{pc.(:tier_ok)}"
+          full_fires = honest.select { |m| m[:full] }
+          puts "\n--- 🚦 FLIP GATE: honest FULL sustained_plateau firing = #{full_fires.size}/#{honest.size} (MUST be 0) ---"
+          if full_fires.size.zero?
+            puts "  ✅ 0 honest fires at cand (cov=#{COV_CEIL}, margin=#{ELEV_MARG}, N=#{NWIN.to_i}) → these constants are flip-safe on this cohort."
+          else
+            puts "  🔴 #{full_fires.size} honest FALSE fires. Bands: #{full_fires.group_by { |m| m[:band] }.transform_values(&:size)}."
+            puts "  If [P1] rho_dropped fires broadly on honest → the windowed ρ* re-seed (P1.1) is NOT done yet (illustrative ρ* → false deficit)."
+            puts "  Else tighten: lower cov_ceiling (below the honest fires' CoV) OR raise N (above their run-length) OR raise margin."
+          end
+          puts "  honest band mix: #{honest.group_by { |m| m[:band] }.transform_values(&:size)}"
+
+          if DARIYA_ID.strip != ""
+            puts "\n===== dariya labeled-positive (stream #{DARIYA_ID}) ====="
+            ds = Stream.find_by(id: DARIYA_ID)
+            if ds
+              dm = probe(ds)
+              if dm
+                puts "  CoV=#{dm[:cov]&.round(4)} excess=#{dm[:excess]&.round(3)} run-len=#{dm[:runlen]} | [P1]=#{dm[:p1]} [P2]=#{dm[:p2]} [P3]=#{dm[:p3]} dur=#{dm[:dur]} → FULL=#{dm[:full]}"
+                puts "  (want FULL=true at the plateau: a botter SHOULD trip all conjuncts with these constants.)"
+              else
+                puts "  probe returned nil (no window / no baseline / not stable — stream may be ended; use its historical TIH)."
+              end
+            else
+              puts "  stream #{DARIYA_ID} not found."
+            end
+          end
+          puts "\nNEXT: PO review → if 0/N honest + dariya FULL=true → seed the 3 CalibrationConstants → flip csustained_enabled=1.0 → STRICT live-verify + re-bot (4.2)."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/csustcal.rb) lines)"
+
+      - name: Run on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/csustcal.rb ${TARGET}:/tmp/csustcal.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/csustcal.rb ${CONTAINER}:/tmp/csustcal.rb && docker exec \
+            -e HONEST_SAMPLE='${{ inputs.honest_sample || '200' }}' \
+            -e CAND_COV_CEILING='${{ inputs.cand_cov_ceiling || '0.022' }}' \
+            -e CAND_ELEVATED_MARGIN='${{ inputs.cand_elevated_margin || '0.30' }}' \
+            -e CAND_N_WINDOWS='${{ inputs.cand_n_windows || '6' }}' \
+            -e DARIYA_STREAM_ID='${{ inputs.dariya_stream_id || '' }}' \
+            ${CONTAINER} sh -c 'bin/rails runner /tmp/csustcal.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
