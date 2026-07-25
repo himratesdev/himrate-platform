@@ -11,7 +11,8 @@ module EngineSpecDoubles
   Context = Data.define(:raw_chatters, :v, :cell, :rho_self_lo, :clean_self_history, :i_event,
                         :i_event_external, :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
                         :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample,
-                        :cps, :reputation, :ccv_chat_divergence, :l2_roster_usernames, :v_w)
+                        :cps, :reputation, :ccv_chat_divergence, :l2_roster_usernames, :v_w,
+                        :own_ccv_baseline)
   K = Data.define(:pi0, :tau_hard, :tau_delta, :phi_yellow, :phi_red, :q_mid, :q_hi,
                   :llr_temporal_r2, :llr_temporal_r3, :llr_temporal_r4, :llr_temporal_r7,
                   :llr_per_user_bot_score, :llr_known_bot, :i_event_enabled).new(
@@ -39,7 +40,8 @@ RSpec.describe TrustIndex::V2::Engine do
              i_event: false, i_event_external: false, raid_window: false, n_chat_eff: chatters.size, q: 0.9,
              cold_start_tier: "full", self_history_stable: true, chatter_quality_high: true,
              stream_count: 20, unattributed_surge: false, thin_sample: false, cps: 70,
-             reputation: "Стабильная", ccv_chat_divergence: 0.0, l2_roster_usernames: nil, v_w: nil }
+             reputation: "Стабильная", ccv_chat_divergence: 0.0, l2_roster_usernames: nil, v_w: nil,
+             own_ccv_baseline: nil }
     EngineSpecDoubles::Context.new(**base.merge(over))
   end
 
