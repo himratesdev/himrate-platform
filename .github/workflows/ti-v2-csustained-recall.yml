@@ -1,0 +1,136 @@
+name: ti-v2-csustained-recall
+# [skip ci] ops-probe. RECALL side of C_self^SP calibration: replays the dariya labeled-positive botted
+# stream (retention 3650d) from PERSISTED data (TIH rows + ccv_snapshots) and checks, PER CYCLE (faithful
+# trailing-30min CoV, mirroring the live engine), whether the sustained_plateau arm WOULD have fired FULL
+# during the botted plateau — i.e. a botter auto-accuses. READ-ONLY: never writes/flips anything. Pairs
+# with ti-v2-csustained-calibrate (FP side = 0/N honest). Together FP=0 + RECALL=fire → flip-ready.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      channel_login: { required: false, type: string, default: "dariya_willis" }
+      lookback_days: { required: false, type: string, default: "3" }
+      cand_cov_ceiling: { required: false, type: string, default: "0.022" }
+      cand_elevated_margin: { required: false, type: string, default: "0.30" }
+      cand_n_windows: { required: false, type: string, default: "6" }
+
+jobs:
+  recall:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build recall script
+        run: |
+          cat > /tmp/csustrecall.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          LOGIN     = ENV.fetch("CHANNEL_LOGIN", "dariya_willis")
+          DAYS      = ENV.fetch("LOOKBACK_DAYS", "3").to_i
+          COV_CEIL  = ENV.fetch("CAND_COV_CEILING", "0.022").to_f
+          ELEV_MARG = ENV.fetch("CAND_ELEVATED_MARGIN", "0.30").to_f
+          NWIN      = ENV.fetch("CAND_N_WINDOWS", "6").to_f
+
+          ch = Channel.where("lower(login) = ?", LOGIN.downcase).first ||
+               Channel.where("lower(display_name) = ?", LOGIN.downcase).first
+          abort "channel '#{LOGIN}' not found" unless ch
+          puts "===== C_self^SP RECALL replay — #{ch.login} (#{ch.id}) — cov<#{COV_CEIL} margin=#{ELEV_MARG} N=#{NWIN.to_i} ====="
+
+          # green-only own_ccv baseline (mirrors ContextBuilder#v2_own_ccv_baseline + the #519 de-poison)
+          green = TrustIndexHistory.where(channel_id: ch.id, engine_version: "v2", c_hard: false, band_color: "green")
+                    .where("calculated_at > ?", 90.days.ago).order(calculated_at: :desc).limit(30)
+                    .pluck(:ccv).compact.map(&:to_i).reject(&:zero?).sort
+          baseline = green.size >= 3 ? green[green.size / 2] : nil
+          puts "green-only own_ccv_baseline (median of #{green.size} honest): #{baseline.inspect}"
+          if baseline.nil?
+            puts "⚠ no honest baseline (need ≥3 green own-history rows) → [P2] can't evaluate. The de-poison keeps"
+            puts "  botted rows OUT of the baseline, so a channel that's been botted a lot has few green rows."
+          end
+
+          streams = ch.streams.where("started_at > ?", DAYS.days.ago).order(started_at: :desc).to_a
+          puts "streams in last #{DAYS}d: #{streams.size}\n"
+          any_fire = false
+          streams.each do |s|
+            rows = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2")
+                     .order(calculated_at: :asc).pluck(:calculated_at, :band_color, :f_soft_lo, :ccv, :rho_obs)
+            next if rows.empty?
+            # all ccv_snapshots for this stream (for the trailing-30min CoV per cycle)
+            snaps = s.ccv_snapshots.order(:timestamp).pluck(:timestamp, :ccv_count).map { |t, c| [ t, c.to_f ] }
+            deficit_rows = rows.count { |_, bc, fsl, _, _| bc.to_s != "green" && fsl.to_f > 0 }
+            peak = rows.map { |_, _, _, c, _| c.to_i }.compact.max
+            puts "--- stream #{s.id} started #{s.started_at} | TIH=#{rows.size} deficit_rows=#{deficit_rows} peak_ccv=#{peak} ---"
+            next if deficit_rows.zero?
+
+            # Walk cycles; track the consecutive non-green f_soft_lo>0 run; at each such row compute the
+            # trailing-30min CoV (faithful to the live [P3] input) and check FULL at that cycle.
+            run = 0; fired_at = nil; details = nil
+            rows.each do |ts, bc, fsl, ccv, _rho|
+              if bc.to_s != "green" && fsl.to_f > 0
+                run += 1
+              else
+                run = 0; next
+              end
+              win = snaps.select { |t, _| t > ts - 1800 && t <= ts }.map { |_, c| c }
+              next if win.size < 5
+              m = win.sum / win.size
+              next unless m > 0
+              cov = Math.sqrt(win.sum { |x| (x - m)**2 } / (win.size - 1)) / m
+              p1 = true                                                   # in a surviving-deficit run
+              p2 = !baseline.nil? && !ccv.nil? && ccv.to_i > baseline * (1 + ELEV_MARG)
+              p3 = cov < COV_CEIL
+              dur = run >= NWIN
+              if p1 && p2 && p3 && dur
+                fired_at = ts
+                details = "run=#{run} ccv=#{ccv} (base #{baseline}, +#{((ccv.to_f / baseline - 1) * 100).round}%) cov=#{cov.round(4)}"
+                break
+              end
+            end
+            if fired_at
+              any_fire = true
+              puts "  ✅ FULL sustained_plateau FIRED at #{fired_at} — #{details}"
+              puts "     → a botter on these constants AUTO-ACCUSES (AMBER→YELLOW). RECALL confirmed on this stream."
+            else
+              # diagnose the closest miss
+              maxrun = 0; cur = 0; covs = []
+              rows.each do |ts, bc, fsl, ccv, _|
+                if bc.to_s != "green" && fsl.to_f > 0
+                  cur += 1; maxrun = [ maxrun, cur ].max
+                  win = snaps.select { |t, _| t > ts - 1800 && t <= ts }.map { |_, c| c }
+                  if win.size >= 5
+                    m = win.sum / win.size; covs << (Math.sqrt(win.sum { |x| (x - m)**2 } / (win.size - 1)) / m) if m > 0
+                  end
+                else cur = 0 end
+              end
+              puts "  — no FULL fire. max_run=#{maxrun} (need ≥#{NWIN.to_i}); deficit-window CoV min=#{covs.min&.round(4)} (need <#{COV_CEIL}); baseline=#{baseline.inspect} peak_ccv=#{peak}"
+            end
+          end
+          puts "\n===== RECALL VERDICT: #{any_fire ? '✅ botter would auto-accuse (FULL fired on ≥1 botted stream)' : '🔴 NO fire — recall NOT confirmed at these constants (see per-stream diagnosis)'} ====="
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/csustrecall.rb) lines)"
+
+      - name: Run on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/csustrecall.rb ${TARGET}:/tmp/csustrecall.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/csustrecall.rb ${CONTAINER}:/tmp/csustrecall.rb && docker exec \
+            -e CHANNEL_LOGIN='${{ inputs.channel_login || 'dariya_willis' }}' \
+            -e LOOKBACK_DAYS='${{ inputs.lookback_days || '3' }}' \
+            -e CAND_COV_CEILING='${{ inputs.cand_cov_ceiling || '0.022' }}' \
+            -e CAND_ELEVATED_MARGIN='${{ inputs.cand_elevated_margin || '0.30' }}' \
+            -e CAND_N_WINDOWS='${{ inputs.cand_n_windows || '6' }}' \
+            ${CONTAINER} sh -c 'bin/rails runner /tmp/csustrecall.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
