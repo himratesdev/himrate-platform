@@ -516,8 +516,18 @@ module TrustIndex
       def v2_self_history(channel)
         # P0.5: ρ_self_lo must be built from rows of the SAME ρ_obs convention as the current compute —
         # pooling cumulative + windowed samples corrupts the baseline (see self_history_convention_scope).
+        #
+        # moat-audit de-poison (BLOCKER fix): the own-history baseline (own_ccv_history → G5 lurker guard's
+        # own_ccv_baseline; ρ_obs → rho_self_lo → [1]) must exclude BOTTED streams, not just named-bot
+        # (c_hard) ones. A SILENT viewbotter has c_hard=false, so its botted streams were previously folded
+        # into its own baseline → G5 read "online not elevated vs its own (poisoned) median" → floored the
+        # deficit → the botter ratcheted to permanent GREEN. Filtering to `band_color: "green"` breaks the
+        # ratchet: a botted stream reads AMBER/RED (elevated vs the HONEST baseline) → excluded → the
+        # baseline never inflates → the botter stays elevated → caught. Self-healing (a currently-poisoned
+        # channel de-inflates as its new botted streams read AMBER). Green = a positive honest verdict
+        # (rows 3-4); AMBER (deficit) / RED / YELLOW / GREY are excluded.
         scope = TrustIndexHistory
-          .where(channel_id: channel.id, engine_version: "v2", c_hard: false)
+          .where(channel_id: channel.id, engine_version: "v2", c_hard: false, band_color: "green")
           .where("calculated_at > ?", SELF_HISTORY_WINDOW_DAYS.days.ago)
         rows = self_history_convention_scope(scope)
           .order(calculated_at: :desc)

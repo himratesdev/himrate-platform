@@ -138,12 +138,32 @@ RSpec.describe TrustIndex::ContextBuilder do
     it "computes rho_self_lo from clean v2 history once ≥3 clean rows exist" do
       3.times do |i|
         create(:trust_index_history, channel: channel, stream: create(:stream, channel: channel),
-                                     engine_version: "v2", c_hard: false, rho_obs: 0.02 + (i * 0.01),
-                                     calculated_at: (i + 1).days.ago)
+                                     engine_version: "v2", c_hard: false, band_color: "green",
+                                     rho_obs: 0.02 + (i * 0.01), calculated_at: (i + 1).days.ago)
       end
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a]))
       expect(c.clean_self_history).to be(true)
       expect(c.rho_self_lo).to be_within(0.001).of(0.02)
+    end
+
+    it "moat-audit de-poison: BOTTED (non-green) self-history rows are excluded from the baseline" do
+      # 3 honest GREEN streams at CCV 300 + 3 botted AMBER streams at CCV 900 (elevated online, low ρ_obs).
+      # The G5 own_ccv baseline + rho_self_lo must be built from the GREEN rows only (median 300, not 600) —
+      # else the botter's own inflated online poisons its floor and it ratchets to permanent GREEN.
+      3.times do |i|
+        create(:trust_index_history, channel: channel, stream: create(:stream, channel: channel),
+                                     engine_version: "v2", c_hard: false, band_color: "green",
+                                     rho_obs: 0.30, ccv: 300, calculated_at: (i + 1).days.ago)
+      end
+      3.times do |i|
+        create(:trust_index_history, channel: channel, stream: create(:stream, channel: channel),
+                                     engine_version: "v2", c_hard: false, band_color: "amber",
+                                     rho_obs: 0.05, ccv: 900, calculated_at: (i + 4).days.ago)
+      end
+      c = described_class.build_v2(stream, ctx_hash(chatters: %w[a]))
+      # own_ccv_baseline = median of GREEN CCV (300), NOT median of all 6 (600) → botter stays elevated → caught
+      expect(c.own_ccv_baseline).to eq(300)
+      expect(c.rho_self_lo).to be_within(0.001).of(0.30) # green-only ρ_obs P10, not dragged down by botted 0.05
     end
 
     it "P0.5: self-baseline segregates by ρ_obs convention — flag ON ignores cumulative rows (no mixing)" do
@@ -151,7 +171,8 @@ RSpec.describe TrustIndex::ContextBuilder do
       # is 'windowed', so the baseline must NOT be built from cumulative samples → stays dormant.
       3.times do |i|
         create(:trust_index_history, channel: channel, stream: create(:stream, channel: channel),
-                                     engine_version: "v2", c_hard: false, rho_obs: 0.02 + (i * 0.01),
+                                     engine_version: "v2", c_hard: false, band_color: "green",
+                                     rho_obs: 0.02 + (i * 0.01),
                                      rho_convention: "cumulative", calculated_at: (i + 1).days.ago)
       end
       allow(Flipper).to receive(:enabled?).and_call_original
