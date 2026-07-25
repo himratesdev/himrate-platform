@@ -114,4 +114,18 @@ RSpec.describe "Flipper Feature Flags" do
       expect(FlipperDefaults::HOOK_FLAGS[:trends_pdf_export]).to match(/TASK-\d+/)
     end
   end
+
+  # Battle-mode windowing flip: ti_v2_cowindowed_rho is deploy-proof on staging + development but the boot
+  # loop guards it on Rails.env, so it is NOT auto-enabled in production (PO-gated rollout) or test (specs
+  # assume the cumulative verdict).
+  describe "staging-only deploy-proof flags (STAGING_ALL_FLAGS)" do
+    it "includes ti_v2_cowindowed_rho" do
+      expect(FlipperDefaults::STAGING_ALL_FLAGS).to include(:ti_v2_cowindowed_rho)
+    end
+
+    it "keeps ti_v2_cowindowed_rho OUT of the always-on ALL_FLAGS (env-gated, not global)" do
+      expect(FlipperDefaults::ALL_FLAGS).not_to include(:ti_v2_cowindowed_rho)
+      expect(Rails.env.test?).to be true # → the STAGING_ALL_FLAGS boot loop is skipped here (cumulative verdict)
+    end
+  end
 end
