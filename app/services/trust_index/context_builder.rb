@@ -509,10 +509,11 @@ module TrustIndex
       # (DEC-2-sanctioned). F_self also requires I=1 (dormant while i_event_enabled=0.0) so this is dormant
       # regardless, but the query is the real one for when the I-event computation lands.
       # i_event EPIC: also plucks `ccv` on the SAME scan (heap rows already fetched for the c_hard/convention
-      # filter → zero added scan) → own_ccv_history feeds [2] v_above_own_trend. The clean-only (c_hard=false)
-      # + convention-scoped 30-row window means a frequent botter accumulates <10 clean rows → self_history_stable
-      # false → i_event gated off for them (no honest baseline to deviate from — the no-baseline→no-self-accuse
-      # property; they are caught by F_soft/F_hard/C_inflation instead). Intended.
+      # filter → zero added scan) → own_ccv_history feeds [2] v_above_own_trend. The honest-only
+      # (c_hard=false ∧ band_color=green — see the de-poison note below) + convention-scoped 30-row window
+      # means a frequent botter accumulates <10 honest rows → self_history_stable false → i_event gated off
+      # for them (no honest baseline to deviate from — the no-baseline→no-self-accuse property; they are
+      # caught by F_soft/F_hard/C_inflation instead). Intended.
       def v2_self_history(channel)
         # P0.5: ρ_self_lo must be built from rows of the SAME ρ_obs convention as the current compute —
         # pooling cumulative + windowed samples corrupts the baseline (see self_history_convention_scope).
