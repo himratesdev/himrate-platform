@@ -4,8 +4,8 @@ require "rails_helper"
 
 module ReasonCodeBuilderSpecDoubles
   Band = Data.define(:row, :sub)
-  Ctx = Data.define(:c_hard, :c_self, :c_inflation, :named_count, :named_pct, :self_history_stable,
-                    :chatter_quality_high, :cold_start_tier, :stream_count,
+  Ctx = Data.define(:c_hard, :c_self, :c_inflation, :i_event_sustained, :named_count, :named_pct,
+                    :self_history_stable, :chatter_quality_high, :cold_start_tier, :stream_count,
                     :raid_window_suppressed_i, :unattributed_surge, :thin_sample)
 end
 
@@ -15,8 +15,8 @@ RSpec.describe TrustIndex::V2::ReasonCodeBuilder do
   end
 
   def ctx(**over)
-    base = { c_hard: false, c_self: false, c_inflation: false, named_count: 0, named_pct: 0.0,
-             self_history_stable: false, chatter_quality_high: false, cold_start_tier: "full",
+    base = { c_hard: false, c_self: false, c_inflation: false, i_event_sustained: false, named_count: 0,
+             named_pct: 0.0, self_history_stable: false, chatter_quality_high: false, cold_start_tier: "full",
              stream_count: 20, raid_window_suppressed_i: false, unattributed_surge: false, thin_sample: false }
     ReasonCodeBuilderSpecDoubles::Ctx.new(**base.merge(over))
   end
@@ -42,8 +42,16 @@ RSpec.describe TrustIndex::V2::ReasonCodeBuilder do
     expect(result).not_to include("INFLATION_EVENT_CORROBORATION")
   end
 
-  it "RED/YELLOW → SELF_HISTORY_INFLATION_EVENT when C_self" do
+  it "RED/YELLOW → SELF_HISTORY_INFLATION_EVENT when C_self (legacy step arm)" do
     expect(codes(band(2), c_self: true)).to include("SELF_HISTORY_INFLATION_EVENT")
+  end
+
+  # TI v2.1 C_self^SP: the sustained-plateau arm surfaces a DISTINCT code (a held silent-viewbot plateau
+  # vs an abrupt step), for observability + legal copy. Never both codes.
+  it "C_self + i_event_sustained → SELF_HISTORY_SUSTAINED_INFLATION (the held-plateau code, not the step)" do
+    result = codes(band(2), c_self: true, i_event_sustained: true)
+    expect(result).to include("SELF_HISTORY_SUSTAINED_INFLATION")
+    expect(result).not_to include("SELF_HISTORY_INFLATION_EVENT")
   end
 
   it "soft deficit alone (row 6a) → non-accusatory ENGAGEMENT_DEFICIT_UNCORROBORATED, no HARD/SELF" do

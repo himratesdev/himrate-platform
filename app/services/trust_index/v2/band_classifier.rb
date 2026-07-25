@@ -28,9 +28,11 @@ module TrustIndex
       end
 
       # Canonical driver contract (L4 builds this; the class stays duck-typed for isolated tests).
+      # i_event_sustained (TI v2.1 C_self^SP): i_event came from the SUSTAINED-plateau arm, not the legacy
+      # step → a single deficit-family signal → capped at YELLOW unless independently corroborated.
       Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
                             :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier,
-                            :cell_calibrated)
+                            :cell_calibrated, :i_event_sustained)
 
       def self.call(drivers:, k:)
         new(drivers, k).call
@@ -61,10 +63,27 @@ module TrustIndex
         @d.c_hard || @d.c_self || @d.c_inflation
       end
 
+      # TI v2.1 C_self^SP row2-cap: a SUSTAINED-only self-history inflation (the held-plateau arm) is a
+      # single deficit-family signal. Public RED requires a SECOND, INDEPENDENT corroborator — a named-bot
+      # fraction (C_hard) or a CCV-step (C_inflation). The legacy 6-AND step arm (i_event_sustained=false)
+      # keeps its unchanged RED path (the step IS the independent second signal). Also excludes a
+      # sustained-only C_self from self-corroborating the F_soft RED branch (deficit corroborating deficit).
+      def i_event_sustained?
+        @d.i_event_sustained == true
+      end
+
+      # RED via the F_soft branch needs a corroborator INDEPENDENT of the sustained-deficit family: a
+      # sustained-only C_self shares F_soft's shape, so it can't corroborate F_soft to public RED. A legacy
+      # (step) C_self carries the 5 external step conjuncts → still a valid independent F_soft corroborator.
+      def independently_corroborated?
+        @d.c_hard || @d.c_inflation || (@d.c_self && !i_event_sustained?)
+      end
+
       def row1?
         @d.n_frac >= @k.phi_red ||
-          (accusable_tier? && @d.i_event && @d.f_self_ratio >= 0.50 && !@d.raid_window) ||
-          (accusable_tier? && cell_calibrated? && @d.f_soft_lo_ratio >= 0.50 && corroborated?)
+          (accusable_tier? && @d.i_event && @d.f_self_ratio >= 0.50 && !@d.raid_window &&
+            (!i_event_sustained? || @d.c_hard || @d.c_inflation)) ||
+          (accusable_tier? && cell_calibrated? && @d.f_soft_lo_ratio >= 0.50 && independently_corroborated?)
       end
 
       def row2?

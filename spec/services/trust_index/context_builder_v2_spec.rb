@@ -253,7 +253,10 @@ RSpec.describe TrustIndex::ContextBuilder do
         phi_inflation: 0.30, inflation_corrob_enabled: 0.0, # TI v2.1 dormant
         i_event_enabled: 0.0, ie_v_trend_z: 99.0, ie_arrival_floor_frac: 0.0, # i_event dormant
         ie_conv_floor: -1.0, ie_cv_floor: 0.0,
-        lurker_collapse_ratio: -1.0 # G5 dormant
+        lurker_collapse_ratio: -1.0, # G5 dormant
+        # TI v2.1 C_self^SP dormant (enabled 0.0; N=999 + cov_ceiling=0.0 backstops)
+        csustained_enabled: 0.0, csustained_n_windows: 999.0,
+        csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0
       )
       r = TrustIndex::V2::Engine.compute(context: c, k: k)
       expect(r.b_hard.map(&:username)).to include("megabot")
@@ -388,6 +391,48 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(sig[:conv]).to eq(0.0)                               # [5] growing, 0 follower growth
       expect(sig[:cov]).to be_a(Numeric)                          # [6]
       expect(sig[:self_history_stable]).to be(true)
+    end
+
+    # TI v2.1 C_self^SP durability ledger — the CURRENT stream's leading run of consecutive windowed
+    # elevated-deficit TIH windows, reconstructed from append-only history (no new table/column/counter).
+    describe "v2_sustained_count (C_self^SP durability ledger)" do
+      let(:sc_stream) { create(:stream, channel: channel) }
+
+      def seed_tih(band_color:, f_soft_lo:, at:)
+        create(:trust_index_history, channel: channel, stream: sc_stream, engine_version: "v2",
+               c_hard: false, band_color: band_color, f_soft_lo: f_soft_lo,
+               rho_convention: "cumulative", calculated_at: at)
+      end
+
+      it "DORMANT (csustained_enabled≤0): returns 0 with NO read" do
+        seed_tih(band_color: "amber", f_soft_lo: 100, at: 1.minute.ago)
+        expect(described_class.send(:v2_sustained_count, sc_stream, { "csustained_enabled" => 0.0 })).to eq(0)
+      end
+
+      it "counts the leading run of consecutive non-green f_soft_lo>0 (surviving-deficit) windows" do
+        seed_tih(band_color: "amber", f_soft_lo: 100, at: 3.minutes.ago)
+        seed_tih(band_color: "amber", f_soft_lo: 120, at: 2.minutes.ago)
+        seed_tih(band_color: "amber", f_soft_lo: 140, at: 1.minute.ago)
+        expect(described_class.send(:v2_sustained_count, sc_stream,
+          { "csustained_enabled" => 1.0, "csustained_n_windows" => 10.0 })).to eq(3)
+      end
+
+      it "HARD RESET on any GREEN (honest) window — the leading run stops at the first green" do
+        seed_tih(band_color: "amber", f_soft_lo: 100, at: 4.minutes.ago)
+        seed_tih(band_color: "green", f_soft_lo: 0,   at: 3.minutes.ago) # an honest window breaks the run
+        seed_tih(band_color: "amber", f_soft_lo: 120, at: 2.minutes.ago)
+        seed_tih(band_color: "amber", f_soft_lo: 140, at: 1.minute.ago)
+        # newest-first: amber, amber, green(STOP) → leading run = 2
+        expect(described_class.send(:v2_sustained_count, sc_stream,
+          { "csustained_enabled" => 1.0, "csustained_n_windows" => 10.0 })).to eq(2)
+      end
+
+      it "a G5-floored window (f_soft_lo=0, non-green) breaks the run (no surviving deficit)" do
+        seed_tih(band_color: "amber", f_soft_lo: 0,   at: 2.minutes.ago) # floored → not a deficit window
+        seed_tih(band_color: "amber", f_soft_lo: 140, at: 1.minute.ago)
+        expect(described_class.send(:v2_sustained_count, sc_stream,
+          { "csustained_enabled" => 1.0, "csustained_n_windows" => 10.0 })).to eq(1)
+      end
     end
   end
 end

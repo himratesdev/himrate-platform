@@ -12,14 +12,20 @@ module EngineSpecDoubles
                         :i_event_external, :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
                         :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample,
                         :cps, :reputation, :ccv_chat_divergence, :l2_roster_usernames, :v_w,
-                        :own_ccv_baseline)
+                        :own_ccv_baseline, :sustained_count, :ccv_cov)
   K = Data.define(:pi0, :tau_hard, :tau_delta, :phi_yellow, :phi_red, :q_mid, :q_hi,
                   :llr_temporal_r2, :llr_temporal_r3, :llr_temporal_r4, :llr_temporal_r7,
-                  :llr_per_user_bot_score, :llr_known_bot, :i_event_enabled).new(
+                  :llr_per_user_bot_score, :llr_known_bot, :i_event_enabled,
+                  # TI v2.1 C_self^SP — dormant defaults (mirror Registry). Present so k.with(...) can flip
+                  # them in the C_self^SP describe block; absent-key engine tests read them via respond_to?.
+                  :csustained_enabled, :csustained_n_windows, :csustained_elevated_margin,
+                  :csustained_cov_ceiling).new(
                     pi0: 0.02, tau_hard: 0.9, tau_delta: 0.5, phi_yellow: 0.10, phi_red: 0.35,
                     q_mid: 0.5, q_hi: 0.8, llr_temporal_r2: 1.1, llr_temporal_r3: 2.2,
                     llr_temporal_r4: 2.9, llr_temporal_r7: 4.6, llr_per_user_bot_score: 3.9,
-                    llr_known_bot: 3.4, i_event_enabled: 0.0 # DORMANT default (mirror Registry)
+                    llr_known_bot: 3.4, i_event_enabled: 0.0, # DORMANT default (mirror Registry)
+                    csustained_enabled: 0.0, csustained_n_windows: 999.0,
+                    csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0
                   )
 end
 
@@ -41,7 +47,7 @@ RSpec.describe TrustIndex::V2::Engine do
              cold_start_tier: "full", self_history_stable: true, chatter_quality_high: true,
              stream_count: 20, unattributed_surge: false, thin_sample: false, cps: 70,
              reputation: "Стабильная", ccv_chat_divergence: 0.0, l2_roster_usernames: nil, v_w: nil,
-             own_ccv_baseline: nil }
+             own_ccv_baseline: nil, sustained_count: 0, ccv_cov: nil }
     EngineSpecDoubles::Context.new(**base.merge(over))
   end
 
@@ -150,6 +156,66 @@ RSpec.describe TrustIndex::V2::Engine do
     it "FLIP suppressed by raid: enabled=1.0 + screaming fixture but raid_window=true → i_event false (provenance)" do
       r = described_class.compute(context: firing_ctx(raid_window: true), k: k.with(i_event_enabled: 1.0))
       expect(r.c_self).to be(false)
+    end
+  end
+
+  describe "C_self^SP sustained-plateau arm (T1-074, battle-mode) — dormant by default, YELLOW-capped when flipped" do
+    # HELD-plateau fixture: thin honest chat (EIHC≈30) but V=5000 held high → rho_dropped [1]; online
+    # elevated vs the own baseline (100) → [P2]; flat CCV (ccv_cov 0.01) → [P3]; a long persisted run
+    # (sustained_count 5) → durability; clean+stable self-history; no raid/surge; full tier.
+    def plateau_ctx(**over)
+      context(Array.new(30) { |i| chatter("h#{i}") }, v: 5000, n_chat_eff: 30,
+              rho_self_lo: 0.03, clean_self_history: true, self_history_stable: true,
+              cold_start_tier: "full", raid_window: false, unattributed_surge: false,
+              own_ccv_baseline: 100, ccv_cov: 0.01, sustained_count: 5, **over)
+    end
+
+    let(:k_on) do
+      k.with(csustained_enabled: 1.0, csustained_n_windows: 3.0,
+             csustained_cov_ceiling: 0.05, csustained_elevated_margin: 0.30)
+    end
+
+    it "DORMANT (csustained_enabled=0.0): the held-plateau fixture does NOT accuse → F_soft alone → AMBER" do
+      r = described_class.compute(context: plateau_ctx, k: k)
+      expect(r.c_self).to be(false)
+      expect(r.confirmed_anomaly).to be(false)
+      expect([ 1, 2 ]).not_to include(r.band.row) # a soft deficit alone → AMBER row 6
+    end
+
+    it "GOLDEN byte-identical at defaults: sustained_count 0 vs 99 yield identical Results while dormant" do
+      lo = described_class.compute(context: plateau_ctx(sustained_count: 0), k: k)
+      hi = described_class.compute(context: plateau_ctx(sustained_count: 99), k: k)
+      expect(lo.to_h).to eq(hi.to_h) # sustained_count/ccv_cov inert while csustained_enabled=0.0
+    end
+
+    it "FLIP proves the wire is REAL: enabled + held plateau → i_event fires, c_self, YELLOW (capped, no independent corroborator)" do
+      r = described_class.compute(context: plateau_ctx, k: k_on)
+      expect(r.c_self).to be(true)
+      expect(r.confirmed_anomaly).to be(true)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ]) # sustained-only caps at YELLOW, never public RED alone
+      expect(r.reason_codes.map(&:code)).to include("SELF_HISTORY_SUSTAINED_INFLATION")
+    end
+
+    it "FP guard (baseline): no honest baseline (self_history_stable false) → no fire even when enabled" do
+      expect(described_class.compute(context: plateau_ctx(self_history_stable: false), k: k_on).c_self).to be(false)
+    end
+
+    it "FP guard [P2]: online NOT elevated vs own baseline (honest quieting) → no fire (G5-inverse)" do
+      # own_ccv_baseline 6000 > V 5000 → not elevated → the sustained arm is off; the honest quiet-chat case
+      # (chat collapses, online stable) — F_soft is separately floored by G5 in L2.
+      expect(described_class.compute(context: plateau_ctx(own_ccv_baseline: 6000), k: k_on).c_self).to be(false)
+    end
+
+    it "FP guard [P3]: a RISING surge (high CoV, not flat) → plateau_shape false → no fire" do
+      expect(described_class.compute(context: plateau_ctx(ccv_cov: 0.40), k: k_on).c_self).to be(false)
+    end
+
+    it "FP guard (durability): a short run (sustained_count+1 < N) → no fire yet" do
+      expect(described_class.compute(context: plateau_ctx(sustained_count: 1), k: k_on).c_self).to be(false)
+    end
+
+    it "FP guard [P4] raid: a raid window suppresses the sustained arm (provenance)" do
+      expect(described_class.compute(context: plateau_ctx(raid_window: true), k: k_on).c_self).to be(false)
     end
   end
 

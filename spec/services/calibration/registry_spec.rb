@@ -29,7 +29,9 @@ RSpec.describe Calibration::Registry do
       :phi_inflation, :inflation_corrob_enabled, # TI v2.1 inflation corroborator (dormant)
       # TI v2.1 i_event self-history tripwire (C_self / F_self arm — dormant)
       :i_event_enabled, :ie_v_trend_z, :ie_arrival_floor_frac, :ie_conv_floor, :ie_cv_floor,
-      :lurker_collapse_ratio # G5 lurker-collapse guard (dormant)
+      :lurker_collapse_ratio, # G5 lurker-collapse guard (dormant)
+      # TI v2.1 C_self^SP sustained-plateau self-corroborator (dormant)
+      :csustained_enabled, :csustained_n_windows, :csustained_elevated_margin, :csustained_cov_ceiling
     )
   end
 end
