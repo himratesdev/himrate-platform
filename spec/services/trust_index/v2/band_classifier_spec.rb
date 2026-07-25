@@ -6,7 +6,7 @@ require "rails_helper"
 # dynamic-constant-assignment; namespaced to avoid global collisions).
 module BandClassifierSpecDoubles
   Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
-                        :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier)
+                        :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier, :cell_calibrated)
   Thresholds = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi)
 end
 
@@ -17,7 +17,7 @@ RSpec.describe TrustIndex::V2::BandClassifier do
   def drivers(**over)
     base = { n_frac: 0.0, f_self_ratio: 0.0, f_soft_lo_ratio: 0.0, a_hat: 0.0, q: 0.9,
              i_event: false, c_hard: false, c_self: false, c_inflation: false,
-             raid_window: false, cold_start_tier: "full" }
+             raid_window: false, cold_start_tier: "full", cell_calibrated: true }
     BandClassifierSpecDoubles::Drivers.new(**base.merge(over))
   end
 
@@ -120,6 +120,24 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     # locks in that when i_event flips, a thin-history channel still can't be accused off it.
     b = classify(i_event: true, c_self: true, f_self_ratio: 0.55, a_hat: 0.55, cold_start_tier: "basic")
     expect(%w[red yellow]).not_to include(b.color)
+  end
+
+  # moat-audit (uncovered-cell safety): the f_soft/C_inflation accusatory branch must NEVER fire off an
+  # uncalibrated per-cell ρ* (DEFAULT fallback) — only ~10 RU cells are seeded; the rest of the fleet is
+  # on the illustrative 0.03 default that could false-accuse a low-chat cell.
+  it "moat-audit: an UNCALIBRATED cell + C_inflation-corroborated soft deficit is NOT accused (→ AMBER)" do
+    b = classify(f_soft_lo_ratio: 0.60, c_inflation: true, a_hat: 0.60, cell_calibrated: false)
+    expect([ b.row, b.color ]).to eq([ 6, "amber" ])
+  end
+
+  it "moat-audit: named-bot FRACTION STILL accuses on an uncalibrated cell (cell-independent hard evidence)" do
+    b = classify(n_frac: 0.58, c_hard: true, a_hat: 0.30, cell_calibrated: false)
+    expect([ b.row, b.color ]).to eq([ 1, "red" ])
+  end
+
+  it "moat-audit control: the SAME corroborated soft deficit on a CALIBRATED cell IS accused (RED)" do
+    b = classify(f_soft_lo_ratio: 0.60, c_inflation: true, a_hat: 0.60, cell_calibrated: true)
+    expect([ b.row, b.color ]).to eq([ 1, "red" ])
   end
 
   describe ".label_key_for (surface-audit sweep — the ONE reader-side derivation point)" do

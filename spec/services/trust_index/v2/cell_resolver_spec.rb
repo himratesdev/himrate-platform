@@ -7,10 +7,17 @@ RSpec.describe TrustIndex::V2::CellResolver do
     CalibrationCellBaseline.create!({ chat_mode: "open", language: "ru", sample_size: 100 }.merge(attrs))
   end
 
-  it "resolves the exact cell's ρ* triple" do
+  it "resolves the exact cell's ρ* triple + carries calibrated=true" do
     baseline(category: "gaming", v_bucket: "1k-5k", rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: true)
     r = described_class.call(category: "gaming", v_bucket: "1k-5k", chat_mode: "open", language: "ru")
     expect([ r.rho_star, r.rho_lo, r.rho_hi ]).to eq([ 0.03, 0.02, 0.05 ])
+    expect(r.calibrated).to be(true) # moat-audit: threaded to BandClassifier so the f_soft branch can accuse
+  end
+
+  it "carries calibrated=false for an uncalibrated leaf with no calibrated ancestor (no public accusation off it)" do
+    baseline(category: "gaming", v_bucket: "1k-5k", rho_star: 0.04, rho_lo: 0.02, rho_hi: 0.07, calibrated: false)
+    r = described_class.call(category: "gaming", v_bucket: "1k-5k", chat_mode: "open", language: "ru")
+    expect(r.calibrated).to be(false)
   end
 
   it "falls back to the default category when the exact cell is absent" do

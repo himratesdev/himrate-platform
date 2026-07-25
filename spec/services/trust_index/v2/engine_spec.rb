@@ -7,7 +7,7 @@ module EngineSpecDoubles
   Chatter = Data.define(:username, :temporal_recurrence, :known_bot_hit, :per_user_bot_score,
                         :account_profile_llr, :anti_bot_llr,
                         :cluster_delta_k, :cluster_size, :age_gate, :recurrence_gate)
-  Cell = Data.define(:rho_star, :rho_lo, :rho_hi)
+  Cell = Data.define(:rho_star, :rho_lo, :rho_hi, :calibrated)
   Context = Data.define(:raw_chatters, :v, :cell, :rho_self_lo, :clean_self_history, :i_event,
                         :i_event_external, :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
                         :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample,
@@ -25,7 +25,7 @@ end
 
 RSpec.describe TrustIndex::V2::Engine do
   let(:k) { EngineSpecDoubles::K }
-  let(:cell) { EngineSpecDoubles::Cell.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05) }
+  let(:cell) { EngineSpecDoubles::Cell.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: true) }
 
   def chatter(name, bot: false)
     EngineSpecDoubles::Chatter.new(

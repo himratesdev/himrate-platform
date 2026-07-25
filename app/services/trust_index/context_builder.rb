@@ -18,7 +18,7 @@ module TrustIndex
     SELF_HISTORY_STABLE_MIN = 10 # full tier — self-history considered stable
     # EC-18 coarsest fallback: illustrative honest chat-share baseline when no calibration_cell_baseline
     # row resolves (pre-GATE-0 / novel cell). Values from SRS FR-003 example — refined per-cell at GATE 0.
-    DEFAULT_CELL_BASELINE = TrustIndex::V2::CellResolver::Baseline.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05)
+    DEFAULT_CELL_BASELINE = TrustIndex::V2::CellResolver::Baseline.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: false)
     V_BUCKETS = [ [ 1_000, "0-1k" ], [ 5_000, "1k-5k" ], [ 20_000, "5k-20k" ] ].freeze
 
     # i_event EPIC (T1-074) — external-conjunct window/min-sample constants.
