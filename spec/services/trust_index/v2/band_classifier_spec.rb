@@ -115,6 +115,13 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     expect([ b.row, b.color ]).to eq([ 1, "red" ])
   end
 
+  it "G4: the i_event/C_self accusatory branch ALSO gates on tier — basic tier does NOT accuse" do
+    # Symmetric half of the gate: the self-history branch is dormant today (i_event_enabled=0), but this
+    # locks in that when i_event flips, a thin-history channel still can't be accused off it.
+    b = classify(i_event: true, c_self: true, f_self_ratio: 0.55, a_hat: 0.55, cold_start_tier: "basic")
+    expect(%w[red yellow]).not_to include(b.color)
+  end
+
   describe ".label_key_for (surface-audit sweep — the ONE reader-side derivation point)" do
     it "maps every persisted row to its canonical key" do
       expect(described_class.label_key_for(3)).to eq("band.green_real")
