@@ -110,9 +110,13 @@ RSpec.describe TrustIndex::V2::L2Presume do
   end
 
   it "G5 is inert in cumulative mode (v_w nil) even with a positive ratio — keys on the windowed frame only" do
-    guardless = described_class.call(raw: g5_raw, b_hard_usernames: Set.new, v: 2800, cell: g5_cell, k: k)
-    with_ratio = described_class.call(raw: g5_raw, b_hard_usernames: Set.new, v: 2800, cell: g5_cell, k: k,
-                                      own_ccv_baseline: 3000, lurker_collapse_ratio: 0.3)
-    expect(with_ratio.to_h).to eq(guardless.to_h) # cumulative EIHC 100 whitens → both f_soft 0, but via cell math, not the guard
+    # Load-bearing (CR N1): use a THIN cumulative roster (5 chatters) so the cumulative deficit is POSITIVE
+    # (2800 − 5/0.03 ≈ 2633). If the guard wrongly ignored the nil v_w and fired (2800 ≤ 3000·1.3), f_soft
+    # would floor to 0 — a value that DIFFERS from the correct positive deficit. Asserting the positive
+    # deficit proves the `v_w &&` short-circuit keeps G5 off in cumulative mode.
+    thin = Array.new(5) { |i| chatter("h#{i}") }
+    sb = described_class.call(raw: thin, b_hard_usernames: Set.new, v: 2800, cell: g5_cell, k: k,
+                              own_ccv_baseline: 3000, lurker_collapse_ratio: 0.3) # v_w nil (cumulative)
+    expect(sb.f_soft).to be_within(1.0).of(2800 - 5 / 0.03) # ≈2633 positive → guard did NOT floor
   end
 end
