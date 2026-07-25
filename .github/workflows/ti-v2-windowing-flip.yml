@@ -1,0 +1,136 @@
+name: ti-v2-windowing-flip
+# ATOMIC windowing verdict flip (battle-mode P3.1). Replaces the cumulative ρ* cells with the windowed
+# pool (51-run / 212-anchor seed) + sets G5 lurker_collapse_ratio + enables ti_v2_cowindowed_rho — all
+# together (seeding windowed cells while the verdict is cumulative would mismatch conventions fleet-wide).
+#   mode=dryrun : seed + compute the honest cohort's POST-FLIP band mix inside a transaction, then ROLL
+#                 BACK — zero live impact. Proves honest → GREEN before the real flip.
+#   mode=apply  : the real atomic flip (transaction: delete+seed cells + ratio; then enable the flag) +
+#                 a post-flip honest verify with AUTO-ROLLBACK (disable the flag if honest amber >25%).
+# Reversible: disable ti_v2_cowindowed_rho + re-run gate0-seed (restores cumulative cells).
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      mode: { required: true, type: choice, options: [dryrun, apply], default: dryrun }
+      ratio: { description: "lurker_collapse_ratio", required: false, type: string, default: "0.10" }
+
+jobs:
+  flip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build flip script
+        run: |
+          cat > /tmp/wflip.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          MODE = ENV.fetch("MODE", "dryrun")
+          RATIO = ENV.fetch("RATIO", "0.10").to_f
+          CB = TrustIndex::ContextBuilder
+          # windowed ρ* — pooled 51 shadow-mine runs / 212 honest anchors, dedup-by-login (2026-07-25).
+          # esports|0-1k|open ρ_hi clamped 4.2→1.5 (outlier P90). GATE0-WINDOWED-RESEED-PROPOSAL-2026-07-25.
+          CELLS = [
+            [ "just_chatting", "0-1k",  "open",           "RU", 0.2816, 0.1141, 0.9639 ],
+            [ "just_chatting", "0-1k",  "followers-only", "RU", 0.2521, 0.1328, 0.5962 ],
+            [ "gaming",        "0-1k",  "open",           "RU", 0.2529, 0.1317, 0.7812 ],
+            [ "esports",       "0-1k",  "followers-only", "RU", 0.3816, 0.1637, 1.2000 ],
+            [ "gaming",        "0-1k",  "followers-only", "RU", 0.2283, 0.0824, 0.5564 ],
+            [ "esports",       "0-1k",  "open",           "RU", 0.4412, 0.1064, 1.5000 ],
+            [ "just_chatting", "1k-5k", "followers-only", "RU", 0.1285, 0.0556, 0.3181 ],
+            [ "esports",       "1k-5k", "followers-only", "RU", 0.1759, 0.0390, 0.4660 ],
+            [ "gaming",        "1k-5k", "followers-only", "RU", 0.0831, 0.0442, 0.1796 ],
+            [ "just_chatting", "5k-20k", "followers-only", "RU", 0.0246, 0.0130, 0.0596 ]
+          ]
+
+          def seed!
+            CalibrationCellBaseline.delete_all
+            CELLS.each do |cat, vb, cm, lang, star, lo, hi|
+              CalibrationCellBaseline.create!(category: cat, v_bucket: vb, chat_mode: cm, language: lang,
+                                              rho_star: star, rho_lo: lo, rho_hi: hi, calibrated: true, sample_size: 8)
+            end
+            c = CalibrationConstant.find_or_initialize_by(key: "lurker_collapse_ratio")
+            c.update!(value: RATIO, calibrated: true, source: "lurker_calibrate_2026-07-25")
+          end
+
+          # Compute the honest cohort's band mix on the WINDOWED frame (manual v_w, so it works whether or not
+          # the flag is enabled — matches the shadow/analyzer path). Honest ref = c_hard=false ∧ stable.
+          def honest_band_mix(n_target)
+            live = Stream.where(ended_at: nil).order(started_at: :desc).limit(500).to_a
+            bands = Hash.new(0); n = 0; sample = []
+            live.each do |s|
+              break if n >= n_target
+              ctx = CB.build(s)
+              roster, v_w = CB.windowed_inputs(s)
+              next if v_w.nil?
+              v2c = CB.build_v2(s, ctx)
+              next if v2c.v.nil? || v2c.v <= 0 || !v2c.self_history_stable
+              wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+              res = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+              next unless res.c_hard == false
+              b = "#{res.band&.color}/#{res.band&.row}"
+              bands[b] += 1; n += 1
+              sample << "#{s.channel.login} #{b} auth=#{res.authenticity&.round} rho_obs=#{res.rho_obs&.round(3)}" if sample.size < 15
+            end
+            [ bands, n, sample ]
+          end
+
+          puts "===== windowing-flip MODE=#{MODE} ratio=#{RATIO} @ #{Time.current.iso8601} ====="
+          puts "\n-- CURRENT calibrated cells (pre-flip, restore ref) --"
+          CalibrationCellBaseline.where(calibrated: true).order(:category, :v_bucket).each do |c|
+            puts "  #{c.category}|#{c.v_bucket}|#{c.chat_mode}|#{c.language} rho*=#{c.rho_star} lo=#{c.rho_lo} hi=#{c.rho_hi} n=#{c.sample_size}"
+          end
+
+          if MODE == "dryrun"
+            ActiveRecord::Base.transaction do
+              seed!
+              bands, n, sample = honest_band_mix(40)
+              amber = bands.select { |k, _| k.start_with?("amber") }.values.sum
+              puts "\n-- DRYRUN post-flip honest band mix (n=#{n}) — SIMULATED, will roll back --"
+              puts "  #{bands.sort_by { |_, v| -v }.to_h}"
+              sample.each { |x| puts "   #{x}" }
+              puts "  amber fraction: #{n.positive? ? (100.0 * amber / n).round : 0}%  (target ~0; pre-flip windowed-shadow was ~55%)"
+              raise ActiveRecord::Rollback
+            end
+            puts "\n-- rolled back (no live change). If amber ~0 → safe to run mode=apply. --"
+          else
+            seed!
+            Flipper.enable(:ti_v2_cowindowed_rho)
+            puts "\n-- APPLIED: #{CELLS.size} windowed cells + lurker_collapse_ratio=#{RATIO} + ti_v2_cowindowed_rho ENABLED --"
+            bands, n, sample = honest_band_mix(40)
+            amber = bands.select { |k, _| k.start_with?("amber") }.values.sum
+            frac = n.positive? ? amber.to_f / n : 0
+            puts "\n-- POST-FLIP LIVE honest band mix (n=#{n}) --"
+            puts "  #{bands.sort_by { |_, v| -v }.to_h}"
+            sample.each { |x| puts "   #{x}" }
+            puts "  amber fraction: #{(frac * 100).round}%"
+            if frac > 0.25
+              Flipper.disable(:ti_v2_cowindowed_rho)
+              puts "\n== 🔴 AUTO-ROLLBACK: amber #{(frac * 100).round}% > 25% → ti_v2_cowindowed_rho DISABLED. Cells are windowed (verdict back to cumulative = over-lenient, safe); re-run gate0-seed to fully restore. =="
+            else
+              puts "\n== 🟢 FLIP LIVE: honest cohort GREEN (amber #{(frac * 100).round}%). ti_v2_cowindowed_rho ON. NEXT: promote to ALL_FLAGS (deploy-proof) + STRICT single-streamer verify. =="
+            end
+          end
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/wflip.rb) lines)"
+
+      - name: Run on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/wflip.rb ${TARGET}:/tmp/wflip.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/wflip.rb ${CONTAINER}:/tmp/wflip.rb && docker exec -e MODE='${{ inputs.mode }}' -e RATIO='${{ inputs.ratio || '0.10' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/wflip.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
