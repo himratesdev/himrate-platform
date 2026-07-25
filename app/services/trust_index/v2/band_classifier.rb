@@ -32,7 +32,7 @@ module TrustIndex
       # step → a single deficit-family signal → capped at YELLOW unless independently corroborated.
       Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
                             :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier,
-                            :cell_calibrated, :i_event_sustained)
+                            :cell_calibrated, :i_event_sustained, :c_pop)
 
       def self.call(drivers:, k:)
         new(drivers, k).call
@@ -59,8 +59,12 @@ module TrustIndex
       # single-source monoculture). Only the f_soft_lo_ratio branch of rows 1-2 reads this; the n_frac
       # branch stays B_hard-only (the publicly-named fraction). C_inflation ships dormant (its L4 gate
       # keys off inflation_corrob_enabled), so pre-flip corroborated? == c_hard || c_self exactly.
+      # C_pop (population-anchored, always-botter fix) joins the YELLOW corroboration set — but is
+      # DELIBERATELY absent from independently_corroborated? (the RED branch) so a population-only accusation
+      # caps at YELLOW: a single mis-priced cell can never alone drive a public RED. RED needs C_hard (named
+      # bots) or C_inflation (a step) to ALSO fire — mirrors the C_self^SP sustained YELLOW-cap discipline.
       def corroborated?
-        @d.c_hard || @d.c_self || @d.c_inflation
+        @d.c_hard || @d.c_self || @d.c_inflation || @d.c_pop
       end
 
       # TI v2.1 C_self^SP row2-cap: a SUSTAINED-only self-history inflation (the held-plateau arm) is a

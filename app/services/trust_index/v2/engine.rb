@@ -49,7 +49,10 @@ module TrustIndex
         # leading run of consecutive windowed elevated-deficit TIH windows (builder-reconstructed from
         # append-only history; 0 + no read when csustained_enabled≤0). ccv_cov = CoV of the trailing-30min
         # CCV series (the flat-and-high plateau shape [P3]). Both inert unless csustained_enabled>0.
-        :sustained_count, :ccv_cov
+        :sustained_count, :ccv_cov,
+        # TI v2.1 C_pop (population-anchored, silent-always-botter fix): the CHANNEL's cross-stream density
+        # of deficit windows (0 + no read when cpop_enabled≤0). Fed to the C_pop persistence gate.
+        :pop_deficit_density
       )
 
       SelfCtx = Data.define(:eligible, :v, :eihc, :rho_self_lo)
@@ -65,7 +68,11 @@ module TrustIndex
                             # TI v2.1 C_self^SP: i_event was set by the SUSTAINED-plateau arm and NOT the
                             # legacy 6-AND step → a single deficit-family signal → capped at YELLOW (row2);
                             # public RED requires an independent corroborator (C_hard/C_inflation).
-                            :i_event_sustained)
+                            :i_event_sustained,
+                            # TI v2.1 C_pop: the population-anchored corroborator fired (persistent sub-P1
+                            # chat-share vs a calibrated cell, online inflated) — lets F_soft accuse a silent
+                            # always-botter. Capped at YELLOW in the band (population-alone never public RED).
+                            :c_pop)
 
       Result = Data.define(:erv, :erv_lo, :erv_hi, :authenticity, :a_hat, :n_frac, :band,
                            :reason_codes, :confirmed_anomaly, :cold_start_tier, :confidence_marker,
@@ -123,7 +130,7 @@ module TrustIndex
                               lurker_collapse_ratio: (@k.lurker_collapse_ratio if @k.respond_to?(:lurker_collapse_ratio)))
         i_evt = derive_i_event(soft) # i_event EPIC: derived AFTER L2 (needs soft.eihc for [1] rho_dropped)
         fraud = L3Fuse.call(hard: hard, soft: soft, self_ctx: self_ctx(soft, i_evt), sum_disjoint: windowed?)
-        emit = L4Emit.call(hard: hard, soft: soft, fraud: fraud, ctx: emit_ctx(post, i_evt), k: @k)
+        emit = L4Emit.call(hard: hard, soft: soft, fraud: fraud, ctx: emit_ctx(post, i_evt, soft), k: @k)
         Result.new(**emit.to_h, **extras(post, hard, soft, fraud, emit))
       end
 
@@ -254,7 +261,7 @@ module TrustIndex
         SelfCtx.new(eligible: eligible, v: self_v, eihc: soft.eihc, rho_self_lo: @ctx.rho_self_lo)
       end
 
-      def emit_ctx(post, i_evt)
+      def emit_ctx(post, i_evt, soft)
         EmitCtx.new(v: @ctx.v, n_chat_eff: @ctx.n_chat_eff, q: @ctx.q, i_event: i_evt,
                     raid_window: @ctx.raid_window, cold_start_tier: @ctx.cold_start_tier,
                     named_count: post.b_hard.size, self_history_stable: @ctx.self_history_stable,
@@ -266,7 +273,42 @@ module TrustIndex
                     cell_calibrated: (@ctx.cell.calibrated if @ctx.cell.respond_to?(:calibrated)),
                     # TI v2.1 C_self^SP: set by derive_i_event (called just above in compute) — a sustained-
                     # only self-history inflation caps the band at YELLOW unless independently corroborated.
-                    i_event_sustained: @i_event_sustained)
+                    i_event_sustained: @i_event_sustained,
+                    # TI v2.1 C_pop: population-anchored corroborator (needs soft.rho_obs, post-L2).
+                    c_pop: pop_corroborated?(soft))
+      end
+
+      # TI v2.1 C_pop (population-anchored F_soft accusation — the SILENT ALWAYS-BOTTER fix). The three
+      # existing corroborators are CHANNEL-referential (C_hard = named bots in ITS chat; C_self = an
+      # inflation step in ITS history; C_inflation = a CCV-step in ITS stream) → a silent always-botter
+      # defeats all three (no names, no honest history — the de-poison leaves its self-baseline EMPTY, so
+      # C_self/[P1]/[P2] all gate off — no step). It reads AMBER 6b forever. C_pop uses the PEER POPULATION
+      # as the independent reference: the calibrated cell ρ* is the un-poisonable honest chat-share of the
+      # channel's cell; a persistent chat-share below the cell's P1 tail, with online INFLATED vs the
+      # cell-typical, IS anomalous vs peers (population + time axes are orthogonal to the channel's own data
+      # — not deficit-corroborating-deficit; a farm can't launder ρ*). DORMANT: cpop_enabled=0.0 short-
+      # circuits before any read → c_pop=false → corroborated? byte-identical. Also inert until the re-seed
+      # writes rho_p1/ccv_typical (nil → false) — a third dormancy gate. Capped at YELLOW in the band.
+      def pop_corroborated?(soft)
+        return false unless @k.respond_to?(:cpop_enabled) && @k.cpop_enabled.to_f.positive?
+        return false unless @ctx.cell.respond_to?(:calibrated) && @ctx.cell.calibrated  # never off DEFAULT ρ*
+        return false unless @ctx.cold_start_tier == "full"                              # never a thin-history channel
+        return false if @ctx.raid_window || @ctx.unattributed_surge                     # provenance exclusions
+        rho_p1 = (@ctx.cell.rho_p1 if @ctx.cell.respond_to?(:rho_p1))
+        return false if rho_p1.nil? || soft.rho_obs.nil?
+        return false unless soft.rho_obs < rho_p1.to_f          # [4] TAIL cut: below 99% of honest peers (not P10)
+        return false unless population_elevated?                # [5] online INFLATED vs cell-typical (the discriminator)
+
+        @ctx.pop_deficit_density.to_f >= @k.cpop_density_frac.to_f  # [6] PERSISTENT across the channel's recent windows
+      end
+
+      # [5] population_elevated? — the discriminator that separates a silent botter (online INFLATED) from an
+      # honest low-chat channel (online NORMAL-for-cell). A pure chat-deficit is byte-identical between a
+      # botter and an honest channel mis-celled to a too-high ρ* — the online-elevation axis (vs the cell's
+      # typical CCV) is orthogonal to the chat-share axis and breaks that tie. ccv_typical nil → inert.
+      def population_elevated?
+        t = (@ctx.cell.ccv_typical if @ctx.cell.respond_to?(:ccv_typical))
+        !t.nil? && t.to_f.positive? && @ctx.v.to_f > t.to_f * (1 + @k.cpop_elevated_margin.to_f)
       end
 
       def extras(post, hard, soft, fraud, emit)

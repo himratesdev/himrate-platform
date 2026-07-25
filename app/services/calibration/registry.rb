@@ -62,7 +62,29 @@ module Calibration
       csustained_enabled: 0.0,
       csustained_n_windows: 999.0,
       csustained_elevated_margin: 0.30,
-      csustained_cov_ceiling: 0.0
+      csustained_cov_ceiling: 0.0,
+      # TI v2.1 C_pop (population-anchored F_soft accusation — the SILENT ALWAYS-BOTTER fix, 2026-07-25).
+      # C_hard/C_self/C_inflation are all CHANNEL-referential (named bots in its chat / an inflation step
+      # in its own history / a CCV-step in its stream) → a silent always-botter defeats all three by
+      # construction (no names, no honest history [the de-poison leaves it EMPTY], no step) → it reads
+      # AMBER 6b forever, never accused. C_pop closes that structural "F_soft can never self-accuse" hole:
+      # the CALIBRATED cell ρ* is the un-poisonable HONEST chat-share of the channel's PEER POPULATION — a
+      # persistent chat-share below the cell's P1 tail (rho_p1), with online INFLATED vs the cell-typical
+      # (population_elevated?, the discriminator that separates a botter from an honest low-chat channel),
+      # sustained at density ≥ frac, IS accusable off the population reference (not deficit-corroborating-
+      # deficit — the population + time axes are orthogonal to the channel's own data; a farm can't launder
+      # ρ*). Capped at YELLOW (population-alone never public RED — see band_classifier). csustained_enabled
+      # mirror: cpop_enabled=0.0 (DORMANT kill-switch) → pop_corroborated? short-circuits before any read →
+      # byte-identical. DEFENSE-IN-DEPTH backstops (un-fireable even if enabled flips early, before calib):
+      # cpop_density_frac=999 (a density fraction ≥1.0 is unreachable) AND cpop_n_windows=999 (clamp≤60 →
+      # +1 never reaches 999); ALSO rho_p1/ccv_typical are NULL on every cell until the re-seed writes them
+      # (a third dormancy gate). ⚠ Calibrate rho_p1+ccv_typical+density_frac+n_windows+elevated_margin
+      # TOGETHER (never one-before-others) or the backstop lifts. PO-gated flip = data update (no redeploy),
+      # HARD-blocked on the ρ* re-seed at n≥150 (rho_p1 is noise below that) + EIHC anti-gaming gates live.
+      cpop_enabled: 0.0,
+      cpop_n_windows: 999.0,
+      cpop_density_frac: 999.0,
+      cpop_elevated_margin: 0.30
     }.freeze
 
     K = Data.define(*ILLUSTRATIVE.keys)

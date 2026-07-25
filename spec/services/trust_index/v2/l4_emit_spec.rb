@@ -8,7 +8,7 @@ module L4EmitSpecDoubles
   Fraud = Data.define(:f_hat, :f_hat_lo, :f_hat_hi, :f_self)
   Ctx = Data.define(:v, :n_chat_eff, :q, :i_event, :raid_window, :cold_start_tier, :named_count,
                     :self_history_stable, :chatter_quality_high, :stream_count, :unattributed_surge,
-                    :thin_sample, :ccv_chat_divergence, :v_w, :cell_calibrated, :i_event_sustained)
+                    :thin_sample, :ccv_chat_divergence, :v_w, :cell_calibrated, :i_event_sustained, :c_pop)
   K = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi).new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8)
   # TI v2.1 — K variant with the inflation corroborator ENABLED (for the escalation test). The
   # dormant default (enabled 0.0) is exercised by the base K above, which lacks the keys entirely →
@@ -31,7 +31,7 @@ RSpec.describe TrustIndex::V2::L4Emit do
                  cold_start_tier: "full", named_count: 0, self_history_stable: false,
                  chatter_quality_high: false, stream_count: 20, unattributed_surge: false,
                  thin_sample: false, ccv_chat_divergence: 0.0, v_w: nil, cell_calibrated: true,
-                 i_event_sustained: false }
+                 i_event_sustained: false, c_pop: false }
     described_class.call(hard: hard, soft: soft, fraud: fraud,
                          ctx: L4EmitSpecDoubles::Ctx.new(**ctx_base.merge(ctx_over)), k: k_override || k)
   end

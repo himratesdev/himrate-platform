@@ -35,7 +35,7 @@ module TrustIndex
           erv: clamp0(@c.v - @f.f_hat), erv_lo: clamp0(@c.v - @f.f_hat_hi), erv_hi: clamp0(@c.v - @f.f_hat_lo),
           authenticity: authenticity, a_hat: a_hat, n_frac: n_frac, band: band,
           reason_codes: ReasonCodeBuilder.call(band: band, ctx: reason_ctx),
-          confirmed_anomaly: c_hard || c_self || (c_inflation && band.row <= 2),
+          confirmed_anomaly: c_hard || c_self || ((c_inflation || @c.c_pop) && band.row <= 2),
           cold_start_tier: @c.cold_start_tier,
           confidence_marker: confidence_marker, c_hard: c_hard, c_self: c_self
         )
@@ -111,13 +111,14 @@ module TrustIndex
           n_frac: n_frac, f_self_ratio: ratio_band(@f.f_self), f_soft_lo_ratio: ratio_band(@soft.f_soft_lo),
           a_hat: ratio_band(@f.f_hat), q: @c.q, i_event: @c.i_event, c_hard: c_hard, c_self: c_self,
           c_inflation: c_inflation, raid_window: @c.raid_window, cold_start_tier: @c.cold_start_tier,
-          cell_calibrated: @c.cell_calibrated, i_event_sustained: @c.i_event_sustained
+          cell_calibrated: @c.cell_calibrated, i_event_sustained: @c.i_event_sustained, c_pop: @c.c_pop
         )
       end
 
       def reason_ctx
         ReasonCodeBuilder::Ctx.new(
           c_hard: c_hard, c_self: c_self, c_inflation: c_inflation, i_event_sustained: @c.i_event_sustained,
+          c_pop: @c.c_pop,
           named_count: @c.named_count, named_pct: (n_frac * 100.0).round(1),
           self_history_stable: @c.self_history_stable, chatter_quality_high: @c.chatter_quality_high,
           cold_start_tier: @c.cold_start_tier, stream_count: @c.stream_count,
