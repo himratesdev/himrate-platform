@@ -93,6 +93,35 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     expect(b.row).to eq(1)
   end
 
+  # G4: cold-start tier gates the SOFT-corroborator accusatory branches (protect brand-new streamers from
+  # a corroborator blip against an uncalibrated DEFAULT cell). The named-bot FRACTION branch stays ungated.
+  it "G4: a BASIC-tier channel with a C_inflation-corroborated soft deficit is NOT accused (→ AMBER)" do
+    b = classify(f_soft_lo_ratio: 0.60, c_inflation: true, a_hat: 0.60, cold_start_tier: "basic")
+    expect([ b.row, b.color ]).to eq([ 6, "amber" ]) # soft/corroborator branch gated off for non-full tier
+  end
+
+  it "G4: an INSUFFICIENT-tier channel with a corroborated soft deficit is NOT accused" do
+    b = classify(f_soft_lo_ratio: 0.60, c_inflation: true, a_hat: 0.60, cold_start_tier: "insufficient")
+    expect(%w[red yellow]).not_to include(b.color)
+  end
+
+  it "G4: the named-bot FRACTION branch STILL accuses at basic tier (hard, cell-independent)" do
+    b = classify(n_frac: 0.58, c_hard: true, a_hat: 0.30, cold_start_tier: "basic")
+    expect([ b.row, b.color ]).to eq([ 1, "red" ]) # n_frac ungated by tier
+  end
+
+  it "G4 control: the SAME corroborated deficit at FULL tier IS accused (RED)" do
+    b = classify(f_soft_lo_ratio: 0.60, c_inflation: true, a_hat: 0.60, cold_start_tier: "full")
+    expect([ b.row, b.color ]).to eq([ 1, "red" ])
+  end
+
+  it "G4: the i_event/C_self accusatory branch ALSO gates on tier — basic tier does NOT accuse" do
+    # Symmetric half of the gate: the self-history branch is dormant today (i_event_enabled=0), but this
+    # locks in that when i_event flips, a thin-history channel still can't be accused off it.
+    b = classify(i_event: true, c_self: true, f_self_ratio: 0.55, a_hat: 0.55, cold_start_tier: "basic")
+    expect(%w[red yellow]).not_to include(b.color)
+  end
+
   describe ".label_key_for (surface-audit sweep — the ONE reader-side derivation point)" do
     it "maps every persisted row to its canonical key" do
       expect(described_class.label_key_for(3)).to eq("band.green_real")
