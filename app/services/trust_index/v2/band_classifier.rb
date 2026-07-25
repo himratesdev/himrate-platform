@@ -62,14 +62,24 @@ module TrustIndex
 
       def row1?
         @d.n_frac >= @k.phi_red ||
-          (@d.i_event && @d.f_self_ratio >= 0.50 && !@d.raid_window) ||
-          (@d.f_soft_lo_ratio >= 0.50 && corroborated?)
+          (accusable_tier? && @d.i_event && @d.f_self_ratio >= 0.50 && !@d.raid_window) ||
+          (accusable_tier? && @d.f_soft_lo_ratio >= 0.50 && corroborated?)
       end
 
       def row2?
         @d.n_frac >= @k.phi_yellow ||
-          (@d.i_event && @d.f_self_ratio >= 0.20 && !@d.raid_window) ||
-          (@d.f_soft_lo_ratio >= 0.20 && corroborated?)
+          (accusable_tier? && @d.i_event && @d.f_self_ratio >= 0.20 && !@d.raid_window) ||
+          (accusable_tier? && @d.f_soft_lo_ratio >= 0.20 && corroborated?)
+      end
+
+      # G4 (pre-flip, C_inflation): the SOFT-corroborator accusatory branches (i_event/C_self + f_soft/
+      # C_inflation) escalate off the per-cell ρ* baseline, which is DEFAULT (0.03) + sparse-parent-resolved
+      # for a thin-history channel — a basic/insufficient channel + one corroborator blip could publicly
+      # RED/YELLOW a brand-new streamer. Gate these on full cold-start tier (≥10 streams): never accuse a
+      # channel we lack the history to be sure about. The n_frac branch (publicly-NAMED bot FRACTION — hard
+      # identity evidence, cell-independent) stays ungated → valid at any tier.
+      def accusable_tier?
+        @d.cold_start_tier == "full"
       end
 
       def row3?
