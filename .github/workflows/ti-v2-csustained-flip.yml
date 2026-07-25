@@ -1,0 +1,131 @@
+name: ti-v2-csustained-flip
+# C_self^SP sustained-plateau flip (battle-mode). Seeds the 3 constants + enables csustained_enabled=1.0
+# so the held-plateau self-corroborator goes live. Data-calibrated: FP side = 0/N honest (carried by
+# [P2] online-elevated + durability, both 0/120 honest); [P3] CoV demoted to a loose sanity bound (the
+# real botted CoV 0.03-0.09 overlaps honest 0.02-0.08 → [P3] can't discriminate; [P2]+durability do).
+#   mode=dryrun : seed in a ROLLED-BACK txn → simulate the honest cohort band with the arm ON via the
+#                 real engine (build_v2 populates sustained_count/ccv_cov; Registry.load reads the seeds)
+#                 → confirm 0 honest accused by the sustained arm (c_self ∧ i_event_sustained).
+#   mode=apply  : seed the 3 constants + csustained_enabled=1.0 (STAGING CalibrationConstant, prod
+#                 unaffected) + honest verify with AUTO-ROLLBACK if any honest stream is sustained-accused.
+# STAGING-ONLY. Reversible: csustained_enabled → 0.0. Recall (a botter → YELLOW) validated by the PO's
+# subtle-sustained re-bot acceptance (4.2); the historical dariya replay already fires FULL at these consts.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      mode: { required: true, type: choice, options: [dryrun, apply], default: dryrun }
+      cov_ceiling: { required: false, type: string, default: "0.12" }
+      elevated_margin: { required: false, type: string, default: "0.30" }
+      n_windows: { required: false, type: string, default: "6" }
+      honest_sample: { required: false, type: string, default: "120" }
+
+jobs:
+  flip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build flip script
+        run: |
+          cat > /tmp/csustflip.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          MODE   = ENV.fetch("MODE", "dryrun")
+          COV    = ENV.fetch("COV_CEILING", "0.12").to_f
+          MARG   = ENV.fetch("ELEVATED_MARGIN", "0.30").to_f
+          NWIN   = ENV.fetch("N_WINDOWS", "6").to_f
+          NSAMP  = ENV.fetch("HONEST_SAMPLE", "120").to_i.clamp(20, 400)
+          CB = TrustIndex::ContextBuilder
+
+          def set_consts!(cov, marg, nwin, enabled)
+            [ [ "csustained_cov_ceiling", cov ], [ "csustained_elevated_margin", marg ],
+              [ "csustained_n_windows", nwin ], [ "csustained_enabled", enabled ] ].each do |k, v|
+              c = CalibrationConstant.find_or_initialize_by(key: k)
+              c.update!(value: v, calibrated: true, source: "csustained_flip_2026-07-25")
+            end
+          end
+
+          # Honest cohort scan with the arm applied via Registry.load (reads the seeded consts). A stream is
+          # "sustained-accused" iff c_self AND the sustained arm set i_event (r reason includes the sustained
+          # code) — i.e. FP by THIS arm. We read the band + whether the sustained reason code is present.
+          def honest_scan(n_target)
+            live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(1000).to_a
+            bands = Hash.new(0); n = 0; accused = []
+            live.each do |s|
+              break if n >= n_target
+              t = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(calculated_at: :desc).first
+              next unless t && t.c_hard == false && t.band_color.to_s == "green"
+              ctx = CB.build(s)
+              roster, v_w = CB.windowed_inputs(s)
+              v2c = CB.build_v2(s, ctx)
+              next if v2c.v.nil? || v2c.v <= 0
+              wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w) : v2c
+              res = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+              codes = res.reason_codes.map(&:code)
+              sustained = codes.include?("SELF_HISTORY_SUSTAINED_INFLATION")
+              b = "#{res.band&.color}/#{res.band&.row}"
+              bands[b] += 1; n += 1
+              accused << "#{s.channel.login} #{b} #{codes.join(',')}" if sustained || %w[red yellow].include?(res.band&.color)
+            end
+            [ bands, n, accused ]
+          end
+
+          puts "===== C_self^SP flip MODE=#{MODE} cov=#{COV} margin=#{MARG} N=#{NWIN.to_i} @ #{Time.current.iso8601} ====="
+          cur = %w[csustained_enabled csustained_cov_ceiling csustained_elevated_margin csustained_n_windows]
+                  .map { |k| "#{k}=#{CalibrationConstant.value_for(k, fallback: nil)}" }.join(" ")
+          puts "current: #{cur}"
+
+          if MODE == "dryrun"
+            ActiveRecord::Base.transaction do
+              set_consts!(COV, MARG, NWIN, 1.0)
+              bands, n, accused = honest_scan(NSAMP)
+              puts "\n-- honest band mix WITH C_self^SP ON (simulated, rolls back): #{bands.sort_by { |_, v| -v }.to_h}"
+              puts "-- honest SUSTAINED-ACCUSED (or any red/yellow) — MUST be ~0: #{accused.size}/#{n}"
+              accused.first(10).each { |x| puts "     #{x}" }
+              raise ActiveRecord::Rollback
+            end
+            puts "\n-- rolled back. If honest accused ~0 → safe to apply. --"
+          else
+            set_consts!(COV, MARG, NWIN, 1.0)
+            puts "\n-- APPLIED: csustained_enabled=1.0 cov=#{COV} margin=#{MARG} N=#{NWIN.to_i} (staging) --"
+            bands, n, accused = honest_scan(NSAMP)
+            puts "-- POST-FLIP honest band mix: #{bands.sort_by { |_, v| -v }.to_h}"
+            puts "-- honest ACCUSED (sustained or red/yellow): #{accused.size}/#{n}"
+            accused.first(10).each { |x| puts "     #{x}" }
+            if accused.size > [ (0.02 * n).ceil, 1 ].max
+              CalibrationConstant.find_by(key: "csustained_enabled")&.update!(value: 0.0)
+              puts "\n== 🔴 AUTO-ROLLBACK: #{accused.size} honest accused > threshold → csustained_enabled=0.0 (disabled). Investigate. =="
+            else
+              puts "\n== 🟢 C_self^SP LIVE: honest accused=#{accused.size} (~0). Recall (botter→YELLOW) validated by PO subtle-sustained re-bot (4.2). =="
+            end
+          end
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/csustflip.rb) lines)"
+
+      - name: Run on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/csustflip.rb ${TARGET}:/tmp/csustflip.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/csustflip.rb ${CONTAINER}:/tmp/csustflip.rb && docker exec \
+            -e MODE='${{ inputs.mode }}' \
+            -e COV_CEILING='${{ inputs.cov_ceiling || '0.12' }}' \
+            -e ELEVATED_MARGIN='${{ inputs.elevated_margin || '0.30' }}' \
+            -e N_WINDOWS='${{ inputs.n_windows || '6' }}' \
+            -e HONEST_SAMPLE='${{ inputs.honest_sample || '120' }}' \
+            ${CONTAINER} sh -c 'bin/rails runner /tmp/csustflip.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
