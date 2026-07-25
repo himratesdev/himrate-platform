@@ -7,31 +7,34 @@ module EngineSpecDoubles
   Chatter = Data.define(:username, :temporal_recurrence, :known_bot_hit, :per_user_bot_score,
                         :account_profile_llr, :anti_bot_llr,
                         :cluster_delta_k, :cluster_size, :age_gate, :recurrence_gate)
-  Cell = Data.define(:rho_star, :rho_lo, :rho_hi, :calibrated)
+  Cell = Data.define(:rho_star, :rho_lo, :rho_hi, :calibrated, :rho_p1, :ccv_typical)
   Context = Data.define(:raw_chatters, :v, :cell, :rho_self_lo, :clean_self_history, :i_event,
                         :i_event_external, :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
                         :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample,
                         :cps, :reputation, :ccv_chat_divergence, :l2_roster_usernames, :v_w,
-                        :own_ccv_baseline, :sustained_count, :ccv_cov)
+                        :own_ccv_baseline, :sustained_count, :ccv_cov, :pop_deficit_density)
   K = Data.define(:pi0, :tau_hard, :tau_delta, :phi_yellow, :phi_red, :q_mid, :q_hi,
                   :llr_temporal_r2, :llr_temporal_r3, :llr_temporal_r4, :llr_temporal_r7,
                   :llr_per_user_bot_score, :llr_known_bot, :i_event_enabled,
                   # TI v2.1 C_self^SP — dormant defaults (mirror Registry). Present so k.with(...) can flip
                   # them in the C_self^SP describe block; absent-key engine tests read them via respond_to?.
                   :csustained_enabled, :csustained_n_windows, :csustained_elevated_margin,
-                  :csustained_cov_ceiling).new(
+                  :csustained_cov_ceiling,
+                  # TI v2.1 C_pop — dormant defaults (mirror Registry); k.with(...) flips them in the C_pop block.
+                  :cpop_enabled, :cpop_n_windows, :cpop_density_frac, :cpop_elevated_margin).new(
                     pi0: 0.02, tau_hard: 0.9, tau_delta: 0.5, phi_yellow: 0.10, phi_red: 0.35,
                     q_mid: 0.5, q_hi: 0.8, llr_temporal_r2: 1.1, llr_temporal_r3: 2.2,
                     llr_temporal_r4: 2.9, llr_temporal_r7: 4.6, llr_per_user_bot_score: 3.9,
                     llr_known_bot: 3.4, i_event_enabled: 0.0, # DORMANT default (mirror Registry)
                     csustained_enabled: 0.0, csustained_n_windows: 999.0,
-                    csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0
+                    csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0,
+                    cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30
                   )
 end
 
 RSpec.describe TrustIndex::V2::Engine do
   let(:k) { EngineSpecDoubles::K }
-  let(:cell) { EngineSpecDoubles::Cell.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: true) }
+  let(:cell) { EngineSpecDoubles::Cell.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: true, rho_p1: nil, ccv_typical: nil) }
 
   def chatter(name, bot: false)
     EngineSpecDoubles::Chatter.new(
@@ -47,7 +50,7 @@ RSpec.describe TrustIndex::V2::Engine do
              cold_start_tier: "full", self_history_stable: true, chatter_quality_high: true,
              stream_count: 20, unattributed_surge: false, thin_sample: false, cps: 70,
              reputation: "Стабильная", ccv_chat_divergence: 0.0, l2_roster_usernames: nil, v_w: nil,
-             own_ccv_baseline: nil, sustained_count: 0, ccv_cov: nil }
+             own_ccv_baseline: nil, sustained_count: 0, ccv_cov: nil, pop_deficit_density: 0.0 }
     EngineSpecDoubles::Context.new(**base.merge(over))
   end
 
@@ -216,6 +219,73 @@ RSpec.describe TrustIndex::V2::Engine do
 
     it "FP guard [P4] raid: a raid window suppresses the sustained arm (provenance)" do
       expect(described_class.compute(context: plateau_ctx(raid_window: true), k: k_on).c_self).to be(false)
+    end
+  end
+
+  describe "C_pop population-anchored arm (silent always-botter fix) — dormant by default, YELLOW-capped when flipped" do
+    def cal_cell(**over)
+      EngineSpecDoubles::Cell.new(**{ rho_star: 0.10, rho_lo: 0.06, rho_hi: 0.15, calibrated: true,
+                                      rho_p1: 0.04, ccv_typical: 200 }.merge(over))
+    end
+    # Silent always-botter: V botted-high (1000), thin honest chat (EIHC≈30 → rho_obs≈0.03 < rho_p1 0.04),
+    # online INFLATED vs cell-typical (1000 ≫ 200), persistent (density 1.0), full tier, NO honest history
+    # (self-arm dead — the de-poison would leave its baseline empty). The channel C_hard/C_self/C_inflation
+    # all miss; only C_pop (the population reference) can accuse it.
+    def botter_ctx(**over)
+      context(Array.new(30) { |i| chatter("h#{i}") }, v: 1000, n_chat_eff: 30, cell: cal_cell,
+              cold_start_tier: "full", raid_window: false, unattributed_surge: false,
+              pop_deficit_density: 1.0, self_history_stable: false, clean_self_history: false, **over)
+    end
+    let(:k_pop) { k.with(cpop_enabled: 1.0, cpop_density_frac: 0.8, cpop_n_windows: 10, cpop_elevated_margin: 0.30) }
+
+    it "DORMANT (cpop_enabled=0.0): the always-botter reads AMBER (F_soft alone, uncorroborated) — THE GAP" do
+      r = described_class.compute(context: botter_ctx, k: k)
+      expect(r.confirmed_anomaly).to be(false)
+      expect([ 1, 2 ]).not_to include(r.band.row)
+      expect(r.reason_codes.map(&:code)).not_to include("POPULATION_CHAT_DEFICIT")
+    end
+
+    it "GOLDEN byte-identical: pop_deficit_density 0.0 vs 1.0 yield identical Results while dormant" do
+      lo = described_class.compute(context: botter_ctx(pop_deficit_density: 0.0), k: k)
+      hi = described_class.compute(context: botter_ctx(pop_deficit_density: 1.0), k: k)
+      expect(lo.to_h).to eq(hi.to_h)
+    end
+
+    it "FLIP: enabled + always-botter → C_pop fires → YELLOW + POPULATION_CHAT_DEFICIT (AMBER trap broken)" do
+      r = described_class.compute(context: botter_ctx, k: k_pop)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
+      expect(r.confirmed_anomaly).to be(true)
+      expect(r.reason_codes.map(&:code)).to include("POPULATION_CHAT_DEFICIT")
+    end
+
+    it "FP guard: an UNCALIBRATED cell → no C_pop accusation (never off DEFAULT ρ*)" do
+      r = described_class.compute(context: botter_ctx(cell: cal_cell(calibrated: false)), k: k_pop)
+      expect(r.reason_codes.map(&:code)).not_to include("POPULATION_CHAT_DEFICIT")
+    end
+
+    it "FP guard [5]: online NOT elevated vs cell-typical (honest low-chat channel) → no C_pop" do
+      r = described_class.compute(context: botter_ctx(cell: cal_cell(ccv_typical: 5000)), k: k_pop)
+      expect(r.reason_codes.map(&:code)).not_to include("POPULATION_CHAT_DEFICIT")
+    end
+
+    it "FP guard: rho_p1 NULL (un-reseeded cell) → no C_pop" do
+      r = described_class.compute(context: botter_ctx(cell: cal_cell(rho_p1: nil)), k: k_pop)
+      expect(r.reason_codes.map(&:code)).not_to include("POPULATION_CHAT_DEFICIT")
+    end
+
+    it "FP guard [4]: rho_obs NOT below the P1 tail (chats normally for its cell) → no C_pop" do
+      r = described_class.compute(context: botter_ctx(cell: cal_cell(rho_p1: 0.01)), k: k_pop)
+      expect(r.reason_codes.map(&:code)).not_to include("POPULATION_CHAT_DEFICIT")
+    end
+
+    it "FP guard [6]: not persistent (density < frac) → no C_pop" do
+      r = described_class.compute(context: botter_ctx(pop_deficit_density: 0.5), k: k_pop)
+      expect(r.reason_codes.map(&:code)).not_to include("POPULATION_CHAT_DEFICIT")
+    end
+
+    it "FP guard: a raid window suppresses C_pop (provenance)" do
+      r = described_class.compute(context: botter_ctx(raid_window: true), k: k_pop)
+      expect(r.reason_codes.map(&:code)).not_to include("POPULATION_CHAT_DEFICIT")
     end
   end
 

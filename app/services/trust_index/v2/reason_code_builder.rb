@@ -11,13 +11,13 @@ module TrustIndex
     class ReasonCodeBuilder
       Code = Data.define(:code, :params)
       # Canonical ctx contract (L4 builds this; the class stays duck-typed for isolated tests).
-      Ctx = Data.define(:c_hard, :c_self, :c_inflation, :i_event_sustained, :named_count, :named_pct,
+      Ctx = Data.define(:c_hard, :c_self, :c_inflation, :i_event_sustained, :c_pop, :named_count, :named_pct,
                         :self_history_stable, :chatter_quality_high, :cold_start_tier, :stream_count,
                         :raid_window_suppressed_i, :unattributed_surge, :thin_sample)
 
-      # band — BandClassifier::Band (row, sub). ctx — responds to: c_hard, c_self, named_count,
-      #   named_pct, self_history_stable, chatter_quality_high, cold_start_tier, stream_count,
-      #   raid_window_suppressed_i, unattributed_surge, thin_sample.
+      # band — BandClassifier::Band (row, sub). ctx — responds to: c_hard, c_self, c_inflation, c_pop,
+      #   i_event_sustained, named_count, named_pct, self_history_stable, chatter_quality_high,
+      #   cold_start_tier, stream_count, raid_window_suppressed_i, unattributed_surge, thin_sample.
       def self.call(band:, ctx:)
         new(band, ctx).call
       end
@@ -45,7 +45,13 @@ module TrustIndex
           # TI v2.1: C_inflation corroborated the soft deficit (CCV rose without a matching chat-rate
           # rise). Emitted only when it is the corroborator, not when C_hard already named a fraction
           # (avoids a redundant code). Legal-safe, per-STREAM not per-person (names nobody).
-          (@ctx.c_inflation && !@ctx.c_hard ? code("INFLATION_EVENT_CORROBORATION") : nil) ]
+          (@ctx.c_inflation && !@ctx.c_hard ? code("INFLATION_EVENT_CORROBORATION") : nil),
+          # TI v2.1 C_pop: the population-anchored corroborator (persistent chat-share below the peer-cell
+          # tail, online inflated vs comparable channels). Emitted only when it is the corroborator (not
+          # when C_hard/C_inflation already fired). Legal-safe: describes the population comparison, names
+          # nobody, no "bot/накрутка/fake". i18n: RU «Онлайн устойчиво превышает наблюдаемую активность
+          # относительно похожих каналов» / EN "Online persistently exceeds observed activity vs comparable channels."
+          (@ctx.c_pop && !@ctx.c_hard && !@ctx.c_inflation ? code("POPULATION_CHAT_DEFICIT") : nil) ]
       end
 
       # TI v2.1 C_self^SP: C_self surfaces ONE of two codes — the SUSTAINED-plateau one (a held silent-

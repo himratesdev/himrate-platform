@@ -7,7 +7,7 @@ require "rails_helper"
 module BandClassifierSpecDoubles
   Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
                         :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier, :cell_calibrated,
-                        :i_event_sustained)
+                        :i_event_sustained, :c_pop)
   Thresholds = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi)
 end
 
@@ -19,7 +19,7 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     base = { n_frac: 0.0, f_self_ratio: 0.0, f_soft_lo_ratio: 0.0, a_hat: 0.0, q: 0.9,
              i_event: false, c_hard: false, c_self: false, c_inflation: false,
              raid_window: false, cold_start_tier: "full", cell_calibrated: true,
-             i_event_sustained: false }
+             i_event_sustained: false, c_pop: false }
     BandClassifierSpecDoubles::Drivers.new(**base.merge(over))
   end
 
@@ -187,6 +187,46 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     it "sustained-only F_soft ≥ 0.20 still reaches YELLOW (an accusation, the intended sustained level)" do
       b = classify(f_soft_lo_ratio: 0.30, c_self: true, i_event: true, i_event_sustained: true, a_hat: 0.30)
       expect([ b.row, b.color ]).to eq([ 2, "yellow" ])
+    end
+  end
+
+  # TI v2.1 C_pop (population-anchored, silent-always-botter fix): joins corroborated? (YELLOW) but NOT
+  # independently_corroborated? (RED) → a population-only accusation caps at YELLOW; RED needs C_hard/
+  # C_inflation to ALSO fire (a single mis-priced cell can't alone drive public RED).
+  describe "C_pop population-anchored corroborator" do
+    it "C_pop corroborates a soft deficit ≥ 0.20 → row2 YELLOW (the always-botter is now accused, not AMBER)" do
+      b = classify(f_soft_lo_ratio: 0.30, c_pop: true, a_hat: 0.30)
+      expect([ b.row, b.color ]).to eq([ 2, "yellow" ])
+    end
+
+    it "C_pop-ONLY caps at YELLOW even at f_soft ≥ 0.50 (never public RED alone)" do
+      b = classify(f_soft_lo_ratio: 0.60, c_pop: true, a_hat: 0.60)
+      expect([ b.row, b.color ]).to eq([ 2, "yellow" ]) # independently_corroborated? false → RED branch blocked
+    end
+
+    it "C_pop + C_hard (independent second axis) escalates to RED" do
+      b = classify(f_soft_lo_ratio: 0.60, c_pop: true, c_hard: true, n_frac: 0.05, a_hat: 0.60)
+      expect(b.row).to eq(1)
+    end
+
+    it "C_pop + C_inflation (a step) escalates to RED" do
+      b = classify(f_soft_lo_ratio: 0.60, c_pop: true, c_inflation: true, a_hat: 0.60)
+      expect(b.row).to eq(1)
+    end
+
+    it "C_pop without a soft deficit never accuses (the deficit AND-corroboration gate holds)" do
+      b = classify(f_soft_lo_ratio: 0.0, c_pop: true, a_hat: 0.05, q: 0.9, cold_start_tier: "full")
+      expect(b.row).to be > 2
+    end
+
+    it "G4: C_pop on a BASIC-tier channel is NOT accused (→ AMBER)" do
+      b = classify(f_soft_lo_ratio: 0.30, c_pop: true, a_hat: 0.30, cold_start_tier: "basic")
+      expect([ b.row, b.color ]).to eq([ 6, "amber" ])
+    end
+
+    it "moat-audit: C_pop on an UNCALIBRATED cell is NOT accused (double-gated → AMBER)" do
+      b = classify(f_soft_lo_ratio: 0.30, c_pop: true, a_hat: 0.30, cell_calibrated: false)
+      expect([ b.row, b.color ]).to eq([ 6, "amber" ])
     end
   end
 

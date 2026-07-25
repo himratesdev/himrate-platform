@@ -256,7 +256,9 @@ RSpec.describe TrustIndex::ContextBuilder do
         lurker_collapse_ratio: -1.0, # G5 dormant
         # TI v2.1 C_self^SP dormant (enabled 0.0; N=999 + cov_ceiling=0.0 backstops)
         csustained_enabled: 0.0, csustained_n_windows: 999.0,
-        csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0
+        csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0,
+        # TI v2.1 C_pop dormant (enabled 0.0; density_frac=999 + N=999 backstops)
+        cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30
       )
       r = TrustIndex::V2::Engine.compute(context: c, k: k)
       expect(r.b_hard.map(&:username)).to include("megabot")
@@ -432,6 +434,30 @@ RSpec.describe TrustIndex::ContextBuilder do
         seed_tih(band_color: "amber", f_soft_lo: 140, at: 1.minute.ago)
         expect(described_class.send(:v2_sustained_count, sc_stream,
           { "csustained_enabled" => 1.0, "csustained_n_windows" => 10.0 })).to eq(1)
+      end
+    end
+
+    # TI v2.1 C_pop persistence — the CHANNEL's cross-stream deficit-window density (no green hard-reset).
+    describe "v2_pop_deficit_density (C_pop persistence signal)" do
+      def seed_pd(band_color:, f_soft_lo:, at:)
+        create(:trust_index_history, channel: channel, stream: create(:stream, channel: channel),
+               engine_version: "v2", c_hard: false, band_color: band_color, f_soft_lo: f_soft_lo,
+               rho_convention: "cumulative", calculated_at: at)
+      end
+
+      it "DORMANT (cpop_enabled≤0): returns 0.0 with NO read" do
+        seed_pd(band_color: "amber", f_soft_lo: 100, at: 1.minute.ago)
+        expect(described_class.send(:v2_pop_deficit_density, channel, { "cpop_enabled" => 0.0 })).to eq(0.0)
+      end
+
+      it "density = fraction of last-N windows that are deficit (non-green ∧ f_soft_lo>0), NO green hard-reset" do
+        # amber/100 ✓, green/0 ✗(green), amber/120 ✓, amber/140 ✓, amber/0 ✗(floored) → 3/5 = 0.6 (green mid-run
+        # does NOT reset — unlike the sustained LEADING-run; the sparse-green-immunity fix).
+        [ [ "amber", 100 ], [ "green", 0 ], [ "amber", 120 ], [ "amber", 140 ], [ "amber", 0 ] ].each_with_index do |(bc, fsl), i|
+          seed_pd(band_color: bc, f_soft_lo: fsl, at: (i + 1).minutes.ago)
+        end
+        d = described_class.send(:v2_pop_deficit_density, channel, { "cpop_enabled" => 1.0, "cpop_n_windows" => 60.0 })
+        expect(d).to be_within(0.001).of(3.0 / 5)
       end
     end
   end

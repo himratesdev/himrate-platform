@@ -4,7 +4,7 @@ require "rails_helper"
 
 module ReasonCodeBuilderSpecDoubles
   Band = Data.define(:row, :sub)
-  Ctx = Data.define(:c_hard, :c_self, :c_inflation, :i_event_sustained, :named_count, :named_pct,
+  Ctx = Data.define(:c_hard, :c_self, :c_inflation, :i_event_sustained, :c_pop, :named_count, :named_pct,
                     :self_history_stable, :chatter_quality_high, :cold_start_tier, :stream_count,
                     :raid_window_suppressed_i, :unattributed_surge, :thin_sample)
 end
@@ -15,9 +15,10 @@ RSpec.describe TrustIndex::V2::ReasonCodeBuilder do
   end
 
   def ctx(**over)
-    base = { c_hard: false, c_self: false, c_inflation: false, i_event_sustained: false, named_count: 0,
-             named_pct: 0.0, self_history_stable: false, chatter_quality_high: false, cold_start_tier: "full",
-             stream_count: 20, raid_window_suppressed_i: false, unattributed_surge: false, thin_sample: false }
+    base = { c_hard: false, c_self: false, c_inflation: false, i_event_sustained: false, c_pop: false,
+             named_count: 0, named_pct: 0.0, self_history_stable: false, chatter_quality_high: false,
+             cold_start_tier: "full", stream_count: 20, raid_window_suppressed_i: false,
+             unattributed_surge: false, thin_sample: false }
     ReasonCodeBuilderSpecDoubles::Ctx.new(**base.merge(over))
   end
 
@@ -52,6 +53,16 @@ RSpec.describe TrustIndex::V2::ReasonCodeBuilder do
     result = codes(band(2), c_self: true, i_event_sustained: true)
     expect(result).to include("SELF_HISTORY_SUSTAINED_INFLATION")
     expect(result).not_to include("SELF_HISTORY_INFLATION_EVENT")
+  end
+
+  # TI v2.1 C_pop: the population-anchored corroborator surfaces a legal-safe per-population code (names nobody).
+  it "RED/YELLOW → POPULATION_CHAT_DEFICIT when C_pop is the corroborator (silent always-botter)" do
+    expect(codes(band(2), c_pop: true)).to include("POPULATION_CHAT_DEFICIT")
+  end
+
+  it "suppresses POPULATION_CHAT_DEFICIT when C_hard or C_inflation already fired (no redundant code)" do
+    expect(codes(band(1), c_pop: true, c_hard: true)).not_to include("POPULATION_CHAT_DEFICIT")
+    expect(codes(band(2), c_pop: true, c_inflation: true)).not_to include("POPULATION_CHAT_DEFICIT")
   end
 
   it "soft deficit alone (row 6a) → non-accusatory ENGAGEMENT_DEFICIT_UNCORROBORATED, no HARD/SELF" do

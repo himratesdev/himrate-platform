@@ -31,7 +31,9 @@ RSpec.describe Calibration::Registry do
       :i_event_enabled, :ie_v_trend_z, :ie_arrival_floor_frac, :ie_conv_floor, :ie_cv_floor,
       :lurker_collapse_ratio, # G5 lurker-collapse guard (dormant)
       # TI v2.1 C_self^SP sustained-plateau self-corroborator (dormant)
-      :csustained_enabled, :csustained_n_windows, :csustained_elevated_margin, :csustained_cov_ceiling
+      :csustained_enabled, :csustained_n_windows, :csustained_elevated_margin, :csustained_cov_ceiling,
+      # TI v2.1 C_pop population-anchored corroborator (dormant, silent-always-botter fix)
+      :cpop_enabled, :cpop_n_windows, :cpop_density_frac, :cpop_elevated_margin
     )
   end
 end

@@ -18,7 +18,7 @@ module TrustIndex
     SELF_HISTORY_STABLE_MIN = 10 # full tier — self-history considered stable
     # EC-18 coarsest fallback: illustrative honest chat-share baseline when no calibration_cell_baseline
     # row resolves (pre-GATE-0 / novel cell). Values from SRS FR-003 example — refined per-cell at GATE 0.
-    DEFAULT_CELL_BASELINE = TrustIndex::V2::CellResolver::Baseline.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: false)
+    DEFAULT_CELL_BASELINE = TrustIndex::V2::CellResolver::Baseline.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: false, rho_p1: nil, ccv_typical: nil)
     V_BUCKETS = [ [ 1_000, "0-1k" ], [ 5_000, "1k-5k" ], [ 20_000, "5k-20k" ] ].freeze
 
     # i_event EPIC (T1-074) — external-conjunct window/min-sample constants.
@@ -121,7 +121,9 @@ module TrustIndex
         # reconstructed from append-only TIH (0 + NO read when csustained_enabled≤0 → dormant cost). ccv_cov
         # = CoV of the already-fetched 30min CCV series (zero new scan; the [P3] plateau_shape input).
         sustained_count: v2_sustained_count(stream, consts),
-        ccv_cov: i_event_cov_metric((context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f })
+        ccv_cov: i_event_cov_metric((context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f }),
+        # TI v2.1 C_pop: the channel's cross-stream deficit-window density (0 + no read when cpop_enabled≤0).
+        pop_deficit_density: v2_pop_deficit_density(channel, consts)
       )
     end
 
@@ -590,6 +592,29 @@ module TrustIndex
         0
       end
 
+      # TI v2.1 C_pop persistence signal — the CHANNEL's density of deficit windows over the last N v2
+      # windowed TIH rows (across streams — a silent always-botter is persistent ACROSS sessions, not just
+      # within one stream, so this is channel-scoped unlike v2_sustained_count). density = fraction of the
+      # last N rows that are (band_color≠green ∧ f_soft_lo>0). NO green hard-reset (unlike the sustained
+      # LEADING-run) — a single sacrificial green window can't buy 90-day immunity (the sparse-green evasion
+      # fix). DORMANT: cpop_enabled≤0 → 0.0 with NO read. One bounded index-ordered read on the composite
+      # (channel_id, calculated_at) index. Returns 0.0..1.0.
+      def v2_pop_deficit_density(channel, consts)
+        return 0.0 unless (consts["cpop_enabled"] || 0.0).to_f.positive?
+
+        n = (consts["cpop_n_windows"] || 999.0).to_f.to_i.clamp(1, 60)
+        rows = self_history_convention_scope(
+          TrustIndexHistory.where(channel_id: channel.id, engine_version: "v2")
+        ).order(calculated_at: :desc, id: :desc).limit(n).pluck(:band_color, :f_soft_lo)
+        return 0.0 if rows.empty?
+
+        deficit = rows.count { |bc, fsl| bc.to_s != "green" && fsl.to_f.positive? }
+        deficit.to_f / rows.size
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 pop_deficit_density failed (#{e.message})")
+        0.0
+      end
+
       # === i_event EPIC (T1-074) — the 5 EXTERNAL conjuncts [2/4/5/6] + shared constant read ===
 
       # ONE WHERE-IN read of all builder-side calibration scalars (q_mid + the i_event gate/floors) so the
@@ -598,7 +623,7 @@ module TrustIndex
       def v2_builder_constants
         CalibrationConstant
           .where(key: %w[q_mid i_event_enabled ie_v_trend_z ie_arrival_floor_frac ie_conv_floor ie_cv_floor
-                         csustained_enabled csustained_n_windows])
+                         csustained_enabled csustained_n_windows cpop_enabled cpop_n_windows])
           .pluck(:key, :value).to_h
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: builder constants load failed (#{e.message})")
