@@ -1,0 +1,117 @@
+name: ti-v2-lurker-calibrate
+# Battle-mode: calibrate G5's lurker_collapse_ratio. The guard floors the windowed F_soft deficit when
+# the online is NOT elevated above the channel's own baseline: floor ⟺ v_eff ≤ baseline·(1+ratio) ⟺
+# excess_elevation = v_eff/baseline − 1 ≤ ratio. We must pick a ratio ABOVE the honest quiet-lurker excess
+# (so honest quiet streams with a windowed deficit get floored → GREEN) but BELOW the botting threshold
+# (+30% → 0.30, per the threat model) so a botter (online elevated vs its own baseline) keeps its deficit.
+# Samples LIVE honest streams (GREEN, c_hard=false, self_history_stable, own_ccv_baseline present), computes
+# the UN-FLOORED windowed deficit (guard dormant at ratio -1.0) + excess_elevation, and reports the excess
+# distribution for the lurker-collapse candidates (honest streams that WOULD read a windowed deficit).
+# READ-ONLY. Output = recommended lurker_collapse_ratio for PO review before the windowing flip.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      honest_sample: { required: false, type: string, default: "200" }
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build calibration script
+        run: |
+          cat > /tmp/lurkercal.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          N = ENV.fetch("HONEST_SAMPLE", "200").to_i.clamp(20, 500)
+          CB = TrustIndex::ContextBuilder
+          def pct(a, p) a = a.compact.sort; a.empty? ? nil : a[((p*(a.size-1)).round)] end
+
+          # Un-floored windowed deficit + excess-elevation for a live stream. Guard is dormant fleet-wide
+          # (lurker_collapse_ratio -1.0) so wres.f_soft is the RAW windowed deficit the guard would act on.
+          def probe(s)
+            ctx = CB.build(s)
+            roster, v_w = CB.windowed_inputs(s)
+            return nil if v_w.nil?
+            v2c = CB.build_v2(s, ctx)
+            base = v2c.own_ccv_baseline
+            return nil if base.nil? || base.to_f <= 0
+            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+            wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+            v_eff = [ v_w, v2c.v ].min
+            { excess: v_eff.to_f / base.to_f - 1.0, f_soft: wres.f_soft.to_f, v_eff: v_eff, base: base,
+              band: "#{wres.band&.color}/#{wres.band&.row}", auth: wres.authenticity }
+          rescue => e
+            nil
+          end
+
+          puts "===== G5 lurker_collapse_ratio calibration (honest<=#{N}) ====="
+          live = Stream.where(ended_at: nil).order(started_at: :desc).limit(800).to_a
+          honest = []; scanned = 0
+          live.each do |s|
+            break if honest.size >= N
+            scanned += 1
+            t = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(calculated_at: :desc).first
+            next unless t && t.c_hard == false && t.band_color.to_s == "green"
+            m = probe(s)
+            next unless m
+            honest << m
+          end
+          puts "honest cohort: #{honest.size} (scanned #{scanned})"
+          abort "too few (#{honest.size})" if honest.size < 20
+
+          all_ex = honest.map { |m| m[:excess] }
+          # lurker-collapse candidates = honest streams that WOULD read a windowed deficit (f_soft>0) →
+          # these are the ones the guard must floor. Their excess-elevation is what the ratio must clear.
+          deficit = honest.select { |m| m[:f_soft] > 1.0 }
+          def_ex = deficit.map { |m| m[:excess] }
+          puts "\n--- excess_elevation = v_eff/own_baseline − 1 ---"
+          puts "  ALL honest (n=#{all_ex.size}):     p50=#{pct(all_ex,0.5)&.round(3)} p90=#{pct(all_ex,0.9)&.round(3)} p95=#{pct(all_ex,0.95)&.round(3)} p99=#{pct(all_ex,0.99)&.round(3)} max=#{all_ex.max&.round(3)}"
+          if def_ex.any?
+            puts "  honest WITH windowed deficit (the lurker-collapse candidates the guard must floor) n=#{def_ex.size}:"
+            puts "    p50=#{pct(def_ex,0.5)&.round(3)} p90=#{pct(def_ex,0.9)&.round(3)} p95=#{pct(def_ex,0.95)&.round(3)} p99=#{pct(def_ex,0.99)&.round(3)} max=#{def_ex.max&.round(3)}"
+          else
+            puts "  NO honest streams currently show a windowed deficit (f_soft>0) — either the cohort is chatty"
+            puts "  or the current ρ* cells already absorb it. The ratio then just needs to clear honest noise."
+          end
+
+          # Recommend: ratio ABOVE honest-deficit p95 (floor them) but the threat model wants +30% botting
+          # caught → keep ratio ≤ 0.30 if possible. Report both and the tension if p95 > 0.30.
+          floor_need = pct(def_ex.any? ? def_ex : all_ex, 0.95) || 0.0
+          rec = [ floor_need + 0.05, 0.30 ].min
+          puts "\n--- RECOMMENDATION ---"
+          puts "  honest-side floor need (p95 of candidate excess): #{floor_need.round(3)}"
+          puts "  botting threat wants ratio ≤ 0.30 (detect +30%). dariya botted excess ≈ 1.08 (562/270) → any ratio <1.08 keeps its deficit."
+          if floor_need > 0.30
+            puts "  ⚠ TENSION: honest-deficit excess p95 (#{floor_need.round(3)}) > 0.30 → some honest good-day-quiet streams"
+            puts "    overlap the +30% botting band. Options: (a) accept ratio=#{(floor_need+0.05).round(3)} (misses <#{((floor_need+0.05)*100).round}% botting), (b) keep 0.30 (a few honest good-day-quiet FP → AMBER), (c) tighten cell ρ* so fewer honest read a deficit."
+          else
+            puts "  ✅ recommend lurker_collapse_ratio = #{rec.round(3)} (floors honest quiet-lurkers, keeps ≥+30% botting deficit)."
+          end
+          puts "\n  band mix (honest cohort): #{honest.group_by { |m| m[:band] }.transform_values(&:size)}"
+          puts "  NEXT: PO review → seed lurker_collapse_ratio (CalibrationConstant) as part of the atomic windowed seed+flip."
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/lurkercal.rb) lines)"
+
+      - name: Run on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/lurkercal.rb ${TARGET}:/tmp/lurkercal.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/lurkercal.rb ${CONTAINER}:/tmp/lurkercal.rb && docker exec -e HONEST_SAMPLE='${{ inputs.honest_sample || '200' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/lurkercal.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
