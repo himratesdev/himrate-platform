@@ -424,7 +424,7 @@ module TrustIndex
         return {} unless cold_tier == "full"                       # FP-guard 1: never floor a thin-history roster
         return {} if (context_hash[:recent_raids] || []).any?      # FP-guard 2: raid = honest first-timers
 
-        Clickhouse::ChatQueries.new.within_channel_recurrence(
+        Clickhouse::ChatQueries.within_channel_recurrence(
           stream.channel.login, chatters, stream.id, since: SELF_HISTORY_WINDOW_DAYS.days.ago
         )
       rescue StandardError => e

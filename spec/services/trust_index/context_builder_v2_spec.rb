@@ -482,30 +482,31 @@ RSpec.describe TrustIndex::ContextBuilder do
       end
 
       it "v2_within_channel_recurrence: DORMANT (enabled≤0) → {} with NO CH query" do
-        expect(Clickhouse::ChatQueries).not_to receive(:new)
+        expect(Clickhouse::ChatQueries).not_to receive(:within_channel_recurrence)
         r = described_class.send(:v2_within_channel_recurrence, rg_stream, %w[a b], { "recurrence_gate_enabled" => 0.0 }, "full", {})
         expect(r).to eq({})
       end
 
       it "v2_within_channel_recurrence: enabled but NOT full-tier → {} (FP-guard 1: never floor a thin roster)" do
-        expect(Clickhouse::ChatQueries).not_to receive(:new)
+        expect(Clickhouse::ChatQueries).not_to receive(:within_channel_recurrence)
         r = described_class.send(:v2_within_channel_recurrence, rg_stream, %w[a b], { "recurrence_gate_enabled" => 1.0 }, "basic", {})
         expect(r).to eq({})
       end
 
       it "v2_within_channel_recurrence: enabled + full-tier + a raid window → {} (FP-guard 2: honest first-timers)" do
-        expect(Clickhouse::ChatQueries).not_to receive(:new)
+        expect(Clickhouse::ChatQueries).not_to receive(:within_channel_recurrence)
         r = described_class.send(:v2_within_channel_recurrence, rg_stream, %w[a b],
                                  { "recurrence_gate_enabled" => 1.0 }, "full", { recent_raids: [ { timestamp: Time.current } ] })
         expect(r).to eq({})
       end
 
       it "v2_within_channel_recurrence: enabled + full-tier + no raid → issues the bounded CH query" do
-        fake = instance_double(Clickhouse::ChatQueries, within_channel_recurrence: { "regular" => 5 })
-        allow(Clickhouse::ChatQueries).to receive(:new).and_return(fake)
+        allow(Clickhouse::ChatQueries).to receive(:within_channel_recurrence).and_return({ "regular" => 5 })
         r = described_class.send(:v2_within_channel_recurrence, rg_stream, %w[regular],
                                  { "recurrence_gate_enabled" => 1.0 }, "full", {})
         expect(r).to eq({ "regular" => 5 })
+        expect(Clickhouse::ChatQueries).to have_received(:within_channel_recurrence)
+          .with(rg_stream.channel.login, %w[regular], rg_stream.id, hash_including(:since))
       end
     end
   end
