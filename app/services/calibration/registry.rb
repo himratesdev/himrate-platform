@@ -84,7 +84,24 @@ module Calibration
       cpop_enabled: 0.0,
       cpop_n_windows: 999.0,
       cpop_density_frac: 999.0,
-      cpop_elevated_margin: 0.30
+      cpop_elevated_margin: 0.30,
+      # TI v2.1 recurrence_gate (EIHC anti-gaming, 2026-07-25). EIHC = Σ_u weight(u); a chatting bot L0
+      # misses (this-channel-only → low cross-channel temporal_recurrence → not b_hard) counts FULL weight
+      # → lifts EIHC 1:1 → rho_obs rises above ρ* → the deficit vanishes → evades F_soft/C_self^SP[P1]/C_pop.
+      # recurrence_gate downweights a chatter by WITHIN-channel loyalty s(u) = distinct past streams of THIS
+      # channel they posted in (a first-time-here chatter s=0 = injection candidate → floored to g_new; a
+      # regular s≥r_full = full weight). weight ramp [g_new,1] over [0,r_full]. DORMANT: recurrence_gate_
+      # enabled=0.0 → the builder issues NO CH query (rec_map={}) AND the ramp returns 1.0 unconditionally at
+      # the neutral defaults (r_full=1.0 ∧ new_floor=1.0) → EIHC byte-identical. Two-layer dormancy (query-
+      # skip + value-1.0). ⚠ Calibrate r_full+new_floor TOGETHER (never one-before-others) or the backstop
+      # lifts. age_gate is DEFERRED INDEFINITELY (per-chatter Helix infeasible at scale + re-imports the
+      # ~52%-honest account_profile mass-FP; the only affordable newness signal IS recurrence_gate s=0).
+      # FLIP HARD-blocked on: the two-EIHC display split (else a floored honest EIHC drops the PUBLIC
+      # authenticity number — the account_profile leak through the EIHC door) + a gated-basis ρ* re-seed +
+      # cost-DSV + calibration. Data-flip (no redeploy) after all, per the csustained/cpop precedent.
+      recurrence_gate_enabled: 0.0,
+      recurrence_gate_r_full: 1.0,
+      recurrence_gate_new_floor: 1.0
     }.freeze
 
     K = Data.define(*ILLUSTRATIVE.keys)

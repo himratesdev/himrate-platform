@@ -85,10 +85,15 @@ module TrustIndex
       # i_event EPIC: self-history rows plucked ONCE (rho_obs for the baseline + ccv for [2] v_above_own_trend)
       # — the ccv column rides the SAME scan v2_self_history already runs every cycle (zero added scan).
       sh = v2_self_history(channel)
+      cold_tier = v2_cold_start_tier(cold[:status])
+      # TI v2.1 recurrence_gate: within-channel loyalty s(u) for the present roster (dormant → {} → no query).
+      rec_map = v2_within_channel_recurrence(stream, chatters, consts, cold_tier, context_hash)
 
       TrustIndex::V2::Engine::Context.new(
         v: v,
-        raw_chatters: v2_chatter_signals(chatters, context_hash),
+        raw_chatters: v2_chatter_signals(chatters, context_hash, rec_map,
+                                         (consts["recurrence_gate_r_full"] || 1.0).to_f,
+                                         (consts["recurrence_gate_new_floor"] || 1.0).to_f),
         # moat-audit (frame consistency): resolve the ρ* cell's V-bucket on the SAME windowed frame the L2
         # deficit uses (v_eff = min(V_W, V_inst) — mirrors l2_presume/self_v G1 cap), not instant V. A
         # botted stream whose instant V lands in a higher (looser-ρ*) bucket while its windowed V_W is a
@@ -104,7 +109,7 @@ module TrustIndex
         raid_window: (context_hash[:recent_raids] || []).any?,
         n_chat_eff: chatters.size,
         q: q,
-        cold_start_tier: v2_cold_start_tier(cold[:status]),
+        cold_start_tier: cold_tier,
         chatter_quality_high: q >= q_mid, # descriptive reason-code flag (tracks calibrated q_mid)
         stream_count: cold[:stream_count],
         unattributed_surge: false, # provenance-source wiring (host/shoutout/category) = follow-up EPIC
@@ -369,7 +374,7 @@ module TrustIndex
       # spam OR unknown), mirroring the v1 signal (temporal_cross_channel rejects bot_type=="utility")
       # + the model's BOT_TYPES %w[utility spam unknown]. Counting only "spam" would let an "unknown"
       # tier read clean → nil recurrence AND clean-Q → inflate the GREEN gate: the exact miss TI v2 closes.
-      def v2_chatter_signals(chatters, context_hash)
+      def v2_chatter_signals(chatters, context_hash, rec_map = {}, rec_full = 1.0, rec_floor = 1.0)
         return [] if chatters.empty?
 
         flagged = context_hash.dig(:temporal_cross_channel_flags, :flagged) || {}
@@ -386,10 +391,46 @@ module TrustIndex
             anti_bot_llr: 0.0,        # no cheap per-chatter roles source; recall-safe neutral
             cluster_delta_k: 0.0,     # community-detection δ_K = follow-up → no density collapse
             cluster_size: 1,
-            age_gate: 1.0,            # account-age downweight = follow-up (paired with account_profile)
-            recurrence_gate: 1.0
+            age_gate: 1.0,            # DEFERRED INDEFINITELY — per-chatter Helix infeasible + account_profile mass-FP
+            # TI v2.1 recurrence_gate: within-channel loyalty s(u)=rec_map[username]. rec_map={} + neutral
+            # defaults (rec_full=1.0 ∧ rec_floor=1.0) → 1.0 for every chatter → byte-identical (dormant).
+            recurrence_gate: v2_recurrence_gate_value(rec_map[username], rec_full, rec_floor)
           )
         end
+      end
+
+      # TI v2.1 recurrence_gate ramp: weight ∈ [g_new, 1.0] over s ∈ [0, r_full] within-channel past streams.
+      # DORMANT backstop: neutral defaults (r_full≤1.0 ∧ g_new≥1.0) → unconditional 1.0 even if the enabled
+      # flag flips before r_full/g_new are calibrated. Floor (not zero) at s=0 + ramp (not step) so a botter
+      # must sustain injected chatters across r_full of THIS channel's own streams to fully launder them,
+      # and an honest first-time viewer keeps g_new of weight (never zeroed).
+      def v2_recurrence_gate_value(s, r_full, g_new)
+        return 1.0 if r_full <= 1.0 && g_new >= 1.0
+        s = s.to_i
+        return 1.0 if s >= r_full
+        return g_new if s <= 0
+
+        g_new + (1.0 - g_new) * (s / r_full)
+      end
+
+      # TI v2.1 recurrence_gate: the ONE bounded within-channel-loyalty CH read. DORMANT: recurrence_gate_
+      # enabled≤0 → {} with NO query (byte-identical cost). FP-GUARD 1 (mass-collapse killer): a thin-history
+      # channel has s=0 for its ENTIRE roster → a uniform floor would mass-false-deficit every new channel
+      # (the account_profile-shaped trap) → gate ONLY full cold-start tier (≥10 streams — the SAME accusation
+      # bar sustained_plateau?/pop_corroborated? enforce). FP-GUARD 2 (raid/onset): a raid/host is a wave of
+      # honest first-timers → skip the downweight. Returns { username => past_stream_count }.
+      def v2_within_channel_recurrence(stream, chatters, consts, cold_tier, context_hash)
+        return {} unless (consts["recurrence_gate_enabled"] || 0.0).to_f.positive?
+        return {} if chatters.empty?
+        return {} unless cold_tier == "full"                       # FP-guard 1: never floor a thin-history roster
+        return {} if (context_hash[:recent_raids] || []).any?      # FP-guard 2: raid = honest first-timers
+
+        Clickhouse::ChatQueries.within_channel_recurrence(
+          stream.channel.login, chatters, stream.id, since: SELF_HISTORY_WINDOW_DAYS.days.ago
+        )
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2_within_channel_recurrence failed (#{e.message})")
+        {}
       end
 
       def v2_known_bot_map(chatters)
@@ -623,7 +664,8 @@ module TrustIndex
       def v2_builder_constants
         CalibrationConstant
           .where(key: %w[q_mid i_event_enabled ie_v_trend_z ie_arrival_floor_frac ie_conv_floor ie_cv_floor
-                         csustained_enabled csustained_n_windows cpop_enabled cpop_n_windows])
+                         csustained_enabled csustained_n_windows cpop_enabled cpop_n_windows
+                         recurrence_gate_enabled recurrence_gate_r_full recurrence_gate_new_floor])
           .pluck(:key, :value).to_h
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: builder constants load failed (#{e.message})")

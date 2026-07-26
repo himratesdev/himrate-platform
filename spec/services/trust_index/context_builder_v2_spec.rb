@@ -258,7 +258,9 @@ RSpec.describe TrustIndex::ContextBuilder do
         csustained_enabled: 0.0, csustained_n_windows: 999.0,
         csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0,
         # TI v2.1 C_pop dormant (enabled 0.0; density_frac=999 + N=999 backstops)
-        cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30
+        cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30,
+        # TI v2.1 recurrence_gate dormant (enabled 0.0; r_full=1.0 ∧ new_floor=1.0 neutral backstop)
+        recurrence_gate_enabled: 0.0, recurrence_gate_r_full: 1.0, recurrence_gate_new_floor: 1.0
       )
       r = TrustIndex::V2::Engine.compute(context: c, k: k)
       expect(r.b_hard.map(&:username)).to include("megabot")
@@ -458,6 +460,53 @@ RSpec.describe TrustIndex::ContextBuilder do
         end
         d = described_class.send(:v2_pop_deficit_density, channel, { "cpop_enabled" => 1.0, "cpop_n_windows" => 60.0 })
         expect(d).to be_within(0.001).of(3.0 / 5)
+      end
+    end
+
+    # TI v2.1 recurrence_gate (EIHC anti-gaming) — within-channel loyalty downweight.
+    describe "recurrence_gate" do
+      let(:rg_stream) { create(:stream, channel: channel) }
+
+      it "v2_recurrence_gate_value: dormant neutral defaults (r_full=1.0 ∧ g_new=1.0) → 1.0 for any s" do
+        expect(described_class.send(:v2_recurrence_gate_value, 0, 1.0, 1.0)).to eq(1.0)
+        expect(described_class.send(:v2_recurrence_gate_value, nil, 1.0, 1.0)).to eq(1.0)
+        expect(described_class.send(:v2_recurrence_gate_value, 5, 1.0, 1.0)).to eq(1.0)
+      end
+
+      it "v2_recurrence_gate_value: calibrated → floor at s=0, full at s≥r_full, ramp between" do
+        expect(described_class.send(:v2_recurrence_gate_value, 0, 4.0, 0.5)).to eq(0.5)    # first-time-here → floor
+        expect(described_class.send(:v2_recurrence_gate_value, nil, 4.0, 0.5)).to eq(0.5)  # no history → floor
+        expect(described_class.send(:v2_recurrence_gate_value, 4, 4.0, 0.5)).to eq(1.0)    # regular → full
+        expect(described_class.send(:v2_recurrence_gate_value, 6, 4.0, 0.5)).to eq(1.0)    # ≥ r_full → full
+        expect(described_class.send(:v2_recurrence_gate_value, 2, 4.0, 0.5)).to be_within(0.001).of(0.75) # ramp
+      end
+
+      it "v2_within_channel_recurrence: DORMANT (enabled≤0) → {} with NO CH query" do
+        expect(Clickhouse::ChatQueries).not_to receive(:within_channel_recurrence)
+        r = described_class.send(:v2_within_channel_recurrence, rg_stream, %w[a b], { "recurrence_gate_enabled" => 0.0 }, "full", {})
+        expect(r).to eq({})
+      end
+
+      it "v2_within_channel_recurrence: enabled but NOT full-tier → {} (FP-guard 1: never floor a thin roster)" do
+        expect(Clickhouse::ChatQueries).not_to receive(:within_channel_recurrence)
+        r = described_class.send(:v2_within_channel_recurrence, rg_stream, %w[a b], { "recurrence_gate_enabled" => 1.0 }, "basic", {})
+        expect(r).to eq({})
+      end
+
+      it "v2_within_channel_recurrence: enabled + full-tier + a raid window → {} (FP-guard 2: honest first-timers)" do
+        expect(Clickhouse::ChatQueries).not_to receive(:within_channel_recurrence)
+        r = described_class.send(:v2_within_channel_recurrence, rg_stream, %w[a b],
+                                 { "recurrence_gate_enabled" => 1.0 }, "full", { recent_raids: [ { timestamp: Time.current } ] })
+        expect(r).to eq({})
+      end
+
+      it "v2_within_channel_recurrence: enabled + full-tier + no raid → issues the bounded CH query" do
+        allow(Clickhouse::ChatQueries).to receive(:within_channel_recurrence).and_return({ "regular" => 5 })
+        r = described_class.send(:v2_within_channel_recurrence, rg_stream, %w[regular],
+                                 { "recurrence_gate_enabled" => 1.0 }, "full", {})
+        expect(r).to eq({ "regular" => 5 })
+        expect(Clickhouse::ChatQueries).to have_received(:within_channel_recurrence)
+          .with(rg_stream.channel.login, %w[regular], rg_stream.id, hash_including(:since))
       end
     end
   end

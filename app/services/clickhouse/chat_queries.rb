@@ -150,6 +150,36 @@ module Clickhouse
       []
     end
 
+    # TI v2.1 recurrence_gate (EIHC anti-gaming): WITHIN-channel loyalty. For the ≤500 present roster,
+    # count each username's DISTINCT PAST streams of THIS channel over the trailing horizon (EXCLUDING the
+    # current stream → s(u) is strictly PAST). A first-time-here chatter (s=0) is an injection candidate;
+    # a channel regular (s≥r_full) is a real human. ONE bounded round-trip: rides the PRIMARY ORDER BY
+    # (channel_login, timestamp) → partition-pruned per-channel range scan (NO bloom-index reliance, unlike
+    # the channel-less cross_channel → strictly CHEAPER than the already-running cross_channel). Bounded by
+    # the ≤500-username IN-list. Returns { username => past_stream_count }. {} on error → gate stays 1.0
+    # (recall-safe — a failed loyalty read never manufactures a deficit).
+    def within_channel_recurrence(channel_login, present_usernames, current_stream_id, since:)
+      return {} if present_usernames.empty?
+
+      since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
+      quoted   = present_usernames.map { |u| "'#{escape_string_literal(u)}'" }.join(",")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT username, uniqExact(stream_id) AS s
+        FROM chat_messages
+        WHERE channel_login = '#{escape_string_literal(channel_login)}'
+          AND msg_type = 'privmsg'
+          AND username IN (#{quoted})
+          AND stream_id != '#{escape_string_literal(current_stream_id.to_s)}'
+          AND stream_id IS NOT NULL
+          AND timestamp > toDateTime('#{since_ts}')
+        GROUP BY username
+      SQL
+      rows.to_h { |r| [ r["username"], r["s"].to_i ] }
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: within_channel_recurrence failed (#{e.class})")
+      {}
+    end
+
     # T1-057 FR-A: overlap edge-ledger source query. One row per (username, channel_login) over the
     # rolling 24h window, for the OVERLAP COHORT only — users present in 2..max_channels distinct
     # channels (single-channel chatters carry no overlap edge; users above the cap are bots/omnipresent
