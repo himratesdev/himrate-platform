@@ -85,8 +85,9 @@ module TrustIndex
       # i_event EPIC: self-history rows plucked ONCE (rho_obs for the baseline + ccv for [2] v_above_own_trend)
       # — the ccv column rides the SAME scan v2_self_history already runs every cycle (zero added scan).
       sh = v2_self_history(channel)
+      cold_tier = v2_cold_start_tier(cold[:status])
       # TI v2.1 recurrence_gate: within-channel loyalty s(u) for the present roster (dormant → {} → no query).
-      rec_map = v2_within_channel_recurrence(stream, chatters, consts, v2_cold_start_tier(cold[:status]), context_hash)
+      rec_map = v2_within_channel_recurrence(stream, chatters, consts, cold_tier, context_hash)
 
       TrustIndex::V2::Engine::Context.new(
         v: v,
@@ -108,7 +109,7 @@ module TrustIndex
         raid_window: (context_hash[:recent_raids] || []).any?,
         n_chat_eff: chatters.size,
         q: q,
-        cold_start_tier: v2_cold_start_tier(cold[:status]),
+        cold_start_tier: cold_tier,
         chatter_quality_high: q >= q_mid, # descriptive reason-code flag (tracks calibrated q_mid)
         stream_count: cold[:stream_count],
         unattributed_surge: false, # provenance-source wiring (host/shoutout/category) = follow-up EPIC
