@@ -1,0 +1,146 @@
+name: ti-v2-rho-reseed
+# [skip ci] ops. TI v2.1 GATE-0 ρ* RE-SEED with a dryrun honest-impact gate + apply auto-rollback — the
+# safety gate0-seed.yml lacks. Seeds the windowed per-cell ρ* (rho_star=P50, rho_lo=P10, rho_hi=P90,
+# calibrated=true) from the POOLED windowed shadow corpus (accrued cross-run by the hourly
+# ti-v2-shadow-mine; the pool lives in verivio-clode _tasks/T1-074/rho-raw/ because docker json-logs
+# rotate ~30min). The re-seed unblocks: honest false-AMBER cleanup + trustworthy F_soft (cell_calibrated
+# for more cells) + the C_pop flip prerequisite. STAGING-ONLY, reversible (data-only).
+#   mode=dryrun : upsert the cells in a ROLLED-BACK txn → scan the live honest RU cohort band mix
+#                 BEFORE vs AFTER → confirm honest AMBER DROPS (false-AMBER cleanup) AND 0 new honest
+#                 RED/YELLOW. Read-only (rolls back). ALWAYS run this first.
+#   mode=apply  : snapshot prior cell values → upsert calibrated → honest verify → AUTO-ROLLBACK (restore
+#                 the snapshot) if any honest RED/YELLOW appears. Only after dryrun is SAFE.
+# ⚠ MATURITY: only reseed once the pooled corpus has ≥ ~12 cells at n≥8 (windowed). Assess laptop-side
+# from the shadow-mine pool. cells_json = the mined per-cell rows (see the recipe in the memory /
+# _tasks/T1-074). PO pre-authorized 2026-07-27 «когда созреет начинай» — dryrun→apply autonomous.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      mode: { required: true, type: choice, options: [dryrun, apply], default: dryrun }
+      honest_sample: { required: false, type: string, default: "80" }
+      # JSON array of per-cell rows: [{"cat":"gaming","vb":"1k-5k","cm":"open","lang":"RU","star":0.09,"lo":0.05,"hi":0.15,"n":11}, ...]
+      cells_json: { required: true, type: string, default: "[]" }
+
+jobs:
+  reseed:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build reseed script
+        run: |
+          cat > /tmp/reseed.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          require "json"
+          MODE   = ENV.fetch("RESEED_MODE", "dryrun")
+          HN     = ENV.fetch("HONEST_SAMPLE", "80").to_i.clamp(20, 300)
+          ROWS   = JSON.parse(ENV.fetch("CELLS_JSON", "[]")) rescue []
+          CB = TrustIndex::ContextBuilder
+          abort "no cells provided (cells_json empty)" if ROWS.empty?
+
+          def amber(bands) bands.select { |k, _| k.start_with?("amber") }.values.sum end
+          def accus(bands) bands.select { |k, _| k.start_with?("red") || k.start_with?("yellow") }.values.sum end
+
+          # Live honest RU cohort band mix via the REAL engine (reads the seeded cells through Registry/cell
+          # resolver). c_hard=false honest anchors only. Returns [band_mix, n].
+          def honest_scan(n_target)
+            live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(1000).to_a
+            bands = Hash.new(0); n = 0
+            live.each do |s|
+              break if n >= n_target
+              t = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(calculated_at: :desc).first
+              next unless t && t.c_hard == false
+              ctx = CB.build(s)
+              roster, v_w = CB.windowed_inputs(s)
+              v2c = CB.build_v2(s, ctx)
+              next if v2c.v.nil? || v2c.v <= 0
+              wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w) : v2c
+              res = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+              bands["#{res.band&.color}/#{res.band&.row}"] += 1
+              n += 1
+            rescue StandardError
+              nil
+            end
+            [ bands, n ]
+          end
+
+          def upsert!(rows)
+            rows.each do |r|
+              b = CalibrationCellBaseline.find_or_initialize_by(
+                category: r["cat"], v_bucket: r["vb"], chat_mode: r["cm"], language: r["lang"]
+              )
+              b.assign_attributes(rho_star: r["star"], rho_lo: r["lo"], rho_hi: r["hi"],
+                                  sample_size: r["n"], calibrated: true)
+              b.save!
+            end
+          end
+
+          puts "===== ρ* RE-SEED windowed MODE=#{MODE} — #{ROWS.size} cells @ #{Time.current.iso8601} ====="
+          ROWS.each { |r| puts "  #{r['cat']}|#{r['vb']}|#{r['cm']}|#{r['lang']} → rho*=#{r['star']} lo=#{r['lo']} hi=#{r['hi']} n=#{r['n']}" }
+
+          if MODE == "dryrun"
+            before, nb = honest_scan(HN)
+            ActiveRecord::Base.transaction do
+              upsert!(ROWS)
+              after, na = honest_scan(HN)
+              puts "\n-- honest band mix BEFORE: #{before.sort_by { |_, v| -v }.to_h} (n=#{nb})"
+              puts "-- honest band mix AFTER (simulated, rolls back): #{after.sort_by { |_, v| -v }.to_h} (n=#{na})"
+              puts "-- honest AMBER #{amber(before)}→#{amber(after)} (want DOWN — false-AMBER cleanup); honest RED/YELLOW after=#{accus(after)} (want 0)"
+              safe = amber(after) <= amber(before) && accus(after) == 0
+              puts(safe ? "\n✅ DRYRUN SAFE → dispatch MODE=apply" : "\n🔴 DRYRUN UNSAFE (honest not improved / accused) → DO NOT apply; investigate")
+              raise ActiveRecord::Rollback
+            end
+          else
+            # snapshot prior values (nil = new cell) for rollback
+            snap = ROWS.map do |r|
+              c = CalibrationCellBaseline.find_by(category: r["cat"], v_bucket: r["vb"], chat_mode: r["cm"], language: r["lang"])
+              [ r, c && { rho_star: c.rho_star, rho_lo: c.rho_lo, rho_hi: c.rho_hi, sample_size: c.sample_size, calibrated: c.calibrated } ]
+            end
+            upsert!(ROWS)
+            after, na = honest_scan(HN)
+            puts "\n-- POST-RESEED honest band mix: #{after.sort_by { |_, v| -v }.to_h} (n=#{na}); honest RED/YELLOW=#{accus(after)}"
+            if accus(after) > [ (0.02 * na).ceil, 1 ].max
+              snap.each do |r, prev|
+                c = CalibrationCellBaseline.find_by(category: r["cat"], v_bucket: r["vb"], chat_mode: r["cm"], language: r["lang"])
+                next unless c
+                prev ? c.update!(prev) : c.update!(calibrated: false) # new cell → un-calibrate (never accuse off it)
+              end
+              puts "\n== 🔴 AUTO-ROLLBACK: #{accus(after)} honest accused → reverted #{ROWS.size} cells. Investigate. =="
+            else
+              puts "\n== 🟢 RE-SEED APPLIED: #{ROWS.size} cells calibrated, honest RED/YELLOW=#{accus(after)} (~0)."
+              puts "   NEXT: STRICT live-verify (honest RU GREEN + dariya labeled-botter deficit) + C_pop quantiles"
+              puts "   (rho_p1=P5-margin@n≥150 + ccv_typical) — needs a miner harvest change (gate0-seed/ti-v2-anchor-rho)."
+            end
+          end
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/reseed.rb) lines)"
+
+      - name: Run on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/reseed.rb ${TARGET}:/tmp/reseed.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          CELLS_JSON=$(cat <<'CJSON'
+          ${{ inputs.cells_json }}
+          CJSON
+          )
+          ssh ${TARGET} "docker cp /tmp/reseed.rb ${CONTAINER}:/tmp/reseed.rb && docker exec \
+            -e RESEED_MODE='${{ inputs.mode }}' -e HONEST_SAMPLE='${{ inputs.honest_sample || '80' }}' \
+            -e CELLS_JSON=$(printf %q "$CELLS_JSON") \
+            ${CONTAINER} sh -c 'bin/rails runner /tmp/reseed.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
