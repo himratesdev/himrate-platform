@@ -37,13 +37,18 @@ jobs:
           N    = ENV.fetch("SAMPLE", "250").to_i.clamp(50, 600)
           CB = TrustIndex::ContextBuilder
 
-          # Compute a stream's band under a given k. Returns [band_str, accusatory_bool, V] or nil.
+          # Compute a stream's band under a given k. Returns [band_str, accusatory_bool, V_inst, v_eff] or
+          # nil. v_eff = min(V_W, V_inst) is the DEFICIT frame the floor actually acts on (the engine floors
+          # deficit-family arms on v_eff/self_v, NOT instant V) — the safety gate must compare v_eff, not the
+          # display V (a channel with instant V just over the floor but a windowed dip below it is correctly
+          # floored on its deficit frame).
           def verdict(s, k)
             ctx = CB.build(s); v2c = CB.build_v2(s, ctx)
             return nil if v2c.v.nil? || v2c.v <= 0
             wr, vw = CB.windowed_inputs(s)
             r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c), k: k)
-            [ "#{r.band&.color}/#{r.band&.row}#{r.band&.sub}", %w[red yellow].include?(r.band&.color), v2c.v ]
+            v_eff = vw ? [ vw, v2c.v ].min : v2c.v
+            [ "#{r.band&.color}/#{r.band&.row}#{r.band&.sub}", %w[red yellow].include?(r.band&.color), v2c.v, v_eff ]
           rescue StandardError
             nil
           end
@@ -63,9 +68,9 @@ jobs:
             n += 1
             before[b0[0]] += 1; after[b1[0]] += 1
             next if b0[0] == b1[0]
-            row = "#{s.channel.login.ljust(20)} V=#{b0[2].to_i.to_s.ljust(5)} #{b0[0]} → #{b1[0]}"
+            row = "#{s.channel.login.ljust(20)} V=#{b0[2].to_i.to_s.ljust(5)} v_eff=#{b0[3].to_i.to_s.ljust(5)} #{b0[0]} → #{b1[0]}"
             changed << row
-            above_floor_changed << row if b0[2].to_f >= CCV     # 🔴 a change at/above the floor = BUG
+            above_floor_changed << row if b0[3].to_f >= CCV     # 🔴 a change with deficit-frame v_eff ≥ floor = BUG
             gained << row if !b0[1] && b1[1]                    # 🔴 gained an accusation = BUG (floor only removes)
           end
 
@@ -92,7 +97,7 @@ jobs:
             live.first(N).each do |s|
               b0 = verdict(s, k0); bl = verdict(s, Calibration::Registry.load)
               next if b0.nil? || bl.nil?
-              post_above += 1 if b0[2].to_f >= CCV && b0[0] != bl[0]
+              post_above += 1 if b0[3].to_f >= CCV && b0[0] != bl[0] # deficit-frame v_eff ≥ floor must be unperturbed
             end
             if post_above > 0
               CalibrationConstant.find_by(key: "deficit_min_ccv")&.update!(value: 0.0)
