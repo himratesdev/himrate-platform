@@ -1,0 +1,43 @@
+name: ti-v2-accused-deepdive
+# [skip ci] READ-ONLY. Dumps deep signals for a list of accused logins (category/ccv/chat/own-baseline/
+# green-history/settings) so a human can judge real-botter vs FP (legit-silent music/ASMR).
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      logins: { required: true, type: string, default: "" }
+jobs:
+  dd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/dd.rb <<'RB'
+          $stdout.sync = true
+          ENV.fetch("LOGINS","").split(/[ ,]+/).reject(&:empty?).each do |login|
+            ch = Channel.where("lower(login) = ?", login.downcase).first
+            next puts("#{login}: not found") unless ch
+            s = ch.streams.where(ended_at: nil).order(started_at: :desc).first
+            next puts("#{login}: no live stream") unless s
+            ctx = TrustIndex::ContextBuilder.build(s)
+            ccv = ctx[:latest_ccv]; chatters = (ctx[:stream_chatters]||[]).size
+            gc = TrustIndexHistory.where(channel_id: ch.id, engine_version:"v2", c_hard:false, band_color:"green").where("calculated_at > ?", 90.days.ago)
+            gcv = gc.order(calculated_at: :desc).limit(30).pluck(:ccv).compact.map(&:to_i).reject(&:zero?).sort
+            base = gcv.size>=3 ? gcv[gcv.size/2] : nil
+            cfg = ctx[:channel_protection_config]
+            mins = ((Time.current - s.started_at)/60).round rescue nil
+            puts format("%-16s game=%-20s ccv=%-5s chatters=%-4d green_rows=%-3d baseline=%-6s started=%smin subsonly=%s slow=%s emote=%s",
+              login, (s.game_name||"?")[0,20], ccv, chatters, gc.count, base.inspect, mins, cfg&.subs_only_enabled, cfg&.slow_mode_seconds, cfg&.emote_only_enabled)
+          end
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/dd.rb hostkey:/tmp/dd.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker cp /tmp/dd.rb $C:/tmp/dd.rb && docker exec -e LOGINS='${{ inputs.logins }}' $C sh -c 'bin/rails runner /tmp/dd.rb 2>&1'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper|Redis|stackprof|Please add|KnownBot' || true
