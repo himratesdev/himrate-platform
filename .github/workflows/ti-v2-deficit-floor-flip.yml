@@ -91,7 +91,7 @@ jobs:
             puts "\n🔴 REFUSING TO APPLY — dryrun-equivalent check failed live. No write performed."
           else
             c = CalibrationConstant.find_or_initialize_by(key: "deficit_min_ccv")
-            c.update!(value: CCV, calibrated: true, source: "fullchain_flip1_deficit_min_ccv_2026-07-27")
+            c.update!(value: CCV, calibrated: true, source: "fullchain_deficit_flip1") # ≤32 chars (varchar limit)
             # Re-verify LIVE (Registry.load now reads CCV). Confirm no V≥CCV channel is disturbed vs k0.
             post_above = 0
             live.first(N).each do |s|
