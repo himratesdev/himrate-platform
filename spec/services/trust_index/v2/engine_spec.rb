@@ -333,10 +333,13 @@ RSpec.describe TrustIndex::V2::Engine do
     end
 
     it "floors F_soft too: a micro channel's soft deficit is zeroed at/below the floor (L2 wiring)" do
-      # V=40 < 50, thin chat → without the floor F_soft_lo would be > 0; with it, zeroed.
-      floored = described_class.compute(context: micro_ctx(rho_self_lo: nil, clean_self_history: false),
-                                        k: k.with(deficit_min_ccv: 50))
-      expect(floored.f_soft_lo).to eq(0.0)
+      # High-ρ cell so a deficit EXISTS pre-floor at micro V (EIHC 30 / ρ_lo 0.9 = 33 < V=40 → f_soft_lo ≈ 7).
+      hi_cell = EngineSpecDoubles::Cell.new(rho_star: 0.9, rho_lo: 0.9, rho_hi: 0.9, calibrated: true, rho_p1: nil, ccv_typical: nil)
+      base = micro_ctx(cell: hi_cell, rho_self_lo: nil, clean_self_history: false)
+      pre = described_class.compute(context: base, k: k)                       # floor off → deficit present
+      floored = described_class.compute(context: base, k: k.with(deficit_min_ccv: 50))
+      expect(pre.f_soft_lo).to be > 0.0                                        # proves the deficit exists without the floor
+      expect(floored.f_soft_lo).to eq(0.0)                                    # M4 floors it (V=40 < 50)
     end
   end
 

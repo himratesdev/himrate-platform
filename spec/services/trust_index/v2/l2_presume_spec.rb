@@ -96,11 +96,18 @@ RSpec.describe TrustIndex::V2::L2Presume do
   end
 
   it "M4: at/above the floor the deficit is UNCHANGED (a materially-online channel still accuses)" do
-    raw = [ chatter("h0"), chatter("h1") ] # EIHC 2
+    raw = [ chatter("h0") ] # EIHC 1 → 1/0.03 ≈ 33 explains only 33 viewers → V=100 leaves a real deficit
+    floored = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 100, cell: cell, k: k, deficit_min_ccv: 50)
+    guardless = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 100, cell: cell, k: k)
+    expect(floored.to_h).to eq(guardless.to_h) # V (100) > floor (50) → not below → deficit intact
+    expect(floored.f_soft).to be > 0.0          # ≈ 100 − 1/0.03 = 67
+  end
+
+  it "M4: exactly AT the floor is not below (< not ≤) → deficit unchanged" do
+    raw = [ chatter("h0") ]
     floored = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 50, cell: cell, k: k, deficit_min_ccv: 50)
     guardless = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 50, cell: cell, k: k)
-    expect(floored.to_h).to eq(guardless.to_h) # V == floor → not below → deficit intact
-    expect(floored.f_soft).to be > 0.0
+    expect(floored.to_h).to eq(guardless.to_h) # V == floor → guard uses strict `<` → intact
   end
 
   it "M4: the floor uses the WINDOWED v_eff frame (min(V_W, V_inst)), not instant V" do
