@@ -130,8 +130,13 @@ module TrustIndex
                               lurker_collapse_ratio: (@k.lurker_collapse_ratio if @k.respond_to?(:lurker_collapse_ratio)))
         i_evt = derive_i_event(soft) # i_event EPIC: derived AFTER L2 (needs soft.eihc for [1] rho_dropped)
         fraud = L3Fuse.call(hard: hard, soft: soft, self_ctx: self_ctx(soft, i_evt), sum_disjoint: windowed?)
-        emit = L4Emit.call(hard: hard, soft: soft, fraud: fraud, ctx: emit_ctx(post, i_evt, soft), k: @k)
-        Result.new(**emit.to_h, **extras(post, hard, soft, fraud, emit))
+        # TI v2.1 two-EIHC split: the DISPLAY fraud (ungated EIHC) drives the public ERV/authenticity number
+        # so recurrence_gate's honest-first-timer downweight never drops it; the gated `fraud`/`soft` drive
+        # the accusation (band + corroborators + persisted ledger deficit). Dormant → fraud_disp == fraud.
+        fraud_disp = display_fraud(post, hard, i_evt, fraud)
+        emit = L4Emit.call(hard: hard, soft: soft, fraud: fraud, fraud_display: fraud_disp,
+                           ctx: emit_ctx(post, i_evt, soft), k: @k)
+        Result.new(**emit.to_h, **extras(post, hard, soft, fraud, fraud_disp, emit))
       end
 
       private
@@ -261,6 +266,34 @@ module TrustIndex
         SelfCtx.new(eligible: eligible, v: self_v, eihc: soft.eihc, rho_self_lo: @ctx.rho_self_lo)
       end
 
+      # TI v2.1 two-EIHC split — the DISPLAY fraud on an UNGATED EIHC (recurrence_gate neutralized to 1.0),
+      # feeding erv/authenticity/â (the public number) so an honest channel's first-time chatters (floored
+      # for the accusation) never drop the displayed authenticity — the account_profile-leak-through-display
+      # fix. DORMANT: when no chatter is downweighted (every recurrence_gate == 1.0 — the flag-off state),
+      # the ungated pipeline IS the gated one → returns the gated `fraud` unchanged (ZERO recompute) →
+      # byte-identical. Live: one cheap second L2→L3 pass over the SAME roster/b_hard (pure Ruby, no CH/PG).
+      def display_fraud(post, hard, i_evt, fraud)
+        return fraud unless recurrence_downweighted?
+
+        soft_disp = L2Presume.call(raw: ungated_chatters, b_hard_usernames: names(post),
+                                   v: @ctx.v, cell: @ctx.cell, k: @k,
+                                   windowed_usernames: @ctx.l2_roster_usernames, v_w: @ctx.v_w,
+                                   own_ccv_baseline: @ctx.own_ccv_baseline,
+                                   lurker_collapse_ratio: (@k.lurker_collapse_ratio if @k.respond_to?(:lurker_collapse_ratio)))
+        L3Fuse.call(hard: hard, soft: soft_disp, self_ctx: self_ctx(soft_disp, i_evt), sum_disjoint: windowed?)
+      end
+
+      # The split is live iff some chatter carries a recurrence_gate < 1.0 (the gate flipped + this roster
+      # has a first-time/partial chatter). All 1.0 (dormant / no downweight) → skip the second pass.
+      def recurrence_downweighted?
+        @ctx.raw_chatters.any? { |c| c.respond_to?(:recurrence_gate) && c.recurrence_gate.to_f < 1.0 }
+      end
+
+      # The roster with recurrence_gate neutralized to 1.0 (age_gate / cluster untouched) — the display basis.
+      def ungated_chatters
+        @ctx.raw_chatters.map { |c| c.respond_to?(:with) ? c.with(recurrence_gate: 1.0) : c }
+      end
+
       def emit_ctx(post, i_evt, soft)
         EmitCtx.new(v: @ctx.v, n_chat_eff: @ctx.n_chat_eff, q: @ctx.q, i_event: i_evt,
                     raid_window: @ctx.raid_window, cold_start_tier: @ctx.cold_start_tier,
@@ -311,16 +344,21 @@ module TrustIndex
         !t.nil? && t.to_f.positive? && @ctx.v.to_f > t.to_f * (1 + @k.cpop_elevated_margin.to_f)
       end
 
-      def extras(post, hard, soft, fraud, emit)
+      def extras(post, hard, soft, fraud, fraud_disp, emit)
         v = @ctx.v.to_f
+        # DISPLAY basis (fraud_disp, ungated) — the headline number: f_hat/interval + authenticity interval,
+        # paired with the display erv/authenticity from L4. GATED basis (soft/fraud) — the accusation
+        # observability persisted to TIH + read back by the ledgers: eihc/rho_obs (→ρ* miner + self-history),
+        # f_soft/f_soft_lo/f_soft_hi (→ C_self^SP sustained_count + C_pop pop_deficit_density), f_self.
+        # Dormant → fraud_disp == fraud → both bases identical → byte-identical.
         { axes: AxesBuilder.call(authenticity: emit.authenticity, reputation: @ctx.reputation,
                                  rho_obs: soft.rho_obs, cps: @ctx.cps),
-          eihc: soft.eihc, rho_obs: soft.rho_obs, f_hat: fraud.f_hat, f_hat_lo: fraud.f_hat_lo,
-          f_hat_hi: fraud.f_hat_hi, f_hard: hard.f_hard, f_hard_lo: hard.f_hard_lo,
+          eihc: soft.eihc, rho_obs: soft.rho_obs, f_hat: fraud_disp.f_hat, f_hat_lo: fraud_disp.f_hat_lo,
+          f_hat_hi: fraud_disp.f_hat_hi, f_hard: hard.f_hard, f_hard_lo: hard.f_hard_lo,
           f_self: fraud.f_self,
           f_soft: soft.f_soft, f_soft_lo: soft.f_soft_lo, f_soft_hi: soft.f_soft_hi,
-          # authenticity interval mirrors the ERV interval: MORE fraud (f_hat_hi) → LOWER authenticity.
-          authenticity_lo: authenticity_pct(fraud.f_hat_hi, v), authenticity_hi: authenticity_pct(fraud.f_hat_lo, v),
+          # authenticity interval mirrors the DISPLAY ERV interval: MORE fraud (f_hat_hi) → LOWER authenticity.
+          authenticity_lo: authenticity_pct(fraud_disp.f_hat_hi, v), authenticity_hi: authenticity_pct(fraud_disp.f_hat_lo, v),
           q_score: @ctx.q,
           # P0.5: stamp which ρ_obs convention this row used (windowed? = flag-ON co-windowed frame).
           rho_convention: (windowed? ? "windowed" : "cumulative"),

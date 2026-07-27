@@ -26,13 +26,13 @@ end
 RSpec.describe TrustIndex::V2::L4Emit do
   let(:k) { L4EmitSpecDoubles::K }
 
-  def emit(hard:, soft:, fraud:, k_override: nil, **ctx_over)
+  def emit(hard:, soft:, fraud:, k_override: nil, fraud_display: nil, **ctx_over)
     ctx_base = { v: 5000, n_chat_eff: 500, q: 0.9, i_event: false, raid_window: false,
                  cold_start_tier: "full", named_count: 0, self_history_stable: false,
                  chatter_quality_high: false, stream_count: 20, unattributed_surge: false,
                  thin_sample: false, ccv_chat_divergence: 0.0, v_w: nil, cell_calibrated: true,
                  i_event_sustained: false, c_pop: false }
-    described_class.call(hard: hard, soft: soft, fraud: fraud,
+    described_class.call(hard: hard, soft: soft, fraud: fraud, fraud_display: fraud_display,
                          ctx: L4EmitSpecDoubles::Ctx.new(**ctx_base.merge(ctx_over)), k: k_override || k)
   end
 
@@ -159,5 +159,21 @@ RSpec.describe TrustIndex::V2::L4Emit do
              ccv_chat_divergence: 0.5, k_override: L4EmitSpecDoubles::K_INFLATION_ON)
     # instant frame: â = 350/2000 = 0.175 ≤ 0.20 + high Q → GREEN row4 (vs the windowed YELLOW row2 above)
     expect([ r.band.row, r.band.color ]).to eq([ 4, "green" ])
+  end
+
+  # TI v2.1 two-EIHC split: erv/authenticity/â use the UNGATED fraud_display; the band uses the gated fraud.
+  it "two-EIHC split: display uses fraud_display (ungated) while the band decides on the gated fraud" do
+    # gated fraud f_hat 2000 (â 0.40 — a deficit the accusation sees); display fraud f_hat 0 (number healthy).
+    r = emit(hard: hard(0.0), soft: soft(2000.0), fraud: fraud(2000.0), fraud_display: fraud(0.0))
+    expect(r.authenticity).to eq(100.0) # DISPLAY (fraud_display f_hat 0) — the public number is protected
+    expect(r.erv).to eq(5000.0)         # V − 0 (display)
+    expect(r.a_hat).to eq(0.0)          # DISPLAY â
+    expect(r.band.row).to be > 2        # gated f_soft deficit alone (no corroborator) → AMBER; display stays 100
+  end
+
+  it "two-EIHC dormant: fraud_display omitted → defaults to the gated fraud → byte-identical display" do
+    r = emit(hard: hard(0.0), soft: soft(2000.0), fraud: fraud(2000.0)) # no fraud_display
+    expect(r.authenticity).to be_within(0.5).of(60.0) # 100·(1−2000/5000) — display == gated (no split)
+    expect(r.erv).to eq(3000.0)
   end
 end

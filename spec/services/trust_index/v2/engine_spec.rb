@@ -289,6 +289,28 @@ RSpec.describe TrustIndex::V2::Engine do
     end
   end
 
+  describe "two-EIHC display split (recurrence_gate) — public authenticity UNGATED, accusation GATED" do
+    # 40 first-time-here chatters (recurrence_gate 0.5), V=1000, cell ρ*=0.03.
+    #   ungated EIHC = 40 → 40/1000 = 0.04 ≥ ρ* → NO display deficit → authenticity 100 (protected)
+    #   gated   EIHC = 20 → 20/1000 = 0.02 < ρ* → f_soft ≈ 333 (the accusation basis — the deficit is seen)
+    it "downweighted chatters lower the GATED deficit (f_soft) but NOT the DISPLAY authenticity/ERV" do
+      chatters = Array.new(40) { |i| chatter("h#{i}").with(recurrence_gate: 0.5) }
+      r = described_class.compute(context: context(chatters, v: 1000, n_chat_eff: 40), k: k)
+      expect(r.authenticity).to eq(100.0)       # DISPLAY (ungated) — the public number is protected
+      expect(r.erv).to eq(1000.0)               # DISPLAY erv = V (no display-basis fraud)
+      expect(r.eihc).to be_within(0.5).of(20.0) # GATED EIHC = 0.5 × 40 (persisted/accusation basis)
+      expect(r.f_soft).to be > 300              # GATED — the accusation re-sees the deficit the gate restored
+    end
+
+    it "dormant (recurrence_gate 1.0): no split — display == accusation basis (byte-identical path)" do
+      chatters = Array.new(40) { |i| chatter("h#{i}") } # recurrence_gate defaults to 1.0
+      r = described_class.compute(context: context(chatters, v: 1000, n_chat_eff: 40), k: k)
+      expect(r.eihc).to be_within(0.5).of(40.0) # ungated == gated → EIHC = 40
+      expect(r.authenticity).to eq(100.0)       # 40/1000 = 0.04 ≥ ρ* → no deficit either basis
+      expect(r.f_soft).to eq(0.0)               # no gated deficit (vs 333 in the split case above)
+    end
+  end
+
   it "EC-15/TC-017: V≤0 (null CCV) short-circuits to GREY with null ERV — never a headline number" do
     r = described_class.compute(context: context([ chatter("a") ], v: 0, n_chat_eff: 0), k: k)
     expect(r.erv).to be_nil
