@@ -85,6 +85,22 @@ module Calibration
       cpop_n_windows: 999.0,
       cpop_density_frac: 999.0,
       cpop_elevated_margin: 0.30,
+      # TI v2.1 deficit_min_ccv (FULL-CHAIN M4, shared deficit-family absolute floor, 2026-07-27). Every
+      # deficit-family accusation (F_soft label, F_self eligibility, C_self^SP [P2] online_elevated,
+      # C_pop) rests on a per-viewer chat-share statistic that becomes integer-quantization NOISE below
+      # ~50 concurrent viewers: at ρ*≈0.05, V=40 → E[chatters]≈2 → P(0 honest chatters in a window)≈13% →
+      # a deficit PRESUMPTION has a double-digit false base-rate; and the C_self^SP "×(1+margin) relative
+      # elevation" test is meaningless at V=2 (baseline 1 → threshold 1.3 → V=2 reads "elevated" — the
+      # tremortela ccv=2 nonsense-FP). ONE shared floor (the failure semantic is identical everywhere;
+      # per-arm values = fake precision), applied at each arm's OWN V-frame. DORMANT: 0.0 → every
+      # `v < deficit_min_ccv` guard is `v < 0` = false → byte-identical (golden spec). This constant only
+      # REMOVES accusations → no honest-FP path; recall cost = a botter buying <50 total online (below every
+      # commercial bot tier, below product materiality) — accepted. Calibrated target 50 = half the smallest
+      # commercial tier (100, CcvTierClustering KNOWN_TIERS); PO-gated data-flip (no redeploy), FIRST flip in
+      # the FULL-CHAIN order (pure FP-reduction, lands before any aggression increase). ⚠ Do NOT raise past
+      # ~50 — it is the only net under the stagger-evasion hole (temporal family evadable by ≤2-channel /
+      # >5s-spaced posting → deficit family is the silent-bot backstop).
+      deficit_min_ccv: 0.0,
       # TI v2.1 recurrence_gate (EIHC anti-gaming, 2026-07-25). EIHC = Σ_u weight(u); a chatting bot L0
       # misses (this-channel-only → low cross-channel temporal_recurrence → not b_hard) counts FULL weight
       # → lifts EIHC 1:1 → rho_obs rises above ρ* → the deficit vanishes → evades F_soft/C_self^SP[P1]/C_pop.

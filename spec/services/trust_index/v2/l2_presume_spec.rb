@@ -74,6 +74,44 @@ RSpec.describe TrustIndex::V2::L2Presume do
     expect(win.rho_obs).to be_within(1e-6).of(30 / 300.0)  # ρ_obs = EIHC_W / min(V_W, V_inst)
   end
 
+  # FULL-CHAIN M4 shared deficit-family absolute floor (deficit_min_ccv).
+  it "M4 dormant (deficit_min_ccv nil / 0.0) is byte-identical to the guardless call" do
+    raw = Array.new(45) { |i| chatter("h#{i}") }
+    guardless = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 5000, cell: cell, k: k)
+    off_nil = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 5000, cell: cell, k: k, deficit_min_ccv: nil)
+    off_zero = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 5000, cell: cell, k: k, deficit_min_ccv: 0.0)
+    expect(off_nil.to_h).to eq(guardless.to_h)
+    expect(off_zero.to_h).to eq(guardless.to_h)
+  end
+
+  it "M4: below the floor the F_soft PRESUMPTION is zeroed (micro-channel deficit is quantization noise)" do
+    raw = [ chatter("h0"), chatter("h1") ] # EIHC 2
+    # V=40 < deficit_min_ccv=50 → a deficit would exist (40 − 2/0.02 = ... clamped) but is suppressed.
+    sb = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 40, cell: cell, k: k, deficit_min_ccv: 50)
+    expect(sb.f_soft).to eq(0.0)
+    expect(sb.f_soft_lo).to eq(0.0)
+    expect(sb.f_soft_hi).to eq(0.0)
+    expect(sb.eihc).to eq(2.0)             # observability preserved (the low share is real)
+    expect(sb.rho_obs).to be_within(1e-9).of(2 / 40.0)
+  end
+
+  it "M4: at/above the floor the deficit is UNCHANGED (a materially-online channel still accuses)" do
+    raw = [ chatter("h0"), chatter("h1") ] # EIHC 2
+    floored = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 50, cell: cell, k: k, deficit_min_ccv: 50)
+    guardless = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 50, cell: cell, k: k)
+    expect(floored.to_h).to eq(guardless.to_h) # V == floor → not below → deficit intact
+    expect(floored.f_soft).to be > 0.0
+  end
+
+  it "M4: the floor uses the WINDOWED v_eff frame (min(V_W, V_inst)), not instant V" do
+    raw = Array.new(30) { |i| chatter("h#{i}") }
+    windowed = Set.new(raw.map(&:username))
+    # instant V_inst=200 (above floor) but windowed V_W=40 → v_eff=min=40 < 50 → floored.
+    sb = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 200, cell: cell, k: k,
+                              windowed_usernames: windowed, v_w: 40, deficit_min_ccv: 50)
+    expect(sb.f_soft).to eq(0.0)
+  end
+
   # G5 lurker-collapse "no-injection floor". Shared setup: 100 cumulative chatters, only 5 active in the
   # last 60min (windowed) — the collapsed-chat signature. flat cell rho_star 0.03.
   let(:g5_raw) { Array.new(100) { |i| chatter("h#{i}") } }

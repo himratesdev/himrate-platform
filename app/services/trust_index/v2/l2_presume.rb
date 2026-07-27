@@ -18,7 +18,7 @@ module TrustIndex
       #   same 60min). This makes ρ_obs = EIHC_W/V_W a same-window chat-share (kills the cumulative-EIHC /
       #   instant-V duration-confound that lets a long stream's departed chatters whiten a late injection).
       def self.call(raw:, b_hard_usernames:, v:, cell:, k:, windowed_usernames: nil, v_w: nil,
-                    own_ccv_baseline: nil, lurker_collapse_ratio: nil)
+                    own_ccv_baseline: nil, lurker_collapse_ratio: nil, deficit_min_ccv: nil)
         humans = raw.reject { |c| b_hard_usernames.include?(c.username) }
         humans = humans.select { |c| windowed_usernames.include?(c.username) } if windowed_usernames
         # G1 (young-ramp decay guard): the deficit denominator is min(V_W, V_inst), NOT V_W alone. A young
@@ -36,6 +36,16 @@ module TrustIndex
         v_eff = v_w ? [ v_w, v ].min : v
         eihc = EihcWeigher.eihc(humans, tau_delta: k.tau_delta)
         rho_obs = v_eff.positive? ? eihc / v_eff.to_f : 0.0
+
+        # FULL-CHAIN M4 (deficit_min_ccv floor): below ~50 concurrent viewers the chat-share deficit is
+        # integer-quantization noise (P(0 honest chatters in a window)≈13% at V=40, ρ*=0.05). Floor the
+        # F_soft PRESUMPTION on the deficit V-frame (v_eff — the same frame the deficit divides by), but
+        # keep rho_obs/eihc for observability (the low share is real; only the fraud PRESUMPTION is
+        # suppressed — mirrors the G5 return contract). DORMANT: deficit_min_ccv nil/≤0 (default 0.0) →
+        # `v_eff < 0` false → byte-identical. A botter buying <50 online is below every commercial tier.
+        if deficit_min_ccv.to_f.positive? && v_eff < deficit_min_ccv.to_f
+          return SoftBound.new(eihc: eihc, rho_obs: rho_obs, f_soft: 0.0, f_soft_lo: 0.0, f_soft_hi: 0.0)
+        end
 
         # G5 (lurker-collapse "no-injection floor"): a windowed deficit PRESUMES an injection — fake
         # viewers inflating V beyond what the honest chat explains. But an honest stream whose viewers
