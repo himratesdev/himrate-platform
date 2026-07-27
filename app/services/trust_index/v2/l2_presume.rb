@@ -42,7 +42,8 @@ module TrustIndex
         # F_soft PRESUMPTION on the deficit V-frame (v_eff — the same frame the deficit divides by), but
         # keep rho_obs/eihc for observability (the low share is real; only the fraud PRESUMPTION is
         # suppressed — mirrors the G5 return contract). DORMANT: deficit_min_ccv nil/≤0 (default 0.0) →
-        # `v_eff < 0` false → byte-identical. A botter buying <50 online is below every commercial tier.
+        # the `.positive?` guard short-circuits BEFORE the `v_eff < floor` compare → byte-identical. A botter
+        # buying <50 online is below every commercial tier.
         if deficit_min_ccv.to_f.positive? && v_eff < deficit_min_ccv.to_f
           return SoftBound.new(eihc: eihc, rho_obs: rho_obs, f_soft: 0.0, f_soft_lo: 0.0, f_soft_hi: 0.0)
         end

@@ -226,7 +226,7 @@ module TrustIndex
       # presume), on the SAME G1-capped frame [P1]/F_self use (self_v). An honest quiet-chat stream (stable,
       # not elevated online) is excluded here by the exact discriminator G5 floors the deficit on.
       def online_elevated?
-        return false if below_deficit_floor?(self_v) # M4: no micro-channel ×(1+margin)-relative accusation (tremortela ccv=2)
+        return false if below_deficit_floor?(self_v) # M4: no micro-channel ×(1+margin)-relative accusation (tremortela ccv=2). Guards the C_self^SP [P2] path; F_self has its OWN floor in self_ctx.
         b = @ctx.own_ccv_baseline
         b.to_f.positive? && self_v > b.to_f * (1 + @k.csustained_elevated_margin.to_f)
       end
