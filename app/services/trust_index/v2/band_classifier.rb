@@ -31,9 +31,12 @@ module TrustIndex
       # Canonical driver contract (L4 builds this; the class stays duck-typed for isolated tests).
       # i_event_sustained (TI v2.1 C_self^SP): i_event came from the SUSTAINED-plateau arm, not the legacy
       # step → a single deficit-family signal → capped at YELLOW unless independently corroborated.
+      # c_hard_abs (FULL-CHAIN M3): the integer named-count trigger — a YELLOW-only row2 driver that catches
+      # a mid-roster confirmed-bot cluster the P5-diluted n_frac fraction path misses. NOT in
+      # independently_corroborated? (never public RED off an absolute count — B2 red-team).
       Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
                             :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier,
-                            :cell_calibrated, :i_event_sustained, :c_pop)
+                            :cell_calibrated, :i_event_sustained, :c_pop, :c_hard_abs)
 
       def self.call(drivers:, k:)
         new(drivers, k).call
@@ -93,6 +96,9 @@ module TrustIndex
 
       def row2?
         @d.n_frac >= @k.phi_yellow ||
+          # FULL-CHAIN M3: the integer named-count trigger (YELLOW-only; full-tier gated as defense-in-depth,
+          # mirroring the other accusatory branches — never accuse a thin-history channel). Nil → false.
+          (accusable_tier? && @d.c_hard_abs == true) ||
           (accusable_tier? && @d.i_event && @d.f_self_ratio >= 0.20 && !@d.raid_window) ||
           (accusable_tier? && cell_calibrated? && @d.f_soft_lo_ratio >= 0.20 && corroborated?)
       end

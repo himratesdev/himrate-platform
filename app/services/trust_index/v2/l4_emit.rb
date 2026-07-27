@@ -44,7 +44,7 @@ module TrustIndex
           erv: clamp0(@c.v - @fd.f_hat), erv_lo: clamp0(@c.v - @fd.f_hat_hi), erv_hi: clamp0(@c.v - @fd.f_hat_lo),
           authenticity: authenticity, a_hat: a_hat, n_frac: n_frac, band: band,
           reason_codes: ReasonCodeBuilder.call(band: band, ctx: reason_ctx),
-          confirmed_anomaly: c_hard || c_self || ((c_inflation || @c.c_pop) && band.row <= 2),
+          confirmed_anomaly: c_hard || c_self || ((c_inflation || @c.c_pop || c_hard_abs) && band.row <= 2),
           cold_start_tier: @c.cold_start_tier,
           confidence_marker: confidence_marker, c_hard: c_hard, c_self: c_self
         )
@@ -95,6 +95,25 @@ module TrustIndex
         n_frac >= @k.phi_yellow
       end
 
+      # FULL-CHAIN M3 c_hard hybrid — the INTEGER named-count trigger. The fraction path (c_hard) is
+      # P5-diluted + fraction-gated, so a mid-roster 3-10 confirmed-bot cluster reads GREEN (anastaze 15.9%
+      # R7 → n_frac 0.064). c_hard_abs fires on the COUNT of publicly-named (B_hard) members (not the P5
+      # statistic) with a roster floor + a population-normalized share (never a naked absolute — roaming
+      # spam bots visit hundreds of channels). Naming legality unchanged (only B_hard members named). B2
+      # (red-team): YELLOW-ONLY — it feeds row2 + the plashka, NEVER independently_corroborated? (RED), so
+      # a spam campaign parking 3 roamers + a coincidental deficit can't manufacture a public RED. DORMANT:
+      # chard_abs_enabled=0.0 → false before any read → byte-identical (golden); 999 backstops un-fireable.
+      # NOTE: this method is NOT itself cold-start-tier-gated — the full-tier gate lives in BandClassifier
+      # row2 (accusable_tier? && c_hard_abs); confirmed_anomaly re-couples via `&& band.row <= 2` so a basic-
+      # tier channel (which can't reach row2 off c_hard_abs) never shows the plashka. (CR nit.)
+      def c_hard_abs
+        return false unless @k.respond_to?(:chard_abs_enabled) && @k.chard_abs_enabled.to_f.positive?
+
+        @c.named_count.to_i >= @k.chard_abs_count.to_f &&
+          @c.n_chat_eff.to_i >= @k.chard_abs_roster_min.to_f &&
+          (@c.n_chat_eff.positive? ? @c.named_count.to_f / @c.n_chat_eff : 0.0) >= @k.chard_abs_share.to_f
+      end
+
       def c_self
         @c.i_event
       end
@@ -122,13 +141,17 @@ module TrustIndex
           n_frac: n_frac, f_self_ratio: ratio_band(@f.f_self), f_soft_lo_ratio: ratio_band(@soft.f_soft_lo),
           a_hat: ratio_band(@f.f_hat), q: @c.q, i_event: @c.i_event, c_hard: c_hard, c_self: c_self,
           c_inflation: c_inflation, raid_window: @c.raid_window, cold_start_tier: @c.cold_start_tier,
-          cell_calibrated: @c.cell_calibrated, i_event_sustained: @c.i_event_sustained, c_pop: @c.c_pop
+          cell_calibrated: @c.cell_calibrated, i_event_sustained: @c.i_event_sustained, c_pop: @c.c_pop,
+          c_hard_abs: c_hard_abs
         )
       end
 
       def reason_ctx
         ReasonCodeBuilder::Ctx.new(
-          c_hard: c_hard, c_self: c_self, c_inflation: c_inflation, i_event_sustained: @c.i_event_sustained,
+          # M3: the integer-count path names the SAME B_hard members → emit HARD_NAMED_FRACTION for it too
+          # (the code + {n, pct} params are valid for both fraction and count triggers; named_pct is the true
+          # sub-φ_yellow fraction). The c_inflation/c_pop "!c_hard" dedup then correctly defers to named evidence.
+          c_hard: c_hard || c_hard_abs, c_self: c_self, c_inflation: c_inflation, i_event_sustained: @c.i_event_sustained,
           c_pop: @c.c_pop,
           named_count: @c.named_count, named_pct: (n_frac * 100.0).round(1),
           self_history_stable: @c.self_history_stable, chatter_quality_high: @c.chatter_quality_high,

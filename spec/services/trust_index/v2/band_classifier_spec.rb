@@ -7,7 +7,7 @@ require "rails_helper"
 module BandClassifierSpecDoubles
   Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
                         :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier, :cell_calibrated,
-                        :i_event_sustained, :c_pop)
+                        :i_event_sustained, :c_pop, :c_hard_abs)
   Thresholds = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi)
 end
 
@@ -19,7 +19,7 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     base = { n_frac: 0.0, f_self_ratio: 0.0, f_soft_lo_ratio: 0.0, a_hat: 0.0, q: 0.9,
              i_event: false, c_hard: false, c_self: false, c_inflation: false,
              raid_window: false, cold_start_tier: "full", cell_calibrated: true,
-             i_event_sustained: false, c_pop: false }
+             i_event_sustained: false, c_pop: false, c_hard_abs: false }
     BandClassifierSpecDoubles::Drivers.new(**base.merge(over))
   end
 
@@ -227,6 +227,36 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     it "moat-audit: C_pop on an UNCALIBRATED cell is NOT accused (double-gated → AMBER)" do
       b = classify(f_soft_lo_ratio: 0.30, c_pop: true, a_hat: 0.30, cell_calibrated: false)
       expect([ b.row, b.color ]).to eq([ 6, "amber" ])
+    end
+  end
+
+  # FULL-CHAIN M3 c_hard_abs — the integer named-count trigger (YELLOW-only, B2 red-team).
+  describe "c_hard_abs integer named-count trigger" do
+    it "dormant default (c_hard_abs false) does NOT accuse a clean stream" do
+      b = classify(c_hard_abs: false, a_hat: 0.05, q: 0.9, cold_start_tier: "full")
+      expect(b.row).to be > 2
+    end
+
+    it "c_hard_abs alone drives row2 YELLOW (mid-roster cluster the fraction path misses)" do
+      # n_frac below phi_yellow (the P5-diluted fraction path is dead) but the integer trigger fires.
+      b = classify(c_hard_abs: true, n_frac: 0.04, a_hat: 0.05, cold_start_tier: "full")
+      expect([ b.row, b.color ]).to eq([ 2, "yellow" ])
+    end
+
+    it "B2: c_hard_abs is YELLOW-ONLY — with a soft deficit ≥ 0.50 it still caps at YELLOW (never public RED)" do
+      # A spam campaign parking named roamers + a coincidental deficit must not reach RED off an absolute count.
+      b = classify(c_hard_abs: true, f_soft_lo_ratio: 0.60, n_frac: 0.04, a_hat: 0.60, cold_start_tier: "full")
+      expect(b.row).to eq(2) # independently_corroborated? excludes c_hard_abs → row1 f_soft branch blocked
+    end
+
+    it "G4: c_hard_abs on a thin-history (basic) channel is NOT accused (→ non-accusatory)" do
+      b = classify(c_hard_abs: true, n_frac: 0.04, a_hat: 0.05, cold_start_tier: "basic")
+      expect(b.row).to be > 2
+    end
+
+    it "the FRACTION path (n_frac ≥ phi_red) still reaches RED independently of c_hard_abs" do
+      b = classify(n_frac: 0.40, c_hard_abs: false, a_hat: 0.40, cold_start_tier: "full")
+      expect([ b.row, b.color ]).to eq([ 1, "red" ]) # named FRACTION RED bar unchanged
     end
   end
 

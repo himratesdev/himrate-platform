@@ -24,7 +24,10 @@ module EngineSpecDoubles
                   :cpop_enabled, :cpop_n_windows, :cpop_density_frac, :cpop_elevated_margin,
                   # FULL-CHAIN M4 shared deficit-family absolute floor — dormant default (mirror Registry);
                   # k.with(deficit_min_ccv: 50) flips it in the M4 describe block.
-                  :deficit_min_ccv).new(
+                  :deficit_min_ccv,
+                  # FULL-CHAIN M3 c_hard hybrid integer named-count trigger — dormant defaults (mirror Registry);
+                  # k.with(...) flips them in the M3 describe block.
+                  :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share).new(
                     pi0: 0.02, tau_hard: 0.9, tau_delta: 0.5, phi_yellow: 0.10, phi_red: 0.35,
                     q_mid: 0.5, q_hi: 0.8, llr_temporal_r2: 1.1, llr_temporal_r3: 2.2,
                     llr_temporal_r4: 2.9, llr_temporal_r7: 4.6, llr_per_user_bot_score: 3.9,
@@ -32,7 +35,8 @@ module EngineSpecDoubles
                     csustained_enabled: 0.0, csustained_n_windows: 999.0,
                     csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0,
                     cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30,
-                    deficit_min_ccv: 0.0 # DORMANT default (mirror Registry)
+                    deficit_min_ccv: 0.0, # DORMANT default (mirror Registry)
+                    chard_abs_enabled: 0.0, chard_abs_count: 999.0, chard_abs_roster_min: 999.0, chard_abs_share: 999.0
                   )
 end
 
@@ -340,6 +344,51 @@ RSpec.describe TrustIndex::V2::Engine do
       floored = described_class.compute(context: base, k: k.with(deficit_min_ccv: 50))
       expect(pre.f_soft_lo).to be > 0.0                                        # proves the deficit exists without the floor
       expect(floored.f_soft_lo).to eq(0.0)                                    # M4 floors it (V=40 < 50)
+    end
+  end
+
+  describe "FULL-CHAIN M3 c_hard hybrid (c_hard_abs) — dormant by default, YELLOW-only integer trigger" do
+    # A mid-roster confirmed-bot cluster the P5-diluted fraction path misses: 5 named bots + 45 humans
+    # (roster 50). n_frac = f_hard_lo(P5≈4.5)/50 ≈ 0.09 < φ_yellow 0.10 → the fraction path is GREEN, but
+    # the INTEGER count (5 ≥ 3, roster 50 ≥ 30, share 0.10 ≥ 0.02) fires c_hard_abs.
+    def cluster_ctx(**over)
+      chatters = Array.new(5) { |i| chatter("b#{i}", bot: true) } + Array.new(45) { |i| chatter("h#{i}") }
+      # V=1000 so the 45 humans (EIHC 45 / ρ* 0.03 = 1500) fully explain the online → NO F_soft deficit;
+      # the ONLY signal left is the 5-named integer cluster. Isolates c_hard_abs from the deficit family.
+      context(chatters, v: 1000, n_chat_eff: 50, cold_start_tier: "full", **over)
+    end
+    let(:k_abs) { k.with(chard_abs_enabled: 1.0, chard_abs_count: 3.0, chard_abs_roster_min: 30.0, chard_abs_share: 0.02) }
+
+    it "DORMANT (chard_abs_enabled=0.0): the mid-roster cluster reads GREEN (fraction path P5-diluted below φ_yellow)" do
+      r = described_class.compute(context: cluster_ctx, k: k)
+      expect(r.n_frac).to be < k.phi_yellow          # the fraction path is dead
+      expect(r.band.row).to be > 2                    # → GREEN (the gap)
+      expect(r.confirmed_anomaly).to be(false)
+    end
+
+    it "GOLDEN byte-identical: chard_abs_count 999 vs 3 is inert while enabled=0.0" do
+      lo = described_class.compute(context: cluster_ctx, k: k)
+      hi = described_class.compute(context: cluster_ctx, k: k.with(chard_abs_count: 3.0)) # enabled still 0.0
+      expect(lo.to_h).to eq(hi.to_h)
+    end
+
+    it "FLIP: enabled + 5 named of 50 → row2 YELLOW + plashka + HARD_NAMED_FRACTION (the cluster is now caught)" do
+      r = described_class.compute(context: cluster_ctx, k: k_abs)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
+      expect(r.confirmed_anomaly).to be(true)
+      expect(r.reason_codes.map(&:code)).to include("HARD_NAMED_FRACTION")
+    end
+
+    it "B2: c_hard_abs is YELLOW-ONLY — a coincident f_soft deficit does NOT escalate it to public RED" do
+      # A big deficit AND the integer trigger → still YELLOW (c_hard_abs excluded from independently_corroborated?).
+      r = described_class.compute(context: cluster_ctx(v: 5000, cell: EngineSpecDoubles::Cell.new(
+        rho_star: 0.9, rho_lo: 0.9, rho_hi: 0.9, calibrated: true, rho_p1: nil, ccv_typical: nil)), k: k_abs)
+      expect(r.band.row).to eq(2) # never row1 off an absolute count + deficit
+    end
+
+    it "FP guard (tier): a BASIC-tier channel with the cluster is NOT accused" do
+      r = described_class.compute(context: cluster_ctx(cold_start_tier: "basic"), k: k_abs)
+      expect(r.band.row).to be > 2
     end
   end
 
