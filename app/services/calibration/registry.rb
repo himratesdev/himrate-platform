@@ -85,6 +85,25 @@ module Calibration
       cpop_n_windows: 999.0,
       cpop_density_frac: 999.0,
       cpop_elevated_margin: 0.30,
+      # FULL-CHAIN M3 c_hard hybrid (integer named-count trigger, 2026-07-27). The n_frac fraction path is
+      # P5-diluted (one named bot → f_hard_lo P5 ≈ 0 → n_frac ≈ 0) and fraction-gated (needs ≥φ_yellow of the
+      # WHOLE roster) → a mid-roster cluster of 3-10 confirmed cross-channel bots reads GREEN (live: anastaze
+      # 15.9% R7-overlap → n_frac 0.064 → green). c_hard_abs adds a YELLOW trigger on the INTEGER count of
+      # publicly-named (B_hard, ≥99%-precision) members: named_count ≥ chard_abs_count ∧ roster ≥
+      # chard_abs_roster_min ∧ named/roster ≥ chard_abs_share. Naming legality is UNCHANGED (only B_hard
+      # members are ever named). B2 (red-team): this is YELLOW-ONLY — it does NOT enter
+      # independently_corroborated? (3 campaign roamers + a deficit must never reach public RED); the n_frac
+      # fraction path keeps the RED bar (φ_red). chard_abs_enabled is the primary bool-as-float kill-switch:
+      # 0.0 (DEFAULT, DORMANT) → c_hard_abs false before any read → band byte-identical. DEFENSE-IN-DEPTH
+      # backstops (un-fireable even if enabled flips early): chard_abs_count=999 (a named count of a ≤500
+      # roster can't reach 999) ∧ chard_abs_roster_min=999 ∧ chard_abs_share=999 (a share ≤1.0 < 999). ⚠
+      # Calibrate count+roster_min+share TOGETHER (never one-before-others) or a backstop lifts. Calibrated
+      # targets (M3, honest-anchor confirmed-present p99): count=max(3, p99+2)→3, roster_min=30, share=0.02.
+      # PO-gated flip (accusatory) = data update, no redeploy.
+      chard_abs_enabled: 0.0,
+      chard_abs_count: 999.0,
+      chard_abs_roster_min: 999.0,
+      chard_abs_share: 999.0,
       # TI v2.1 deficit_min_ccv (FULL-CHAIN M4, shared deficit-family absolute floor, 2026-07-27). Every
       # deficit-family accusation (F_soft label, F_self eligibility, C_self^SP [P2] online_elevated,
       # C_pop) rests on a per-viewer chat-share statistic that becomes integer-quantization NOISE below

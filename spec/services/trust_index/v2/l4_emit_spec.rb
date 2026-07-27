@@ -21,6 +21,11 @@ module L4EmitSpecDoubles
   K_INFLATION_OFF = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :inflation_corrob_enabled, :phi_inflation)
                         .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8,
                              inflation_corrob_enabled: 0.0, phi_inflation: 0.30)
+  # FULL-CHAIN M3 — K with the c_hard hybrid integer trigger ENABLED (count 3 / roster 30 / share 0.02).
+  K_CHARD_ABS_ON = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi,
+                               :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share)
+                       .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8,
+                            chard_abs_enabled: 1.0, chard_abs_count: 3.0, chard_abs_roster_min: 30.0, chard_abs_share: 0.02)
 end
 
 RSpec.describe TrustIndex::V2::L4Emit do
@@ -175,5 +180,35 @@ RSpec.describe TrustIndex::V2::L4Emit do
     r = emit(hard: hard(0.0), soft: soft(2000.0), fraud: fraud(2000.0)) # no fraud_display
     expect(r.authenticity).to be_within(0.5).of(60.0) # 100·(1−2000/5000) — display == gated (no split)
     expect(r.erv).to eq(3000.0)
+  end
+
+  # FULL-CHAIN M3 c_hard_abs — the integer named-count trigger.
+  describe "c_hard hybrid integer named-count trigger (c_hard_abs)" do
+    it "DORMANT: base K lacks chard_abs_enabled → respond_to? guard → no accusation on a mid-roster cluster" do
+      # 5 named of 100 roster (5% < phi_yellow 10% → fraction path dead), no deficit → GREEN while dormant.
+      r = emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(0.0), named_count: 5, n_chat_eff: 100, q: 0.9)
+      expect(r.band.row).to be > 2
+      expect(r.confirmed_anomaly).to be(false)
+    end
+
+    it "FLIP: enabled + 5 named of 100 (count≥3, roster≥30, share 5%≥2%) → row2 YELLOW + plashka" do
+      r = emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(0.0), named_count: 5, n_chat_eff: 100, q: 0.9,
+               k_override: L4EmitSpecDoubles::K_CHARD_ABS_ON)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
+      expect(r.confirmed_anomaly).to be(true)
+      expect(r.reason_codes.map(&:code)).to include("HARD_NAMED_FRACTION") # names the same B_hard members
+    end
+
+    it "FP guard: only 2 named (< count 3) → no fire even enabled (a couple of roamers don't accuse)" do
+      r = emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(0.0), named_count: 2, n_chat_eff: 100,
+               k_override: L4EmitSpecDoubles::K_CHARD_ABS_ON)
+      expect(r.band.row).to be > 2
+    end
+
+    it "FP guard: roster below floor (< 30) → no fire even with 5 named (micro-channel self-inflation)" do
+      r = emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(0.0), named_count: 5, n_chat_eff: 20,
+               k_override: L4EmitSpecDoubles::K_CHARD_ABS_ON)
+      expect(r.band.row).to be > 2
+    end
   end
 end
