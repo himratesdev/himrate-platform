@@ -18,22 +18,30 @@ module TrustIndex
       #   thin_sample, ccv_chat_divergence, v_w (BUG-A windowed band frame), cell_calibrated,
       #   i_event_sustained, c_pop (C_pop population corroborator). k — thresholds
       #   (phi_yellow/phi_red/q_mid/q_hi + inflation_corrob_enabled/phi_inflation).
-      def self.call(hard:, soft:, fraud:, ctx:, k:)
-        new(hard, soft, fraud, ctx, k).call
+      # fraud_display (TI v2.1 two-EIHC split) — the fraud computed on an UNGATED EIHC (recurrence_gate
+      # neutralized). erv/authenticity/â (the PUBLIC number) use it so an honest channel's first-time
+      # chatters, downweighted for the ACCUSATION, never drop the displayed authenticity. The band +
+      # corroborators keep the gated `fraud`/`soft`. Defaults to `fraud` → byte-identical when the gate is
+      # dormant or a caller doesn't split.
+      def self.call(hard:, soft:, fraud:, ctx:, k:, fraud_display: nil)
+        new(hard, soft, fraud, ctx, k, fraud_display).call
       end
 
-      def initialize(hard, soft, fraud, ctx, k)
+      def initialize(hard, soft, fraud, ctx, k, fraud_display = nil)
         @hard = hard
         @soft = soft
         @f = fraud
         @c = ctx
         @k = k
+        @fd = fraud_display || fraud # DISPLAY fraud (ungated); == @f when dormant / not split
       end
 
       def call
         band = BandClassifier.call(drivers: band_drivers, k: @k)
         EmitResult.new(
-          erv: clamp0(@c.v - @f.f_hat), erv_lo: clamp0(@c.v - @f.f_hat_hi), erv_hi: clamp0(@c.v - @f.f_hat_lo),
+          # DISPLAY (ungated) — the public ERV/authenticity number, protected from the recurrence_gate
+          # downweight (@fd == @f when dormant → byte-identical).
+          erv: clamp0(@c.v - @fd.f_hat), erv_lo: clamp0(@c.v - @fd.f_hat_hi), erv_hi: clamp0(@c.v - @fd.f_hat_lo),
           authenticity: authenticity, a_hat: a_hat, n_frac: n_frac, band: band,
           reason_codes: ReasonCodeBuilder.call(band: band, ctx: reason_ctx),
           confirmed_anomaly: c_hard || c_self || ((c_inflation || @c.c_pop) && band.row <= 2),
@@ -69,8 +77,10 @@ module TrustIndex
         [ x, 0.0 ].max
       end
 
+      # DISPLAY â = F̂/V on the UNGATED fraud (the public number). The BAND's â (green-gate + row6 sub)
+      # uses the GATED @f via ratio_band(@f.f_hat) in band_drivers — accusation stays on the gated deficit.
       def a_hat
-        ratio(@f.f_hat)
+        ratio(@fd.f_hat)
       end
 
       def authenticity
