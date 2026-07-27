@@ -127,7 +127,8 @@ module TrustIndex
                               windowed_usernames: @ctx.l2_roster_usernames, v_w: @ctx.v_w,
                               own_ccv_baseline: @ctx.own_ccv_baseline,
                               # respond_to? keeps isolated-K unit doubles green (mirrors derive_i_event)
-                              lurker_collapse_ratio: (@k.lurker_collapse_ratio if @k.respond_to?(:lurker_collapse_ratio)))
+                              lurker_collapse_ratio: (@k.lurker_collapse_ratio if @k.respond_to?(:lurker_collapse_ratio)),
+                              deficit_min_ccv: deficit_min_ccv)
         i_evt = derive_i_event(soft) # i_event EPIC: derived AFTER L2 (needs soft.eihc for [1] rho_dropped)
         fraud = L3Fuse.call(hard: hard, soft: soft, self_ctx: self_ctx(soft, i_evt), sum_disjoint: windowed?)
         # TI v2.1 two-EIHC split: the DISPLAY fraud (ungated EIHC) drives the public ERV/authenticity number
@@ -225,6 +226,7 @@ module TrustIndex
       # presume), on the SAME G1-capped frame [P1]/F_self use (self_v). An honest quiet-chat stream (stable,
       # not elevated online) is excluded here by the exact discriminator G5 floors the deficit on.
       def online_elevated?
+        return false if below_deficit_floor?(self_v) # M4: no micro-channel ×(1+margin)-relative accusation (tremortela ccv=2). Guards the C_self^SP [P2] path; F_self has its OWN floor in self_ctx.
         b = @ctx.own_ccv_baseline
         b.to_f.positive? && self_v > b.to_f * (1 + @k.csustained_elevated_margin.to_f)
       end
@@ -256,8 +258,23 @@ module TrustIndex
         @ctx.v_w ? [ @ctx.v_w, @ctx.v ].min : @ctx.v
       end
 
+      # FULL-CHAIN M4: the shared deficit-family absolute floor (dormant 0.0). respond_to? keeps isolated-K
+      # unit doubles green (mirrors the lurker/i_event/cell guards). ≤0 → every `< floor` guard is false →
+      # byte-identical. Threaded to L2Presume (F_soft) + gating self_ctx (F_self) / online_elevated? ([P2])
+      # / pop_corroborated? (C_pop) so ALL deficit-family accusations share one below-materiality cutoff.
+      def deficit_min_ccv
+        @k.deficit_min_ccv.to_f if @k.respond_to?(:deficit_min_ccv)
+      end
+
+      # M4: below the shared floor no deficit-family arm may accuse — a per-arm predicate on that arm's V.
+      def below_deficit_floor?(v)
+        f = deficit_min_ccv.to_f
+        f.positive? && v.to_f < f
+      end
+
       def self_ctx(soft, i_evt)
-        eligible = @ctx.clean_self_history && i_evt && !@ctx.raid_window
+        # M4: F_self is a deficit-family accusation → suppress below the shared floor (self_v frame).
+        eligible = @ctx.clean_self_history && i_evt && !@ctx.raid_window && !below_deficit_floor?(self_v)
         # F_self shares the deficit frame: G1 min(V_W, V_inst) when co-windowed (same young-ramp decay
         # guard as L2/L4 — a falling online can't hide an injection), else instant V (dormant, unchanged).
         # N-2: in decay this suppresses the F_self convert-from-honest escalation to the smaller current
@@ -279,7 +296,8 @@ module TrustIndex
                                    v: @ctx.v, cell: @ctx.cell, k: @k,
                                    windowed_usernames: @ctx.l2_roster_usernames, v_w: @ctx.v_w,
                                    own_ccv_baseline: @ctx.own_ccv_baseline,
-                                   lurker_collapse_ratio: (@k.lurker_collapse_ratio if @k.respond_to?(:lurker_collapse_ratio)))
+                                   lurker_collapse_ratio: (@k.lurker_collapse_ratio if @k.respond_to?(:lurker_collapse_ratio)),
+                                   deficit_min_ccv: deficit_min_ccv)
         L3Fuse.call(hard: hard, soft: soft_disp, self_ctx: self_ctx(soft_disp, i_evt), sum_disjoint: windowed?)
       end
 
@@ -327,6 +345,7 @@ module TrustIndex
         return false unless @ctx.cell.respond_to?(:calibrated) && @ctx.cell.calibrated  # never off DEFAULT ρ*
         return false unless @ctx.cold_start_tier == "full"                              # never a thin-history channel
         return false if @ctx.raid_window || @ctx.unattributed_surge                     # provenance exclusions
+        return false if below_deficit_floor?(@ctx.v)                                    # M4: below-materiality floor (instant V frame)
         rho_p1 = (@ctx.cell.rho_p1 if @ctx.cell.respond_to?(:rho_p1))
         return false if rho_p1.nil? || soft.rho_obs.nil?
         return false unless soft.rho_obs < rho_p1.to_f          # [4] TAIL cut: below 99% of honest peers (not P10)

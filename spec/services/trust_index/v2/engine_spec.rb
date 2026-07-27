@@ -21,14 +21,18 @@ module EngineSpecDoubles
                   :csustained_enabled, :csustained_n_windows, :csustained_elevated_margin,
                   :csustained_cov_ceiling,
                   # TI v2.1 C_pop — dormant defaults (mirror Registry); k.with(...) flips them in the C_pop block.
-                  :cpop_enabled, :cpop_n_windows, :cpop_density_frac, :cpop_elevated_margin).new(
+                  :cpop_enabled, :cpop_n_windows, :cpop_density_frac, :cpop_elevated_margin,
+                  # FULL-CHAIN M4 shared deficit-family absolute floor — dormant default (mirror Registry);
+                  # k.with(deficit_min_ccv: 50) flips it in the M4 describe block.
+                  :deficit_min_ccv).new(
                     pi0: 0.02, tau_hard: 0.9, tau_delta: 0.5, phi_yellow: 0.10, phi_red: 0.35,
                     q_mid: 0.5, q_hi: 0.8, llr_temporal_r2: 1.1, llr_temporal_r3: 2.2,
                     llr_temporal_r4: 2.9, llr_temporal_r7: 4.6, llr_per_user_bot_score: 3.9,
                     llr_known_bot: 3.4, i_event_enabled: 0.0, # DORMANT default (mirror Registry)
                     csustained_enabled: 0.0, csustained_n_windows: 999.0,
                     csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0,
-                    cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30
+                    cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30,
+                    deficit_min_ccv: 0.0 # DORMANT default (mirror Registry)
                   )
 end
 
@@ -286,6 +290,56 @@ RSpec.describe TrustIndex::V2::Engine do
     it "FP guard: a raid window suppresses C_pop (provenance)" do
       r = described_class.compute(context: botter_ctx(raid_window: true), k: k_pop)
       expect(r.reason_codes.map(&:code)).not_to include("POPULATION_CHAT_DEFICIT")
+    end
+  end
+
+  describe "FULL-CHAIN M4 shared deficit-family floor (deficit_min_ccv) — dormant by default, FP-only suppressor" do
+    # A MICRO held-plateau that WOULD trip C_self^SP: V=40, own baseline 1 (40 ≫ 1·1.3 → elevated),
+    # thin chat EIHC 30 vs rho_self_lo 0.90 → rho_dropped (40 − 30/0.9 ≈ 6.7 > 0), flat CoV, long run.
+    # This is the tremortela ccv=2 nonsense-FP class writ small — real online is immaterial.
+    def micro_ctx(**over)
+      context(Array.new(30) { |i| chatter("h#{i}") }, v: 40, n_chat_eff: 30,
+              rho_self_lo: 0.90, clean_self_history: true, self_history_stable: true,
+              cold_start_tier: "full", raid_window: false, unattributed_surge: false,
+              own_ccv_baseline: 1, ccv_cov: 0.01, sustained_count: 5, **over)
+    end
+    let(:k_sus) do
+      k.with(csustained_enabled: 1.0, csustained_n_windows: 3.0,
+             csustained_cov_ceiling: 0.05, csustained_elevated_margin: 0.30)
+    end
+
+    it "GOLDEN byte-identical: deficit_min_ccv 0.0 is a no-op (matches the keyless-default behavior)" do
+      base = described_class.compute(context: micro_ctx, k: k_sus)                       # C_self^SP fires (micro)
+      zero = described_class.compute(context: micro_ctx, k: k_sus.with(deficit_min_ccv: 0.0))
+      expect(zero.to_h).to eq(base.to_h)
+    end
+
+    it "with the floor (50) the micro C_self^SP is SUPPRESSED — no nonsense accusation on an immaterial online" do
+      fired = described_class.compute(context: micro_ctx, k: k_sus)                      # floor 0.0 → fires
+      floored = described_class.compute(context: micro_ctx, k: k_sus.with(deficit_min_ccv: 50))
+      expect(fired.c_self).to be(true)                                                   # proves the fixture WOULD accuse
+      expect(floored.c_self).to be(false)                                               # M4 floors [P2] online_elevated? + F_self
+      expect([ 1, 2 ]).not_to include(floored.band.row)                                 # not accusatory
+    end
+
+    it "the floor does NOT touch a materially-online botter (V above the floor still accuses)" do
+      # Same plateau shape but V=5000 (≫ floor) with own baseline 100 → still elevated → C_self^SP intact.
+      big = context(Array.new(30) { |i| chatter("h#{i}") }, v: 5000, n_chat_eff: 30,
+                    rho_self_lo: 0.03, clean_self_history: true, self_history_stable: true,
+                    cold_start_tier: "full", own_ccv_baseline: 100, ccv_cov: 0.01, sustained_count: 5)
+      r = described_class.compute(context: big, k: k_sus.with(deficit_min_ccv: 50))
+      expect(r.c_self).to be(true)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
+    end
+
+    it "floors F_soft too: a micro channel's soft deficit is zeroed at/below the floor (L2 wiring)" do
+      # High-ρ cell so a deficit EXISTS pre-floor at micro V (EIHC 30 / ρ_lo 0.9 = 33 < V=40 → f_soft_lo ≈ 7).
+      hi_cell = EngineSpecDoubles::Cell.new(rho_star: 0.9, rho_lo: 0.9, rho_hi: 0.9, calibrated: true, rho_p1: nil, ccv_typical: nil)
+      base = micro_ctx(cell: hi_cell, rho_self_lo: nil, clean_self_history: false)
+      pre = described_class.compute(context: base, k: k)                       # floor off → deficit present
+      floored = described_class.compute(context: base, k: k.with(deficit_min_ccv: 50))
+      expect(pre.f_soft_lo).to be > 0.0                                        # proves the deficit exists without the floor
+      expect(floored.f_soft_lo).to eq(0.0)                                    # M4 floors it (V=40 < 50)
     end
   end
 

@@ -34,6 +34,8 @@ RSpec.describe Calibration::Registry do
       :csustained_enabled, :csustained_n_windows, :csustained_elevated_margin, :csustained_cov_ceiling,
       # TI v2.1 C_pop population-anchored corroborator (dormant, silent-always-botter fix)
       :cpop_enabled, :cpop_n_windows, :cpop_density_frac, :cpop_elevated_margin,
+      # FULL-CHAIN M4 shared deficit-family absolute floor (dormant)
+      :deficit_min_ccv,
       # TI v2.1 recurrence_gate EIHC anti-gaming (dormant)
       :recurrence_gate_enabled, :recurrence_gate_r_full, :recurrence_gate_new_floor
     )
