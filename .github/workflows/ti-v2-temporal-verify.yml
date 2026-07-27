@@ -1,0 +1,72 @@
+name: ti-v2-temporal-verify
+# [skip ci] READ-ONLY. Does the cross-channel temporal bot-detection actually work END-TO-END?
+# flags → table freshness → top flagged bots → L0 wiring (temporal_recurrence→b_hard) → C_hard on a botted roster.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+jobs:
+  v:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/tv.rb <<'RB'
+          $stdout.sync = true
+          puts "===== CROSS-CHANNEL TEMPORAL BOT-DETECTION — END-TO-END VERIFY @ #{Time.current.iso8601} ====="
+          puts "\n== FLAGS (must be ON to run) =="
+          %i[temporal_cross_channel cross_channel_digest cross_channel_edges].each { |f| puts "  #{f} = #{Flipper.enabled?(f)}" }
+          puts "\n== TABLE FRESHNESS (worker cron */5) =="
+          [CrossChannelTemporalFlag, CrossChannelDigest, CrossChannelPresence].each do |m|
+            last = m.maximum(:refreshed_at) rescue (m.maximum(:last_seen_at) rescue nil)
+            age = last ? "#{((Time.current - last)/60).round}min ago" : "—"
+            puts "  #{m.name}: #{m.count} rows | freshest #{age}"
+          end
+          puts "\n== TEMPORAL FLAG TIERS (the caught cross-channel bots) =="
+          CrossChannelTemporalFlag.group(:bot_flag_tier).count.each { |t, c| puts "  #{t}: #{c}" }
+          puts "  spam vs utility: #{CrossChannelTemporalFlag.group(:bot_type).count}"
+          puts "\n== TOP 15 FLAGGED (username | R=event_count | max_concurrent_channels | tier) =="
+          CrossChannelTemporalFlag.order(event_count: :desc).limit(15).each { |f| puts "  #{f.username.to_s.ljust(24)} R=#{f.event_count} max_ch=#{f.max_concurrent_channels} #{f.bot_flag_tier} #{f.bot_type}" }
+          # ── WIRING: does a top flagged bot become b_hard in L0? ──
+          puts "\n== L0 WIRING (temporal_recurrence → LLR → b_hard) =="
+          k = Calibration::Registry.load
+          top = CrossChannelTemporalFlag.where(bot_type: "spam").order(event_count: :desc).first
+          if top
+            cs = TrustIndex::V2::Engine::ChatterSignals.new(username: top.username, temporal_recurrence: top.event_count,
+              known_bot_hit: false, per_user_bot_score: nil, account_profile_llr: 0.0, anti_bot_llr: 0.0,
+              cluster_delta_k: 0.0, cluster_size: 1, age_gate: 1.0, recurrence_gate: 1.0)
+            post = TrustIndex::V2::L0Identity.call([cs], k: k)
+            puts "  top spam bot '#{top.username}' R=#{top.event_count} → b_hard? #{post.b_hard.any? { |b| b.username == top.username }} (tau_hard=#{k.tau_hard}, llr_r7=#{k.llr_temporal_r7})"
+          else
+            puts "  NO spam-tier flags exist → nothing to wire (detection producing nothing)."
+          end
+          # ── LIVE: find a live RU stream whose current roster has flagged bots → does C_hard fire? ──
+          puts "\n== LIVE C_hard on rosters WITH flagged bots =="
+          CB = TrustIndex::ContextBuilder
+          found = 0
+          Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(400).each do |s|
+            break if found >= 5
+            roster = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
+            next if roster.empty?
+            flagged = CrossChannelTemporalFlag.where(username: roster).where.not(bot_type: "utility")
+            next if flagged.count < 3
+            ctx = CB.build(s); roster2, v_w = CB.windowed_inputs(s); v2c = CB.build_v2(s, ctx)
+            next if v2c.v.nil? || v2c.v <= 0
+            wctx = v_w ? v2c.with(l2_roster_usernames: roster2, v_w: v_w) : v2c
+            r = TrustIndex::V2::Engine.compute(context: wctx, k: k)
+            found += 1
+            puts "  #{s.channel.login.ljust(20)} roster=#{roster.size} flagged_bots=#{flagged.count} → band=#{r.band&.color}/#{r.band&.row} n_frac=#{r.n_frac.round(3)} c_hard=#{r.c_hard} b_hard=#{r.b_hard.size}"
+          end
+          puts "  (found #{found} live RU streams with ≥3 flagged-bot chatters)" if found >= 0
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/tv.rb hostkey:/tmp/tv.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker cp /tmp/tv.rb $C:/tmp/tv.rb && docker exec $C sh -c 'bin/rails runner /tmp/tv.rb 2>&1'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
