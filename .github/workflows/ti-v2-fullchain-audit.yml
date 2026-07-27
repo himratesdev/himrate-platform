@@ -1,0 +1,142 @@
+name: ti-v2-fullchain-audit
+# [skip ci] READ-ONLY. PHASE 0 of the detection→verdict clean redesign (PO 2026-07-27 «оцени комплексно —
+# все 5 слоёв + другие сигналы»). One pass over ~40 live RU streams tracing EVERY layer per stream:
+# collection freshness → L0 (flagged tier-dist, p_u dist, b_hard) → L1 (f_hard_lo, n_frac distance to
+# phi_yellow) → L2 (cell_calibrated, rho_obs, f_soft_lo) → L4 (band + per-predicate corroborator trace).
+# Plus: population flagged_share stats (the normalized-threshold foundation), PerUserBotScore live
+# coverage, deep-dive of the top flagged-share streams (botted vs spam-magnet), per-tier precision
+# proxies for the LLR r2/r3/r4 recalibration. Zero writes, zero flips.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      sample: { required: false, type: string, default: "40" }
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+
+      - name: Build audit script
+        run: |
+          cat > /tmp/fca.rb <<'RB'
+          $stdout.sync = true
+          N = ENV.fetch("SAMPLE", "40").to_i.clamp(10, 100)
+          CB = TrustIndex::ContextBuilder
+          k = Calibration::Registry.load
+
+          def pct(sorted, p) = sorted.empty? ? nil : sorted[(p * (sorted.size - 1)).round]
+
+          puts "===== TI v2 FULL-CHAIN AUDIT (5 layers + signals) @ #{Time.current.iso8601} ====="
+
+          # ── A. COLLECTION HEALTH ──────────────────────────────────────────────
+          puts "\n== A. COLLECTION =="
+          %i[ti_v2_engine temporal_cross_channel cross_channel_digest cross_channel_edges ti_v2_cowindowed_rho ti_v2_cowindowed_shadow].each { |f| puts "  flag #{f} = #{Flipper.enabled?(f)}" }
+          %w[csustained_enabled inflation_corrob_enabled cpop_enabled recurrence_gate_enabled i_event_enabled].each { |c| puts "  const #{c} = #{CalibrationConstant.value_for(c, fallback: 'default')}" }
+          [CrossChannelTemporalFlag, CrossChannelDigest].each do |m|
+            last = (m.maximum(:refreshed_at) rescue nil)
+            puts "  #{m.name}: #{m.count} rows | freshest #{last ? "#{((Time.current - last) / 60).round}min ago" : '—'}"
+          end
+          puts "  temporal tiers: #{CrossChannelTemporalFlag.group(:bot_flag_tier).count} | types: #{CrossChannelTemporalFlag.group(:bot_type).count}"
+          puts "  cells: #{CalibrationCellBaseline.where(calibrated: true).count} calibrated / #{CalibrationCellBaseline.count}"
+
+          # ── L0 THRESHOLD MATH (as-configured, incl. DB-stored LLR overrides) ──
+          req = Math.log(k.tau_hard / (1 - k.tau_hard)) - Math.log(k.pi0 / (1 - k.pi0))
+          puts "\n== L0 τ-MATH == pi0=#{k.pi0} tau_hard=#{k.tau_hard} → required ΣLLR=#{req.round(3)}"
+          { r2: k.llr_temporal_r2, r3: k.llr_temporal_r3, r4: k.llr_temporal_r4, r7: k.llr_temporal_r7 }.each do |t, llr|
+            p_u = 1.0 / (1.0 + Math.exp(-(Math.log(k.pi0 / (1 - k.pi0)) + llr)))
+            puts "  #{t}: LLR=#{llr} → p_u=#{p_u.round(3)} → b_hard? #{p_u >= k.tau_hard}"
+          end
+
+          # PUBS live coverage (the 30min×300 rotation — does it cover the live fleet?)
+          live_all = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(300).to_a
+          ids = live_all.map(&:id)
+          covered = PerUserBotScore.where(stream_id: ids).distinct.count(:stream_id)
+          puts "\n== PUBS LIVE COVERAGE == #{covered}/#{ids.size} live RU streams have PerUserBotScore rows"
+
+          # ── B. PER-STREAM LAYER TRACE ─────────────────────────────────────────
+          puts "\n== B. PER-STREAM TRACE (≤#{N} live RU, non-empty roster) =="
+          puts "  login | V | roster | flags w/f/y/c (spam) | b_hard | f_hard_lo | n_frac(→φy=#{k.phi_yellow}) | q | cell | rho_obs | f_soft_lo | div | band | corr"
+          rows = []
+          live_all.each do |s|
+            break if rows.size >= N
+            ctx = CB.build(s)
+            roster = ctx[:stream_chatters] || []
+            next if roster.empty?
+            fl = ctx.dig(:temporal_cross_channel_flags, :flagged) || {}
+            spam = fl.reject { |_, v| v[:bot_type] == "utility" }
+            tiers = Hash.new(0); spam.each_value { |v| tiers[v[:bot_flag_tier]] += 1 }
+            v2c = CB.build_v2(s, ctx)
+            next if v2c.v.nil? || v2c.v <= 0
+            wr, v_w = CB.windowed_inputs(s)
+            wctx = v_w ? v2c.with(l2_roster_usernames: wr, v_w: v_w) : v2c
+            r = TrustIndex::V2::Engine.compute(context: wctx, k: k)
+            cell_cal = (v2c.cell.calibrated rescue "?")
+            rows << { s: s, ctx: ctx, v2c: v2c, r: r, roster: roster, spam: spam, tiers: tiers,
+                      share: spam.size.to_f / roster.size }
+            puts format("  %-18s %5d %4d  w%d/f%d/y%d/c%d (%d)  bh=%-2d fhl=%-5.2f nf=%.3f q=%.2f cell=%-5s rho=%-5s fsl=%-6s div=%.2f %s/%s%s %s",
+                        s.channel.login, v2c.v, roster.size,
+                        tiers["watch"], tiers["flag"], tiers["yellow"], tiers["confirmed"], spam.size,
+                        r.b_hard.size, r.f_hard_lo.to_f, r.n_frac.to_f, r.q_score.to_f,
+                        cell_cal, r.rho_obs&.round(2), r.f_soft_lo&.round(1), v2c.ccv_chat_divergence.to_f,
+                        r.band&.color, r.band&.row, r.band&.sub,
+                        [r.c_hard ? "C_HARD" : nil, r.c_self ? "C_SELF" : nil].compact.join(","))
+          rescue StandardError => e
+            puts "  #{s.channel.login rescue s.id}: ERR #{e.class} #{e.message[0, 80]}"
+          end
+
+          # ── C. POPULATION STATS (normalized-threshold foundation) ─────────────
+          puts "\n== C. POPULATION flagged_share (spam-flagged / roster) over #{rows.size} streams =="
+          shares = rows.map { |h| h[:share] }.sort
+          confirmed = rows.map { |h| h[:tiers]["confirmed"] }.sort
+          puts "  share: p50=#{pct(shares, 0.50)&.round(4)} p90=#{pct(shares, 0.90)&.round(4)} p99=#{pct(shares, 0.99)&.round(4)} max=#{shares.last&.round(4)} | nonzero=#{shares.count(&:positive?)}/#{shares.size}"
+          puts "  confirmed-count: p50=#{pct(confirmed, 0.50)} p90=#{pct(confirmed, 0.90)} max=#{confirmed.last} | streams with ≥1 confirmed=#{confirmed.count(&:positive?)} ≥3=#{confirmed.count { |c| c >= 3 }}"
+          puts "  band mix: #{rows.map { |h| h[:r].band&.color }.tally}"
+
+          # ── D. DEEP-DIVE top-3 by flagged_share (+ voodoosh) ─────────────────
+          puts "\n== D. DEEP-DIVE (top-3 flagged_share: botted or spam-magnet?) =="
+          picks = rows.sort_by { |h| -h[:share] }.first(3)
+          vd = Channel.find_by(login: "voodoosh")
+          if vd && (vs = rows.find { |h| h[:s].channel_id == vd.id }).nil?
+            lv = Stream.where(channel_id: vd.id, ended_at: nil).first
+            puts "  (voodoosh not in sample; live=#{!lv.nil?})"
+          end
+          picks.each do |h|
+            s, ctx, v2c, r = h.values_at(:s, :ctx, :v2c, :r)
+            puts "\n  ▶ #{s.channel.login} V=#{v2c.v} roster=#{h[:roster].size} share=#{(h[:share] * 100).round(1)}% band=#{r.band&.color}/#{r.band&.row}"
+            h[:spam].sort_by { |_, v| -v[:event_count] }.first(8).each { |u, v| puts "     #{u.to_s.ljust(24)} R=#{v[:event_count]} #{v[:bot_flag_tier]} max_ch=#{v[:max_concurrent_channels]}" }
+            %w[CcvTierClustering AuthRatio ChatterCcvRatio CcvChatCorrelation CcvStepFunction].each do |sig|
+              res = TrustIndex::Signals.const_get(sig).new.calculate(ctx) rescue nil
+              puts "     v1 #{sig}: value=#{res&.value.inspect} conf=#{res&.confidence.inspect}"
+            end
+            puts "     WHY-NOT trace:"
+            puts "       c_hard: n_frac=#{r.n_frac.to_f.round(4)} < phi_yellow=#{k.phi_yellow} (b_hard=#{r.b_hard.size}, need n_frac≥#{k.phi_yellow} ⇒ ~#{(k.phi_yellow * v2c.n_chat_eff).ceil} named of #{v2c.n_chat_eff})"
+            puts "       c_inflation: div=#{v2c.ccv_chat_divergence.to_f} vs phi=#{k.phi_inflation} raid=#{v2c.raid_window}"
+            puts "       c_self^SP: rho_self_lo=#{v2c.rho_self_lo.inspect} stable=#{v2c.self_history_stable} tier=#{v2c.cold_start_tier} sustained=#{v2c.sustained_count} own_base=#{v2c.own_ccv_baseline.inspect} cov=#{v2c.ccv_cov&.round(3)}"
+          end
+
+          # ── E. TIER PRECISION PROXIES (for LLR r2/r3/r4 recalibration) ────────
+          puts "\n== E. TIER PRECISION PROXIES (sample ≤200/tier: known-bot overlap + digest breadth) =="
+          kb = KnownBotService.new
+          %w[watch flag yellow confirmed].each do |tier|
+            names = CrossChannelTemporalFlag.where(bot_flag_tier: tier, bot_type: "spam").limit(200).pluck(:username)
+            next puts("  #{tier}: 0 rows") if names.empty?
+            hits = (kb.check_batch(names).count { |_, v| v[:bot] } rescue "?")
+            breadth = CrossChannelDigest.where(username: names).pluck(:distinct_channels_24h).sort
+            puts "  #{tier}: n=#{names.size} known_bot=#{hits} digest_ch24h p50=#{pct(breadth, 0.5)} p90=#{pct(breadth, 0.9)} (digest-covered #{breadth.size})"
+          end
+          puts "\n===== AUDIT DONE ====="
+          RB
+          echo built
+
+      - name: Run
+        run: |
+          scp /tmp/fca.rb hostkey:/tmp/fca.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: $C"
+          ssh hostkey "docker cp /tmp/fca.rb $C:/tmp/fca.rb && docker exec -e SAMPLE='${{ inputs.sample || '40' }}' $C sh -c 'bin/rails runner /tmp/fca.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot service' || true
