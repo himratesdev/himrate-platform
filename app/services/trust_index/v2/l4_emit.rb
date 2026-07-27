@@ -103,6 +103,9 @@ module TrustIndex
       # (red-team): YELLOW-ONLY — it feeds row2 + the plashka, NEVER independently_corroborated? (RED), so
       # a spam campaign parking 3 roamers + a coincidental deficit can't manufacture a public RED. DORMANT:
       # chard_abs_enabled=0.0 → false before any read → byte-identical (golden); 999 backstops un-fireable.
+      # NOTE: this method is NOT itself cold-start-tier-gated — the full-tier gate lives in BandClassifier
+      # row2 (accusable_tier? && c_hard_abs); confirmed_anomaly re-couples via `&& band.row <= 2` so a basic-
+      # tier channel (which can't reach row2 off c_hard_abs) never shows the plashka. (CR nit.)
       def c_hard_abs
         return false unless @k.respond_to?(:chard_abs_enabled) && @k.chard_abs_enabled.to_f.positive?
 
