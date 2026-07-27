@@ -1,0 +1,57 @@
+name: ti-v2-dv-fullchain
+# [skip ci] READ-ONLY Deployment Verification for the FULL-CHAIN F1-F4 PRs. Confirms on the deployed
+# main: (F4) deficit_min_ccv is live in the Registry K and DORMANT (0.0/absent); (F1) the LLR naming-stack
+# invariants hold on the LIVE DB-merged table; the v2 engine computes healthy over live RU streams with the
+# verdict UNPERTURBED (dormant floor). Zero writes.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+
+jobs:
+  dv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/dv.rb <<'RB'
+          $stdout.sync = true
+          puts "===== DV: FULL-CHAIN F4 (deficit_min_ccv) + F1 (LLR invariants) @ #{Time.current.iso8601} ====="
+          k = Calibration::Registry.load
+          puts "\n== F4 dormancy =="
+          puts "  deficit_min_ccv const = #{CalibrationConstant.value_for('deficit_min_ccv', fallback: 'MISSING(dormant)')}"
+          puts "  k.deficit_min_ccv = #{k.respond_to?(:deficit_min_ccv) ? k.deficit_min_ccv : 'NOT-IN-K'} (expect 0.0 = dormant)"
+          puts "\n== F1 invariants on the LIVE DB-merged table =="
+          tau_gap = Math.log(k.tau_hard / (1.0 - k.tau_hard)) - Math.log(k.pi0 / (1.0 - k.pi0))
+          puts "  τ_gap=#{tau_gap.round(3)}"
+          puts "  I1 r2+known=#{(k.llr_temporal_r2 + k.llr_known_bot).round(2)} < τ_gap ? #{k.llr_temporal_r2 + k.llr_known_bot < tau_gap}"
+          puts "  I2 r3+known=#{(k.llr_temporal_r3 + k.llr_known_bot).round(2)} < τ_gap ? #{k.llr_temporal_r3 + k.llr_known_bot < tau_gap}"
+          puts "  I3 r4=#{k.llr_temporal_r4} < τ_gap−1 (#{(tau_gap - 1).round(2)}) ? #{k.llr_temporal_r4 < tau_gap - 1}"
+          puts "  r7=#{k.llr_temporal_r7} (live seed) names ? #{k.llr_temporal_r7 >= tau_gap}"
+          puts "\n== engine health (dormant floor → verdict unperturbed; 12 live RU) =="
+          CB = TrustIndex::ContextBuilder
+          n = 0; bands = Hash.new(0)
+          Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(80).each do |s|
+            break if n >= 12
+            ctx = CB.build(s); v2c = CB.build_v2(s, ctx); next if v2c.v.nil? || v2c.v <= 0
+            wr, vw = CB.windowed_inputs(s)
+            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c), k: k)
+            n += 1; bands["#{r.band&.color}/#{r.band&.row}"] += 1
+          rescue StandardError
+            nil
+          end
+          puts "  computed #{n} → bands #{bands.sort.to_h}"
+          puts "\n===== DV DONE ====="
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/dv.rb hostkey:/tmp/dv.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: $C"
+          ssh hostkey "docker cp /tmp/dv.rb $C:/tmp/dv.rb && docker exec $C sh -c 'bin/rails runner /tmp/dv.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true

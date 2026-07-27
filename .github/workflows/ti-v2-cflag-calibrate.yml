@@ -1,0 +1,93 @@
+name: ti-v2-cflag-calibrate
+# [skip ci] READ-ONLY. FULL-CHAIN M2/M3 calibration probe for C_flag + c_hard-hybrid. Measures the
+# honest-population flagged-share distribution on an UNSCREENED full-tier cohort (red-team fix: the 154
+# GATE-0 anchors were pre-screened for low flagged share → biased low). Computes, per live full-tier RU
+# stream: the tier-weighted flagged count/share (confirmed w=1.0 + yellow w=configurable), the confirmed
+# integer count (c_hard-hybrid basis), and the max_concurrent_channels distribution of the flagged (the
+# roamer-vs-dedicated discriminator the corpus proved). Zero writes. Output → cflag_share_min / w_yellow /
+# chard_abs_count candidate thresholds for the (PO-gated) flips.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      sample: { required: false, type: string, default: "150" }
+      w_yellow: { required: false, type: string, default: "0.5" }
+
+jobs:
+  calibrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+
+      - name: Build
+        run: |
+          cat > /tmp/cfc.rb <<'RB'
+          $stdout.sync = true
+          N = ENV.fetch("SAMPLE", "150").to_i.clamp(30, 400)
+          WY = ENV.fetch("W_YELLOW", "0.5").to_f
+          CB = TrustIndex::ContextBuilder
+          def pct(s, p) = s.empty? ? nil : s.sort[(p * (s.size - 1)).round]
+
+          puts "===== C_flag / c_hard-hybrid CALIBRATION (unscreened full-tier RU, ≤#{N}, w_yellow=#{WY}) @ #{Time.current.iso8601} ====="
+          # UNSCREENED cohort: all live full-tier RU streams (NOT the pre-screened anchors). We DERIVE
+          # honest-ness from the engine verdict (green/amber = honest side; yellow/red excluded as the
+          # already-accused) rather than from a temporal-clean pre-filter (which would bias the share low).
+          live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(600).to_a
+          rows = []
+          live.each do |s|
+            break if rows.size >= N
+            ctx = CB.build(s)
+            roster = ctx[:stream_chatters] || []
+            next if roster.size < 10                    # skip micro (below any C_flag min_roster)
+            fl = (ctx.dig(:temporal_cross_channel_flags, :flagged) || {}).reject { |_, v| v[:bot_type] == "utility" }
+            v2c = CB.build_v2(s, ctx)
+            next if v2c.v.nil? || v2c.v <= 0
+            next unless v2c.cold_start_tier == "full"   # C_flag/c_hard only accuse full tier
+            wr, v_w = CB.windowed_inputs(s)
+            r = TrustIndex::V2::Engine.compute(context: (v_w ? v2c.with(l2_roster_usernames: wr, v_w: v_w) : v2c), k: Calibration::Registry.load)
+            conf = fl.count { |_, v| v[:bot_flag_tier] == "confirmed" }
+            yel  = fl.count { |_, v| v[:bot_flag_tier] == "yellow" }
+            w = conf + WY * yel
+            # unflagged-roster floor basis (red-team: attackers' own flags must not lift the roster gate)
+            unflagged = roster.size - fl.size
+            mcs = fl.values.map { |v| v[:max_concurrent_channels].to_i }
+            rows << { login: s.channel.login, v: v2c.v, roster: roster.size, unflagged: unflagged,
+                      conf: conf, yel: yel, w: w, share: w / roster.size.to_f,
+                      conf_share: conf / roster.size.to_f, band: "#{r.band&.color}/#{r.band&.row}",
+                      accused: %w[red yellow].include?(r.band&.color), mc_med: (mcs.empty? ? nil : pct(mcs, 0.5)) }
+          rescue StandardError => e
+            nil
+          end
+
+          honest = rows.reject { |h| h[:accused] } # green/amber/grey side = the honest population for the norm
+          puts "\n== COHORT == #{rows.size} full-tier streams | honest(non-accused)=#{honest.size} accused=#{rows.size - honest.size}"
+
+          shares = honest.map { |h| h[:share] }
+          cshares = honest.map { |h| h[:conf_share] }
+          confs = honest.map { |h| h[:conf] }
+          puts "\n== HONEST tier-weighted flagged_share (w_yellow=#{WY}) =="
+          puts "  p50=#{pct(shares, 0.5)&.round(4)} p90=#{pct(shares, 0.9)&.round(4)} p95=#{pct(shares, 0.95)&.round(4)} p99=#{pct(shares, 0.99)&.round(4)} max=#{shares.max&.round(4)} | nonzero=#{shares.count(&:positive?)}/#{shares.size}"
+          puts "  → cflag_share_min candidate = max(3×p99, 0.05) = #{[3 * (pct(shares, 0.99) || 0), 0.05].max.round(4)}"
+          puts "\n== HONEST confirmed-only share (w_yellow=0 basis) =="
+          puts "  p90=#{pct(cshares, 0.9)&.round(4)} p99=#{pct(cshares, 0.99)&.round(4)} max=#{cshares.max&.round(4)}"
+          puts "\n== HONEST confirmed integer count (c_hard-hybrid chard_abs_count basis) =="
+          puts "  p90=#{pct(confs, 0.9)} p99=#{pct(confs, 0.99)} max=#{confs.max} | streams ≥3 confirmed=#{confs.count { |c| c >= 3 }}"
+          puts "  → chard_abs_count candidate = max(3, p99+2) = #{[3, (pct(confs, 0.99) || 0) + 2].max}"
+          puts "\n== BAND MIX (full-tier cohort) == #{rows.map { |h| h[:band] }.tally.sort.to_h}"
+          puts "\n== TOP-10 honest by weighted share (would-be C_flag FPs — eyeball) =="
+          honest.sort_by { |h| -h[:share] }.first(10).each { |h| puts format("  %-20s V=%-5d roster=%-3d conf=%-2d yel=%-2d w=%.1f share=%.3f mc_med=%s %s", h[:login], h[:v], h[:roster], h[:conf], h[:yel], h[:w], h[:share], h[:mc_med], h[:band]) }
+          puts "\n== ACCUSED (already yellow/red — C_flag would be redundant here) =="
+          rows.select { |h| h[:accused] }.first(10).each { |h| puts format("  %-20s V=%-5d roster=%-3d conf=%-2d share=%.3f %s", h[:login], h[:v], h[:roster], h[:conf], h[:share], h[:band]) }
+          puts "\n===== CALIBRATION DONE ====="
+          RB
+          echo built
+
+      - name: Run
+        run: |
+          scp /tmp/cfc.rb hostkey:/tmp/cfc.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker cp /tmp/cfc.rb $C:/tmp/cfc.rb && docker exec -e SAMPLE='${{ inputs.sample || '150' }}' -e W_YELLOW='${{ inputs.w_yellow || '0.5' }}' $C sh -c 'bin/rails runner /tmp/cfc.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
