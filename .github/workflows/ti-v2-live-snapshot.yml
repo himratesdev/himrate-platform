@@ -1,0 +1,96 @@
+name: ti-v2-live-snapshot
+# [skip ci] READ-ONLY observability. Runs the REAL TI v2 engine over a sample of live RU streams and
+# reports the current moat behavior: band distribution (GREEN/AMBER/YELLOW/RED), which corroborators fire
+# (C_hard/C_self/C_inflation — the LIVE-accusing ones; C_pop/recurrence_gate dormant), per-cell ρ*
+# coverage (calibrated vs DEFAULT — DEFAULT cells can't accuse off F_soft), and the ACCUSED list (row≤2)
+# with their signals so a human can eyeball real-botter vs false-positive. Zero writes, zero flips.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      sample: { required: false, type: string, default: "200" }
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host hostkey
+            HostName 82.21.7.48
+            User root
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Build snapshot script
+        run: |
+          cat > /tmp/snap.rb <<'RUBY_EOF'
+          $stdout.sync = true
+          N = ENV.fetch("SAMPLE", "200").to_i.clamp(20, 600)
+          CB = TrustIndex::ContextBuilder
+
+          puts "===== TI v2 LIVE MOAT SNAPSHOT (live RU, sample≤#{N}) @ #{Time.current.iso8601} ====="
+          puts "flags: cowindowed_rho=#{Flipper.enabled?(:ti_v2_cowindowed_rho)} | consts: inflation=#{CalibrationConstant.value_for('inflation_corrob_enabled', fallback: 0.0)} csustained=#{CalibrationConstant.value_for('csustained_enabled', fallback: 0.0)} cpop=#{CalibrationConstant.value_for('cpop_enabled', fallback: 0.0)} recurrence=#{CalibrationConstant.value_for('recurrence_gate_enabled', fallback: 0.0)}"
+          puts "cells: #{CalibrationCellBaseline.where(calibrated: true).count} calibrated / #{CalibrationCellBaseline.count} total\n"
+
+          live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(1000).to_a
+          bands = Hash.new(0); reasons = Hash.new(0); n = 0; scanned = 0
+          corr = { c_hard: 0, c_self: 0 }; cell_cal = 0; cell_def = 0; accused = []
+          live.each do |s|
+            break if n >= N
+            scanned += 1
+            ctx = CB.build(s)
+            roster, v_w = CB.windowed_inputs(s)
+            v2c = CB.build_v2(s, ctx)
+            next if v2c.v.nil? || v2c.v <= 0
+            wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w) : v2c
+            r = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+            n += 1
+            bands["#{r.band&.color}/#{r.band&.row}#{r.band&.sub}"] += 1
+            r.reason_codes.each { |c| reasons[c.code] += 1 }
+            corr[:c_hard] += 1 if r.c_hard
+            corr[:c_self] += 1 if r.c_self
+            (v2c.cell.respond_to?(:calibrated) && v2c.cell.calibrated) ? cell_cal += 1 : cell_def += 1
+            if r.band && r.band.row <= 2
+              accused << format("%-22s %-10s auth=%-4s n_frac=%.2f rho_obs=%s cell=%s [%s]",
+                                s.channel.login, "#{r.band.color}/#{r.band.row}", r.authenticity&.round,
+                                r.n_frac.to_f, r.rho_obs&.round(3), (v2c.cell.calibrated rescue "?"),
+                                r.reason_codes.map(&:code).join(","))
+            end
+          rescue StandardError => e
+            nil
+          end
+
+          puts "scanned #{scanned} live RU → #{n} computed\n"
+          puts "== BAND DISTRIBUTION =="
+          bands.sort_by { |k, _| k }.each { |k, v| puts format("  %-14s %4d  (%.0f%%)", k, v, 100.0 * v / [ n, 1 ].max) }
+          g = bands.select { |k, _| k.start_with?("green") }.values.sum
+          a = bands.select { |k, _| k.start_with?("amber") }.values.sum
+          acc = bands.select { |k, _| k.start_with?("red") || k.start_with?("yellow") }.values.sum
+          gr = bands.select { |k, _| k.start_with?("grey") }.values.sum
+          puts format("\n  GREEN %d (%.0f%%) | AMBER %d (%.0f%%) | ACCUSED(red/yellow) %d (%.0f%%) | GREY %d",
+                      g, 100.0 * g / [ n, 1 ].max, a, 100.0 * a / [ n, 1 ].max, acc, 100.0 * acc / [ n, 1 ].max, gr)
+          puts "\n== CORROBORATOR FIRING (live-accusing) == C_hard=#{corr[:c_hard]} C_self=#{corr[:c_self]} (C_inflation surfaces via reason code)"
+          puts "== CELL ρ* COVERAGE == calibrated=#{cell_cal} / DEFAULT(can't accuse off F_soft)=#{cell_def}"
+          puts "\n== REASON CODES == #{reasons.sort_by { |_, v| -v }.to_h}"
+          puts "\n== ACCUSED (row≤2) — eyeball real-botter vs FP == #{accused.size}"
+          accused.first(25).each { |x| puts "  #{x}" }
+          puts "\n(GREY = cold-start/insufficient. AMBER = engagement anomaly, NON-accusatory. ACCUSED = C_hard∨C_self∨C_inflation corroborated.)"
+          RUBY_EOF
+          echo "Built ($(wc -l < /tmp/snap.rb) lines)"
+
+      - name: Run on ${{ inputs.target }}
+        run: |
+          TARGET="${{ inputs.target || 'hostkey' }}"
+          scp /tmp/snap.rb ${TARGET}:/tmp/snap.rb
+          CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: ${CONTAINER}"
+          ssh ${TARGET} "docker cp /tmp/snap.rb ${CONTAINER}:/tmp/snap.rb && docker exec -e SAMPLE='${{ inputs.sample || '200' }}' ${CONTAINER} sh -c 'bin/rails runner /tmp/snap.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService' || true
