@@ -1,0 +1,108 @@
+name: ti-v2-chard-calibrate
+# [skip ci] READ-ONLY no-re-bot calibration for c_hard_abs (M3). Ground truth WITHOUT botting a channel,
+# from three independent label sources:
+#   P (positive)  = the engine's OWN high-confidence botters (n_frac ≥ 0.20 = ≥20% named cross-channel bots
+#                   in chat — not plausibly honest). Near-certain accusation the fraction path already makes.
+#   N (negative)  = clean honest anchors (full-tier + stable green history + ZERO confirmed flagged in roster).
+#   A (ambiguous) = the mid-tier gap c_hard_abs targets: ≥3 confirmed flagged BUT n_frac < 0.10 (fraction
+#                   path misses — olezha27-class).
+# For every channel it measures named_count (B_hard = confirmed cross-channel bots), roster, named-share, AND
+# the max_concurrent_channels DISTRIBUTION of the flagged (the mc=EXACTLY-3 botnet signature vs mc≥15 roaming-
+# spam-magnet — the disambiguator for the honest/botted overlap). Output: the chard_abs_count / share / roster
+# that separates P from N (precision/recall), whether an mc-filter sharpens it, and how the A-cohort classifies.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      sample: { required: false, type: string, default: "300" }
+
+jobs:
+  cal:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/cc.rb <<'RB'
+          $stdout.sync = true
+          N = ENV.fetch("SAMPLE", "300").to_i.clamp(50, 600)
+          CB = TrustIndex::ContextBuilder
+          k = Calibration::Registry.load
+          def pct(s, p) = s.empty? ? nil : s.sort[(p * (s.size - 1)).round]
+
+          puts "===== c_hard_abs NO-RE-BOT CALIBRATION (live RU ≤#{N}) @ #{Time.current.iso8601} ====="
+          live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(1000).to_a
+          rows = []; n = 0
+          live.each do |s|
+            break if n >= N
+            ctx = CB.build(s)
+            roster = ctx[:stream_chatters] || []
+            next if roster.size < 10
+            fl = (ctx.dig(:temporal_cross_channel_flags, :flagged) || {}).reject { |_, v| v[:bot_type] == "utility" }
+            v2c = CB.build_v2(s, ctx)
+            next if v2c.v.nil? || v2c.v <= 0
+            next unless v2c.cold_start_tier == "full"
+            wr, vw = CB.windowed_inputs(s)
+            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c), k: k)
+            n += 1
+            confirmed = fl.select { |_, v| v[:bot_flag_tier] == "confirmed" }
+            named = r.b_hard.size # the actual B_hard the engine names (≈ confirmed crossing τ_hard)
+            mcs = confirmed.values.map { |v| v[:max_concurrent_channels].to_i }
+            # mc signature: dedicated botnet = mc small (≤5, esp. ==3); roaming spam magnet = mc large (≥15).
+            ded = mcs.count { |m| m <= 5 }; roam = mcs.count { |m| m >= 15 }
+            # green-history proxy: prior v2 green rows for this channel (honest track record)
+            greens = TrustIndexHistory.where(channel_id: s.channel_id, engine_version: "v2", band_color: "green").limit(1).exists?
+            rows << { login: s.channel.login, v: v2c.v, roster: roster.size, named: named,
+                      conf: confirmed.size, share: (roster.size.positive? ? named.to_f / roster.size : 0.0),
+                      n_frac: r.n_frac.to_f, band: "#{r.band&.color}/#{r.band&.row}",
+                      mc_med: (mcs.empty? ? nil : pct(mcs, 0.5)), mc_max: mcs.max, ded: ded, roam: roam, greens: greens }
+          rescue StandardError
+            nil
+          end
+
+          # LABEL COHORTS
+          pos = rows.select { |h| h[:n_frac] >= 0.20 }                                   # P: engine's high-conf botters
+          neg = rows.select { |h| h[:conf] == 0 && h[:greens] }                          # N: clean (0 confirmed + green history)
+          amb = rows.select { |h| h[:conf] >= 3 && h[:n_frac] < 0.10 }                   # A: mid-tier gap
+          puts "\n== COHORTS == scanned #{rows.size} full-tier | P(n_frac≥0.20)=#{pos.size} N(0conf+green)=#{neg.size} A(≥3conf & n_frac<0.10)=#{amb.size}"
+
+          puts "\n== P (positive — known botters) named_count distribution =="
+          pn = pos.map { |h| h[:named] }
+          puts "  named p10=#{pct(pn, 0.10)} p50=#{pct(pn, 0.5)} min=#{pn.min} max=#{pn.max} | share p50=#{pct(pos.map { |h| h[:share] }, 0.5)&.round(3)}"
+          puts "\n== N (negative — clean anchors) named_count distribution =="
+          nn = neg.map { |h| h[:named] }
+          puts "  named p50=#{pct(nn, 0.5)} p90=#{pct(nn, 0.9)} p99=#{pct(nn, 0.99)} max=#{nn.max} (all should be ~0 by construction, 0 confirmed)"
+
+          # SEPARATION: for candidate chard_abs_count K (+ roster≥30, share≥0.02), recall on P, FP on N.
+          puts "\n== SEPARATION (chard_abs_count K, roster≥30 ∧ share≥0.02) — recall(P) / FP(N) =="
+          [ 3, 4, 5, 6, 8, 10 ].each do |kk|
+            fires = ->(h) { h[:named] >= kk && h[:roster] >= 30 && h[:share] >= 0.02 }
+            rp = pos.count { |h| fires.call(h) }; fpn = neg.count { |h| fires.call(h) }
+            fa = amb.count { |h| fires.call(h) }
+            puts format("  K=%-2d  recall_P=%d/%d  FP_N=%d/%d  fires_A=%d/%d", kk, rp, pos.size, fpn, neg.size, fa, amb.size)
+          end
+
+          puts "\n== A (ambiguous mid-tier) — mc-signature classifies dedicated(botnet) vs roaming(spam-magnet) =="
+          amb.sort_by { |h| -h[:named] }.first(15).each do |h|
+            sig = h[:roam] > h[:ded] ? "ROAMING(honest?)" : (h[:ded].positive? ? "DEDICATED(botter?)" : "—")
+            puts format("  %-20s V=%-5d roster=%-3d named=%-2d conf=%-2d share=%.3f mc_med=%s mc_max=%s ded≤5=%d roam≥15=%d → %s %s",
+                        h[:login], h[:v], h[:roster], h[:named], h[:conf], h[:share], h[:mc_med], h[:mc_max], h[:ded], h[:roam], sig, h[:band])
+          end
+
+          puts "\n== N with any confirmed>0 excluded; sanity: P mc-signature (should be DEDICATED) =="
+          pos.sort_by { |h| -h[:named] }.first(8).each do |h|
+            puts format("  %-20s named=%-3d mc_med=%s ded≤5=%d roam≥15=%d %s", h[:login], h[:named], h[:mc_med], h[:ded], h[:roam], h[:band])
+          end
+          puts "\n===== CALIBRATION DONE ====="
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/cc.rb hostkey:/tmp/cc.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: $C"
+          ssh hostkey "docker cp /tmp/cc.rb $C:/tmp/cc.rb && docker exec -e SAMPLE='${{ inputs.sample || '300' }}' $C sh -c 'bin/rails runner /tmp/cc.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
