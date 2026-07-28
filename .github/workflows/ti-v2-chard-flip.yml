@@ -1,0 +1,115 @@
+name: ti-v2-chard-flip
+# [skip ci] FULL-CHAIN c_hard_abs flip (M3 integer named-count YELLOW trigger). ACCUSATORY (adds YELLOW
+# accusations on mid-tier dedicated-botnet channels the P5-diluted fraction path misses). Staging-only,
+# reversible (chard_abs_enabled → 0.0).
+#   mode=dryrun : compute the live fleet with the trigger OFF (current) vs ON (K.with injection, NO DB write)
+#                 → report EVERY channel that GAINS a c_hard_abs accusation, with the mc-signature of its
+#                 named bots (mc≤5 = DEDICATED botnet / mc≥15 = roaming spam = potential FP). SAFETY: every
+#                 newly-accused channel should be a dedicated botnet; a roaming-magnet honest channel gaining
+#                 an accusation is a BUG (→ needs the F2.1 mc-filter first).
+#   mode=apply  : seed chard_abs_enabled=1.0 + count/roster/share (staging CalibrationConstant) → re-verify
+#                 → AUTO-ROLLBACK to 0.0 if any newly-accused channel's named bots are majority roaming (mc≥15).
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      mode: { required: true, type: choice, options: [dryrun, apply], default: dryrun }
+      count: { required: false, type: string, default: "5" }
+      roster_min: { required: false, type: string, default: "30" }
+      share: { required: false, type: string, default: "0.02" }
+      sample: { required: false, type: string, default: "300" }
+
+jobs:
+  flip:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/cf.rb <<'RB'
+          $stdout.sync = true
+          MODE = ENV.fetch("MODE", "dryrun")
+          KC   = ENV.fetch("COUNT", "5").to_f
+          RM   = ENV.fetch("ROSTER_MIN", "30").to_f
+          SH   = ENV.fetch("SHARE", "0.02").to_f
+          N    = ENV.fetch("SAMPLE", "300").to_i.clamp(50, 600)
+          CB = TrustIndex::ContextBuilder
+          def pct(s, p) = s.empty? ? nil : s.sort[(p * (s.size - 1)).round]
+
+          # For a stream under k, return [band_str, accusatory?, named_count, roster, mc_list_of_named].
+          def probe(s, k, cb)
+            ctx = cb.build(s); roster = ctx[:stream_chatters] || []
+            v2c = cb.build_v2(s, ctx); return nil if v2c.v.nil? || v2c.v <= 0
+            wr, vw = cb.windowed_inputs(s)
+            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c), k: k)
+            fl = (ctx.dig(:temporal_cross_channel_flags, :flagged) || {}).reject { |_, v| v[:bot_type] == "utility" }
+            named_users = r.b_hard.map(&:username)
+            mcs = named_users.filter_map { |u| fl[u]&.dig(:max_concurrent_channels)&.to_i }
+            [ "#{r.band&.color}/#{r.band&.row}", %w[red yellow].include?(r.band&.color), r.b_hard.size, roster.size, mcs, v2c.cold_start_tier ]
+          rescue StandardError
+            nil
+          end
+
+          k0 = Calibration::Registry.load
+          k1 = k0.with(chard_abs_enabled: 1.0, chard_abs_count: KC, chard_abs_roster_min: RM, chard_abs_share: SH)
+          puts "===== c_hard_abs flip MODE=#{MODE} count=#{KC.to_i} roster_min=#{RM.to_i} share=#{SH} @ #{Time.current.iso8601} ====="
+          puts "current chard_abs_enabled = #{CalibrationConstant.value_for('chard_abs_enabled', fallback: 'MISSING(0.0)')}"
+
+          live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(1000).to_a
+          n = 0; gained = []; roaming_fp = []
+          live.each do |s|
+            break if n >= N
+            b0 = probe(s, k0, CB); next if b0.nil?
+            next unless b0[5] == "full"          # c_hard_abs only accuses full-tier
+            b1 = probe(s, k1, CB); next if b1.nil?
+            n += 1
+            next if b0[1] == b1[1]                # accusatory status unchanged
+            next unless !b0[1] && b1[1]           # GAINED an accusation (the point of the flip)
+            mcs = b1[4]; ded = mcs.count { |m| m <= 5 }; roam = mcs.count { |m| m >= 15 }
+            sig = roam > ded ? "🔴 ROAMING(honest-FP?)" : "DEDICATED(botnet)"
+            row = format("%-20s named=%-3d roster=%-3d %s→%s mc=%s ded≤5=%d roam≥15=%d %s",
+                         s.channel.login, b1[2], b1[3], b0[0], b1[0], mcs.inspect, ded, roam, sig)
+            gained << row
+            roaming_fp << row if roam > ded       # majority-roaming newly-accused = potential honest FP
+          end
+
+          puts "\n== NEWLY ACCUSED by c_hard_abs: #{gained.size}/#{n} (the mid-tier botnets the fraction path missed) =="
+          gained.first(40).each { |x| puts "  #{x}" }
+          puts "\n== 🔴 ROAMING-MAGNET FP RISK (majority mc≥15 named — MUST be 0; else need F2.1 mc-filter first): #{roaming_fp.size} =="
+          roaming_fp.first(10).each { |x| puts "  #{x}" }
+          safe = roaming_fp.empty?
+
+          if MODE == "dryrun"
+            puts(safe ? "\n🟢 DRYRUN SAFE — every newly-accused channel is a DEDICATED botnet (mc≤5). Apply is recall-only, no honest FP." : "\n🔴 DRYRUN UNSAFE — a roaming-magnet honest channel gains an accusation. Build the F2.1 mc-filter BEFORE apply.")
+          elsif !safe
+            puts "\n🔴 REFUSING TO APPLY — roaming-magnet FP risk live. No write."
+          else
+            [ [ "chard_abs_enabled", 1.0 ], [ "chard_abs_count", KC ], [ "chard_abs_roster_min", RM ], [ "chard_abs_share", SH ] ].each do |kk, vv|
+              c = CalibrationConstant.find_or_initialize_by(key: kk)
+              c.update!(value: vv, calibrated: true, source: "fullchain_chard_flip") # ≤32 chars
+            end
+            # re-verify live (Registry.load now reads the seeds) — confirm no roaming-magnet accusation
+            post_roam = 0
+            live.first(N).each do |s|
+              bl = probe(s, Calibration::Registry.load, CB); next if bl.nil? || !bl[1]
+              mcs = bl[4]; post_roam += 1 if mcs.count { |m| m >= 15 } > mcs.count { |m| m <= 5 }
+            end
+            if post_roam > 0
+              CalibrationConstant.find_by(key: "chard_abs_enabled")&.update!(value: 0.0)
+              puts "\n== 🔴 AUTO-ROLLBACK: #{post_roam} roaming-magnet accusations → chard_abs_enabled=0.0. Investigate. =="
+            else
+              puts "\n== 🟢 APPLIED: c_hard_abs LIVE (count=#{KC.to_i}/roster=#{RM.to_i}/share=#{SH}). Dedicated botnets now YELLOW. Reversible → 0.0. =="
+            end
+          end
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/cf.rb hostkey:/tmp/cf.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          echo "container: $C"
+          ssh hostkey "docker cp /tmp/cf.rb $C:/tmp/cf.rb && docker exec -e MODE='${{ inputs.mode }}' -e COUNT='${{ inputs.count || '5' }}' -e ROSTER_MIN='${{ inputs.roster_min || '30' }}' -e SHARE='${{ inputs.share || '0.02' }}' -e SAMPLE='${{ inputs.sample || '300' }}' $C sh -c 'bin/rails runner /tmp/cf.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
