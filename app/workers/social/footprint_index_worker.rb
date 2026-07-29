@@ -55,15 +55,22 @@ module Social
       0
     end
 
-    # Replace a channel's link set with its fresh Twitch socialMedias footprint (delete-then-insert in a
-    # txn so a removed link disappears). TwitchSocials.from_about contract: nil = the fetch/socialMedias
-    # FAILED → skip WITHOUT stamping (retry next run, so a channel that has socials isn't frozen empty);
-    # [] = fetched OK, no socials → stamp (0 links) to avoid a retry storm. Returns 1 if synced, else 0.
-    def sync_channel(channel, about)
-      socials = SocialAnalytics::TwitchSocials.from_about(about)
-      return 0 if socials.nil? # transient/partial GQL failure — no stamp, retry next run
+    # Persist a channel's footprint from one batch slot. batch_channel_about gives us three states:
+    #   nil        → the batch slot failed (transient) → skip WITHOUT stamping (retry next run).
+    #   :not_found → dead/renamed/banned channel (200 but user null) → stamp EMPTY so it drops out of the
+    #                NULLS-FIRST queue for STALE_AFTER instead of churning every run (the bulk of the
+    #                monitored set's apparent failures). Same «stamp a definitively-gone id» pattern as
+    #                ChannelMetadataRefreshWorker#isolate_bad_id.
+    #   hash       → normalize via from_about. nil socials there = a null socialMedias FIELD on a present
+    #                user (partial GQL failure under load) → skip (retry); [] = genuinely none → stamp.
+    # Returns 1 if the channel was (re)synced/stamped, else 0.
+    def sync_channel(channel, result)
+      return 0 if result.nil? # transient batch-slot failure — retry next run, no stamp
 
-      persist(channel, socials)
+      socials = result == :not_found ? [] : SocialAnalytics::TwitchSocials.from_about(result)
+      return 0 if socials.nil? # partial socialMedias-field failure — retry next run, no stamp
+
+      persist(channel, socials) # [] (dead / genuinely-no-socials) stamps 0 links → drops out for STALE_AFTER
       1
     rescue StandardError => e
       Rails.logger.warn("Social::FootprintIndexWorker[#{channel.login}]: #{e.class}: #{e.message&.slice(0, 140)}")

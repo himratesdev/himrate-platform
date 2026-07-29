@@ -60,13 +60,32 @@ RSpec.describe Social::FootprintIndexWorker do
     expect(channel.reload.social_synced_at).to be_present
   end
 
-  it "does NOT stamp on a transient/partial GQL failure (`nil`) so it retries next run" do
+  it "does NOT stamp on a partial socialMedias-field failure (from_about → nil) so it retries" do
     channel
     stub_footprint("recrent" => nil)
 
     described_class.new.perform
 
     expect(channel.reload.social_synced_at).to be_nil
+  end
+
+  it "does NOT stamp on a transient batch-slot failure (nil result) so it retries" do
+    channel
+    allow_any_instance_of(Twitch::GqlClient).to receive(:batch_channel_about).and_return("recrent" => nil)
+
+    described_class.new.perform
+
+    expect(channel.reload.social_synced_at).to be_nil
+  end
+
+  it "STAMPS a dead channel (:not_found — 200 but user null) empty so it stops churning the queue" do
+    channel
+    allow_any_instance_of(Twitch::GqlClient).to receive(:batch_channel_about).and_return("recrent" => :not_found)
+
+    described_class.new.perform
+
+    expect(channel.social_links.reload).to be_empty
+    expect(channel.reload.social_synced_at).to be_present # stamped → drops out of NULLS-FIRST head
   end
 
   it "dedupes a duplicate URL from Twitch (unique index would otherwise abort the channel)" do

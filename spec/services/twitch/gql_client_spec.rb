@@ -114,18 +114,23 @@ RSpec.describe Twitch::GqlClient do
       expect(result["nosocials"][:social_medias]).to eq([]) # genuine empty preserved (not nil)
     end
 
-    it "maps a failed/absent slot to nil, and a partial (socialMedias null) keeps social_medias nil" do
+    it "maps a null user (200, dead channel) to :not_found, and a null socialMedias field to a hash" do
       stub_gql_batch(
         size: 2,
         responses: [
-          { data: { user: nil }, errors: [ { message: "not found" } ] },
+          { data: { user: nil } }, # HTTP 200 but no such user → dead/renamed channel
           { data: { user: { id: "3", displayName: "Partial", channel: { socialMedias: nil } } } }
         ]
       )
 
       result = client.batch_channel_about(logins: %w[gone partial])
-      expect(result["gone"]).to be_nil                      # absent user → nil about
-      expect(result["partial"][:social_medias]).to be_nil   # partial failure preserved for the caller
+      expect(result["gone"]).to eq(:not_found)              # dead channel → worker stamps it empty
+      expect(result["partial"][:social_medias]).to be_nil   # present user, null field → partial (worker retries)
+    end
+
+    it "maps a batch-level failure (all slots nil) to nil per login (transient → retry)" do
+      allow_any_instance_of(described_class).to receive(:execute_batch).and_return([ nil, nil ])
+      expect(client.batch_channel_about(logins: %w[a b])).to eq("a" => nil, "b" => nil)
     end
 
     it "raises when the batch exceeds MAX_BATCH_SIZE" do

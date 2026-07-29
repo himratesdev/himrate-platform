@@ -288,18 +288,23 @@ module Twitch
       format_channel_about(result&.dig("data", "user"))
     end
 
-    # Batch channel_about for many logins in ONE GQL request (SA-2 footprint index). A per-channel loop
-    # of 100 tight calls rate-limits Twitch (partial "service error" / nil); one batch request of ≤35 is
-    # 1/N the requests → no rate-limit. Returns { login => channel_about-hash | nil } (nil = that slot
-    # failed / user not found — same shape/semantics as the single channel_about).
+    # Batch channel_about for many logins in ONE GQL request (SA-2 footprint index). One batch request
+    # of ≤35 is 1/N the requests of a per-channel loop. Returns { login => hash | :not_found | nil },
+    # distinguishing the two "no data" cases the footprint worker MUST treat differently:
+    #   hash       → user found.
+    #   :not_found → batch responded (HTTP 200) but this slot's `user` is null = the channel is dead /
+    #                renamed / banned (this is the BULK of apparent "failures" in the monitored set, not
+    #                rate-limiting). Worker STAMPS it empty so it stops churning at the NULLS-FIRST head.
+    #   nil        → the batch slot itself failed (batch-level non-200 → execute_batch nils it) →
+    #                transient, retry next run.
     def batch_channel_about(logins:)
       logins = Array(logins).map(&:to_s).reject(&:blank?)
       return {} if logins.empty?
       raise ArgumentError, "Batch size #{logins.size} exceeds max #{MAX_BATCH_SIZE}" if logins.size > MAX_BATCH_SIZE
 
       operations = logins.map { |login| { query: QUERIES[:channel_about], variables: { login: login } } }
-      items = execute_batch(operations) # array parallel to logins; nil per slot on failure
-      logins.each_with_index.to_h { |login, i| [ login, format_channel_about(items[i]&.dig("data", "user")) ] }
+      items = execute_batch(operations) # array parallel to logins; nil per slot on batch-level failure
+      logins.each_with_index.to_h { |login, i| [ login, resolve_batch_slot(items[i]) ] }
     end
 
     # FR-014: User following list (for follow-bot detection)
@@ -519,6 +524,15 @@ module Twitch
     # Shared shape for channel_about (single + batch): a GQL `user` node → our symbol hash, or nil when
     # the user is absent (not found / errored slot / partial failure). socialMedias is preserved as
     # nil (field failed to resolve — partial "service error") vs [] (genuinely none) so callers can tell.
+    # One batch slot → hash (user found) | :not_found (200 but user null = dead channel) | nil (slot
+    # failed → transient). See batch_channel_about for how the footprint worker uses each.
+    def resolve_batch_slot(item)
+      return nil if item.nil? # batch-level failure — retry
+      return :not_found if item.dig("data", "user").nil? # 200 response, no such user — dead channel
+
+      format_channel_about(item.dig("data", "user"))
+    end
+
     def format_channel_about(user)
       return nil unless user
 
