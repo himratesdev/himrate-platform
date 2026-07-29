@@ -1,0 +1,77 @@
+name: ti-v2-deadjobs-verify
+# [skip ci] READ-ONLY. Audit the Sidekiq dead/retry sets to resolve whether the ~8744 dead SCW jobs
+# (PG::NumericValueOutOfRange write-side twin from the TI v2 cutover) are (a) inert + auto-expiring (→ no
+# action) or (b) still accumulating (→ write-side fix needed). Reports dead-set size, error-class
+# breakdown, age distribution (oldest/newest → expiry), retry-set + queue depths, and whether ANY dead
+# job is fresh (< 6h → the write-side is STILL erroring live). Zero writes, zero purge.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/dj.rb <<'RB'
+          $stdout.sync = true
+          require "sidekiq/api"
+          puts "===== SIDEKIQ DEAD/RETRY AUDIT @ #{Time.current.iso8601} ====="
+          ds = Sidekiq::DeadSet.new
+          rs = Sidekiq::RetrySet.new
+          puts "\n== SIZES == dead=#{ds.size} retry=#{rs.size}"
+          puts "== QUEUES =="
+          Sidekiq::Queue.all.each { |q| puts "  #{q.name}: #{q.size} (latency #{q.latency.round(1)}s)" }
+
+          # DEAD set breakdown: by worker class + error class + age.
+          klass = Hash.new(0); err = Hash.new(0); times = []
+          ds.each do |j|
+            klass[j["class"] || j["wrapped"] || "?"] += 1
+            err["#{j['error_class']}"] += 1
+            times << j["failed_at"].to_f if j["failed_at"]
+          end
+          puts "\n== DEAD by WORKER == #{klass.sort_by { |_, v| -v }.first(8).to_h}"
+          puts "== DEAD by ERROR == #{err.sort_by { |_, v| -v }.first(8).to_h}"
+          if times.any?
+            oldest = Time.at(times.min); newest = Time.at(times.max)
+            puts "\n== DEAD AGE == oldest #{((Time.current - oldest) / 3600).round(1)}h ago (#{oldest.iso8601}) | newest #{((Time.current - newest) / 3600).round(1)}h ago (#{newest.iso8601})"
+            fresh6 = times.count { |t| (Time.current.to_f - t) < 6 * 3600 }
+            fresh1 = times.count { |t| (Time.current.to_f - t) < 3600 }
+            puts "  fresh: <1h=#{fresh1}  <6h=#{fresh6}  → #{fresh6.zero? ? '🟢 INERT (no dead job in 6h → write-side NOT erroring live; set auto-expires ~6mo)' : '🔴 STILL ERRORING (fresh dead jobs → write-side bug LIVE, needs fix not just purge)'}"
+            # Sidekiq DeadSet default TTL = 6 months / 10k cap. Show which applies.
+            puts "  (Sidekiq DeadSet: auto-trims at 10k jobs OR 6mo age — whichever first)"
+          end
+
+          # RETRY set — is anything actively retry-looping (the live-error signal)?
+          rerr = Hash.new(0); rk = Hash.new(0)
+          rs.each { |j| rerr["#{j['error_class']}"] += 1; rk[j['class'] || '?'] += 1 }
+          puts "\n== RETRY by ERROR == #{rerr.sort_by { |_, v| -v }.first(6).to_h}"
+          puts "== RETRY by WORKER == #{rk.sort_by { |_, v| -v }.first(6).to_h}"
+
+          # Sample 3 dead SCW jobs to see the exact args/error (is it the v1-column write-side twin?)
+          puts "\n== SAMPLE DEAD (first 3 SignalComputeWorker) =="
+          n = 0
+          ds.each do |j|
+            break if n >= 3
+            next unless (j["class"] || j["wrapped"]).to_s.include?("SignalCompute")
+            n += 1
+            puts "  args=#{j['args'].inspect[0, 120]}  err=#{j['error_class']}: #{j['error_message'].to_s[0, 140]}"
+          end
+          puts "  (none SCW in dead set)" if n.zero?
+          puts "\n== VERDICT =="
+          fresh6 = times.count { |t| (Time.current.to_f - t) < 6 * 3600 }
+          puts(fresh6.zero? ? "  🟢 dead set INERT — auto-expiring, no live write-side error → purge OPTIONAL (cosmetic). No code fix needed." : "  🔴 write-side STILL erroring — needs a code fix (stop writing v1 columns on v2 path) BEFORE purge.")
+          puts "\n===== AUDIT DONE ====="
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/dj.rb hostkey:/tmp/dj.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker cp /tmp/dj.rb $C:/tmp/dj.rb && docker exec $C sh -c 'bin/rails runner /tmp/dj.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
