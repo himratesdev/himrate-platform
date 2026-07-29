@@ -122,6 +122,11 @@ module FlipperDefaults
     pva
     ti_v2_cowindowed_shadow
     ti_v2_ie_shadow
+    # SA-2 social-footprint index (channel_social_links refresh). Was manually Flipper.enable'd →
+    # Redis-only → reverted OFF on a redeploy, stalling the backfill at ~1026/5232 (the recurring
+    # PVA «flag not deploy-proof» pattern). ALL_FLAGS makes the bounded (≤100/run) cron auto-enable
+    # every boot so the pool keeps indexing. Promoted 2026-07-29.
+    social_footprint_index
   ].freeze
 
   # Verdict-flip flags that must be DEPLOY-PROOF on staging (survive a kamal-setup Redis flush) but stay
