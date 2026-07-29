@@ -114,9 +114,32 @@
   // owner-OAuth; динамика/рост need accrued history; посты-reels / прогноз цен are unbuilt backend).
   // Per the no-fabricated-numbers rule we HIDE them — a dimmed fake number is still a fake number.
   // They come back, wired, as the creds/history/backend land.
+  // Replace a card's fabricated demo content with a clean titled «Скоро появится» placeholder
+  // (no fake numbers, structure-agnostic). CSP-safe: textContent + inline style, no innerHTML/eval.
+  function markSoon(cardAnchor, title) {
+    var card = q(cardAnchor);
+    if (!card) return;
+    Array.prototype.slice.call(card.children).forEach(hide); // drop the design's fabricated content
+    var box = document.createElement("div");
+    box.style.cssText = "padding:24px 4px;font-family:Inter,system-ui,sans-serif;";
+    var h = document.createElement("div");
+    h.textContent = title;
+    h.style.cssText = "font-size:16px;font-weight:600;color:#F4F4F7;margin-bottom:6px;";
+    var s = document.createElement("div");
+    s.textContent = "Скоро появится";
+    s.style.cssText = "font-size:13px;color:#9A9AA9;";
+    box.appendChild(h);
+    box.appendChild(s);
+    card.appendChild(box);
+  }
+
   function renderDeferred() {
-    ["Card Демография", "Card Гео", "Card Динамика", "Card Посты", "Card Прогноз цен", "Card Рост"]
-      .forEach(function (n) { hide(q(n)); });
+    // Demographics + geo (measured age/gender/country) can't be sourced for an arbitrary channel without
+    // owner authorization — private everywhere (same dead-end as VK). Deferred with «Скоро появится», no
+    // fabricated data (PO 2026-07-29). The rest carry only demo data + no near-term backing → hidden.
+    markSoon("Card Демография", "Демография");
+    markSoon("Card Гео", "География");
+    ["Card Динамика", "Card Посты", "Card Прогноз цен", "Card Рост"].forEach(function (n) { hide(q(n)); });
   }
 
   function renderHeader(profile) {
