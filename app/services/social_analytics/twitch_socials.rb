@@ -41,23 +41,26 @@ module SocialAnalytics
     def call
       return [] if @login.blank?
 
-      about = Twitch::GqlClient.new.channel_about(channel_login: @login)
-      return nil if about.nil? # channel_about fully failed — caller retries
+      self.class.from_about(Twitch::GqlClient.new.channel_about(channel_login: @login))
+    end
+
+    # Normalize a channel_about result (single OR one slot of a batch) → [{platform,…}] | [] | nil.
+    #   nil about / nil social_medias = the fetch failed OR socialMedias failed to resolve (partial GQL
+    #     "service error" under rate-limit — base channel present but a null socialMedias). NOT "no
+    #     socials" → nil so the footprint worker retries instead of stamping the channel empty for 7 days.
+    #   [] social_medias = the channel genuinely links no socials → [].
+    # Class method so the batch footprint worker can reuse it on batch_channel_about results.
+    def self.from_about(about)
+      return nil if about.nil?
 
       socials = about[:social_medias]
-      # socialMedias == null = the field FAILED to resolve (partial GQL "service error" — Twitch
-      # rate-limits a burst and returns the base channel but a null socialMedias). That is NOT "no
-      # socials" → return nil so the footprint worker retries instead of stamping the channel empty for
-      # 7 days. An empty ARRAY = the channel genuinely links no socials → [].
       return nil if socials.nil?
       return [] if socials.empty?
 
       socials.filter_map { |sm| normalize(sm) }
     end
 
-    private
-
-    def normalize(social)
+    def self.normalize(social)
       raw = social[:name].to_s.downcase
       platform = PLATFORM_MAP[raw] || raw
       url = social[:url].to_s
@@ -70,7 +73,7 @@ module SocialAnalytics
       }
     end
 
-    def extract_handle(platform, url)
+    def self.extract_handle(platform, url)
       case platform
       when "telegram"  then url[%r{t\.me/(?:s/)?([A-Za-z0-9_]+)}, 1]
       when "vk"        then url[%r{vk\.com/([A-Za-z0-9_.]+)}, 1]

@@ -46,4 +46,23 @@ RSpec.describe SocialAnalytics::TwitchSocials do
   it "is empty for blank input without calling Twitch" do
     expect(described_class.call("")).to eq([])
   end
+
+  # .from_about is the shared normalizer the BATCH footprint worker reuses on batch_channel_about slots.
+  describe ".from_about" do
+    it "normalizes socialMedias from an about hash" do
+      about = { social_medias: [ { name: "youtube", title: "YT", url: "https://youtube.com/c/x" } ] }
+      expect(described_class.from_about(about)).to eq([
+        { platform: "youtube", title: "YT", url: "https://youtube.com/c/x", handle: "x", analyzable: true }
+      ])
+    end
+
+    it "returns nil for a nil about (fetch failed) or a null socialMedias (partial failure)" do
+      expect(described_class.from_about(nil)).to be_nil
+      expect(described_class.from_about(social_medias: nil)).to be_nil
+    end
+
+    it "returns [] for an empty socialMedias (genuinely no socials)" do
+      expect(described_class.from_about(social_medias: [])).to eq([])
+    end
+  end
 end
