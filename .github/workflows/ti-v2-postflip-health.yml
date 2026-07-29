@@ -64,12 +64,24 @@ jobs:
 
           puts "\n===== 2b. ACCUSATORY ROWS (1/2) — corroboration audit ====="
           acc = v2.where(band_row: [ 1, 2 ])
-          puts "  accusatory rows last #{h}h: #{acc.count} (each MUST have c_hard OR c_self)"
-          bad = acc.where(c_hard: [ false, nil ], c_self: [ false, nil ]).count
-          puts "  UNCORROBORATED (must be 0): #{bad}"
+          # A band-1/2 row is properly corroborated by ANY live corroborator. The TIH persists c_hard/c_self
+          # as columns, but c_hard_abs (FULL-CHAIN Flip-2: Result.c_hard is FRACTION-only per B2) / C_inflation
+          # / C_pop surface only via their REASON CODES. So the "uncorroborated" alarm must accept the codes
+          # too — else it cries wolf on every legit c_hard_abs/C_inflation accusation (masking a real miss).
+          corrob_codes = %w[HARD_NAMED_FRACTION SELF_HISTORY_INFLATION_EVENT SELF_HISTORY_SUSTAINED_INFLATION
+                            INFLATION_EVENT_CORROBORATION POPULATION_CHAT_DEFICIT CROSS_CHANNEL_CHAT_PATTERN]
+          puts "  accusatory rows last #{h}h: #{acc.count} (each MUST have c_hard/c_self OR a corroborator reason code)"
+          bad = 0
+          acc.find_each do |t|
+            next if t.c_hard || t.c_self
+            codes = (t.reason_codes || []).map { |c| c.is_a?(Hash) ? (c["code"] || c[:code]) : c }
+            bad += 1 if (codes & corrob_codes).empty?
+          end
+          puts "  UNCORROBORATED (must be 0): #{bad}  [corroborators: c_hard∨c_self∨{#{corrob_codes.join('∨')}}]"
           acc.order(calculated_at: :desc).limit(10).each do |t|
             login = Channel.find_by(id: t.channel_id)&.login.to_s[0, 20]
-            puts format("  %-20s row=%d nfrac=%s c_hard=%s c_self=%s auth=%s erv=%s", login, t.band_row, t.n_frac, t.c_hard, t.c_self, t.authenticity, t.erv)
+            codes = (t.reason_codes || []).map { |c| c.is_a?(Hash) ? (c["code"] || c[:code]) : c }.join(",")
+            puts format("  %-20s row=%d nfrac=%s c_hard=%s c_self=%s auth=%s codes=%s", login, t.band_row, t.n_frac, t.c_hard, t.c_self, t.authenticity, codes)
           end
 
           puts "\n===== 2d. NIL-AUDIT DRILLDOWN (auth/erv nil rows — designed grey path or a bug?) ====="
