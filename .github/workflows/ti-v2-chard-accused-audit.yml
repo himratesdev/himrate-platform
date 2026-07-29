@@ -1,0 +1,82 @@
+name: ti-v2-chard-accused-audit
+# [skip ci] READ-ONLY. Post-Flip-2 FP check: is c_hard_abs OVER-firing on honest high-authenticity
+# channels? For every LIVE RU stream currently accused via c_hard_abs (band 1/2, HARD_NAMED_FRACTION,
+# c_hard fraction FALSE — i.e. the integer-count path, not the fraction path), report V, roster, the named
+# B_hard count + share, authenticity, AND the named bots' mc + R distribution, so a human can judge
+# TP (bought chat-bots / real botnet) vs FP (honest channel with a few incidental roaming-botnet chatters).
+# Zero writes. Informs whether chard_abs_count/share need raising OR the F2.1 mc-filter needs enabling.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      sample: { required: false, type: string, default: "300" }
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/ca.rb <<'RB'
+          $stdout.sync = true
+          N = ENV.fetch("SAMPLE", "300").to_i.clamp(50, 600)
+          CB = TrustIndex::ContextBuilder
+          k = Calibration::Registry.load
+          def pct(s, p) = s.empty? ? nil : s.sort[(p * (s.size - 1)).round]
+
+          puts "===== c_hard_abs ACCUSED AUDIT (live RU, TP vs FP) @ #{Time.current.iso8601} ====="
+          puts "consts: chard_abs_count=#{CalibrationConstant.value_for('chard_abs_count', fallback: '?')} roster_min=#{CalibrationConstant.value_for('chard_abs_roster_min', fallback: '?')} share=#{CalibrationConstant.value_for('chard_abs_share', fallback: '?')} mc_max=#{CalibrationConstant.value_for('chard_abs_mc_max', fallback: 'default(999)')}"
+
+          live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(1000).to_a
+          n = 0; chard = []; frac = []; self_sp = []
+          live.each do |s|
+            break if n >= N
+            ctx = CB.build(s); v2c = CB.build_v2(s, ctx); next if v2c.v.nil? || v2c.v <= 0
+            wr, vw = CB.windowed_inputs(s)
+            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c), k: k)
+            n += 1
+            next unless r.band && r.band.row <= 2
+            codes = r.reason_codes.map(&:code)
+            roster = (ctx[:stream_chatters] || []).size
+            named = r.b_hard.size
+            fl = (ctx.dig(:temporal_cross_channel_flags, :flagged) || {})
+            mcs = r.b_hard.map { |b| fl[b.username]&.dig(:max_concurrent_channels)&.to_i }.compact
+            rec = { login: s.channel.login, v: v2c.v, roster: roster, named: named,
+                    share: (roster.positive? ? (named.to_f / roster * 100).round(1) : 0), auth: r.authenticity&.round(1),
+                    mc_med: pct(mcs, 0.5), mc_max: mcs.max, mc3: mcs.count { |m| m == 3 }, roam: mcs.count { |m| m >= 15 } }
+            if r.c_hard then frac << rec
+            elsif codes.include?("HARD_NAMED_FRACTION") then chard << rec
+            elsif r.c_self then self_sp << rec
+            end
+          rescue StandardError
+            nil
+          end
+
+          puts "\n== scanned #{n} live RU → accused: c_hard_abs=#{chard.size} c_hard_fraction=#{frac.size} C_self^SP=#{self_sp.size} =="
+          auths = chard.map { |h| h[:auth] }.compact.sort
+          puts "\n== c_hard_abs accused — AUTHENTICITY distribution (high auth = FP suspicion) =="
+          puts "  auth p10=#{pct(auths, 0.1)} p50=#{pct(auths, 0.5)} p90=#{pct(auths, 0.9)} | ≥95%: #{auths.count { |a| a >= 95 }}/#{auths.size}  ≥90%: #{auths.count { |a| a >= 90 }}/#{auths.size}"
+          puts "  → high-auth accused = channel's AUDIENCE is real (99%) but has ≥#{CalibrationConstant.value_for('chard_abs_count', fallback: 5)} botnet-CHAT accounts. TP (bought chat-bots) or FP (incidental roaming botnet in chat)?"
+          puts "\n== c_hard_abs ACCUSED (sorted by auth desc — top of list = FP-suspects) =="
+          chard.sort_by { |h| -(h[:auth] || 0) }.first(25).each do |h|
+            flag = (h[:auth].to_f >= 95 && h[:roam].to_i.zero?) ? "⚠ HIGH-AUTH" : ""
+            puts format("  %-20s V=%-5d roster=%-3d named=%-2d share=%.1f%% auth=%-5s mc_med=%s mc3=%d roam≥15=%d %s",
+                        h[:login], h[:v], h[:roster], h[:named], h[:share], h[:auth], h[:mc_med], h[:mc3], h[:roam], flag)
+          end
+          puts "\n== c_hard FRACTION accused (real botters, n_frac≥10%) — for contrast =="
+          frac.sort_by { |h| -(h[:named] || 0) }.first(8).each { |h| puts format("  %-20s V=%-5d roster=%-3d named=%-2d share=%.1f%% auth=%s", h[:login], h[:v], h[:roster], h[:named], h[:share], h[:auth]) }
+          puts "\n== VERDICT hint =="
+          hi = auths.count { |a| a >= 95 }
+          puts "  #{hi}/#{auths.size} c_hard_abs-accused have auth≥95% → #{hi > auths.size / 2 ? '🔴 likely OVER-firing (raise count/share OR enable mc_max=8 OR add min-fraud gate)' : '🟢 mostly low-auth = real fraud'}"
+          puts "\n===== AUDIT DONE ====="
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/ca.rb hostkey:/tmp/ca.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker cp /tmp/ca.rb $C:/tmp/ca.rb && docker exec -e SAMPLE='${{ inputs.sample || '300' }}' $C sh -c 'bin/rails runner /tmp/ca.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
