@@ -109,6 +109,21 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(chatters["clean"].temporal_recurrence).to be_nil
     end
 
+    it "M3.1: wires chatter_mc (username → max_concurrent) from the flagged map, excluding utility + unflagged" do
+      flagged = {
+        "botspam" => { bot_flag_tier: "confirmed", bot_type: "spam", event_count: 9, max_concurrent_channels: 12 },
+        "unknownbot" => { bot_flag_tier: "flag", bot_type: "unknown", event_count: 4, max_concurrent_channels: 6 },
+        "utilitybot" => { bot_flag_tier: "flag", bot_type: "utility", event_count: 5, max_concurrent_channels: 8 }
+      }
+      c = described_class.build_v2(stream, ctx_hash(chatters: %w[botspam unknownbot utilitybot clean], flagged: flagged))
+      # keyed by the SAME username strings b_hard members carry; utility allowlist + unflagged omitted.
+      expect(c.chatter_mc).to eq("botspam" => 12, "unknownbot" => 6)
+    end
+
+    it "M3.1: chatter_mc is {} when there are no temporal flags (byte-identical mc-filter — every named counts)" do
+      expect(described_class.build_v2(stream, ctx_hash(chatters: %w[a b])).chatter_mc).to eq({})
+    end
+
     it "wires known_bot_hit from the batch denylist check" do
       allow_any_instance_of(KnownBotService).to receive(:check_batch)
         .and_return({ "knownbot" => { bot: true, confidence: 0.95, sources: %w[a b] } })
@@ -259,8 +274,9 @@ RSpec.describe TrustIndex::ContextBuilder do
         csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0,
         # TI v2.1 C_pop dormant (enabled 0.0; density_frac=999 + N=999 backstops)
         cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30,
-        # FULL-CHAIN M3 c_hard hybrid dormant (enabled 0.0; 999 backstops)
+        # FULL-CHAIN M3 c_hard hybrid dormant (enabled 0.0; 999 backstops) + M3.1 mc-filter dormant (999)
         chard_abs_enabled: 0.0, chard_abs_count: 999.0, chard_abs_roster_min: 999.0, chard_abs_share: 999.0,
+        chard_abs_mc_max: 999.0,
         # FULL-CHAIN M4 shared deficit-family floor dormant (0.0)
         deficit_min_ccv: 0.0,
         # TI v2.1 recurrence_gate dormant (enabled 0.0; r_full=1.0 ∧ new_floor=1.0 neutral backstop)

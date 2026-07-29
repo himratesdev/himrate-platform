@@ -109,9 +109,15 @@ module TrustIndex
       def c_hard_abs
         return false unless @k.respond_to?(:chard_abs_enabled) && @k.chard_abs_enabled.to_f.positive?
 
-        @c.named_count.to_i >= @k.chard_abs_count.to_f &&
+        # M3.1: trigger on the DEDICATED named count (mc-filtered), NOT the full named_count — a roaming-spam
+        # member (mc≥15) can't lift a big honest channel into accusation. named_count_dedicated ==
+        # named_count at the dormant mc_max default (999) → byte-identical. Falls back to named_count when the
+        # ctx double predates the field (isolated unit tests) → old behavior preserved.
+        has_ded = @c.respond_to?(:named_count_dedicated) && !@c.named_count_dedicated.nil?
+        dedicated = has_ded ? @c.named_count_dedicated : @c.named_count
+        dedicated.to_i >= @k.chard_abs_count.to_f &&
           @c.n_chat_eff.to_i >= @k.chard_abs_roster_min.to_f &&
-          (@c.n_chat_eff.positive? ? @c.named_count.to_f / @c.n_chat_eff : 0.0) >= @k.chard_abs_share.to_f
+          (@c.n_chat_eff.positive? ? dedicated.to_f / @c.n_chat_eff : 0.0) >= @k.chard_abs_share.to_f
       end
 
       def c_self

@@ -34,8 +34,8 @@ RSpec.describe Calibration::Registry do
       :csustained_enabled, :csustained_n_windows, :csustained_elevated_margin, :csustained_cov_ceiling,
       # TI v2.1 C_pop population-anchored corroborator (dormant, silent-always-botter fix)
       :cpop_enabled, :cpop_n_windows, :cpop_density_frac, :cpop_elevated_margin,
-      # FULL-CHAIN M3 c_hard hybrid integer named-count trigger (dormant)
-      :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share,
+      # FULL-CHAIN M3 c_hard hybrid integer named-count trigger (dormant) + M3.1 mc-filter (dormant)
+      :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share, :chard_abs_mc_max,
       # FULL-CHAIN M4 shared deficit-family absolute floor (dormant)
       :deficit_min_ccv,
       # TI v2.1 recurrence_gate EIHC anti-gaming (dormant)
