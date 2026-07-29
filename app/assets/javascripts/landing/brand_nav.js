@@ -14,6 +14,7 @@
     "Nav · Watchlists": "/app/watchlists",
     "Nav · Лучшие моменты": "/app/moments",
     "Nav · Поиск стримеров": "/app/search",
+    "Nav · Поиск блогеров": "/app/creators",
     "Nav · Сравнение": "/app/compare",
     "Nav · Настройки": "/app/settings",
     "Nav · Мой канал": "/app/channel",
@@ -38,6 +39,19 @@
     el.style.cursor = "pointer";
     el.addEventListener("click", function () { window.location.href = route; });
     el.style.backgroundColor = isActive(route) ? ACTIVE_BG : ""; // route-authoritative highlight
+  });
+
+  // Sidebar items whose page isn't built yet: give them a visible "coming soon" state so they
+  // don't read as active clickable rows with a silent dead click (SITE-AUDIT-2). "Поиск блогеров"
+  // is deliberately NOT here — it has a live route (/app/creators) and is now wired above.
+  var DEFERRED = ["Nav · Алерты", "Nav · Биржа", "Nav · Измерение", "Nav · Кампании",
+    "Nav · Команда", "Nav · Подключение", "Nav · Подписка", "Nav · Шаблоны"];
+  DEFERRED.forEach(function (name) {
+    var el = q(name);
+    if (!el) return;
+    el.style.opacity = "0.4";
+    el.style.cursor = "default";
+    el.title = "Скоро";
   });
 
   // Topbar: show the signed-in user's initial and route the account control to /login (which shows the

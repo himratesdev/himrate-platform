@@ -43,6 +43,16 @@
   disable("Email In");
   disable("Continue T");
 
+  // Brand mark → back to marketing (escape hatch: a guest who reached /login and changed
+  // their mind had no way back; SITE-AUDIT-2). Legal links are real <a href> in the view.
+  ["L Logo", "L Wordmark"].forEach(function (name) {
+    var n = el(name);
+    if (n) {
+      n.style.cursor = "pointer";
+      n.addEventListener("click", go("/"));
+    }
+  });
+
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) {
       return r.ok ? r.json() : {};
