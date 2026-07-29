@@ -26,7 +26,12 @@ module SocialAnalytics
 
       # Build-for-scale: no single external source may crash the whole warm. Each fetch degrades to
       # its own empty/unavailable result so the profile always assembles (footprint + whatever analysed).
-      socials = safe("TwitchSocials") { TwitchSocials.call(@login) } || []
+      socials = safe("TwitchSocials") { TwitchSocials.call(@login) }
+      # nil = the Twitch socialMedias SEED fetch failed (transient GQL rate-limit / service error) — return
+      # nil so ProfileRefreshWorker does NOT cache an empty profile for 24h (a streamer would see «no
+      # socials» until expiry); the endpoint re-warms on the next request. [] = genuinely no linked socials.
+      return nil if socials.nil?
+
       {
         login: @login,
         socials: socials, # full footprint (every linked account, incl. display-only discord/rkn)

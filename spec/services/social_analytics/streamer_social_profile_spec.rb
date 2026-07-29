@@ -41,6 +41,13 @@ RSpec.describe SocialAnalytics::StreamerSocialProfile do
     expect(r[:platforms]).to eq({})
   end
 
+  it "returns nil (do NOT cache an empty profile) when the Twitch socials SEED fetch fails" do
+    # nil = TwitchSocials fetch failed (transient GQL) — distinct from [] (genuinely no socials).
+    # A nil profile makes ProfileRefreshWorker skip the 24h cache so the endpoint re-warms.
+    allow(SocialAnalytics::TwitchSocials).to receive(:call).and_return(nil)
+    expect(described_class.call("flaky")).to be_nil
+  end
+
   it "wires the YouTube platform alongside Telegram" do
     allow(SocialAnalytics::TwitchSocials).to receive(:call).and_return([
       { platform: "youtube", url: "https://www.youtube.com/c/recrentchannel", handle: "recrentchannel", analyzable: true }
@@ -69,10 +76,10 @@ RSpec.describe SocialAnalytics::StreamerSocialProfile do
     expect(r.dig(:platforms, :telegram, :available)).to be(false) # platform marked unavailable, no raise
   end
 
-  it "returns an empty footprint (not a crash) when the Twitch seed itself raises" do
+  it "returns nil (not a crash, and not a cacheable empty profile) when the Twitch seed RAISES" do
+    # A raising seed is a FAILURE, not «no socials» — safe{} swallows the raise → nil → the profile is
+    # nil so the worker skips the 24h cache and re-warms later (same path as a nil TwitchSocials return).
     allow(SocialAnalytics::TwitchSocials).to receive(:call).and_raise(StandardError, "gql down")
-    r = described_class.call("recrent")
-    expect(r[:socials]).to eq([])
-    expect(r[:platforms]).to eq({})
+    expect(described_class.call("recrent")).to be_nil
   end
 end
