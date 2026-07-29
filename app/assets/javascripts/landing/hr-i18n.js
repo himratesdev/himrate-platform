@@ -245,7 +245,6 @@ window.HR_TRANS = {
   "Из публичных данных": "From public data",
   "Изменчивая": "Volatile",
   "Измерение результата кампании": "Campaign result measurement",
-  "Измерение результата кампании": "Campaign result measurement",
   "Имя": "Name",
   "Интеграция в эфире": "In-stream integration",
   "Историю баллов и рейдов теряет через неделю": "Loses score and raid history after a week",
