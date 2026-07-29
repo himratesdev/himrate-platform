@@ -5,7 +5,10 @@ require "rails_helper"
 RSpec.describe Social::FootprintIndexWorker do
   let(:channel) { create(:channel, login: "recrent", is_monitored: true, social_synced_at: nil) }
 
-  before { allow(Flipper).to receive(:enabled?).with(:social_footprint_index).and_return(true) }
+  before do
+    allow(Flipper).to receive(:enabled?).with(:social_footprint_index).and_return(true)
+    allow_any_instance_of(described_class).to receive(:sleep) # skip the inter-call throttle in tests
+  end
 
   def stub_socials(login, socials)
     allow(SocialAnalytics::TwitchSocials).to receive(:call).with(login).and_return(socials)
