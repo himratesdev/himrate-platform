@@ -1,0 +1,79 @@
+name: ti-v2-llr-groundtruth
+# [skip ci] READ-ONLY. B1-unblock: measure per-tier bot-precision from an INDEPENDENT label (the mc /
+# max_concurrent_channels signature) — NOT from the circular HUMAN-strict corpus (which excludes
+# temporally-flagged users by construction). For each temporal tier (watch R2 / flag R3 / yellow R4-6 /
+# confirmed R7+), sample users and measure their mc-distribution: mc=EXACTLY-3 ∧ high-R = the malicious
+# botnet signature (rotate-3-channels, R∈[70,170]); mc≥15 = roaming utility/spam; the mc≤5 "dedicated"
+# fraction within a tier is an independent P(bot|tier) proxy. From that ladder, propose calibrated
+# llr_temporal_r2/r3/r4/r7 (LLR = logit(π̂_bot) − logit(π0)). Analysis only — the naming flip is PO-gated.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      per_tier: { required: false, type: string, default: "400" }
+jobs:
+  gt:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/gt.rb <<'RB'
+          $stdout.sync = true
+          PT = ENV.fetch("PER_TIER", "400").to_i.clamp(50, 2000)
+          k = Calibration::Registry.load
+          pi0 = k.pi0
+          logit = ->(p) { Math.log(p / (1.0 - p)) }
+          def pct(s, p) = s.empty? ? nil : s.sort[(p * (s.size - 1)).round]
+
+          puts "===== LLR GROUND-TRUTH (mc-signature, independent of tier) @ #{Time.current.iso8601} ====="
+          puts "π0=#{pi0}  current LLR: r2=#{k.llr_temporal_r2} r3=#{k.llr_temporal_r3} r4=#{k.llr_temporal_r4} r7=#{k.llr_temporal_r7}"
+          puts "τ_gap=logit(0.90)−logit(π0)=#{(logit.call(0.90) - logit.call(pi0)).round(3)} (b_hard names iff ΣLLR≥τ_gap)"
+
+          tiers = { "watch(R2)" => "watch", "flag(R3)" => "flag", "yellow(R4-6)" => "yellow", "confirmed(R7+)" => "confirmed" }
+          ladder = {}
+          tiers.each do |label, t|
+            rows = CrossChannelTemporalFlag.where(bot_flag_tier: t, bot_type: "spam")
+                     .limit(PT).pluck(:event_count, :max_concurrent_channels)
+            next puts("  #{label}: 0 rows") if rows.empty?
+            mcs = rows.map { |_, m| m.to_i }; rs = rows.map { |r, _| r.to_i }
+            ded = mcs.count { |m| m <= 5 }        # dedicated botnet (incl. mc=3 signature)
+            mc3 = mcs.count { |m| m == 3 }        # the EXACT rotate-3 signature
+            roam = mcs.count { |m| m >= 15 }      # roaming utility/spam
+            # Independent bot-precision proxy = dedicated (mc≤5) fraction within the tier. Clamp for logit.
+            pi_hat = (ded.to_f / rows.size).clamp(0.001, 0.999)
+            llr = (logit.call(pi_hat) - logit.call(pi0)).round(3)
+            ladder[label] = llr
+            puts format("\n  %-14s n=%-4d  mc=3(sig)=%d%%  mc≤5(dedicated)=%d%%  mc≥15(roaming)=%d%%  R p50=%s p90=%s",
+                        label, rows.size, (100.0 * mc3 / rows.size).round, (100.0 * ded / rows.size).round,
+                        (100.0 * roam / rows.size).round, pct(rs, 0.5), pct(rs, 0.9))
+            puts format("    → π̂_bot(mc≤5)=%.3f → LLR_%s = %.3f   (current %s)",
+                        pi_hat, t, llr, (t == "watch" ? k.llr_temporal_r2 : t == "flag" ? k.llr_temporal_r3 : t == "yellow" ? k.llr_temporal_r4 : k.llr_temporal_r7))
+          end
+
+          puts "\n== PROPOSED LLR (from mc-signature precision; FP-conservative = use mc≤5, the tighter bot label) =="
+          puts "  llr_temporal_r2 ≈ #{ladder['watch(R2)']}  (current #{k.llr_temporal_r2})"
+          puts "  llr_temporal_r3 ≈ #{ladder['flag(R3)']}  (current #{k.llr_temporal_r3})"
+          puts "  llr_temporal_r4 ≈ #{ladder['yellow(R4-6)']}  (current #{k.llr_temporal_r4})"
+          puts "  llr_temporal_r7 ≈ #{ladder['confirmed(R7+)']}  (current #{k.llr_temporal_r7})"
+          tg = (logit.call(0.90) - logit.call(pi0))
+          puts "\n== NAMING CHECK (LLR + llr_known_bot #{k.llr_known_bot} vs τ_gap #{tg.round(2)}) =="
+          %w[watch(R2) flag(R3) yellow(R4-6) confirmed(R7+)].each do |lb|
+            next unless ladder[lb]
+            solo = ladder[lb] >= tg
+            wknown = (ladder[lb] + k.llr_known_bot) >= tg
+            puts "  #{lb}: solo-names=#{solo}  +known_bot-names=#{wknown}"
+          end
+          puts "\n(⚠ mc≤5 is a STRUCTURAL bot proxy, not gold ground truth — high-R multi-channel lurkers can also sit at mc=3-5.\n Use as the FP-conservative floor; a naming (r7) flip still needs the re-bot / ban-outcome confirmation. Analysis only.)"
+          puts "\n===== GROUND-TRUTH DONE ====="
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/gt.rb hostkey:/tmp/gt.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker cp /tmp/gt.rb $C:/tmp/gt.rb && docker exec -e PER_TIER='${{ inputs.per_tier || '400' }}' $C sh -c 'bin/rails runner /tmp/gt.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
