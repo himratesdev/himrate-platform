@@ -135,6 +135,33 @@
     });
   }
 
+  // Navigation wiring (SITE-AUDIT-2 CJM). The public card renders on the landing layout
+  // WITHOUT hr-shared.js (the marketing nav engine), so its chrome was dead: the card was
+  // a navigational dead-end (no escape to marketing) AND the registration Gate CTAs did
+  // nothing — the biggest SEO→signup conversion leak. Wire them explicitly here.
+  function nav(pencilName, dest) {
+    var n = el(pencilName);
+    if (!n) return;
+    n.style.cursor = "pointer";
+    n.addEventListener("click", function (e) {
+      e.preventDefault();
+      if (dest === "back") {
+        if (window.history.length > 1) window.history.back();
+        else window.location.href = "/";
+      } else {
+        window.location.href = dest;
+      }
+    });
+  }
+  // Registration Gate → sign-in (both CTAs open LK/paid surfaces that require an account).
+  nav("Gate CTA1", "/login"); // «Открыть в кабинете»
+  nav("Gate CTA2", "/login"); // «Разовый отчёт за период»
+  // Escape hatches back to marketing (the card is a shared / SEO landing surface).
+  nav("Logo", "/");
+  nav("Wordmark", "/");
+  nav("BC Home", "/");
+  nav("BC Back", "back");
+
   fetch("/api/v1/channels/" + encodeURIComponent(login) + "/card", {
     // This is a RU page (lang="ru") — pin the API locale to ru so labels (erv_label) come back
     // in Russian regardless of the visitor's browser locale.
