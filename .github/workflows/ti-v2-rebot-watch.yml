@@ -1,0 +1,92 @@
+name: ti-v2-rebot-watch
+# [skip ci] READ-ONLY re-bot watch harness for a CONSENTED channel. One command → the WHOLE live moat
+# state for `login`: current flags/consts, full L0-L4 breakdown, and EVERY live corroborator made explicit
+# (C_hard fraction / c_hard_abs integer-count / C_self^SP sustained-plateau / C_inflation CCV-shape /
+# F_soft deficit), plus the flagged+named bots with tier + max_concurrent (mc) so the operator can see the
+# injected bots being detected. Run it BEFORE bots (baseline), DURING injection (every few min), and AFTER
+# bot-off (recovery) to capture the verdict trajectory. Zero writes.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      login: { required: true, type: string }
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/rw.rb <<'RB'
+          $stdout.sync = true
+          LOGIN = ENV.fetch("LOGIN").downcase.strip
+          CB = TrustIndex::ContextBuilder
+          k = Calibration::Registry.load
+          ch = Channel.find_by("LOWER(login) = ?", LOGIN)
+          abort "channel '#{LOGIN}' not found" unless ch
+          s = Stream.where(channel_id: ch.id, ended_at: nil).order(started_at: :desc).first
+          abort "channel '#{LOGIN}' is not LIVE (no open stream)" unless s
+
+          puts "===== RE-BOT WATCH: #{LOGIN} @ #{Time.current.iso8601} (stream started #{((Time.current - s.started_at) / 60).round}min ago) ====="
+          puts "\n== LIVE MOAT STATE (what tonight's re-bot tests) =="
+          %w[deficit_min_ccv chard_abs_enabled chard_abs_count chard_abs_roster_min chard_abs_share
+             csustained_enabled inflation_corrob_enabled cpop_enabled i_event_enabled].each do |c|
+            puts "  #{c} = #{CalibrationConstant.value_for(c, fallback: 'MISSING/default')}"
+          end
+          %i[ti_v2_engine temporal_cross_channel ti_v2_cowindowed_rho].each { |f| puts "  flag #{f} = #{Flipper.enabled?(f)}" }
+
+          ctx = CB.build(s)
+          roster = ctx[:stream_chatters] || []
+          v2c = CB.build_v2(s, ctx)
+          wr, vw = CB.windowed_inputs(s)
+          wctx = vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c
+          r = TrustIndex::V2::Engine.compute(context: wctx, k: k)
+          codes = r.reason_codes.map(&:code)
+
+          puts "\n== VERDICT == band=#{r.band&.color}/#{r.band&.row}#{r.band&.sub}  authenticity=#{r.authenticity&.round(1)}  erv=#{r.erv&.round}  confirmed_anomaly=#{r.confirmed_anomaly}"
+          puts "  V(instant)=#{v2c.v}  V_W(windowed)=#{vw || '—'}  roster=#{roster.size}  cell_calibrated=#{(v2c.cell.calibrated rescue '?')}"
+          puts "\n== LAYER BREAKDOWN =="
+          puts "  L0/L1 identity: b_hard(named)=#{r.b_hard.size}  f_hard_lo=#{r.f_hard_lo&.round(2)}  n_frac=#{r.n_frac&.round(4)}"
+          puts "  L2 presume    : eihc=#{r.eihc&.round(1)}  rho_obs=#{r.rho_obs&.round(4)}  f_soft=#{r.f_soft&.round(1)}  f_soft_lo=#{r.f_soft_lo&.round(1)}  (cell rho*=#{v2c.cell&.rho_star})"
+          puts "  L3 fuse       : f_hat=#{r.f_hat&.round(1)}  f_self=#{r.f_self&.round(1)}"
+
+          # EVERY corroborator explicit
+          nf = r.n_frac.to_f
+          c_hard_frac = nf >= k.phi_yellow
+          named = r.b_hard.size
+          share = roster.size.positive? ? named.to_f / roster.size : 0.0
+          c_hard_abs = CalibrationConstant.value_for("chard_abs_enabled", fallback: 0.0).to_f.positive? &&
+                       named >= CalibrationConstant.value_for("chard_abs_count", fallback: 999).to_f &&
+                       roster.size >= CalibrationConstant.value_for("chard_abs_roster_min", fallback: 999).to_f &&
+                       share >= CalibrationConstant.value_for("chard_abs_share", fallback: 999).to_f
+          puts "\n== CORROBORATORS (which caught it) =="
+          puts "  C_hard  (fraction n_frac≥#{k.phi_yellow}): #{c_hard_frac}  [n_frac=#{nf.round(4)}]"
+          puts "  c_hard_abs (integer count≥#{CalibrationConstant.value_for('chard_abs_count', fallback: '?')}): #{c_hard_abs}  [named=#{named} roster=#{roster.size} share=#{share.round(4)}]"
+          puts "  C_self / C_self^SP (self-history): #{r.c_self}  [SELF_HISTORY_SUSTAINED_INFLATION in codes: #{codes.include?('SELF_HISTORY_SUSTAINED_INFLATION')}]"
+          puts "  C_inflation (CCV↑∧chat-flat): divergence=#{v2c.ccv_chat_divergence&.round(3)} vs phi=#{k.phi_inflation}  [INFLATION_EVENT_CORROBORATION in codes: #{codes.include?('INFLATION_EVENT_CORROBORATION')}]"
+          puts "  F_soft deficit alone (non-accusatory AMBER): #{r.f_soft_lo.to_f > 0 && !r.confirmed_anomaly}"
+          puts "  reason_codes: #{codes.inspect}"
+
+          # The flagged + named bots (chatting cross-channel bots — for a CHATTING-bot re-bot). Silent
+          # viewbots won't appear here (chat-invisible) → they show up as an F_soft/C_self^SP deficit instead.
+          fl = (ctx.dig(:temporal_cross_channel_flags, :flagged) || {}).reject { |_, v| v[:bot_type] == 'utility' }
+          named_set = r.b_hard.map(&:username).to_set
+          puts "\n== DETECTED CROSS-CHANNEL FLAGGED IN ROSTER: #{fl.size} (named/b_hard: #{named}) =="
+          fl.sort_by { |_, v| -v[:event_count].to_i }.first(20).each do |u, v|
+            puts format("  %-22s R=%-4d tier=%-9s mc=%-3d %s", u, v[:event_count], v[:bot_flag_tier], v[:max_concurrent_channels], named_set.include?(u) ? 'NAMED(b_hard)' : '')
+          end
+          puts "\n(SILENT viewbots are chat-invisible → 0 flagged; caught via F_soft deficit / C_self^SP / C_inflation.")
+          puts "(CHATTING cross-channel bots → appear flagged; caught via C_hard fraction / c_hard_abs count.)"
+          puts "\n===== WATCH DONE ====="
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/rw.rb hostkey:/tmp/rw.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker cp /tmp/rw.rb $C:/tmp/rw.rb && docker exec -e LOGIN='${{ inputs.login }}' $C sh -c 'bin/rails runner /tmp/rw.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
