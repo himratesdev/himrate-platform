@@ -285,19 +285,21 @@ module Twitch
       return nil if channel_login.blank?
 
       result = execute(QUERIES[:channel_about], { login: channel_login })
-      user = result&.dig("data", "user")
-      return nil unless user
+      format_channel_about(result&.dig("data", "user"))
+    end
 
-      {
-        id: user["id"],
-        display_name: user["displayName"],
-        description: user["description"],
-        primary_color_hex: user["primaryColorHex"],
-        profile_image_url: user["profileImageURL"],
-        social_medias: user.dig("channel", "socialMedias")&.map do |sm|
-          { name: sm["name"], title: sm["title"], url: sm["url"] }
-        end
-      }
+    # Batch channel_about for many logins in ONE GQL request (SA-2 footprint index). A per-channel loop
+    # of 100 tight calls rate-limits Twitch (partial "service error" / nil); one batch request of ≤35 is
+    # 1/N the requests → no rate-limit. Returns { login => channel_about-hash | nil } (nil = that slot
+    # failed / user not found — same shape/semantics as the single channel_about).
+    def batch_channel_about(logins:)
+      logins = Array(logins).map(&:to_s).reject(&:blank?)
+      return {} if logins.empty?
+      raise ArgumentError, "Batch size #{logins.size} exceeds max #{MAX_BATCH_SIZE}" if logins.size > MAX_BATCH_SIZE
+
+      operations = logins.map { |login| { query: QUERIES[:channel_about], variables: { login: login } } }
+      items = execute_batch(operations) # array parallel to logins; nil per slot on failure
+      logins.each_with_index.to_h { |login, i| [ login, format_channel_about(items[i]&.dig("data", "user")) ] }
     end
 
     # FR-014: User following list (for follow-bot detection)
@@ -512,6 +514,24 @@ module Twitch
     rescue JSON::ParserError => e
       Rails.logger.error("Twitch GQL JSON parse error: #{e.message}")
       nil
+    end
+
+    # Shared shape for channel_about (single + batch): a GQL `user` node → our symbol hash, or nil when
+    # the user is absent (not found / errored slot / partial failure). socialMedias is preserved as
+    # nil (field failed to resolve — partial "service error") vs [] (genuinely none) so callers can tell.
+    def format_channel_about(user)
+      return nil unless user
+
+      {
+        id: user["id"],
+        display_name: user["displayName"],
+        description: user["description"],
+        primary_color_hex: user["primaryColorHex"],
+        profile_image_url: user["profileImageURL"],
+        social_medias: user.dig("channel", "socialMedias")&.map do |sm|
+          { name: sm["name"], title: sm["title"], url: sm["url"] }
+        end
+      }
     end
 
     def parse_batch_response(response)

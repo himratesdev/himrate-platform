@@ -98,6 +98,45 @@ RSpec.describe Twitch::GqlClient do
     end
   end
 
+  describe "#batch_channel_about" do
+    it "returns { login => channel_about } in one request, preserving socialMedias per slot" do
+      stub_gql_batch(
+        size: 2,
+        responses: [
+          { data: { user: { id: "1", displayName: "Recrent",
+                            channel: { socialMedias: [ { name: "t", title: "Telegram", url: "https://t.me/recrent" } ] } } } },
+          { data: { user: { id: "2", displayName: "NoSocials", channel: { socialMedias: [] } } } }
+        ]
+      )
+
+      result = client.batch_channel_about(logins: %w[recrent nosocials])
+      expect(result["recrent"][:social_medias]).to eq([ { name: "t", title: "Telegram", url: "https://t.me/recrent" } ])
+      expect(result["nosocials"][:social_medias]).to eq([]) # genuine empty preserved (not nil)
+    end
+
+    it "maps a failed/absent slot to nil, and a partial (socialMedias null) keeps social_medias nil" do
+      stub_gql_batch(
+        size: 2,
+        responses: [
+          { data: { user: nil }, errors: [ { message: "not found" } ] },
+          { data: { user: { id: "3", displayName: "Partial", channel: { socialMedias: nil } } } }
+        ]
+      )
+
+      result = client.batch_channel_about(logins: %w[gone partial])
+      expect(result["gone"]).to be_nil                      # absent user → nil about
+      expect(result["partial"][:social_medias]).to be_nil   # partial failure preserved for the caller
+    end
+
+    it "raises when the batch exceeds MAX_BATCH_SIZE" do
+      expect { client.batch_channel_about(logins: Array.new(36, "u")) }.to raise_error(ArgumentError, /exceeds max 35/)
+    end
+
+    it "returns {} for an empty login list without a request" do
+      expect(client.batch_channel_about(logins: [])).to eq({})
+    end
+  end
+
   # === FR-003: CommunityTab ===
 
   describe "#community_tab" do

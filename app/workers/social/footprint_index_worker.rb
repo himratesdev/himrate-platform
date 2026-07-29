@@ -18,12 +18,12 @@ module Social
     sidekiq_options queue: :long_running, retry: 1
 
     STALE_AFTER = 7.days
-    MAX_PER_RUN = 100
-    # Space out the per-channel GQL calls. A rapid 100-call burst of channel_about trips Twitch GQL
-    # rate-limiting → "service error" partial responses (socialMedias comes back null) → the backfill
-    # stalled + falsely-empty stamps. Verified: 8/8 succeed at 0.3s spacing, the burst fails. 100 × 0.3s
-    # ≈ 30s/run on :long_running (every 15 min) — well within budget, still 9600/day capacity.
-    THROTTLE = 0.3
+    MAX_PER_RUN = 120
+    # BATCH the channel_about GQL calls (≤ GqlClient MAX_BATCH_SIZE 35). A per-channel loop of 100 tight
+    # calls rate-limited Twitch (~50% partial "service error" / nil); one batch request per 30 channels is
+    # 1/30th the requests → no rate-limit, and far faster. 120/run = 4 batch requests every 15 min →
+    # 11,520/day capacity (covers the pool + 10× growth) with a tiny GQL footprint.
+    BATCH_SIZE = 30
 
     def perform
       return unless Flipper.enabled?(:social_footprint_index)
@@ -31,11 +31,7 @@ module Social
       channels = channels_to_sync
       return if channels.empty?
 
-      synced = 0
-      channels.each_with_index do |channel, i|
-        sleep(THROTTLE) if i.positive?
-        synced += sync_channel(channel)
-      end
+      synced = channels.each_slice(BATCH_SIZE).sum { |slice| sync_batch(slice) }
       Rails.logger.info("Social::FootprintIndexWorker: synced #{synced}/#{channels.size} channels")
     end
 
@@ -50,13 +46,22 @@ module Social
              .limit(MAX_PER_RUN)
     end
 
+    # One GQL batch → the channel_about for every login in the slice → normalize + persist each.
+    def sync_batch(channels)
+      abouts = Twitch::GqlClient.new.batch_channel_about(logins: channels.map(&:login))
+      channels.sum { |channel| sync_channel(channel, abouts[channel.login]) }
+    rescue StandardError => e
+      Rails.logger.warn("Social::FootprintIndexWorker: batch failed (#{e.class}: #{e.message&.slice(0, 120)}) — retry next run")
+      0
+    end
+
     # Replace a channel's link set with its fresh Twitch socialMedias footprint (delete-then-insert in a
-    # txn so a removed link disappears). TwitchSocials contract: nil = the GQL fetch FAILED → skip WITHOUT
-    # stamping (retry next run, so a channel that has socials isn't frozen empty); [] = fetched OK, no
-    # socials → stamp (0 links) to avoid a retry storm. Returns 1 if the channel was (re)synced, else 0.
-    def sync_channel(channel)
-      socials = SocialAnalytics::TwitchSocials.call(channel.login)
-      return 0 if socials.nil? # transient GQL failure — no stamp, retry next run
+    # txn so a removed link disappears). TwitchSocials.from_about contract: nil = the fetch/socialMedias
+    # FAILED → skip WITHOUT stamping (retry next run, so a channel that has socials isn't frozen empty);
+    # [] = fetched OK, no socials → stamp (0 links) to avoid a retry storm. Returns 1 if synced, else 0.
+    def sync_channel(channel, about)
+      socials = SocialAnalytics::TwitchSocials.from_about(about)
+      return 0 if socials.nil? # transient/partial GQL failure — no stamp, retry next run
 
       persist(channel, socials)
       1
