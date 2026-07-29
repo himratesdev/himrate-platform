@@ -128,7 +128,11 @@ module TrustIndex
         sustained_count: v2_sustained_count(stream, consts),
         ccv_cov: i_event_cov_metric((context_hash[:ccv_series_30min] || []).filter_map { |h| h[:ccv]&.to_f }),
         # TI v2.1 C_pop: the channel's cross-stream deficit-window density (0 + no read when cpop_enabled≤0).
-        pop_deficit_density: v2_pop_deficit_density(channel, consts)
+        pop_deficit_density: v2_pop_deficit_density(channel, consts),
+        # FULL-CHAIN M3.1: {username => max_concurrent_channels} from the ALREADY-fetched temporal flags
+        # (zero new query) — feeds the c_hard_abs mc-filter (count only mc ≤ chard_abs_mc_max dedicated
+        # botnet members). {} when temporal flags absent → every named member counts (byte-identical).
+        chatter_mc: v2_chatter_mc(context_hash)
       )
     end
 
@@ -640,6 +644,17 @@ module TrustIndex
       # LEADING-run) — a single sacrificial green window can't buy 90-day immunity (the sparse-green evasion
       # fix). DORMANT: cpop_enabled≤0 → 0.0 with NO read. One bounded index-ordered read on the composite
       # (channel_id, calculated_at) index. Returns 0.0..1.0.
+      # M3.1 mc-filter input: {username => max_concurrent_channels} for the flagged (non-utility) roster —
+      # from the temporal flags ALREADY in context_hash (no CH/PG). Feeds the c_hard_abs mc-filter. {} absent.
+      def v2_chatter_mc(context_hash)
+        flagged = context_hash.dig(:temporal_cross_channel_flags, :flagged) || {}
+        flagged.each_with_object({}) do |(u, v), acc|
+          next if v[:bot_type] == "utility"
+
+          acc[u] = v[:max_concurrent_channels]
+        end
+      end
+
       def v2_pop_deficit_density(channel, consts)
         return 0.0 unless (consts["cpop_enabled"] || 0.0).to_f.positive?
 

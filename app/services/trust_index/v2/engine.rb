@@ -52,12 +52,23 @@ module TrustIndex
         :sustained_count, :ccv_cov,
         # TI v2.1 C_pop (population-anchored, silent-always-botter fix): the CHANNEL's cross-stream density
         # of deficit windows (0 + no read when cpop_enabled≤0). Fed to the C_pop persistence gate.
-        :pop_deficit_density
+        :pop_deficit_density,
+        # FULL-CHAIN M3.1: per-username max_concurrent_channels (mc) map from the temporal flags — feeds the
+        # c_hard_abs mc-filter (count only DEDICATED-botnet named members, mc ≤ chard_abs_mc_max; exclude
+        # mc≥15 roaming spam). {} when temporal flags absent → every named member counts (byte-identical).
+        :chatter_mc
       )
 
       SelfCtx = Data.define(:eligible, :v, :eihc, :rho_self_lo)
       EmitCtx = Data.define(:v, :n_chat_eff, :q, :i_event, :raid_window, :cold_start_tier,
-                            :named_count, :self_history_stable, :chatter_quality_high,
+                            :named_count,
+                            # FULL-CHAIN M3.1: the DEDICATED named count (B_hard members with mc ≤
+                            # chard_abs_mc_max) — c_hard_abs triggers on this, not the full named_count, so a
+                            # roaming-spam member (mc≥15) can't lift a big honest channel into accusation.
+                            # == named_count at the dormant default (mc_max 999). named_count stays the FULL
+                            # count for the HARD_NAMED_FRACTION display (named_pct).
+                            :named_count_dedicated,
+                            :self_history_stable, :chatter_quality_high,
                             :stream_count, :unattributed_surge, :thin_sample, :ccv_chat_divergence,
                             # TI v2.1 BUG-A: windowed V_W (nil dormant) — L4 divides band-driver ratios
                             # by V_W (deficit frame) while ERV/authenticity keep instant :v (display).
@@ -312,10 +323,22 @@ module TrustIndex
         @ctx.raw_chatters.map { |c| c.respond_to?(:with) ? c.with(recurrence_gate: 1.0) : c }
       end
 
+      # FULL-CHAIN M3.1 mc-filter: the count of B_hard members that are DEDICATED (max_concurrent ≤
+      # chard_abs_mc_max) — c_hard_abs triggers on this. A member with no temporal mc (nil — e.g. a
+      # known_bot not cross-channel-flagged) counts (it's a named bot regardless). DORMANT default
+      # (mc_max 999) → every realistic mc ≤ 999 → dedicated == full named_count → byte-identical.
+      # respond_to? keeps isolated-K doubles working (they lack chard_abs_mc_max → treated as 999 → all count).
+      def named_count_dedicated(post)
+        mc_max = (@k.chard_abs_mc_max.to_f if @k.respond_to?(:chard_abs_mc_max)) || 999.0
+        mc = @ctx.chatter_mc || {}
+        post.b_hard.count { |c| m = mc[c.username]; m.nil? || m.to_i <= mc_max }
+      end
+
       def emit_ctx(post, i_evt, soft)
         EmitCtx.new(v: @ctx.v, n_chat_eff: @ctx.n_chat_eff, q: @ctx.q, i_event: i_evt,
                     raid_window: @ctx.raid_window, cold_start_tier: @ctx.cold_start_tier,
-                    named_count: post.b_hard.size, self_history_stable: @ctx.self_history_stable,
+                    named_count: post.b_hard.size, named_count_dedicated: named_count_dedicated(post),
+                    self_history_stable: @ctx.self_history_stable,
                     chatter_quality_high: @ctx.chatter_quality_high, stream_count: @ctx.stream_count,
                     unattributed_surge: @ctx.unattributed_surge, thin_sample: @ctx.thin_sample,
                     ccv_chat_divergence: @ctx.ccv_chat_divergence, v_w: @ctx.v_w,

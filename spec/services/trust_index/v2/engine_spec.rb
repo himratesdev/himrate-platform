@@ -12,7 +12,7 @@ module EngineSpecDoubles
                         :i_event_external, :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
                         :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample,
                         :cps, :reputation, :ccv_chat_divergence, :l2_roster_usernames, :v_w,
-                        :own_ccv_baseline, :sustained_count, :ccv_cov, :pop_deficit_density)
+                        :own_ccv_baseline, :sustained_count, :ccv_cov, :pop_deficit_density, :chatter_mc)
   K = Data.define(:pi0, :tau_hard, :tau_delta, :phi_yellow, :phi_red, :q_mid, :q_hi,
                   :llr_temporal_r2, :llr_temporal_r3, :llr_temporal_r4, :llr_temporal_r7,
                   :llr_per_user_bot_score, :llr_known_bot, :i_event_enabled,
@@ -26,8 +26,8 @@ module EngineSpecDoubles
                   # k.with(deficit_min_ccv: 50) flips it in the M4 describe block.
                   :deficit_min_ccv,
                   # FULL-CHAIN M3 c_hard hybrid integer named-count trigger — dormant defaults (mirror Registry);
-                  # k.with(...) flips them in the M3 describe block.
-                  :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share).new(
+                  # k.with(...) flips them in the M3 describe block. M3.1 mc-filter (chard_abs_mc_max) dormant 999.
+                  :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share, :chard_abs_mc_max).new(
                     pi0: 0.02, tau_hard: 0.9, tau_delta: 0.5, phi_yellow: 0.10, phi_red: 0.35,
                     q_mid: 0.5, q_hi: 0.8, llr_temporal_r2: 1.1, llr_temporal_r3: 2.2,
                     llr_temporal_r4: 2.9, llr_temporal_r7: 4.6, llr_per_user_bot_score: 3.9,
@@ -36,7 +36,8 @@ module EngineSpecDoubles
                     csustained_elevated_margin: 0.30, csustained_cov_ceiling: 0.0,
                     cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30,
                     deficit_min_ccv: 0.0, # DORMANT default (mirror Registry)
-                    chard_abs_enabled: 0.0, chard_abs_count: 999.0, chard_abs_roster_min: 999.0, chard_abs_share: 999.0
+                    chard_abs_enabled: 0.0, chard_abs_count: 999.0, chard_abs_roster_min: 999.0, chard_abs_share: 999.0,
+                    chard_abs_mc_max: 999.0 # M3.1 dormant (mirror Registry — count all mc)
                   )
 end
 
@@ -58,7 +59,7 @@ RSpec.describe TrustIndex::V2::Engine do
              cold_start_tier: "full", self_history_stable: true, chatter_quality_high: true,
              stream_count: 20, unattributed_surge: false, thin_sample: false, cps: 70,
              reputation: "Стабильная", ccv_chat_divergence: 0.0, l2_roster_usernames: nil, v_w: nil,
-             own_ccv_baseline: nil, sustained_count: 0, ccv_cov: nil, pop_deficit_density: 0.0 }
+             own_ccv_baseline: nil, sustained_count: 0, ccv_cov: nil, pop_deficit_density: 0.0, chatter_mc: {} }
     EngineSpecDoubles::Context.new(**base.merge(over))
   end
 
@@ -389,6 +390,36 @@ RSpec.describe TrustIndex::V2::Engine do
     it "FP guard (tier): a BASIC-tier channel with the cluster is NOT accused" do
       r = described_class.compute(context: cluster_ctx(cold_start_tier: "basic"), k: k_abs)
       expect(r.band.row).to be > 2
+    end
+
+    # FULL-CHAIN M3.1 mc-filter — count only DEDICATED (mc ≤ chard_abs_mc_max) named members.
+    it "M3.1 DORMANT (mc_max 999): chatter_mc is inert → dedicated count == full named → fires as before" do
+      # 5 named, 2 of them roaming (mc=20); at the dormant mc_max 999 all 5 count → YELLOW (byte-identical to M3).
+      mc = { "b0" => 3, "b1" => 3, "b2" => 3, "b3" => 20, "b4" => 20 }
+      r = described_class.compute(context: cluster_ctx(chatter_mc: mc), k: k_abs)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
+    end
+
+    it "M3.1 mc-filter ON: roaming (mc≥15) named members are EXCLUDED → a roaming-heavy cluster does NOT accuse" do
+      # Same 5 named but only 3 dedicated (mc=3) + 2 roaming (mc=20). At mc_max=8, count 5→3 < chard_abs_count 5.
+      mc = { "b0" => 3, "b1" => 3, "b2" => 3, "b3" => 20, "b4" => 20 }
+      k5 = k.with(chard_abs_enabled: 1.0, chard_abs_count: 5.0, chard_abs_roster_min: 30.0, chard_abs_share: 0.02, chard_abs_mc_max: 8.0)
+      r = described_class.compute(context: cluster_ctx(chatter_mc: mc), k: k5)
+      expect(r.band.row).to be > 2 # 3 dedicated < 5 required → not accused (roaming spam can't lift the count)
+    end
+
+    it "M3.1 mc-filter keeps a genuine DEDICATED botnet (all mc=3) accused" do
+      mc = { "b0" => 3, "b1" => 3, "b2" => 3, "b3" => 3, "b4" => 3 }
+      k5 = k.with(chard_abs_enabled: 1.0, chard_abs_count: 5.0, chard_abs_roster_min: 30.0, chard_abs_share: 0.02, chard_abs_mc_max: 8.0)
+      r = described_class.compute(context: cluster_ctx(chatter_mc: mc), k: k5)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ]) # 5 dedicated ≥ 5 → still caught
+    end
+
+    it "M3.1: a named member with NO temporal mc (nil, e.g. known_bot) counts as dedicated" do
+      # empty chatter_mc → all 5 named have nil mc → count as dedicated → fires at mc_max=8.
+      k5 = k.with(chard_abs_enabled: 1.0, chard_abs_count: 5.0, chard_abs_roster_min: 30.0, chard_abs_share: 0.02, chard_abs_mc_max: 8.0)
+      r = described_class.compute(context: cluster_ctx(chatter_mc: {}), k: k5)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
     end
   end
 

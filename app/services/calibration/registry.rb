@@ -104,6 +104,17 @@ module Calibration
       chard_abs_count: 999.0,
       chard_abs_roster_min: 999.0,
       chard_abs_share: 999.0,
+      # FULL-CHAIN M3.1 mc-filter (scale-immunity, 2026-07-29). c_hard_abs counts publicly-named (B_hard)
+      # members; a member could be a ROAMING spam bot (max_concurrent_channels ≥ 15 — visits hundreds of
+      # channels) whose presence does NOT mean the streamer bought it. The calibration (mc-signature) proved
+      # the dedicated botnet sits at mc=EXACTLY-3 (rotate-3-channels, R∈[70,170]); roaming utility/spam sits
+      # at mc≥15. chard_abs_mc_max caps the max_concurrent a named member may have to COUNT toward c_hard_abs
+      # — so a big honest channel that attracts roaming spam at scale can't be false-accused off a roaming
+      # count. DORMANT/byte-identical: 999.0 (DEFAULT) → every realistic mc ≤ 999 → the dedicated count ==
+      # the full named count == today's live c_hard_abs. A member with NO temporal mc (e.g. a known_bot not
+      # cross-channel-flagged) counts (mc nil → dedicated) — it's a named bot regardless. Calibrated flip
+      # value ≈ 8 (keeps mc=3-6 dedicated botnets, excludes mc≥15 roaming). PO-gated data update (no redeploy).
+      chard_abs_mc_max: 999.0,
       # TI v2.1 deficit_min_ccv (FULL-CHAIN M4, shared deficit-family absolute floor, 2026-07-27). Every
       # deficit-family accusation (F_soft label, F_self eligibility, C_self^SP [P2] online_elevated,
       # C_pop) rests on a per-viewer chat-share statistic that becomes integer-quantization NOISE below
