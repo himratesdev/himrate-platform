@@ -42,10 +42,15 @@ module SocialAnalytics
       return [] if @login.blank?
 
       about = Twitch::GqlClient.new.channel_about(channel_login: @login)
-      return nil if about.nil? # fetch failed (not "no socials") — let the caller decide to retry
+      return nil if about.nil? # channel_about fully failed — caller retries
 
       socials = about[:social_medias]
-      return [] if socials.blank?
+      # socialMedias == null = the field FAILED to resolve (partial GQL "service error" — Twitch
+      # rate-limits a burst and returns the base channel but a null socialMedias). That is NOT "no
+      # socials" → return nil so the footprint worker retries instead of stamping the channel empty for
+      # 7 days. An empty ARRAY = the channel genuinely links no socials → [].
+      return nil if socials.nil?
+      return [] if socials.empty?
 
       socials.filter_map { |sm| normalize(sm) }
     end

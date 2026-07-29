@@ -19,6 +19,11 @@ module Social
 
     STALE_AFTER = 7.days
     MAX_PER_RUN = 100
+    # Space out the per-channel GQL calls. A rapid 100-call burst of channel_about trips Twitch GQL
+    # rate-limiting → "service error" partial responses (socialMedias comes back null) → the backfill
+    # stalled + falsely-empty stamps. Verified: 8/8 succeed at 0.3s spacing, the burst fails. 100 × 0.3s
+    # ≈ 30s/run on :long_running (every 15 min) — well within budget, still 9600/day capacity.
+    THROTTLE = 0.3
 
     def perform
       return unless Flipper.enabled?(:social_footprint_index)
@@ -26,7 +31,11 @@ module Social
       channels = channels_to_sync
       return if channels.empty?
 
-      synced = channels.sum { |channel| sync_channel(channel) }
+      synced = 0
+      channels.each_with_index do |channel, i|
+        sleep(THROTTLE) if i.positive?
+        synced += sync_channel(channel)
+      end
       Rails.logger.info("Social::FootprintIndexWorker: synced #{synced}/#{channels.size} channels")
     end
 
