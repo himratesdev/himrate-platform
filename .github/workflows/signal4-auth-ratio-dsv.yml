@@ -1,0 +1,132 @@
+name: signal4-auth-ratio-dsv
+# [skip ci] READ-ONLY. Data Source Verification for Trust-Index Signal #4 "Auth Ratio"
+# (code: TrustIndex::Signals::AuthRatio, registry index 0). The signal = chatters_present_total / ccv,
+# NOT an audio/video ratio (there is NO A/V-ratio code — the backlog "A/V ratio API" label is a misnomer).
+# The single load-bearing external source is the INLINE CommunityTab GQL query (channel.chatters via the
+# Android Client-ID kd1unb4b3q4t58fwlpcbzcbnm76a8fp, Kasada-bypass BUG-251.30). If Twitch closed that
+# bypass or changed the chatters schema, the signal silently degrades to insufficient(no_chatters_present_data)
+# platform-wide. This probe proves LIVE whether: (1) community_tab still returns data, (2) the poll cycle
+# still persists it fresh, (3) AuthRatio produces a real value vs abstains. Zero writes.
+on:
+  workflow_dispatch:
+    inputs:
+      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      sample: { required: false, type: string, default: "25" }
+jobs:
+  dsv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: SSH
+        run: |
+          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - name: Build
+        run: |
+          cat > /tmp/s4.rb <<'RB'
+          $stdout.sync = true
+          N = ENV.fetch("SAMPLE", "25").to_i.clamp(5, 60)
+          CB = TrustIndex::ContextBuilder
+          def pct(s, p) = s.empty? ? nil : s.sort[(p * (s.size - 1)).round]
+
+          puts "===== SIGNAL #4 AUTH RATIO — DATA SOURCE VERIFICATION @ #{Time.current.iso8601} ====="
+
+          puts "\n===== 0. CONFIG ====="
+          cid = ENV.fetch("TWITCH_GQL_CLIENT_ID", Twitch::GqlClient::DEFAULT_CLIENT_ID)
+          puts "  active Client-ID: #{cid[0, 8]}… (default Android=#{Twitch::GqlClient::DEFAULT_CLIENT_ID == cid})"
+          puts "  :stream_monitor flag: #{Flipper.enabled?(:stream_monitor)}  (feeds poll_tier1 → community_tab batch)"
+          puts "  :big_channel_chatter_sweep: #{Flipper.enabled?(:big_channel_chatter_sweep)}"
+
+          live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(400).to_a
+          # keep only streams with a positive recent CCV so ratio math is meaningful
+          picked = []
+          live.each do |s|
+            break if picked.size >= N
+            ccv = s.ccv_snapshots.order(timestamp: :desc).pick(:ccv_count)
+            picked << [s, ccv] if ccv && ccv >= 50
+          end
+          puts "\n  live RU streams scanned=#{live.size}, picked (ccv>=50)=#{picked.size}"
+
+          gql = Twitch::GqlClient.new
+          api_ok = 0; api_nil = 0; api_err = 0; errs = Hash.new(0)
+          fresh_present = 0; stale_present = 0; nil_present = 0
+          sig_value = 0; sig_insufficient = 0; sig_reasons = Hash.new(0)
+          rows = []
+
+          picked.each do |s, ccv|
+            login = s.channel.login
+            row = { login: login, ccv: ccv }
+            # --- 1. LIVE API PROBE (does community_tab still return data RIGHT NOW?) ---
+            begin
+              ct = gql.community_tab(channel_login: login)
+              if ct.nil?
+                api_nil += 1; row[:api] = "nil"
+              else
+                api_ok += 1; row[:api] = "ok"; row[:tp] = ct[:total_present]; row[:cnt] = ct[:count]
+              end
+            rescue StandardError => e
+              api_err += 1; errs[e.class.name] += 1; row[:api] = "ERR:#{e.class}"
+            end
+            # --- 2. PERSISTENCE FRESHNESS (is poll cycle writing presence?) ---
+            snap = s.chatters_snapshots.where.not(chatters_present_total: nil).order(timestamp: :desc).first
+            if snap.nil?
+              nil_present += 1; row[:persisted] = "none"
+            else
+              age = (Time.current - snap.timestamp).to_i
+              row[:persisted] = snap.chatters_present_total; row[:age_s] = age
+              age <= 300 ? (fresh_present += 1) : (stale_present += 1)
+            end
+            # --- 3. SIGNAL OUTPUT (real value or abstain?) ---
+            begin
+              ctx = CB.build(s)
+              r = TrustIndex::Signals::AuthRatio.new.calculate(ctx)
+              if r.value.nil?
+                sig_insufficient += 1; reason = r.metadata[:reason] || "?"; sig_reasons[reason] += 1; row[:sig] = "insuf:#{reason}"
+              else
+                sig_value += 1; row[:sig] = "val=#{r.value.round(3)}"; row[:sig_ratio] = r.metadata[:ratio]
+              end
+            rescue StandardError => e
+              row[:sig] = "SIGERR:#{e.class}"
+            end
+            rows << row
+          rescue StandardError
+            nil
+          end
+
+          puts "\n===== 1. LIVE community_tab API PROBE (n=#{picked.size}) ====="
+          puts "  ok=#{api_ok}  nil=#{api_nil}  error=#{api_err}   → #{api_ok.positive? ? '🟢 SOURCE ALIVE' : '🔴 SOURCE DEAD (all nil/err)'}"
+          puts "  errors: #{errs.sort_by { |_, v| -v }.to_h}" unless errs.empty?
+          tps = rows.map { |r| r[:tp] }.compact
+          puts "  total_present dist (api ok): p10=#{pct(tps, 0.1)} p50=#{pct(tps, 0.5)} p90=#{pct(tps, 0.9)}  count-nil rows: #{rows.count { |r| r[:api] == 'ok' && r[:cnt].nil? }}"
+
+          puts "\n===== 2. PERSISTED PRESENCE FRESHNESS (poll cycle health) ====="
+          puts "  fresh(<=300s)=#{fresh_present}  stale(>300s)=#{stale_present}  none=#{nil_present}   → #{fresh_present.positive? ? '🟢 poll persisting' : '🔴 no fresh presence persisted'}"
+
+          puts "\n===== 3. AuthRatio SIGNAL OUTPUT ====="
+          puts "  computed value=#{sig_value}  insufficient=#{sig_insufficient}   → #{sig_value.positive? ? '🟢 signal produces values' : '🔴 signal abstains platform-wide'}"
+          puts "  insufficient reasons: #{sig_reasons.sort_by { |_, v| -v }.to_h}" if sig_insufficient.positive?
+
+          puts "\n===== PER-STREAM (first 25) ====="
+          rows.first(25).each do |r|
+            puts format("  %-20s ccv=%-5d api=%-10s tp=%-6s persisted=%-6s age=%-6s sig=%s",
+                        r[:login], r[:ccv], r[:api], r[:tp] || "-", r[:persisted], r[:age_s] || "-", r[:sig])
+          end
+
+          puts "\n===== VERDICT ====="
+          if api_ok.zero?
+            puts "  🔴 BROKEN: community_tab returns NO data on any live RU stream → Signal #4 is dead. Needs OAuth-path OR remove+reweight."
+          elsif sig_value.zero?
+            puts "  🟡 SOURCE ALIVE but signal abstains — persistence/wiring gap (poll cycle not writing OR ContextBuilder path). Investigate write boundary."
+          elsif fresh_present.zero?
+            puts "  🟡 API alive + signal computes off STALE data — poll cycle stalled. Check :stream_monitor + StreamMonitorWorker cadence."
+          else
+            puts "  🟢 HEALTHY: source alive (#{api_ok}/#{picked.size}), presence fresh (#{fresh_present}), signal computes (#{sig_value}). Signal #4 NOT broken."
+          end
+          puts "\n===== DSV DONE ====="
+          RB
+          echo built
+      - name: Run
+        run: |
+          scp /tmp/s4.rb hostkey:/tmp/s4.rb
+          C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
+          ssh hostkey "docker cp /tmp/s4.rb $C:/tmp/s4.rb && docker exec -e SAMPLE='${{ inputs.sample || '25' }}' $C sh -c 'bin/rails runner /tmp/s4.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
