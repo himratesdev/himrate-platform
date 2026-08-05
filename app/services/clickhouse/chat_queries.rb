@@ -133,7 +133,10 @@ module Clickhouse
     # cumulative roster carries 3-20× more chatters than the last hour on mature streams). Same
     # deterministic ORDER BY username + LIMIT. The CUMULATIVE stream_chatters is retained for L0 B_hard
     # + cross-channel/temporal (they need full history); this windowed set feeds ONLY the L2 EIHC
-    # numerator. Returns a subset of stream_chatters (windowed ⊆ cumulative).
+    # numerator. ⚠ NOT a subset of the stream_chatters RESULT past the cap (BUG-EIHC-500CAP): the full
+    # windowed set ⊆ full cumulative set, but the two alphabetical ≤500 PREFIXES diverge once the
+    # cumulative set outgrows the LIMIT (its 500th name sits earlier in the alphabet) — L2 therefore
+    # treats both as SAMPLES and scales by the uncapped counts below, never by sample sizes.
     def stream_chatters_windowed(stream, since:)
       since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
       rows = Clickhouse.client.select(<<~SQL)
@@ -148,6 +151,38 @@ module Clickhouse
     rescue Clickhouse::Error => e
       Rails.logger.warn("Clickhouse::ChatQueries: stream_chatters_windowed failed (#{e.class})")
       []
+    end
+
+    # BUG-EIHC-500CAP: UNCAPPED distinct-chatter counts — the L2 deficit's scale factor. The two roster
+    # reads above are alphabetical ≤500 samples (cost-bound for per-username PG lookups); dividing a
+    # sample-sized EIHC by the FULL online capped ρ_obs at ≈ 500/V — a structural false deficit on any
+    # roster past the cap (guaranteed AMBER above V ≈ 500/ρ*). Same WHERE as the roster queries (no
+    # cross-source drift); uniqExact rides the stream_id bloom index like the roster read. nil on CH
+    # error → L2 degrades to the capped sum (pre-fix behavior), never crashes the verdict.
+    def stream_chatters_count(stream)
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT uniqExact(username) AS c
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
+      SQL
+      rows.first&.dig("c")&.to_i
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: stream_chatters_count failed (#{e.class})")
+      nil
+    end
+
+    def stream_chatters_windowed_count(stream, since:)
+      since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
+      rows = Clickhouse.client.select(<<~SQL)
+        SELECT uniqExact(username) AS c
+        FROM chat_messages
+        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
+          AND timestamp > toDateTime('#{since_ts}')
+      SQL
+      rows.first&.dig("c")&.to_i
+    rescue Clickhouse::Error => e
+      Rails.logger.warn("Clickhouse::ChatQueries: stream_chatters_windowed_count failed (#{e.class})")
+      nil
     end
 
     # TI v2.1 recurrence_gate (EIHC anti-gaming): WITHIN-channel loyalty. For the ≤500 present roster,

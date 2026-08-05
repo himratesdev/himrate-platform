@@ -184,10 +184,12 @@ class SignalComputeWorker
   # Emits a shadow line with v2_rho_conv="windowed" so ti-v2-shadow-mine (convention=windowed) mines it.
   # A defect is swallowed — accrual must NEVER perturb the live cutover path.
   def accrue_windowed_shadow(stream, context, v2_context)
-    roster, v_w = TrustIndex::ContextBuilder.windowed_inputs(stream)
+    roster, v_w, n_w = TrustIndex::ContextBuilder.windowed_inputs(stream)
     return if v_w.nil? # no CCV snapshots in the window → cannot window (chat & CCV are separate pipelines)
 
-    wctx = v2_context.with(l2_roster_usernames: roster, v_w: v_w)
+    # BUG-EIHC-500CAP: n_roster rides along so the shadow corpus accrues the SAME uncapped-estimator
+    # ρ_obs the verdict path emits — one estimator, one convention, the P2 re-seed stays apples-to-apples.
+    wctx = v2_context.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w)
     wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
     log_shadow(stream, nil, wres, wctx) # wres.rho_convention == "windowed" (v_w present) → convention=windowed mining
     accrue_i_event_shadow(stream, context, wctx, wres) if Flipper.enabled?(:ti_v2_ie_shadow) # PR-i4: own OFF flag

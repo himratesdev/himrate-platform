@@ -47,10 +47,10 @@ jobs:
           # extra Context fields the 6-AND reads ([1] rho_self_lo, [3] raid, suppressors).
           def facts(s)
             ctx = CB.build(s)
-            roster, v_w = CB.windowed_inputs(s)
+            roster, v_w, n_w = CB.windowed_inputs(s)
             return nil if v_w.nil?
             v2c = CB.build_v2(s, ctx)
-            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w)
             wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
             sig = CB.i_event_shadow_signals(s, ctx, wctx, wres)
             {

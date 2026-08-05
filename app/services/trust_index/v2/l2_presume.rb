@@ -13,14 +13,25 @@ module TrustIndex
       # raw — original per-chatter objects (EihcWeigher features + username). b_hard_usernames — Set
       # from L0. v — instant CCV. cell — CellResolver::Baseline (rho_star/rho_lo/rho_hi). k — { tau_delta }.
       # windowed_usernames / v_w — TI v2.1 BUG-A co-windowed inputs (both NIL = dormant, exactly today).
-      #   When present: EIHC is computed over the trailing-60min roster SUBSET (windowed_usernames ⊆ raw,
+      #   When present: EIHC is computed over the trailing-60min roster SUBSET (windowed_usernames ∩ raw,
       #   after B_hard strip) and the ρ_obs/F_soft denominator is the windowed V_W (median CCV over the
       #   same 60min). This makes ρ_obs = EIHC_W/V_W a same-window chat-share (kills the cumulative-EIHC /
       #   instant-V duration-confound that lets a long stream's departed chatters whiten a late injection).
+      # n_roster — BUG-EIHC-500CAP: the UNCAPPED distinct-chatter count of the ACTIVE frame (windowed
+      #   count when v_w present, cumulative otherwise). `raw`/`windowed_usernames` are alphabetical
+      #   ≤500 SAMPLES (cost-bound CH reads); summing weights over a sample while dividing by the FULL
+      #   online silently capped ρ_obs ≈ 500/V — a structural false deficit on every roster past the
+      #   cap (guaranteed AMBER above V ≈ 500/ρ*, live-confirmed on stariy_bog: EIHC 88 vs 1825 real
+      #   windowed chatters → AMBER 27.8 instead of GREEN). L2 now measures the per-chatter RATE on the
+      #   sample and scales it by n_roster. Sub-cap rosters: base.size == n_roster → rate×n == Σw,
+      #   byte-identical. n_roster nil (CH count failed / legacy caller) → capped Σw (pre-fix behavior,
+      #   degraded not broken). Recall-safe: silent view-bots don't chat → they raise NEITHER the sample
+      #   rate NOR n_roster → the deficit they cause is untouched; chatting bots stay the identity
+      #   family's job (n_frac/c_hard are sample-FRACTIONS — already scale-invariant, unchanged here).
       def self.call(raw:, b_hard_usernames:, v:, cell:, k:, windowed_usernames: nil, v_w: nil,
-                    own_ccv_baseline: nil, lurker_collapse_ratio: nil, deficit_min_ccv: nil)
-        humans = raw.reject { |c| b_hard_usernames.include?(c.username) }
-        humans = humans.select { |c| windowed_usernames.include?(c.username) } if windowed_usernames
+                    n_roster: nil, own_ccv_baseline: nil, lurker_collapse_ratio: nil, deficit_min_ccv: nil)
+        base = windowed_usernames ? raw.select { |c| windowed_usernames.include?(c.username) } : raw
+        humans = base.reject { |c| b_hard_usernames.include?(c.username) }
         # G1 (young-ramp decay guard): the deficit denominator is min(V_W, V_inst), NOT V_W alone. A young
         # stream that spiked early then DECAYED has a windowed median V_W ABOVE its current instant online
         # (V_W > V_inst); since Deficit is monotone-increasing in V, V_W would manufacture a false deficit /
@@ -34,7 +45,7 @@ module TrustIndex
         # verdict time post-flip, so the P2 re-seed calibrates ρ* on the right definition. Pre-G1 windowed
         # samples (few hours) re-base to the capped frame on deploy — the P2 re-seed uses post-G1 samples.
         v_eff = v_w ? [ v_w, v ].min : v
-        eihc = EihcWeigher.eihc(humans, tau_delta: k.tau_delta)
+        eihc = scaled_eihc(raw, base, humans, b_hard_usernames, n_roster, k)
         rho_obs = v_eff.positive? ? eihc / v_eff.to_f : 0.0
 
         # FULL-CHAIN M4 (deficit_min_ccv floor): below ~50 concurrent viewers the chat-share deficit is
@@ -72,6 +83,27 @@ module TrustIndex
           f_soft_hi: Deficit.call(v_eff, eihc, cell.rho_hi)
         )
       end
+
+      # BUG-EIHC-500CAP: EIHC magnitude = (per-chatter weight rate on the sampled frame) × (uncapped
+      # distinct roster of the same frame). `base` = the frame sample WITH its named bots (their share
+      # must depress the rate — a chatting botnet in the sample lowers EIHC exactly as it lowered Σw).
+      # Weights are per-chatter gates (density/age/recurrence, all ∈ [0,1]); the alphabetical sample is
+      # weight-independent, so the sample mean is an unbiased rate estimator. Two degradations, both
+      # explicit: (1) n_roster nil → capped Σw (the pre-fix magnitude — CH count unavailable, degrade
+      # not crash); (2) `base` EMPTY while the frame isn't (pathological: the cumulative alphabetical
+      # prefix and the windowed prefix can drift apart on huge long streams) → fall back to the rate
+      # over the full cumulative sample (same weights population, coarser frame). [n_roster, base.size]
+      # .max guards a cross-query race (count read moments after the roster read) from scaling DOWN.
+      def self.scaled_eihc(raw, base, humans, b_hard_usernames, n_roster, k)
+        sum = EihcWeigher.eihc(humans, tau_delta: k.tau_delta)
+        return sum unless n_roster
+        return (sum / base.size.to_f) * [ n_roster, base.size ].max if base.size.positive?
+        return 0.0 if raw.empty?
+
+        raw_humans = raw.reject { |c| b_hard_usernames.include?(c.username) }
+        (EihcWeigher.eihc(raw_humans, tau_delta: k.tau_delta) / raw.size.to_f) * n_roster
+      end
+      private_class_method :scaled_eihc
     end
   end
 end

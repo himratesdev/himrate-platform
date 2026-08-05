@@ -47,8 +47,8 @@ jobs:
             v2c = CB.build_v2(s, ctx)
             next if v2c.v.nil? || v2c.v <= 0
             next unless v2c.cold_start_tier == "full"   # C_flag/c_hard only accuse full tier
-            wr, v_w = CB.windowed_inputs(s)
-            r = TrustIndex::V2::Engine.compute(context: (v_w ? v2c.with(l2_roster_usernames: wr, v_w: v_w) : v2c), k: Calibration::Registry.load)
+            wr, v_w, n_w = CB.windowed_inputs(s)
+            r = TrustIndex::V2::Engine.compute(context: (v_w ? v2c.with(l2_roster_usernames: wr, v_w: v_w, n_roster: n_w) : v2c), k: Calibration::Registry.load)
             conf = fl.count { |_, v| v[:bot_flag_tier] == "confirmed" }
             yel  = fl.count { |_, v| v[:bot_flag_tier] == "yellow" }
             w = conf + WY * yel

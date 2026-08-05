@@ -150,6 +150,48 @@ RSpec.describe Clickhouse::ChatQueries do
     end
   end
 
+  # BUG-EIHC-500CAP: the uncapped uniqExact counts — the L2 deficit's scale factor (the ≤500 rosters
+  # above are alphabetical samples; L2 measures a rate on them and scales by these exact counts).
+  describe ".stream_chatters_count" do
+    it "runs an UNCAPPED uniqExact on the same predicate as the roster read (no LIMIT)" do
+      expect(ch).to receive(:select).with(
+        a_string_matching(/uniqExact\(username\)/)
+          .and(a_string_matching(/stream_id = '#{stream.id}'/))
+          .and(satisfy { |sql| !sql.include?("LIMIT") })
+      ).and_return([ { "c" => 8768 } ])
+
+      expect(described_class.stream_chatters_count(stream)).to eq(8768)
+    end
+
+    it "returns nil (and logs) on a CH error — L2 degrades to the capped sum, never crashes" do
+      expect(ch).to receive(:select).and_raise(Clickhouse::QueryError.new("CH down"))
+      expect(Rails.logger).to receive(:warn).with(/stream_chatters_count failed/)
+
+      expect(described_class.stream_chatters_count(stream)).to be_nil
+    end
+  end
+
+  describe ".stream_chatters_windowed_count" do
+    it "adds the trailing-window timestamp filter to the uncapped uniqExact" do
+      since = Time.utc(2026, 7, 22, 5, 0, 0)
+      expect(ch).to receive(:select).with(
+        a_string_matching(/uniqExact\(username\)/)
+          .and(a_string_matching(/stream_id = '#{stream.id}'/))
+          .and(a_string_matching(/timestamp > toDateTime\('2026-07-22 05:00:00'\)/))
+          .and(satisfy { |sql| !sql.include?("LIMIT") })
+      ).and_return([ { "c" => 1825 } ])
+
+      expect(described_class.stream_chatters_windowed_count(stream, since: since)).to eq(1825)
+    end
+
+    it "returns nil (and logs) on a CH error" do
+      expect(ch).to receive(:select).and_raise(Clickhouse::QueryError.new("CH down"))
+      expect(Rails.logger).to receive(:warn).with(/stream_chatters_windowed_count failed/)
+
+      expect(described_class.stream_chatters_windowed_count(stream, since: Time.utc(2026, 7, 22, 5, 0, 0))).to be_nil
+    end
+  end
+
   describe "integration (real ClickHouse)", :clickhouse do
     let(:real_client) { Clickhouse.client }
     let(:t) { Time.current.utc }

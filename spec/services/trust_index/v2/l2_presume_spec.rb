@@ -74,6 +74,70 @@ RSpec.describe TrustIndex::V2::L2Presume do
     expect(win.rho_obs).to be_within(1e-6).of(30 / 300.0)  # ρ_obs = EIHC_W / min(V_W, V_inst)
   end
 
+  # BUG-EIHC-500CAP: the roster reads are alphabetical ≤500 SAMPLES — EIHC = sample RATE × uncapped
+  # n_roster, never the raw sample sum divided by the full online.
+  describe "n_roster scale correction (BUG-EIHC-500CAP)" do
+    let(:cap_cell) { L2PresumeSpecDoubles::Cell.new(rho_star: 0.05, rho_lo: 0.05, rho_hi: 0.05) }
+
+    it "scales the sample rate by the uncapped windowed count (stariy_bog shape: capped AMBER → clean)" do
+      raw = Array.new(100) { |i| chatter(format("h%03d", i)) } # cumulative alphabetical sample
+      windowed = Set.new(raw.first(40).map(&:username))        # prefix-drift: only 40 land in the window sample
+      capped = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 3200, cell: cap_cell, k: k,
+                                    windowed_usernames: windowed, v_w: 3000) # n_roster absent → pre-fix magnitude
+      expect(capped.eihc).to eq(40.0)
+      expect(capped.f_soft).to be_within(1.0).of(3000 - 40 / 0.05) # 2200 FALSE deficit
+      fixed = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 3200, cell: cap_cell, k: k,
+                                   windowed_usernames: windowed, v_w: 3000, n_roster: 400)
+      expect(fixed.eihc).to be_within(1e-9).of(400.0)              # rate 40/40 = 1.0 × 400
+      expect(fixed.rho_obs).to be_within(1e-6).of(400 / 3000.0)
+      expect(fixed.f_soft).to eq(0.0)                              # 400/0.05 = 8000 explains all of V_W
+    end
+
+    it "is byte-identical below the cap (n_roster == sample size → rate × n == Σw)" do
+      raw = Array.new(45) { |i| chatter("h#{i}") }
+      windowed = Set.new(raw.map(&:username))
+      legacy = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 5000, cell: cell, k: k,
+                                    windowed_usernames: windowed, v_w: 4800)
+      scaled = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 5000, cell: cell, k: k,
+                                    windowed_usernames: windowed, v_w: 4800, n_roster: 45)
+      expect(scaled.to_h).to eq(legacy.to_h)
+    end
+
+    it "keeps the named-bot share in the rate (a chatting botnet depresses scaled EIHC proportionally)" do
+      humans = Array.new(30) { |i| chatter(format("h%03d", i)) }
+      bots = Array.new(10) { |i| chatter(format("b%03d", i)) }
+      raw = humans + bots
+      windowed = Set.new(raw.map(&:username))
+      sb = described_class.call(raw: raw, b_hard_usernames: Set.new(bots.map(&:username)), v: 3200,
+                                cell: cap_cell, k: k, windowed_usernames: windowed, v_w: 3000, n_roster: 400)
+      expect(sb.eihc).to be_within(1e-9).of((30 / 40.0) * 400)     # rate 0.75 × 400 = 300
+    end
+
+    it "never scales DOWN on a cross-query race (n_roster < sample size → sample size wins)" do
+      raw = Array.new(40) { |i| chatter("h#{i}") }
+      windowed = Set.new(raw.map(&:username))
+      sb = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 3200, cell: cap_cell, k: k,
+                                windowed_usernames: windowed, v_w: 3000, n_roster: 10)
+      expect(sb.eihc).to eq(40.0)                                  # max(n_roster, base.size) guard
+    end
+
+    it "falls back to the cumulative-sample rate when the two alphabetical prefixes fully drift apart" do
+      raw = Array.new(50) { |i| chatter("a#{format('%02d', i)}") }         # cumulative prefix: a…
+      windowed = Set.new(Array.new(50) { |i| "z#{format('%02d', i)}" })    # windowed prefix: z… (disjoint)
+      sb = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 3200, cell: cap_cell, k: k,
+                                windowed_usernames: windowed, v_w: 3000, n_roster: 400)
+      expect(sb.eihc).to be_within(1e-9).of(400.0)                 # rate over raw (1.0) × n_roster
+    end
+
+    it "scales the cumulative frame too (flag-OFF rollback path is not left capped)" do
+      raw = Array.new(100) { |i| chatter("h#{i}") }
+      sb = described_class.call(raw: raw, b_hard_usernames: Set.new, v: 20_000, cell: cap_cell, k: k,
+                                n_roster: 800)
+      expect(sb.eihc).to be_within(1e-9).of(800.0)                 # rate 1.0 × cumulative uncapped count
+      expect(sb.f_soft).to be_within(1.0).of(20_000 - 800 / 0.05)  # deficit on the TRUE magnitude
+    end
+  end
+
   # FULL-CHAIN M4 shared deficit-family absolute floor (deficit_min_ccv).
   it "M4 dormant (deficit_min_ccv nil / 0.0) is byte-identical to the guardless call" do
     raw = Array.new(45) { |i| chatter("h#{i}") }

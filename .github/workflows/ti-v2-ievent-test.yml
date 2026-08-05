@@ -121,10 +121,10 @@ jobs:
           s  = ch.streams.where(ended_at: nil).order(started_at: :desc).first; abort "NOT LIVE" unless s
 
           ctx    = TrustIndex::ContextBuilder.build(s)
-          roster, v_w = TrustIndex::ContextBuilder.windowed_inputs(s)
+          roster, v_w, n_w = TrustIndex::ContextBuilder.windowed_inputs(s)
           abort "V_W nil — no CCV snapshot in 60min window (monitoring gap) — FIX before continuing" if v_w.nil?
           v2c    = TrustIndex::ContextBuilder.build_v2(s, ctx)
-          wctx   = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+          wctx   = v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w)
           wres   = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
           cres   = TrustIndex::V2::Engine.compute(context: v2c,  k: Calibration::Registry.load)
           sig    = TrustIndex::ContextBuilder.i_event_shadow_signals(s, ctx, wctx, wres)

@@ -11,7 +11,7 @@ module EngineSpecDoubles
   Context = Data.define(:raw_chatters, :v, :cell, :rho_self_lo, :clean_self_history, :i_event,
                         :i_event_external, :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
                         :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample,
-                        :cps, :reputation, :ccv_chat_divergence, :l2_roster_usernames, :v_w,
+                        :cps, :reputation, :ccv_chat_divergence, :l2_roster_usernames, :v_w, :n_roster,
                         :own_ccv_baseline, :sustained_count, :ccv_cov, :pop_deficit_density, :chatter_mc)
   K = Data.define(:pi0, :tau_hard, :tau_delta, :phi_yellow, :phi_red, :q_mid, :q_hi,
                   :llr_temporal_r2, :llr_temporal_r3, :llr_temporal_r4, :llr_temporal_r7,
@@ -58,7 +58,7 @@ RSpec.describe TrustIndex::V2::Engine do
              i_event: false, i_event_external: false, raid_window: false, n_chat_eff: chatters.size, q: 0.9,
              cold_start_tier: "full", self_history_stable: true, chatter_quality_high: true,
              stream_count: 20, unattributed_surge: false, thin_sample: false, cps: 70,
-             reputation: "Стабильная", ccv_chat_divergence: 0.0, l2_roster_usernames: nil, v_w: nil,
+             reputation: "Стабильная", ccv_chat_divergence: 0.0, l2_roster_usernames: nil, v_w: nil, n_roster: nil,
              own_ccv_baseline: nil, sustained_count: 0, ccv_cov: nil, pop_deficit_density: 0.0, chatter_mc: {} }
     EngineSpecDoubles::Context.new(**base.merge(over))
   end
@@ -106,6 +106,53 @@ RSpec.describe TrustIndex::V2::Engine do
       k: k
     )
     expect(windowed.rho_convention).to eq("windowed") # flag-ON co-windowed frame
+  end
+
+  it "BUG-EIHC-500CAP: a big channel whose windowed roster outgrew the sample cap goes GREEN once " \
+     "n_roster scales the rate — and reproduces the capped false-AMBER when n_roster is absent" do
+    # Sample geometry mirrors the live stariy_bog shape, scaled down: the cumulative alphabetical
+    # sample carries 100 names, only 40 of them fall inside the windowed prefix (the two ≤cap
+    # prefixes diverge), while the TRUE windowed distinct count is 400 against a windowed online of
+    # 3000 (ρ* 0.05 → explained = eihc/0.05).
+    chatters = Array.new(100) { |i| chatter(format("h%03d", i)) }
+    windowed = chatters.first(40).map(&:username).to_set
+    tight_cell = EngineSpecDoubles::Cell.new(rho_star: 0.05, rho_lo: 0.04, rho_hi: 0.06,
+                                             calibrated: true, rho_p1: nil, ccv_typical: nil)
+    capped = described_class.compute(
+      context: context(chatters, v: 3200, n_chat_eff: 100, cell: tight_cell,
+                       l2_roster_usernames: windowed, v_w: 3000, n_roster: nil),
+      k: k
+    )
+    # pre-fix magnitude: eihc = |sample ∩ window| = 40 → deficit 3000 − 800 = 2200 → deep AMBER
+    expect(capped.rho_obs).to be_within(0.001).of(40 / 3000.0)
+    expect(capped.f_soft).to be_within(1.0).of(2200.0)
+    expect(capped.band.color).to eq("amber")
+    fixed = described_class.compute(
+      context: context(chatters, v: 3200, n_chat_eff: 100, cell: tight_cell,
+                       l2_roster_usernames: windowed, v_w: 3000, n_roster: 400),
+      k: k
+    )
+    # rate 40/40 = 1.0 × n_roster 400 → ρ_obs 0.133 ≥ ρ* → deficit 0 → GREEN, authenticity ~100
+    expect(fixed.eihc).to be_within(0.01).of(400.0)
+    expect(fixed.rho_obs).to be_within(0.001).of(400 / 3000.0)
+    expect(fixed.f_soft).to eq(0.0)
+    expect(fixed.band.color).to eq("green")
+    expect(fixed.authenticity).to be > 95
+  end
+
+  it "BUG-EIHC-500CAP recall guard: silent view-bots raise neither the rate nor n_roster — the deficit stays" do
+    # 40 honest chatters, windowed count 40 (sub-cap, no scaling headroom), online inflated to 3000
+    # by chat-invisible bots: eihc = 40 → deficit = 3000 − 40/0.05 = 2200 regardless of the fix.
+    chatters = Array.new(40) { |i| chatter("h#{i}") }
+    tight_cell = EngineSpecDoubles::Cell.new(rho_star: 0.05, rho_lo: 0.04, rho_hi: 0.06,
+                                             calibrated: true, rho_p1: nil, ccv_typical: nil)
+    r = described_class.compute(
+      context: context(chatters, v: 3200, n_chat_eff: 40, cell: tight_cell,
+                       l2_roster_usernames: chatters.map(&:username).to_set, v_w: 3000, n_roster: 40),
+      k: k
+    )
+    expect(r.f_soft).to be_within(1.0).of(2200.0)
+    expect(r.band.color).to eq("amber")
   end
 
   it "G1: a decaying young stream (V_W > V_inst) keeps high authenticity — the stale median makes no false deficit" do

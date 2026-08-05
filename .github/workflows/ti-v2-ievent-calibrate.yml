@@ -61,10 +61,10 @@ jobs:
           # i_event_shadow_signals path, reused so honest + fake are measured identically.
           def mags(s)
             ctx = CB.build(s)
-            roster, v_w = CB.windowed_inputs(s)
+            roster, v_w, n_w = CB.windowed_inputs(s)
             return nil if v_w.nil?
             v2c = CB.build_v2(s, ctx)
-            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w)
             wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
             sig = CB.i_event_shadow_signals(s, ctx, wctx, wres)
             { z: sig[:v_robust_z], share: sig[:arrival_share], cov: sig[:cov], rho_obs: sig[:rho_obs],
