@@ -30,7 +30,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20 # whisper.cpp compile + 466MB model download
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7
 
       # Extract image tag из config/deploy.yml — SINGLE SOURCE OF TRUTH.
       # deploy.yml accessories.whisper.image — authoritative version reference.
