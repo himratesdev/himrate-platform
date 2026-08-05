@@ -80,7 +80,7 @@ jobs:
           fl.sort_by { |_, v| -v[:event_count].to_i }.first(20).each do |u, v|
             puts format("  %-22s R=%-4d tier=%-9s mc=%-3d %s", u, v[:event_count], v[:bot_flag_tier], v[:max_concurrent_channels], named_set.include?(u) ? 'NAMED(b_hard)' : '')
           end
-          puts "\n(SILENT viewbots are chat-invisible → 0 flagged; caught via F_soft deficit / C_self^SP / C_inflation.")
+          puts "\n(SILENT viewbots are chat-invisible → 0 flagged; caught via F_soft deficit / C_self^SP / C_inflation.)"
           puts "(CHATTING cross-channel bots → appear flagged; caught via C_hard fraction / c_hard_abs count.)"
           puts "\n===== WATCH DONE ====="
           RB
@@ -89,4 +89,5 @@ jobs:
         run: |
           scp /tmp/rw.rb hostkey:/tmp/rw.rb
           C=$(ssh hostkey "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
-          ssh hostkey "docker cp /tmp/rw.rb $C:/tmp/rw.rb && docker exec -e LOGIN='${{ inputs.login }}' $C sh -c 'bin/rails runner /tmp/rw.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' || true
+          ssh hostkey "docker cp /tmp/rw.rb $C:/tmp/rw.rb && docker exec -e LOGIN='${{ inputs.login }}' $C sh -c 'bin/rails runner /tmp/rw.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | tr -cd '\11\12\15\40-\176' | grep -avE '36;1m|Flipper audit|connecting to Redis|stackprof|Please add|KnownBot' | tee /tmp/rw-out.txt || true
+          grep -q "RAILS_EXIT=0" /tmp/rw-out.txt || { echo "::error::rebot-watch rails runner FAILED (no RAILS_EXIT=0 in output)"; exit 1; }
