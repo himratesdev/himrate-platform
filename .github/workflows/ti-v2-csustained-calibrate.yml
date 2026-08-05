@@ -71,12 +71,12 @@ jobs:
           # Re-derive the sustained_plateau? conjuncts READ-ONLY (mirrors engine.rb; no flag write).
           def probe(s)
             ctx = CB.build(s)
-            roster, v_w = CB.windowed_inputs(s)
+            roster, v_w, n_w = CB.windowed_inputs(s)
             return nil if v_w.nil?
             v2c  = CB.build_v2(s, ctx)
             base = v2c.own_ccv_baseline
             return nil if base.nil? || base.to_f <= 0 || v2c.rho_self_lo.nil? || !v2c.self_history_stable
-            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+            wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w)
             wres = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
             v_eff = [ v_w, v2c.v ].min.to_f
             eihc  = wres.eihc.to_f

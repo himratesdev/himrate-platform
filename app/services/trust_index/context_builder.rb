@@ -79,9 +79,10 @@ module TrustIndex
       # per build, not N). q_mid tracks the calibrated band gate; the ie_* keys drive the i_event conjuncts.
       consts = v2_builder_constants
       q_mid = (consts["q_mid"] || 0.5).to_f
-      # TI v2.1 BUG-A: the co-windowed L2 inputs (both nil when the ti_v2_cowindowed_rho flag is OFF →
-      # zero added CH/PG work, engine runs cumulative/instant exactly as today).
-      l2_roster, v_w = v2_cowindowed_inputs(stream)
+      # TI v2.1 BUG-A: the co-windowed L2 inputs (all nil when the ti_v2_cowindowed_rho flag is OFF →
+      # zero added CH/PG work, engine runs cumulative/instant exactly as today). n_w (BUG-EIHC-500CAP)
+      # = the UNCAPPED windowed distinct-chatter count L2 scales the sample rate by.
+      l2_roster, v_w, n_w = v2_cowindowed_inputs(stream)
       # i_event EPIC: self-history rows plucked ONCE (rho_obs for the baseline + ccv for [2] v_above_own_trend)
       # — the ccv column rides the SAME scan v2_self_history already runs every cycle (zero added scan).
       sh = v2_self_history(channel)
@@ -119,6 +120,9 @@ module TrustIndex
         ccv_chat_divergence: v2_ccv_chat_divergence(context_hash),
         l2_roster_usernames: l2_roster,
         v_w: v_w,
+        # BUG-EIHC-500CAP: uncapped distinct count of the ACTIVE L2 frame — windowed when windowing,
+        # else the cumulative stream roster (free below the sample cap: count == sample size).
+        n_roster: v_w ? n_w : v2_cumulative_roster_count(stream, chatters),
         # G5 (lurker-collapse guard): the channel's own honest CCV baseline (from the same self-history
         # scan). nil when history is too thin → guard inert. Rides the sh already computed above.
         own_ccv_baseline: v2_own_ccv_baseline(sh[:own_ccv_history]),
@@ -148,8 +152,15 @@ module TrustIndex
 
     # P1 (TI v2.1 BUG-A flip-path): the trailing-60min L2 inputs computed UNCONDITIONALLY (no verdict-flag
     # gate), for the windowed shadow-accrual path (SignalComputeWorker#accrue_windowed_shadow). The caller
-    # gates on the SEPARATE ti_v2_cowindowed_shadow flag; this just computes. Same [roster, v_w] / [nil, nil]
-    # contract as the flag-gated verdict path v2_cowindowed_inputs (both delegate to compute_windowed_inputs).
+    # gates on the SEPARATE ti_v2_cowindowed_shadow flag; this just computes. Same [roster, v_w, n_w] /
+    # [nil, nil, nil] contract as the flag-gated verdict path v2_cowindowed_inputs (both delegate to
+    # compute_windowed_inputs). BUG-EIHC-500CAP: third element = uncapped windowed distinct count.
+    # ⚠ Every `.with(l2_roster_usernames:, v_w:)` overlay MUST thread `n_roster: n_w` too (all 19
+    # probe workflows do as of CR-564): a Context from build_v2 already carries an n_roster for the
+    # frame build_v2 resolved (flag-ON → windowed, flag-OFF → CUMULATIVE), so an overlay that swaps
+    # in a windowed frame without swapping the count inherits the cumulative n_roster → windowed
+    # rate × cumulative count = an OVERSCALED EIHC → deficits understated exactly in the flip-
+    # evaluation probes that force the windowed frame while the flag is still OFF.
     def self.windowed_inputs(stream)
       compute_windowed_inputs(stream)
     end
@@ -469,7 +480,7 @@ module TrustIndex
       # young streams (which is why they stop false-AMBERing — the window isn't padded by chatters that
       # left). One bounded stream_chatters_windowed CH round-trip + one ccv_snapshots PG read, flag-ON only.
       def v2_cowindowed_inputs(stream)
-        return [ nil, nil ] unless cowindowed_rho_enabled?
+        return [ nil, nil, nil ] unless cowindowed_rho_enabled?
 
         compute_windowed_inputs(stream)
       end
@@ -483,13 +494,32 @@ module TrustIndex
       def compute_windowed_inputs(stream)
         since = [ stream.started_at, COWINDOW_MINUTES.minutes.ago ].max
         v_w = v2_median_ccv_windowed(stream, since)
-        return [ nil, nil ] if v_w.nil?
+        return [ nil, nil, nil ] if v_w.nil?
 
         roster = Clickhouse::ChatQueries.stream_chatters_windowed(stream, since: since).to_set
-        [ roster, v_w ]
+        # BUG-EIHC-500CAP: uncapped windowed distinct count. Below the sample cap the roster IS the
+        # full windowed set (count == size, no extra CH read); at the cap, one uniqExact aggregate on
+        # the same WHERE. nil (CH hiccup) → L2 degrades to the capped sum for this cycle.
+        n_w = if roster.size < Clickhouse::ChatQueries::CROSS_CHANNEL_CHATTER_LIMIT
+          roster.size
+        else
+          Clickhouse::ChatQueries.stream_chatters_windowed_count(stream, since: since)
+        end
+        [ roster, v_w, n_w ]
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: windowed inputs failed (#{e.message})")
-        [ nil, nil ]
+        [ nil, nil, nil ]
+      end
+
+      # BUG-EIHC-500CAP (cumulative mode — flag-OFF rollback path): uncapped whole-stream distinct
+      # count, free below the sample cap. Same degrade-to-capped-sum contract on nil.
+      def v2_cumulative_roster_count(stream, chatters)
+        return chatters.size if chatters.size < Clickhouse::ChatQueries::CROSS_CHANNEL_CHATTER_LIMIT
+
+        Clickhouse::ChatQueries.stream_chatters_count(stream)
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: cumulative roster count failed (#{e.message})")
+        nil
       end
 
       def cowindowed_rho_enabled?

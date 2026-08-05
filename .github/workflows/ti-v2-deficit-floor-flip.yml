@@ -45,8 +45,8 @@ jobs:
           def verdict(s, k)
             ctx = CB.build(s); v2c = CB.build_v2(s, ctx)
             return nil if v2c.v.nil? || v2c.v <= 0
-            wr, vw = CB.windowed_inputs(s)
-            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c), k: k)
+            wr, vw, n_w = CB.windowed_inputs(s)
+            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw, n_roster: n_w) : v2c), k: k)
             v_eff = vw ? [ vw, v2c.v ].min : v2c.v
             [ "#{r.band&.color}/#{r.band&.row}#{r.band&.sub}", %w[red yellow].include?(r.band&.color), v2c.v, v_eff ]
           rescue StandardError

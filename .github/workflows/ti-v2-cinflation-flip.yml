@@ -58,10 +58,10 @@ jobs:
             live.each do |s|
               break if n >= n_target
               ctx = CB.build(s)
-              roster, v_w = CB.windowed_inputs(s)
+              roster, v_w, n_w = CB.windowed_inputs(s)
               v2c = CB.build_v2(s, ctx)
               next if v2c.v.nil? || v2c.v <= 0
-              wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w) : v2c
+              wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w) : v2c
               res = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
               next unless res.c_hard == false
               divs << v2c.ccv_chat_divergence.to_f

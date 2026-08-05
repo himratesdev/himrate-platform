@@ -74,11 +74,11 @@ jobs:
             live.each do |s|
               break if n >= n_target
               ctx = CB.build(s)
-              roster, v_w = CB.windowed_inputs(s)
+              roster, v_w, n_w = CB.windowed_inputs(s)
               next if v_w.nil?
               v2c = CB.build_v2(s, ctx)
               next if v2c.v.nil? || v2c.v <= 0 || !v2c.self_history_stable
-              wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w)
+              wctx = v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w)
               res = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
               next unless res.c_hard == false
               b = "#{res.band&.color}/#{res.band&.row}"

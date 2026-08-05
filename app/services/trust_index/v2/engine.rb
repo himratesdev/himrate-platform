@@ -36,11 +36,17 @@ module TrustIndex
         :ccv_chat_divergence,
         # TI v2.1 BUG-A (co-windowed ρ_obs): the trailing-60min L2 inputs. Both NIL when the
         # ti_v2_cowindowed_rho flag is OFF → the engine reproduces today's cumulative-roster / instant-V
-        # behavior byte-for-byte (dormant). l2_roster_usernames = the windowed chatter Set (a subset of
-        # raw_chatters used for the EIHC numerator); v_w = median CCV over the same 60min (the deficit
-        # denominator). Cumulative raw_chatters still drives L0 B_hard + cross-channel; instant :v still
-        # drives ERV/authenticity display.
+        # behavior byte-for-byte (dormant). l2_roster_usernames = the windowed chatter SAMPLE Set (≤500,
+        # alphabetical — intersected with raw_chatters for the EIHC rate basis); v_w = median CCV over
+        # the same 60min (the deficit denominator). Cumulative raw_chatters still drives L0 B_hard +
+        # cross-channel; instant :v still drives ERV/authenticity display.
         :l2_roster_usernames, :v_w,
+        # BUG-EIHC-500CAP: UNCAPPED distinct-chatter count of the ACTIVE L2 frame (windowed count when
+        # v_w present, cumulative otherwise). L2 scales the sample-measured per-chatter rate by this so
+        # ρ_obs is a true share of the online, not min(roster, 500)/V — the cap that structurally
+        # AMBER'ed every channel above V ≈ 500/ρ* (live-confirmed on stariy_bog). nil (CH count failed)
+        # → L2 degrades to the capped sum (pre-fix magnitude).
+        :n_roster,
         # G5 (lurker-collapse guard): the channel's own honest CCV baseline (median of clean,
         # convention-scoped own-CCV history). nil when history is too thin. L2 uses it to distinguish an
         # elevated-online injection (keep deficit) from stable-online honest quieting (floor deficit).
@@ -133,7 +139,7 @@ module TrustIndex
 
         post = L0Identity.call(@ctx.raw_chatters, k: @k)
         hard = L1Subtract.call(post)
-        soft = L2Presume.call(raw: @ctx.raw_chatters, b_hard_usernames: names(post),
+        soft = L2Presume.call(raw: @ctx.raw_chatters, b_hard_usernames: names(post), n_roster: @ctx.n_roster,
                               v: @ctx.v, cell: @ctx.cell, k: @k,
                               windowed_usernames: @ctx.l2_roster_usernames, v_w: @ctx.v_w,
                               own_ccv_baseline: @ctx.own_ccv_baseline,
@@ -303,7 +309,7 @@ module TrustIndex
       def display_fraud(post, hard, i_evt, fraud)
         return fraud unless recurrence_downweighted?
 
-        soft_disp = L2Presume.call(raw: ungated_chatters, b_hard_usernames: names(post),
+        soft_disp = L2Presume.call(raw: ungated_chatters, b_hard_usernames: names(post), n_roster: @ctx.n_roster,
                                    v: @ctx.v, cell: @ctx.cell, k: @k,
                                    windowed_usernames: @ctx.l2_roster_usernames, v_w: @ctx.v_w,
                                    own_ccv_baseline: @ctx.own_ccv_baseline,

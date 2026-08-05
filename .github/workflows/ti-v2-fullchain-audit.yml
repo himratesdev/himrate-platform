@@ -73,8 +73,8 @@ jobs:
             tiers = Hash.new(0); spam.each_value { |v| tiers[v[:bot_flag_tier]] += 1 }
             v2c = CB.build_v2(s, ctx)
             next if v2c.v.nil? || v2c.v <= 0
-            wr, v_w = CB.windowed_inputs(s)
-            wctx = v_w ? v2c.with(l2_roster_usernames: wr, v_w: v_w) : v2c
+            wr, v_w, n_w = CB.windowed_inputs(s)
+            wctx = v_w ? v2c.with(l2_roster_usernames: wr, v_w: v_w, n_roster: n_w) : v2c
             r = TrustIndex::V2::Engine.compute(context: wctx, k: k)
             cell_cal = (v2c.cell.calibrated rescue "?")
             rows << { s: s, ctx: ctx, v2c: v2c, r: r, roster: roster, spam: spam, tiers: tiers,

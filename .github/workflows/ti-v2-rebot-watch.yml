@@ -43,8 +43,8 @@ jobs:
           ctx = CB.build(s)
           roster = ctx[:stream_chatters] || []
           v2c = CB.build_v2(s, ctx)
-          wr, vw = CB.windowed_inputs(s)
-          wctx = vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c
+          wr, vw, n_w = CB.windowed_inputs(s)
+          wctx = vw ? v2c.with(l2_roster_usernames: wr, v_w: vw, n_roster: n_w) : v2c
           r = TrustIndex::V2::Engine.compute(context: wctx, k: k)
           codes = r.reason_codes.map(&:code)
 

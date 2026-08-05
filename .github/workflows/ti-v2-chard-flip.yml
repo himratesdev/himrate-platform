@@ -44,8 +44,8 @@ jobs:
           def probe(s, k, cb)
             ctx = cb.build(s); roster = ctx[:stream_chatters] || []
             v2c = cb.build_v2(s, ctx); return nil if v2c.v.nil? || v2c.v <= 0
-            wr, vw = cb.windowed_inputs(s)
-            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c), k: k)
+            wr, vw, n_w = cb.windowed_inputs(s)
+            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw, n_roster: n_w) : v2c), k: k)
             fl = (ctx.dig(:temporal_cross_channel_flags, :flagged) || {}).reject { |_, v| v[:bot_type] == "utility" }
             named_users = r.b_hard.map(&:username)
             mcs = named_users.filter_map { |u| fl[u]&.dig(:max_concurrent_channels)&.to_i }

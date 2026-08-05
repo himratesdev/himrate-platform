@@ -49,7 +49,7 @@ RSpec.describe TrustIndex::ContextBuilder do
                                       rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: true, sample_size: 50)
       CalibrationCellBaseline.create!(category: "esports", v_bucket: "0-1k", chat_mode: "open", language: "ru",
                                       rho_star: 0.30, rho_lo: 0.15, rho_hi: 0.50, calibrated: true, sample_size: 50)
-      allow(described_class).to receive(:v2_cowindowed_inputs).and_return([ Set.new(%w[a]), 900 ]) # V_W=900 → 0-1k
+      allow(described_class).to receive(:v2_cowindowed_inputs).and_return([ Set.new(%w[a]), 900, 1 ]) # V_W=900 → 0-1k
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a b], ccv: 6000))
       expect(c.cell.rho_star).to eq(0.30) # 0-1k cell via v_eff, NOT the 5k-20k 0.03 cell (instant V)
       expect(c.v).to eq(6000)             # display/ERV V unchanged (instant)
@@ -59,6 +59,8 @@ RSpec.describe TrustIndex::ContextBuilder do
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a b]))
       expect(c.l2_roster_usernames).to be_nil
       expect(c.v_w).to be_nil
+      # BUG-EIHC-500CAP: cumulative frame, sample below the cap → n_roster == sample size, NO CH count query
+      expect(c.n_roster).to eq(2)
     end
 
     it "BUG-A: co-windowed ON but no windowed CCV snapshot → BOTH inputs nil (no half-windowed frame)" do
@@ -72,13 +74,38 @@ RSpec.describe TrustIndex::ContextBuilder do
 
     it "P1: ContextBuilder.windowed_inputs computes windowed inputs UNCONDITIONALLY (ungated shadow path)" do
       s = create(:stream, channel: channel, language: "ru", started_at: 3.hours.ago)
-      # verdict flag OFF, but windowed_inputs is ungated — still [nil, nil] here only because no CCV window.
-      expect(described_class.windowed_inputs(s)).to eq([ nil, nil ])
+      # verdict flag OFF, but windowed_inputs is ungated — still all-nil here only because no CCV window.
+      expect(described_class.windowed_inputs(s)).to eq([ nil, nil, nil ])
       [ 500, 600, 700 ].each_with_index { |c, i| s.ccv_snapshots.create!(ccv_count: c, timestamp: (i + 1).minutes.ago) }
       allow(Clickhouse::ChatQueries).to receive(:stream_chatters_windowed).and_return(%w[u1 u2 u3])
-      roster, v_w = described_class.windowed_inputs(s)
+      roster, v_w, n_w = described_class.windowed_inputs(s)
       expect(roster).to eq(Set.new(%w[u1 u2 u3]))
       expect(v_w).to eq(600) # median of 500/600/700 (nearest-rank)
+      # BUG-EIHC-500CAP: 3 < cap → the roster IS the full windowed set → count == size, no CH aggregate
+      expect(n_w).to eq(3)
+    end
+
+    it "BUG-EIHC-500CAP: a CUMULATIVE sample at the cap triggers stream_chatters_count; nil count degrades" do
+      capped = Array.new(Clickhouse::ChatQueries::CROSS_CHANNEL_CHATTER_LIMIT) { |i| "u#{i}" }
+      allow(Clickhouse::ChatQueries).to receive(:stream_chatters_count).and_return(8768)
+      c = described_class.build_v2(stream, ctx_hash(chatters: capped))
+      expect(c.n_roster).to eq(8768)
+      expect(Clickhouse::ChatQueries).to have_received(:stream_chatters_count)
+      # CH hiccup → nil → L2 degrades to the capped sum for the cycle (no crash, pre-fix magnitude)
+      allow(Clickhouse::ChatQueries).to receive(:stream_chatters_count).and_return(nil)
+      expect(described_class.build_v2(stream, ctx_hash(chatters: capped)).n_roster).to be_nil
+    end
+
+    it "BUG-EIHC-500CAP: a windowed roster AT the sample cap triggers the uncapped uniqExact count" do
+      s = create(:stream, channel: channel, language: "ru", started_at: 3.hours.ago)
+      s.ccv_snapshots.create!(ccv_count: 600, timestamp: 1.minute.ago)
+      capped_roster = Array.new(Clickhouse::ChatQueries::CROSS_CHANNEL_CHATTER_LIMIT) { |i| "u#{i}" }
+      allow(Clickhouse::ChatQueries).to receive(:stream_chatters_windowed).and_return(capped_roster)
+      allow(Clickhouse::ChatQueries).to receive(:stream_chatters_windowed_count).and_return(1825)
+      roster, _v_w, n_w = described_class.windowed_inputs(s)
+      expect(roster.size).to eq(Clickhouse::ChatQueries::CROSS_CHANNEL_CHATTER_LIMIT)
+      expect(n_w).to eq(1825)
+      expect(Clickhouse::ChatQueries).to have_received(:stream_chatters_windowed_count)
     end
 
     # TI v2.1 inflation corroborator input: build_v2 reuses the calibrated v1 CcvChatCorrelation

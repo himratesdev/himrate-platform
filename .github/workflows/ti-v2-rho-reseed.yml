@@ -66,10 +66,10 @@ jobs:
               t = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(calculated_at: :desc).first
               next unless t && t.c_hard == false
               ctx = CB.build(s)
-              roster, v_w = CB.windowed_inputs(s)
+              roster, v_w, n_w = CB.windowed_inputs(s)
               v2c = CB.build_v2(s, ctx)
               next if v2c.v.nil? || v2c.v <= 0
-              wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w) : v2c
+              wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w) : v2c
               res = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
               bands["#{res.band&.color}/#{res.band&.row}"] += 1
               n += 1
