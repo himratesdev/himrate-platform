@@ -55,9 +55,9 @@ jobs:
             next if roster.empty?
             flagged = CrossChannelTemporalFlag.where(username: roster).where.not(bot_type: "utility")
             next if flagged.count < 3
-            ctx = CB.build(s); roster2, v_w = CB.windowed_inputs(s); v2c = CB.build_v2(s, ctx)
+            ctx = CB.build(s); roster2, v_w, n_w = CB.windowed_inputs(s); v2c = CB.build_v2(s, ctx)
             next if v2c.v.nil? || v2c.v <= 0
-            wctx = v_w ? v2c.with(l2_roster_usernames: roster2, v_w: v_w) : v2c
+            wctx = v_w ? v2c.with(l2_roster_usernames: roster2, v_w: v_w, n_roster: n_w) : v2c
             r = TrustIndex::V2::Engine.compute(context: wctx, k: k)
             found += 1
             puts "  #{s.channel.login.ljust(20)} roster=#{roster.size} flagged_bots=#{flagged.count} → band=#{r.band&.color}/#{r.band&.row} n_frac=#{r.n_frac.round(3)} c_hard=#{r.c_hard} b_hard=#{r.b_hard.size}"

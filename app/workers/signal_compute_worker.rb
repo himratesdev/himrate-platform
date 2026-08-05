@@ -258,7 +258,10 @@ class SignalComputeWorker
       v2_n_frac: v2.n_frac, v2_confirmed_anomaly: v2.confirmed_anomaly,
       # rho_star&.to_f — a DB-resolved cell yields BigDecimal (decimal 6,5) which to_json's as a
       # STRING; keep the mining line type-stable (JSON number) pre- and post-GATE-0 seed (CR N1).
-      v2_v: v2c.v, v2_rho_obs: v2.rho_obs, v2_eihc: v2.eihc, v2_rho_star: v2c.cell&.rho_star&.to_f,
+      # v2_n_roster (BUG-EIHC-500CAP): the uncapped frame count behind the scaled EIHC — the exact
+      # magnitude whose absence from observability let the 500-cap bias hide until a live deep-dive.
+      v2_v: v2c.v, v2_rho_obs: v2.rho_obs, v2_eihc: v2.eihc, v2_n_roster: v2c.n_roster,
+      v2_rho_star: v2c.cell&.rho_star&.to_f,
       # P0.5: ρ_obs convention ("cumulative"/"windowed") so the ρ* miner segregates samples — the
       # FLIP re-seed must pool ONLY windowed rows (nil on pre-P0.5 lines = cumulative by construction).
       v2_rho_conv: v2.rho_convention,

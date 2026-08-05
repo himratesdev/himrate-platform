@@ -39,8 +39,8 @@ jobs:
           Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(80).each do |s|
             break if n >= 12
             ctx = CB.build(s); v2c = CB.build_v2(s, ctx); next if v2c.v.nil? || v2c.v <= 0
-            wr, vw = CB.windowed_inputs(s)
-            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw) : v2c), k: k)
+            wr, vw, n_w = CB.windowed_inputs(s)
+            r = TrustIndex::V2::Engine.compute(context: (vw ? v2c.with(l2_roster_usernames: wr, v_w: vw, n_roster: n_w) : v2c), k: k)
             n += 1; bands["#{r.band&.color}/#{r.band&.row}"] += 1
           rescue StandardError
             nil

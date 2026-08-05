@@ -154,9 +154,13 @@ module TrustIndex
     # gate), for the windowed shadow-accrual path (SignalComputeWorker#accrue_windowed_shadow). The caller
     # gates on the SEPARATE ti_v2_cowindowed_shadow flag; this just computes. Same [roster, v_w, n_w] /
     # [nil, nil, nil] contract as the flag-gated verdict path v2_cowindowed_inputs (both delegate to
-    # compute_windowed_inputs). BUG-EIHC-500CAP: third element = uncapped windowed distinct count —
-    # existing 2-element destructures (`roster, v_w = …` in the calibration probes) stay valid (Ruby
-    # drops the extra element) but compute the pre-fix capped magnitude until they thread n_roster.
+    # compute_windowed_inputs). BUG-EIHC-500CAP: third element = uncapped windowed distinct count.
+    # ⚠ Every `.with(l2_roster_usernames:, v_w:)` overlay MUST thread `n_roster: n_w` too (all 19
+    # probe workflows do as of CR-564): a Context from build_v2 already carries an n_roster for the
+    # frame build_v2 resolved (flag-ON → windowed, flag-OFF → CUMULATIVE), so an overlay that swaps
+    # in a windowed frame without swapping the count inherits the cumulative n_roster → windowed
+    # rate × cumulative count = an OVERSCALED EIHC → deficits understated exactly in the flip-
+    # evaluation probes that force the windowed frame while the flag is still OFF.
     def self.windowed_inputs(stream)
       compute_windowed_inputs(stream)
     end

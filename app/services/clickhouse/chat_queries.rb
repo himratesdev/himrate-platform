@@ -17,11 +17,13 @@ module Clickhouse
   # 0-divergence vs Postgres at the 1d flip. The username list is ORDER BY username so PG and CH
   # pick the same deterministic 500 (PG path was tweaked to match for parity).
   module ChatQueries
-    # ⚠️ Schema coupling (T1-074): this cap bounds v2 ρ_obs = EIHC/V ≤ 500 (EihcWeigher weights
-    # ≤ 1.0, V ≥ 1), persisted into trust_index_histories.rho_obs numeric(8,5) (max 999.99999).
-    # Raising the cap past 999 (or letting weights exceed 1.0) silently reintroduces the tiny-V
-    # PG::NumericValueOutOfRange overflow (post-flip incident 2026-07-21) — widen the rho columns
-    # in the same PR (migration 20260721120000 is the precedent).
+    # BUG-EIHC-500CAP: this cap bounds the SAMPLE COST (per-username PG lookups), NOT ρ_obs anymore —
+    # L2 scales the sample rate by the uncapped uniqExact counts below, so EIHC ≤ n_roster (real
+    # distinct chatters, thousands on big channels) and ρ_obs = EIHC/v_eff is bounded only by
+    # n_roster / v_eff (tiny-V snapshot → ρ can reach n_roster). The rho columns are sized for that:
+    # numeric(12,5) via migration 20260805210000 (which superseded 20260721120000's "cap 500 / V ≥ 1
+    # → ρ ≤ 500" sizing). If you change the EIHC magnitude semantics again, re-derive the column
+    # bound in the same PR — that's twice now.
     CROSS_CHANNEL_CHATTER_LIMIT = 500
 
     module_function
@@ -160,6 +162,7 @@ module Clickhouse
     # cross-source drift); uniqExact rides the stream_id bloom index like the roster read. nil on CH
     # error → L2 degrades to the capped sum (pre-fix behavior), never crashes the verdict.
     def stream_chatters_count(stream)
+      validate_stream_uuid!(stream.id)
       rows = Clickhouse.client.select(<<~SQL)
         SELECT uniqExact(username) AS c
         FROM chat_messages
@@ -172,6 +175,7 @@ module Clickhouse
     end
 
     def stream_chatters_windowed_count(stream, since:)
+      validate_stream_uuid!(stream.id)
       since_ts = since.utc.strftime("%Y-%m-%d %H:%M:%S")
       rows = Clickhouse.client.select(<<~SQL)
         SELECT uniqExact(username) AS c

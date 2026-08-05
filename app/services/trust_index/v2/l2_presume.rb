@@ -94,6 +94,12 @@ module TrustIndex
       # prefix and the windowed prefix can drift apart on huge long streams) → fall back to the rate
       # over the full cumulative sample (same weights population, coarser frame). [n_roster, base.size]
       # .max guards a cross-query race (count read moments after the roster read) from scaling DOWN.
+      # Adversarial seam (CR-564 N4, accepted): the alphabetical sample is unbiased for the honest
+      # population, but an attacker picks usernames — chatting bots named past the >cap channel's
+      # alphabet cutoff enter n_roster at the honest rate and are structurally un-nameable by the
+      # sample-scoped L0. Their economics equal sub-cap unnamed chat-bots (~1/ρ* viewers laundered
+      # per bot); silent-viewbot recall is untouched. Follow-up decision (NOT this PR): per-stream
+      # salt in the sample ORDER BY so the cutoff is unpredictable.
       def self.scaled_eihc(raw, base, humans, b_hard_usernames, n_roster, k)
         sum = EihcWeigher.eihc(humans, tau_delta: k.tau_delta)
         return sum unless n_roster

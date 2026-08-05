@@ -48,10 +48,10 @@ jobs:
             break if n >= N
             scanned += 1
             ctx = CB.build(s)
-            roster, v_w = CB.windowed_inputs(s)
+            roster, v_w, n_w = CB.windowed_inputs(s)
             v2c = CB.build_v2(s, ctx)
             next if v2c.v.nil? || v2c.v <= 0
-            wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w) : v2c
+            wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w) : v2c
             r = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
             n += 1
             bands["#{r.band&.color}/#{r.band&.row}#{r.band&.sub}"] += 1

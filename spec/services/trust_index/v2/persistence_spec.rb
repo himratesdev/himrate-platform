@@ -61,6 +61,15 @@ RSpec.describe TrustIndex::V2::Persistence do
     expect(persist(result(rho_obs: 437.5)).reload.rho_obs).to eq(437.5)
   end
 
+  it "persists rho_obs >= 1000 (BUG-EIHC-500CAP: scaled EIHC ≤ n_roster is uncapped; tiny-V snapshot " \
+     "on a big-roster channel) — numeric(12,5) regression guard" do
+    # scaled EIHC removed the ρ ≤ 500 bound numeric(8,5) was sized under (migration 20260805210000):
+    # v_eff = 1-2 (glitchy/pre-offline latest CCV) × windowed n_roster ≥ 1000 → ρ_obs ≥ 1000. The SCW
+    # cutover path has no rescue — an overflow here is dead jobs / lost verdicts, not a log line.
+    expect(persist(result(rho_obs: 1825.0)).reload.rho_obs).to eq(1825.0)
+    expect(persist(result(rho_obs: 8768.43210)).reload.rho_obs).to eq(8768.4321)
+  end
+
   it "stamps rho_convention (P0.5) so the self-baseline + ρ* miner segregate cumulative vs windowed" do
     expect(persist(result).rho_convention).to eq("cumulative")
     expect(persist(result(rho_convention: "windowed")).rho_convention).to eq("windowed")

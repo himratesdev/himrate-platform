@@ -85,6 +85,17 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(n_w).to eq(3)
     end
 
+    it "BUG-EIHC-500CAP: a CUMULATIVE sample at the cap triggers stream_chatters_count; nil count degrades" do
+      capped = Array.new(Clickhouse::ChatQueries::CROSS_CHANNEL_CHATTER_LIMIT) { |i| "u#{i}" }
+      allow(Clickhouse::ChatQueries).to receive(:stream_chatters_count).and_return(8768)
+      c = described_class.build_v2(stream, ctx_hash(chatters: capped))
+      expect(c.n_roster).to eq(8768)
+      expect(Clickhouse::ChatQueries).to have_received(:stream_chatters_count)
+      # CH hiccup → nil → L2 degrades to the capped sum for the cycle (no crash, pre-fix magnitude)
+      allow(Clickhouse::ChatQueries).to receive(:stream_chatters_count).and_return(nil)
+      expect(described_class.build_v2(stream, ctx_hash(chatters: capped)).n_roster).to be_nil
+    end
+
     it "BUG-EIHC-500CAP: a windowed roster AT the sample cap triggers the uncapped uniqExact count" do
       s = create(:stream, channel: channel, language: "ru", started_at: 3.hours.ago)
       s.ccv_snapshots.create!(ccv_count: 600, timestamp: 1.minute.ago)
