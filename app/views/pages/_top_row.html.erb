@@ -1,0 +1,103 @@
+<%# EPIC-64: one ranked row of the public category top — faithful port of the screen-64
+    «IDX Row» DOM (rank badge / blogger / audience), fraud-strip applied: the platform
+    chips, «X% ботов» subline, Trust-Score bar and dynamics cells are removed; the
+    Reliability pill renders the v2 band verdict (legal-safe RU label) or nothing at
+    all when the channel has no band yet (hide-not-dim). locals: row %>
+<div
+  data-pencil-name="IDX Row <%= row[:rank] %>"
+  class="box-border w-full h-fit shrink-0 flex flex-row gap-[16px] p-[12px_20px] justify-start items-center [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#25252F]"
+>
+  <div
+    data-pencil-name="Cell rank"
+    class="box-border w-[44px] shrink-0 h-fit flex flex-row gap-0 justify-center items-start"
+  >
+    <div
+      data-pencil-name="Rank Badge"
+      class="box-border w-[28px] shrink-0 h-[28px] flex flex-row gap-0 justify-center items-center bg-[#1E1838] rounded-[999px]"
+    >
+      <div
+        data-pencil-name="Rank T"
+        class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+      >
+        <%= row[:rank] %>
+      </div>
+    </div>
+  </div>
+  <div
+    data-pencil-name="Cell blogger"
+    class="box-border [flex:1_1_0] min-w-0 h-fit flex flex-row gap-[11px] justify-start items-center"
+  >
+    <div
+      data-pencil-name="Avatar"
+      class="box-border w-[36px] shrink-0 h-[36px] flex flex-row gap-0 justify-center items-center bg-[#1E1838] rounded-[999px]"
+    >
+      <div
+        data-pencil-name="Av T"
+        class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+      >
+        <%= top_avatar_initials(row[:display_name]) %>
+      </div>
+    </div>
+    <div
+      data-pencil-name="Blogger Col"
+      class="box-border w-fit min-w-0 shrink-0 h-fit flex flex-col gap-[2px] justify-start items-start"
+    >
+      <a
+        href="/c/<%= row[:login] %>"
+        data-pencil-name="Bl Name"
+        class="no-underline text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+      >
+        <%= row[:display_name] %>
+      </a>
+      <div
+        data-pencil-name="Bl Handle"
+        class="text-[12px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
+      >
+        @<%= row[:login] %>
+      </div>
+    </div>
+  </div>
+  <div
+    data-pencil-name="Cell aud"
+    class="box-border w-[110px] lg:w-[150px] shrink-0 h-fit flex flex-col gap-[2px] justify-start items-end"
+  >
+    <div
+      data-pencil-name="Aud V"
+      class="text-[14px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]"
+    >
+      <%= top_viewers_compact(row[:real_avg_viewers]) %>
+    </div>
+    <div
+      data-pencil-name="Aud Shown"
+      class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+    >
+      онлайн <%= top_viewers_compact(row[:shown_avg_viewers]) %>
+    </div>
+  </div>
+  <div
+    data-pencil-name="Cell rel"
+    class="box-border w-[132px] lg:w-[162px] shrink-0 h-fit flex flex-row gap-0 justify-start items-start"
+  >
+    <% if row[:band_label].present? %>
+      <% tokens = top_band_tokens(row[:band_color]) %>
+      <div
+        data-pencil-name="Reliability · <%= row[:band_label] %>"
+        class="box-border w-fit shrink-0 h-fit flex flex-row gap-[7px] p-[5px_11px] justify-start items-center rounded-[999px]"
+        style="background:<%= tokens[:bg] %>"
+      >
+        <div
+          data-pencil-name="Rel Dot"
+          class="box-border w-[8px] shrink-0 h-[8px] rounded-full"
+          style="background:<%= tokens[:dot] %>"
+        ></div>
+        <div
+          data-pencil-name="Rel Label"
+          class="text-[12px]/[normal] lg:text-[13px]/[normal] box-border font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal]"
+          style="color:<%= tokens[:dot] %>"
+        >
+          <%= row[:band_label] %>
+        </div>
+      </div>
+    <% end %>
+  </div>
+</div>

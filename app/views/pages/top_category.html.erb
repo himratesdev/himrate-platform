@@ -1,0 +1,166 @@
+<% content_for :title, "Топ стримеров — #{@top_category[:name]} | HimRate" %>
+<% content_for :description, "Топ Twitch-каналов категории #{@top_category[:name]} за 30 дней: средняя аудитория и вердикт по её достоверности. Индекс доверия (TI) — публичная аналитика HimRate." %>
+
+<%# EPIC-64 Phase 1 — public «Топ стримеров категории». Server-rendered (crawler-facing);
+    the table is the screen-64 «Industry Trust Index» block, fraud-strip applied (Twitch-only:
+    охват + band verdict). Chrome = the marketing header/footer partials (crawlable nav). %>
+<%# Data page — no scroll-reveal (same PO-directed neutralizer as /c/:login). %>
+<style>
+  [data-hr-reveal], [data-hr-reveal].hr-in { opacity: 1 !important; transform: none !important; transition: none !important; }
+  html, body { scroll-behavior: auto !important; }
+</style>
+<div
+  data-pencil-name="Топ категории"
+  class="box-border w-full max-w-[1440px] mx-auto min-h-screen h-fit flex flex-col gap-0 justify-start items-start bg-[#07070C]"
+>
+  <%= render "marketing_header" %>
+  <main class="box-border w-full h-fit flex flex-col gap-[24px] p-[32px_16px_64px_16px] lg:p-[40px_56px_88px_56px] justify-start items-start">
+    <div
+      data-pencil-name="Page Header"
+      class="box-border w-full h-fit shrink-0 flex flex-row gap-0 justify-between items-center"
+    >
+      <div
+        data-pencil-name="Header Left"
+        class="box-border w-fit shrink-0 h-fit flex flex-col gap-[4px] justify-start items-start"
+      >
+        <h1
+          data-pencil-name="H1"
+          class="m-0 text-[20px]/[normal] lg:text-[24px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal]"
+        >
+          Топ стримеров — <%= @top_category[:name] %>
+        </h1>
+        <div
+          data-pencil-name="H Sub"
+          class="text-[13px]/[normal] lg:text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal]"
+        >
+          Каналы категории за 30 дней: средняя аудитория и вердикт по её достоверности · <%= @top_category[:channels] %> каналов под наблюдением
+        </div>
+      </div>
+    </div>
+    <div
+      data-pencil-name="Industry Trust Index"
+      class="box-border w-full h-fit shrink-0 flex flex-col gap-0 justify-start items-start bg-[#141419] [border:1px_solid_#25252F] rounded-[16px] overflow-hidden"
+    >
+      <div
+        data-pencil-name="IDX Head"
+        class="box-border w-full h-fit shrink-0 flex flex-col lg:flex-row gap-[12px] lg:gap-0 p-[16px_20px] justify-between items-start lg:items-center [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#25252F]"
+      >
+        <div
+          data-pencil-name="IDX Head L"
+          class="box-border w-fit shrink-0 h-fit flex flex-row gap-[12px] justify-start items-center"
+        >
+          <div
+            data-pencil-name="IDX Icon"
+            class="box-border w-[38px] shrink-0 h-[38px] flex flex-row gap-0 justify-center items-center bg-[#1E1838] rounded-[12px]"
+          >
+            <svg
+              data-pencil-name="IDX I"
+              data-icon-name="award"
+              data-icon-set="lucide"
+              viewBox="0 0 13.99993896484375 14"
+              preserveAspectRatio="xMidYMid meet"
+              xmlns="http://www.w3.org/2000/svg"
+              class="box-border w-[19px] shrink-0 h-[19px]"
+            >
+              <path
+                d="M6.76074 0.60156q-0.62891 0.02734-1.22363 0.25293-0.59473 0.22217-1.10059 0.62891-0.50244 0.40674-0.86816 0.97412-0.3623 0.56738-0.51611 1.19629-0.08545 0.28027-0.10596 0.47168-0.02051 0.18799-0.02051 0.55029 0 0.29395 0.00684 0.40674 0.00684 0.11279 0.03418 0.2666 0.23926 1.27148 1.13476 2.18408l0.23926 0.23584-0.42041 2.33789q-0.42041 2.33789-0.42041 2.43702 0 0.16748 0.06836 0.33496 0.07178 0.16748 0.19824 0.28027 0.2085 0.21191 0.50244 0.24609 0.29395 0.03418 0.54688-0.10595 0.05469-0.02734 1.11767-0.82373 1.06641-0.7998 1.09375-0.78614l1.06299 0.79981q1.06641 0.79639 1.1211 0.82373 0.22559 0.11279 0.46142 0.09912 0.23926-0.01367 0.43408-0.14697 0.19824-0.1333 0.30078-0.3418 0.10596-0.21191 0.09229-0.43408-0.01367-0.14014-0.42041-2.43701l-0.42041-2.28321 0.23926-0.23584q0.89551-0.9126 1.13476-2.18408 0.02734-0.15381 0.03418-0.2666 0.00684-0.11279 0.00684-0.42041 0-0.36572-0.02051-0.54004-0.02051-0.17432-0.10596-0.46826-0.25293-0.99463-0.96728-1.76367-0.71094-0.76904-1.67822-1.09375-0.7417-0.23584-1.54151-0.19483z m0.68701 1.18946q0.62891 0.08545 1.16211 0.44433 0.5332 0.35547 0.88184 0.91602 0.42041 0.66992 0.42041 1.51074 0 0.54688-0.18115 1.02197-0.16748 0.44775-0.48535 0.83399-0.31445 0.38281-0.73487 0.63574-0.48877 0.30762-1.07666 0.39307-0.58789 0.08203-1.14844-0.05811-0.86816-0.22217-1.45605-0.87842-0.58789-0.65967-0.71436-1.55517-0.04102-0.23926-0.0205-0.55372 0.02051-0.31445 0.07861-0.55371 0.14014-0.5332 0.48193-1.00146 0.3418-0.46826 0.80323-0.76221 0.60498-0.36572 1.333-0.42041 0.08203-0.01367 0.31104 0 0.23242 0.01367 0.34521 0.02735z m-1.72265 6.75048q1.2749 0.41699 2.56347 0 0.28027-0.09912 0.29395-0.09912 0.01367 0 0.32129 1.69532 0.30762 1.69189 0.29394 1.69873-0.01367 0.00684-0.77588-0.56739-0.76221-0.57422-0.84765-0.61523-0.08545-0.04102-0.22559-0.09912-0.16748-0.05469-0.40674-0.04102-0.23584 0.01367-0.40332 0.08545-0.09912 0.04102-0.23925 0.15381l-0.72803 0.52979q-0.75537 0.57422-0.76221 0.56738-0.00684-0.00684 0.28711-1.67822 0.29395-1.6748 0.30078-1.70899 0.00684-0.03418 0.03418-0.02051l0.29395 0.09912z"
+                fill="#7B5CFA"
+              ></path>
+            </svg>
+          </div>
+          <div
+            data-pencil-name="IDX Head T"
+            class="box-border w-fit shrink-0 h-fit flex flex-col gap-[2px] justify-start items-start"
+          >
+            <div
+              data-pencil-name="IDX Title"
+              class="text-[16px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+            >
+              Industry Trust Index
+            </div>
+            <div
+              data-pencil-name="IDX Sub"
+              class="text-[12px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal]"
+            >
+              Ранжирование по средней аудитории за 30 дней (Twitch)
+            </div>
+          </div>
+        </div>
+        <nav
+          aria-label="Категории топа"
+          data-pencil-name="Vertical Tabs"
+          class="box-border w-fit max-w-full shrink-0 h-fit flex flex-row flex-wrap gap-[3px] p-[3px] justify-start items-start bg-[#1C1C24] rounded-[12px]"
+        >
+          <% tab_categories = ([ @top_category ] + (@top_categories - [ @top_category ])).first(4) %>
+          <% tab_categories.each do |cat| %>
+            <% active = cat[:slug] == @top_category[:slug] %>
+            <a
+              href="/top/<%= cat[:slug] %>"
+              data-pencil-name="VTab <%= cat[:name] %>"
+              class="no-underline box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[6px_12px] justify-start items-start rounded-[8px] <%= "bg-[#0B0B0F]" if active %>"
+            >
+              <div
+                data-pencil-name="VTab T <%= cat[:name] %>"
+                class="text-[13px]/[normal] box-border font-[Inter,system-ui,sans-serif] text-left [white-space:nowrap] <%= active ? "text-[#F4F4F7] font-semibold" : "text-[#9A9AA9] font-medium" %>"
+              >
+                <%= cat[:name] %>
+              </div>
+            </a>
+          <% end %>
+          <a
+            href="/top"
+            data-pencil-name="VTab Все"
+            class="no-underline box-border w-fit shrink-0 h-fit flex flex-row gap-0 p-[6px_12px] justify-start items-start rounded-[8px]"
+          >
+            <div class="text-[13px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]">Все категории</div>
+          </a>
+        </nav>
+      </div>
+      <div
+        data-pencil-name="IDX TH"
+        class="box-border w-full h-fit shrink-0 flex flex-row gap-[16px] p-[10px_20px] justify-start items-center bg-[#1C1C24]"
+      >
+        <div data-pencil-name="ITH #" class="box-border w-[44px] shrink-0 h-fit flex flex-row gap-0 justify-center items-start">
+          <div class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.5px] text-left [white-space:nowrap]">#</div>
+        </div>
+        <div data-pencil-name="ITH СТРИМЕР" class="box-border [flex:1_1_0] h-fit flex flex-row gap-0 justify-start items-start">
+          <div class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.5px] text-left [white-space:nowrap]">СТРИМЕР</div>
+        </div>
+        <div data-pencil-name="ITH АУДИТОРИЯ" class="box-border w-[110px] lg:w-[150px] shrink-0 h-fit flex flex-row gap-0 justify-end items-start">
+          <div class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.5px] text-left [white-space:nowrap]">АУДИТОРИЯ (30Д)</div>
+        </div>
+        <div data-pencil-name="ITH ВЕРДИКТ" class="box-border w-[132px] lg:w-[162px] shrink-0 h-fit flex flex-row gap-0 justify-start items-start">
+          <div class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-semibold tracking-[0.5px] text-left [white-space:nowrap]">ВЕРДИКТ</div>
+        </div>
+      </div>
+      <% if @top_rows.any? %>
+        <% @top_rows.each do |row| %>
+          <%= render "top_row", row: row %>
+        <% end %>
+      <% else %>
+        <div class="box-border w-full h-fit flex flex-row gap-0 p-[24px_20px] justify-center items-center">
+          <div class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left">Недостаточно данных за 30-дневное окно — категория наблюдается, таблица появится по мере накопления.</div>
+        </div>
+      <% end %>
+      <div
+        data-pencil-name="IDX Foot"
+        class="box-border w-full h-fit flex flex-row gap-0 p-[12px_20px] justify-start items-center"
+      >
+        <div class="text-[11px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal]">
+          Аудитория — средний одновременный онлайн канала за 30 дней по наблюдениям HimRate. Вердикт — итог Индекса доверия (TI): оценки достоверности аудитории по каналу. Методика — <a href="/methodology" class="text-[#9A9AA9] underline">himrate.com/methodology</a>.
+        </div>
+      </div>
+    </div>
+  </main>
+  <%= render "marketing_footer" %>
+</div>
+<script type="application/ld+json"><%= raw ERB::Util.json_escape({
+      "@context" => "https://schema.org",
+      "@type" => "ItemList",
+      "name" => "Топ стримеров — #{@top_category[:name]}",
+      "numberOfItems" => @top_rows.size,
+      "itemListElement" => @top_rows.map do |r|
+        { "@type" => "ListItem", "position" => r[:rank], "name" => r[:display_name],
+          "url" => "#{ApplicationHelper::CANONICAL_HOST}/c/#{r[:login]}" }
+      end
+    }.to_json) %></script>

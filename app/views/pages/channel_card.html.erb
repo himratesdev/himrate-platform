@@ -942,12 +942,12 @@
                 data-pencil-name="H Name Row"
                 class="box-border w-fit h-fit shrink-0 flex flex-row gap-[10px] justify-start items-center"
               >
-                <div
+                <h1
                   data-pencil-name="H Name"
-                  class="text-[26px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                  class="m-0 text-[26px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
                 >
-                  Buster
-                </div>
+                  <%= @login %>
+                </h1>
                 <div
                   data-pencil-name="H Verified"
                   class="box-border w-fit shrink-0 h-fit flex flex-row gap-[5px] p-[4px_9px] justify-start items-center bg-[#10271F] rounded-[999px]"
@@ -993,8 +993,19 @@
                 data-pencil-name="H Meta"
                 class="text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"
               >
-                twitch.tv/buster · Dota 2 · в эфире 3 ч 12 мин
+                twitch.tv/<%= @login %>
               </div>
+              <%# EPIC-64: crawlable internal link /c/ -> /top (renders only when the channel's
+                  latest category qualifies for a public top page). %>
+              <% if @top_category %>
+                <a
+                  href="/top/<%= @top_category[:slug] %>"
+                  data-pencil-name="H Top Link"
+                  class="no-underline text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-medium text-left [white-space:nowrap]"
+                >
+                  Топ категории: <%= @top_category[:name] %> →
+                </a>
+              <% end %>
             </div>
             <div
               data-pencil-name="H Actions"
@@ -3213,3 +3224,17 @@
         </div>
       </div>
     </div>
+
+<script type="application/ld+json"><%= raw ERB::Util.json_escape({
+      "@context" => "https://schema.org",
+      "@type" => "BreadcrumbList",
+      "itemListElement" => [
+        { "@type" => "ListItem", "position" => 1, "name" => "HimRate",
+          "item" => ApplicationHelper::CANONICAL_HOST },
+        *(@top_category ? [ { "@type" => "ListItem", "position" => 2,
+                              "name" => "Топ — #{@top_category[:name]}",
+                              "item" => "#{ApplicationHelper::CANONICAL_HOST}/top/#{@top_category[:slug]}" } ] : []),
+        { "@type" => "ListItem", "position" => @top_category ? 3 : 2, "name" => @login,
+          "item" => "#{ApplicationHelper::CANONICAL_HOST}/c/#{@login}" }
+      ]
+    }.to_json) %></script>
