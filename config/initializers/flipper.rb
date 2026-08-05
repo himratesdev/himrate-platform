@@ -99,34 +99,39 @@ module FlipperDefaults
     !pause_override_reason(flag, redis).nil?
   end
 
-  ALL_FLAGS = %i[
-    pundit_authorization
-    bot_raid_chain
-    compare_unlimited
-    audience_overlap
-    ad_calculator
-    social_presence
-    panel_tracking
-    tracking_requests
-    irc_monitor
-    stream_monitor
-    known_bots
-    channel_discovery
-    bot_scoring
-    signal_compute
-    accessory_drift_detection
-    stream_summary_endpoint
-    cleanup_worker
-    trends_tab
-    trends_aggregation_nightly
-    pva
-    ti_v2_cowindowed_shadow
-    ti_v2_ie_shadow
+  # NB: plain symbol array, NOT %i[] — percent-literals have no comment syntax (`#` inside
+  # %i[] is a literal token, not a comment). A doc comment placed inside the former %i[]
+  # got whitespace-split into ~40 symbol "flags" (:the, :boot, :"2026-07-29.", :"#", …) that
+  # the boot loop below registered AND enabled on every Rails boot (incident 2026-08-05).
+  # Name shape is pinned by spec/flipper/flipper_flag_registry_spec.rb.
+  ALL_FLAGS = [
+    :pundit_authorization,
+    :bot_raid_chain,
+    :compare_unlimited,
+    :audience_overlap,
+    :ad_calculator,
+    :social_presence,
+    :panel_tracking,
+    :tracking_requests,
+    :irc_monitor,
+    :stream_monitor,
+    :known_bots,
+    :channel_discovery,
+    :bot_scoring,
+    :signal_compute,
+    :accessory_drift_detection,
+    :stream_summary_endpoint,
+    :cleanup_worker,
+    :trends_tab,
+    :trends_aggregation_nightly,
+    :pva,
+    :ti_v2_cowindowed_shadow,
+    :ti_v2_ie_shadow,
     # SA-2 social-footprint index (channel_social_links refresh). Was manually Flipper.enable'd →
     # Redis-only → reverted OFF on a redeploy, stalling the backfill at ~1026/5232 (the recurring
     # PVA «flag not deploy-proof» pattern). ALL_FLAGS makes the bounded (≤100/run) cron auto-enable
     # every boot so the pool keeps indexing. Promoted 2026-07-29.
-    social_footprint_index
+    :social_footprint_index
   ].freeze
 
   # Verdict-flip flags that must be DEPLOY-PROOF on staging (survive a kamal-setup Redis flush) but stay
