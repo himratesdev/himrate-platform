@@ -497,10 +497,10 @@ module TrustIndex
         # full windowed set (count == size, no extra CH read); at the cap, one uniqExact aggregate on
         # the same WHERE. nil (CH hiccup) → L2 degrades to the capped sum for this cycle.
         n_w = if roster.size < Clickhouse::ChatQueries::CROSS_CHANNEL_CHATTER_LIMIT
-                roster.size
-              else
-                Clickhouse::ChatQueries.stream_chatters_windowed_count(stream, since: since)
-              end
+          roster.size
+        else
+          Clickhouse::ChatQueries.stream_chatters_windowed_count(stream, since: since)
+        end
         [ roster, v_w, n_w ]
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: windowed inputs failed (#{e.message})")
