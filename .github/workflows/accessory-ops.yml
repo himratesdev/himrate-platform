@@ -166,7 +166,9 @@ jobs:
       # FR-002: validate-secrets fail-fast пред kamal invocation. Mirrors ci.yml deploy jobs.
       - name: Validate required secrets
         env:
-          KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          # Destination-aware: validate the credential actually used for registry login
+          # (см. Write Kamal secrets ниже) — staging = ephemeral GITHUB_TOKEN, production = audit PAT.
+          KAMAL_REGISTRY_PASSWORD: ${{ inputs.destination == 'production' && secrets.KAMAL_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           # BUG-251.18: CLICKHOUSE_PASSWORD must be in the minimal subset. The `clickhouse`
           # accessory's default user is password-protected via this secret; omitting it means
@@ -204,7 +206,13 @@ jobs:
       - name: Write Kamal secrets
         env:
           DESTINATION: ${{ inputs.destination }}
-          KAMAL_REGISTRY_PASSWORD: ${{ secrets.KAMAL_REGISTRY_PASSWORD }}
+          # Registry cred split (incident 2026-08-05: expired PAT → `docker login ghcr.io` on the
+          # host returned "denied: denied", clickhouse reboot aborted at login). Staging logs in
+          # with the ephemeral GITHUB_TOKEN (packages: read suffices — accessory ops only pull),
+          # mirroring the ci.yml deploy-staging job. The dedicated audit PAT stays production-only
+          # (controlled rotation, см. docs/runbooks/kamal_local_deploy.md) — an expired PAT must
+          # never block staging accessory ops.
+          KAMAL_REGISTRY_PASSWORD: ${{ inputs.destination == 'production' && secrets.KAMAL_REGISTRY_PASSWORD || secrets.GITHUB_TOKEN }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           CLICKHOUSE_PASSWORD: ${{ secrets.CLICKHOUSE_PASSWORD }}
           TELEGRAM_OPS_BOT_TOKEN: ${{ secrets.TELEGRAM_OPS_BOT_TOKEN }}
