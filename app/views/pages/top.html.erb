@@ -1,0 +1,60 @@
+<% content_for :title, "Топы стримеров по категориям | HimRate" %>
+<% content_for :description, "Публичные топы Twitch-стримеров по категориям: средняя аудитория за 30 дней и вердикт Индекса доверия (TI) по её достоверности." %>
+
+<%# EPIC-64 Phase 1 — public /top index: one crawlable card-link per qualifying category.
+    Server-rendered; card tokens from the screen-64 design family. %>
+<%# Data page — no scroll-reveal (same PO-directed neutralizer as /c/:login). %>
+<style>
+  [data-hr-reveal], [data-hr-reveal].hr-in { opacity: 1 !important; transform: none !important; transition: none !important; }
+  html, body { scroll-behavior: auto !important; }
+</style>
+<div
+  data-pencil-name="Топы"
+  class="box-border w-full max-w-[1440px] mx-auto min-h-screen h-fit flex flex-col gap-0 justify-start items-start bg-[#07070C]"
+>
+  <%= render "marketing_header" %>
+  <main class="box-border w-full h-fit flex flex-col gap-[24px] p-[32px_16px_64px_16px] lg:p-[40px_56px_88px_56px] justify-start items-start">
+    <div
+      data-pencil-name="Page Header"
+      class="box-border w-full h-fit shrink-0 flex flex-col gap-[4px] justify-start items-start"
+    >
+      <h1
+        data-pencil-name="H1"
+        class="m-0 text-[20px]/[normal] lg:text-[24px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:normal]"
+      >
+        Топы стримеров по категориям
+      </h1>
+      <div
+        data-pencil-name="H Sub"
+        class="text-[13px]/[normal] lg:text-[14px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:normal]"
+      >
+        Средняя аудитория каналов за 30 дней и вердикт Индекса доверия (TI) — публично и без регистрации
+      </div>
+    </div>
+    <% if @top_categories.any? %>
+      <div
+        data-pencil-name="Категории"
+        class="box-border w-full h-fit grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-[12px]"
+      >
+        <% @top_categories.each do |cat| %>
+          <a
+            href="/top/<%= cat[:slug] %>"
+            data-pencil-name="Категория <%= cat[:name] %>"
+            class="no-underline box-border w-full h-fit flex flex-row gap-[12px] p-[16px_20px] justify-between items-center bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]"
+          >
+            <div class="box-border w-fit min-w-0 h-fit flex flex-col gap-[2px] justify-start items-start">
+              <div class="text-[15px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:normal]"><%= cat[:name] %></div>
+              <div class="text-[12px]/[normal] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] font-normal text-left [white-space:nowrap]"><%= cat[:channels] %> каналов под наблюдением</div>
+            </div>
+            <div class="text-[13px]/[normal] box-border text-[#7B5CFA] font-[Inter,system-ui,sans-serif] font-semibold text-left [white-space:nowrap]">Открыть →</div>
+          </a>
+        <% end %>
+      </div>
+    <% else %>
+      <div class="box-border w-full h-fit flex flex-row gap-0 p-[24px_20px] justify-center items-center bg-[#141419] [border:1px_solid_#25252F] rounded-[16px]">
+        <div class="text-[13px]/[normal] box-border text-[#5E5E6B] font-[Inter,system-ui,sans-serif] font-normal text-left">Категории появятся по мере накопления 30-дневных наблюдений.</div>
+      </div>
+    <% end %>
+  </main>
+  <%= render "marketing_footer" %>
+</div>

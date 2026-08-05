@@ -216,6 +216,10 @@ Rails.application.routes.draw do
   # Public channel card (screen 02) — free real-audience analysis of any channel, no account.
   # login = Twitch login (alnum/underscore); constrained so it can't shadow the pages above.
   get "c/:login", to: "pages#channel_card", as: :channel_card, constraints: { login: /[A-Za-z0-9_]+/ }
+  # EPIC-64 Phase 1 — public category tops («Топ стримеров категории»), server-rendered
+  # for crawlers. Slug = transliterated category name (PublicTop::Categories is the map).
+  get "top", to: "pages#top", as: :top
+  get "top/:slug", to: "pages#top_category", as: :top_category, constraints: { slug: /[a-z0-9\-]+/ }
   # Dynamic OG share image per channel (TASK-060 Level 2) — /og/c/:login.png. Public,
   # CDN-cached PNG used as og:image on channel share links.
   get "og/c/:login", to: "og_images#channel", as: :og_channel, constraints: { login: /[A-Za-z0-9_]+/ }

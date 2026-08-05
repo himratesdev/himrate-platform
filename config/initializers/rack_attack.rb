@@ -62,6 +62,13 @@ class Rack::Attack
     req.ip if req.path.match?(%r{\A/c/[^/]+\z}) && !req.options?
   end
 
+  # EPIC-64: public category tops (/top, /top/:slug) — server-rendered from cached
+  # aggregates (1h/6h TTL), but a cache-miss recomputes a 30-day GROUP BY; same
+  # per-IP budget as the channel card.
+  throttle("public_top/ip", limit: 60, period: 1.minute) do |req|
+    req.ip if req.path.match?(%r{\A/top(/[^/]+)?\z}) && !req.options?
+  end
+
   # General API per IP
   throttle("api/ip", limit: 60, period: 1.minute) do |req|
     req.ip if req.path.start_with?("/api/") && !req.options?

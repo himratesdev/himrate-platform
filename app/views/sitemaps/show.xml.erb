@@ -3,8 +3,14 @@
 <% @urls.each do |loc| %>
   <url>
     <loc><%= loc %></loc>
-    <changefreq>weekly</changefreq>
-    <priority><%= loc.end_with?("himrate.com/") ? "1.0" : "0.8" %></priority>
+    <changefreq><%= loc.include?("/c/") ? "daily" : "weekly" %></changefreq>
+    <priority><%= if loc.end_with?("himrate.com/")
+                    "1.0"
+                  elsif loc.include?("/c/")
+                    "0.6"
+                  else
+                    "0.8"
+                  end %></priority>
   </url>
 <% end %>
 </urlset>

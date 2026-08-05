@@ -36,6 +36,36 @@ class PagesController < ApplicationController
 
     @page = "channel_card"
     @login = params[:login]
+    # EPIC-64: category of the channel's latest stream, resolved against the public /top
+    # registry → breadcrumb JSON-LD + a crawlable «топ категории» link (internal linking
+    # /c/ ↔ /top). nil when the category doesn't qualify for a top page — link hidden.
+    latest_game = Stream.where(channel_id: Channel.where(login: @login).select(:id))
+                        .order(started_at: :desc).limit(1).pick(:game_name)
+    @top_category = latest_game && PublicTop::Categories.all.find { |c| c[:name] == latest_game }
+  end
+
+  # EPIC-64 Phase 1 — public category-tops index (/top). Server-rendered: the page exists
+  # FOR crawlers, and a client-fetch shell would hand Googlebot an empty table (the one
+  # deliberate deviation from the landing client-fetch pattern). Landing layout, no auth.
+  def top
+    @page = "top"
+    @top_categories = PublicTop::Categories.all
+  end
+
+  # EPIC-64 Phase 1 — public «Топ стримеров категории» (/top/:slug). Faithful host of the
+  # Industry-Trust-Index table block from the screen-64 design with the fraud-strip canon
+  # applied (Twitch-only: наблюдаемый охват + band verdict; no social scores, no «% ботов»).
+  # Unknown slug 404s exactly like channel_card's unknown login (no soft-404 shells).
+  def top_category
+    category = PublicTop::Categories.resolve(params[:slug])
+    unless category
+      return render(file: Rails.public_path.join("404.html"), status: :not_found, layout: false)
+    end
+
+    @page = "top"
+    @top_category = category
+    @top_categories = PublicTop::Categories.all
+    @top_rows = PublicTop::CategoryTop.call(category[:name])
   end
 
   # Brand dashboard streamer search (screen 20) — faithful export host. Real ranked results are wired
