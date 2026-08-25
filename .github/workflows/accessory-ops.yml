@@ -98,6 +98,10 @@ jobs:
 
       - run: gem install kamal
 
+      - name: Connect Tailscale (home server is tailnet-only)
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
       - name: Set up SSH
         env:
           SSH_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
