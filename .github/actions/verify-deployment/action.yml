@@ -54,7 +54,7 @@ runs:
       shell: bash
       run: |
         echo "Checking containers for SHA: ${{ inputs.expected_sha }}"
-        CONTAINERS=$(ssh root@${{ inputs.host }} \
+        CONTAINERS=$(ssh himych@${{ inputs.host }} \
           "docker ps --filter label=service=himrate --filter label=destination=${{ inputs.destination }} --format '{{.Names}} {{.Image}} {{.Status}}'")
         echo "$CONTAINERS"
 
@@ -75,9 +75,9 @@ runs:
     - name: 'Check 2/8: Health endpoint (container-internal, bypasses proxy)'
       shell: bash
       run: |
-        WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
+        WEB_CONTAINER=$(ssh himych@${{ inputs.host }} \
           "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=web")
-        HEALTH=$(ssh root@${{ inputs.host }} \
+        HEALTH=$(ssh himych@${{ inputs.host }} \
           "docker exec $WEB_CONTAINER ruby -e \"require 'net/http'; puts Net::HTTP.get(URI('http://localhost:3000/health'))\"")
         echo "Health check (container internal): $HEALTH"
         if echo "$HEALTH" | grep -q '"status":"ok"'; then
@@ -90,13 +90,13 @@ runs:
     - name: 'Check 3/8: Migrations'
       shell: bash
       run: |
-        WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
+        WEB_CONTAINER=$(ssh himych@${{ inputs.host }} \
           "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=web")
         if [ -z "$WEB_CONTAINER" ]; then
           echo "::error::Web container not found"
           exit 1
         fi
-        NEEDS_MIGRATION=$(ssh root@${{ inputs.host }} \
+        NEEDS_MIGRATION=$(ssh himych@${{ inputs.host }} \
           "docker exec $WEB_CONTAINER bin/rails runner 'puts ActiveRecord::MigrationContext.new(\"db/migrate\").needs_migration?'")
         echo "Needs migration: $NEEDS_MIGRATION"
         if [ "$NEEDS_MIGRATION" = "true" ]; then
@@ -111,14 +111,14 @@ runs:
         # tier-weighted compute_tier1/2/3 roles. Verify Sidekiq runs in each compute tier.
         FAIL=0
         for ROLE in compute_tier1 compute_tier2 compute_tier3; do
-          CONTAINER=$(ssh root@${{ inputs.host }} \
+          CONTAINER=$(ssh himych@${{ inputs.host }} \
             "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=$ROLE")
           if [ -z "$CONTAINER" ]; then
             echo "::error::$ROLE container not found"
             FAIL=1
             continue
           fi
-          SIDEKIQ=$(ssh root@${{ inputs.host }} "docker top $CONTAINER" | grep -c sidekiq || echo "0")
+          SIDEKIQ=$(ssh himych@${{ inputs.host }} "docker top $CONTAINER" | grep -c sidekiq || echo "0")
           echo "Sidekiq processes in $ROLE: $SIDEKIQ"
           if [ "$SIDEKIQ" = "0" ]; then
             echo "::error::Sidekiq not running in $ROLE container"
@@ -133,7 +133,7 @@ runs:
     - name: 'Check 5/8: Redis'
       shell: bash
       run: |
-        REDIS_VERSION=$(ssh root@${{ inputs.host }} \
+        REDIS_VERSION=$(ssh himych@${{ inputs.host }} \
           "docker exec ${{ inputs.redis_container }} redis-cli INFO server 2>/dev/null | grep redis_version | cut -d: -f2 | tr -d '\r'" || echo "unavailable")
         echo "Redis version: $REDIS_VERSION"
         if [ "$REDIS_VERSION" = "unavailable" ]; then
@@ -141,11 +141,11 @@ runs:
           exit 1
         fi
 
-        BLOOM=$(ssh root@${{ inputs.host }} \
+        BLOOM=$(ssh himych@${{ inputs.host }} \
           "docker exec ${{ inputs.redis_container }} redis-cli MODULE LIST 2>/dev/null | grep -c bf" || echo "0")
         echo "RedisBloom loaded: $BLOOM"
 
-        PING=$(ssh root@${{ inputs.host }} "docker exec ${{ inputs.redis_container }} redis-cli PING" || echo "FAIL")
+        PING=$(ssh himych@${{ inputs.host }} "docker exec ${{ inputs.redis_container }} redis-cli PING" || echo "FAIL")
         echo "Redis PING: $PING"
         if [ "$PING" != "PONG" ]; then
           echo "::error::Redis PING failed"
@@ -155,9 +155,9 @@ runs:
     - name: 'Check 6/8: Flipper'
       shell: bash
       run: |
-        WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
+        WEB_CONTAINER=$(ssh himych@${{ inputs.host }} \
           "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=web")
-        FLAGS=$(ssh root@${{ inputs.host }} \
+        FLAGS=$(ssh himych@${{ inputs.host }} \
           "docker exec $WEB_CONTAINER bin/rails runner 'Flipper.features.each { |f| puts \"#{f.name}: #{f.enabled?}\" }' 2>/dev/null" | grep -v "Flipper audit" || echo "unavailable")
         echo "Flipper flags:"
         echo "$FLAGS"
@@ -168,9 +168,9 @@ runs:
     - name: 'Check 7/8: Sidekiq Cron'
       shell: bash
       run: |
-        WEB_CONTAINER=$(ssh root@${{ inputs.host }} \
+        WEB_CONTAINER=$(ssh himych@${{ inputs.host }} \
           "docker ps -qf label=service=himrate -f label=destination=${{ inputs.destination }} -f label=role=web")
-        CRON=$(ssh root@${{ inputs.host }} \
+        CRON=$(ssh himych@${{ inputs.host }} \
           "docker exec $WEB_CONTAINER bin/rails runner 'Sidekiq::Cron::Job.all.each { |j| puts \"#{j.name}: #{j.status}\" }' 2>/dev/null" | grep -v "Flipper audit" || echo "unavailable")
         echo "Cron jobs:"
         echo "$CRON"
@@ -187,7 +187,7 @@ runs:
     - name: 'Check 8/8: pg_partman configured (TASK-039)'
       shell: bash
       run: |
-        DB_CONTAINER=$(ssh root@${{ inputs.host }} \
+        DB_CONTAINER=$(ssh himych@${{ inputs.host }} \
           "docker ps -qf name=himrate-db")
         if [ -z "$DB_CONTAINER" ]; then
           echo "::error::himrate-db container not found"
@@ -195,7 +195,7 @@ runs:
         fi
 
         DB_NAME="himrate_${{ inputs.destination }}"
-        COUNT=$(ssh root@${{ inputs.host }} \
+        COUNT=$(ssh himych@${{ inputs.host }} \
           "docker exec $DB_CONTAINER psql -U himrate -d $DB_NAME -tAc \
            \"SELECT COUNT(*) FROM partman.part_config WHERE parent_table = 'public.trends_daily_aggregates'\" 2>/dev/null" \
           || echo "ERROR")
@@ -215,7 +215,7 @@ runs:
           exit 1
         fi
 
-        PARTITIONS=$(ssh root@${{ inputs.host }} \
+        PARTITIONS=$(ssh himych@${{ inputs.host }} \
           "docker exec $DB_CONTAINER psql -U himrate -d $DB_NAME -tAc \
            \"SELECT COUNT(*) FROM pg_tables WHERE tablename LIKE 'trends_daily_aggregates_p2%'\" 2>/dev/null")
         echo "Monthly partitions created: $PARTITIONS (expected ≥ 8 — 3 historical + current + 4 premake)"
@@ -229,7 +229,7 @@ runs:
         # = backfill drift / premake gap / far-past dates. Threshold 100 = warning
         # (не fail) — temporary state during backfills OK, persistent accumulation = ops issue.
         # См. docs/runbooks/pg_partman_recovery.md §Default partition accumulation.
-        DEFAULT_ROWS=$(ssh root@${{ inputs.host }} \
+        DEFAULT_ROWS=$(ssh himych@${{ inputs.host }} \
           "docker exec $DB_CONTAINER psql -U himrate -d $DB_NAME -tAc \
            \"SELECT COUNT(*) FROM trends_daily_aggregates_default\" 2>/dev/null" \
           || echo "0")
