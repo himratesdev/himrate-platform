@@ -1,6 +1,6 @@
 name: host-safety-baseline
 
-# Fail-loud watchdog for the shared HOSTKEY VPS (82.21.7.48).
+# Fail-loud watchdog for the shared HOSTKEY VPS (100.78.102.60).
 #
 # Born from the 2026-06-26 incident: the co-tenant bft-* Playwright/Chrome service
 # ran a memcg OOM-kill storm for 22+ minutes with ZERO alerting until the whole host
@@ -24,6 +24,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 4
     steps:
+      - name: Connect Tailscale (home server is tailnet-only)
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          ping: 100.78.102.60
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
@@ -31,8 +36,8 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           cat >> ~/.ssh/config <<SSH_CONFIG
           Host hostkey
-            HostName 82.21.7.48
-            User root
+            HostName 100.78.102.60
+            User himych
             StrictHostKeyChecking accept-new
             IdentityFile ~/.ssh/id_ed25519
             ConnectTimeout 30

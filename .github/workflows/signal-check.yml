@@ -24,6 +24,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
+      - name: Connect Tailscale (home server is tailnet-only)
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          ping: 100.78.102.60
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
@@ -31,14 +36,14 @@ jobs:
           chmod 600 ~/.ssh/id_ed25519
           cat >> ~/.ssh/config <<SSH_CONFIG
           Host hostkey
-            HostName 82.21.7.48
-            User root
+            HostName 100.78.102.60
+            User himych
             StrictHostKeyChecking accept-new
             IdentityFile ~/.ssh/id_ed25519
             ConnectTimeout 30
           Host time4vps
             HostName 194.135.85.159
-            User root
+            User himych
             StrictHostKeyChecking accept-new
             IdentityFile ~/.ssh/id_ed25519
             ConnectTimeout 30
