@@ -155,6 +155,7 @@ jobs:
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TS_AUTHKEY }}
+          ping: 100.78.102.60
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
@@ -275,7 +276,12 @@ jobs:
           GRAFANA_OIDC_CLIENT_SECRET=${{ secrets.GRAFANA_OIDC_CLIENT_SECRET }}
           AUTO_TRIGGER_GH_PAT=${{ secrets.AUTO_TRIGGER_GH_PAT }}
           SECRETS
-      # Routine staging deploy = `kamal deploy` (app роли web/job/whisper_worker/irc only), НЕ `kamal setup`.
+      # Home-server era (2026-08): staging deploy = `kamal setup` — idempotent full-boot,
+      # поднимает accessories (db/redis/clickhouse/whisper) вместе с app-ролями. Причина
+      # прежнего `kamal deploy`-only (перегруженный 3-core VPS, раздутое deploy-окно) умерла
+      # вместе с HOSTKEY; на холостом i5-8500 setup-оверхед незначителен, а первый провижининг
+      # свежего сервера без setup невозможен. Historical rationale ниже сохранён:
+      # (был) Routine staging deploy = `kamal deploy` (app роли web/job/whisper_worker/irc only), НЕ `kamal setup`.
       # Was setup (idempotent full-boot). Switched (deploy-fix): на загруженном 3-core VPS
       # (combat load ~9-11 + ClickHouse accessory #194/#196) setup full-boot перепроверяет/грузит
       # ВСЕ accessory configs каждый деплой → раздувал deploy-окно → новый web не успевал пройти
@@ -293,7 +299,7 @@ jobs:
       - name: Deploy to staging
         run: |
           trap 'rm -f .kamal/secrets.staging' EXIT
-          kamal deploy -d staging
+          kamal setup -d staging
 
   # === Verify Staging Deploy — after deploy-staging ===
   verify-staging:
@@ -307,6 +313,7 @@ jobs:
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TS_AUTHKEY }}
+          ping: 100.78.102.60
       - name: Verify staging deployment
         uses: ./.github/actions/verify-deployment
         with:
@@ -341,6 +348,7 @@ jobs:
         uses: tailscale/github-action@v3
         with:
           authkey: ${{ secrets.TS_AUTHKEY }}
+          ping: 100.78.102.60
       - name: Set up SSH
         run: |
           mkdir -p ~/.ssh
