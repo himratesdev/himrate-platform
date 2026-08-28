@@ -142,7 +142,30 @@ module FlipperDefaults
   # the flag to ALL_FLAGS (or drop the env guard). Battle-mode windowing flip 2026-07-25.
   STAGING_ALL_FLAGS = %i[
     ti_v2_cowindowed_rho
+    follower_snapshot
+    chatter_profile_enrichment
+    raid_detection
+    stale_stream_sweep
+    cross_channel_digest
+    big_channel_chatter_sweep
+    cross_channel_edges
+    temporal_cross_channel
+    saas_lk_live
+    billing_auto_subscription_creation
   ].freeze
+  # ^ 2026-08-28 HOSTKEY-loss incident: these ten lived in HOOK_FLAGS and were manually
+  # Flipper.enable'd on the old staging box — Redis-only state that died with the server.
+  # Fresh DB booted with them silently OFF: ChatterProfileRefreshWorker no-op'd →
+  # chatter_profiles=0 → q_score=0 → EIHC=0 → engine mass-AMBERed the honest fleet
+  # (CHATTER_QUALITY_LOW), cross-channel mc-signatures (the botnet moat) had no data, ЛК gate
+  # closed. Same failure class as the PVA P0 (see HOOK_FLAGS doc below). Promoted here so a
+  # staging boot restores the July-verified operating set with no manual step; prod stays OFF
+  # (per-env rollout unchanged). Original traceability: follower_snapshot TASK-251.W2a ·
+  # chatter_profile_enrichment TASK-251.W2b · raid_detection TASK-251.B · stale_stream_sweep
+  # BUG-251.29 · cross_channel_digest BUG-SCW-CROSS-CHANNEL · big_channel_chatter_sweep
+  # BUG-251.31-G3-PR-A2 · cross_channel_edges/temporal_cross_channel T1-057 · saas_lk_live
+  # LK-BACKEND · billing_auto_subscription_creation BUG-012 (staging/dev-only by design —
+  # production must keep it OFF, which the env-guarded boot loop guarantees).
 
   # Hooks for upcoming features / transitional kill-switches: flag зарегистрирован,
   # но НЕ auto-enabled. Production state управляется отдельно (миграция / admin UI /
@@ -150,51 +173,21 @@ module FlipperDefaults
   HOOK_FLAGS = {
     channel_prune: "TASK-251.2", # Destructive ChannelPruneWorker (unmonitor banned non-pinned).
     # OFF by default — enabled per-env only after a dry-run review confirms the prune set.
-    follower_snapshot: "TASK-251.W2a", # FollowerSnapshotWorker: daily Helix follower-count
-    # snapshots → Streamer Reputation Growth #12 / Follower Quality #13. OFF by default —
-    # additive data collection, enabled per-env post-deploy (same pattern as other monitoring workers).
-    chatter_profile_enrichment: "TASK-251.W2b", # ChatterProfileRefreshWorker: GQL per-chatter
-    # profile cache → Account Profile Scoring (#11). OFF by default — additive, enabled per-env.
-    raid_detection: "TASK-251.B", # RaidDetectionWorker: classify captured IRC raid USERNOTICEs into
-    # RaidAttribution → Raid Attribution signal (#9). OFF by default — additive, enabled per-env.
-    stale_stream_sweep: "BUG-251.29", # StaleStreamSweepWorker: close Stream rows with ended_at NULL
-    # but no CCV activity in last 30 min. OFF by default — operator enables post-deploy after
-    # confirming no false-close on legitimately live channels (e.g., dual-check against Helix).
     # pva (TASK-113): PVA is SHIPPED → moved to ALL_FLAGS (auto-enabled every boot) 2026-07-22.
     # Root cause of the P0: it was add-only here, so a manual Flipper.enable lived only in Redis and
     # a Redis clear / redeploy reverted it to OFF → all enrollment/aggregation workers no-op'd
     # (return unless Flipper.enabled?(:pva)) → cold-start sources stuck "в очереди" forever, retry
     # useless. ALL_FLAGS makes it deploy-proof (the recurring "flags not auto-created" pattern).
+    # 2026-08-28: the same failure class hit ten more manually-enabled flags when the HOSTKEY box
+    # (and its Redis) was terminated — they are now in STAGING_ALL_FLAGS above; see that comment.
     # PR 1e-B (TASK-251.14): chat_messages PG table dropped — 4 chat_* flags removed
     # (chat_writes_clickhouse, chat_backfill_running, chat_reads_clickhouse_dual_read,
     # chat_reads_clickhouse). All paths now CH-only; backfill service deleted. Any future
     # re-backfill would require new source + new service implementation, не re-using these flags.
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
-    billing_auto_subscription_creation: "BUG-012", # Dev/staging only: ChannelsController#track
-    # auto-creates Subscription if missing. Production: flag OFF — Subscription must pre-exist
-    # (payment provider webhook creates it). Prevents masking missing billing integration.
-    accessory_auto_remediation: "BUG-010 PR3", # Kill switch для AutoRemediation::TriggerService
+    accessory_auto_remediation: "BUG-010 PR3" # Kill switch для AutoRemediation::TriggerService
     # GitHub workflow_dispatch. Default OFF — operators enable через
     # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.
-    cross_channel_digest: "BUG-SCW-CROSS-CHANNEL", # CrossChannelIntelligenceWorker + ContextBuilder
-    # short-circuit (read digest table instead of CH 24h scan). OFF by default — enable per-env
-    # after the worker has populated the digest at least once (cron */5 min) and DV confirms
-    # SCW latency drop. Toggling OFF reverts ContextBuilder to the original CH path.
-    big_channel_chatter_sweep: "BUG-251.31-G3-PR-A2", # Twitch::BigChannelChatterSweepWorker: opt-in
-    # parallel CommunityTab sweep on big channels where the single call hit the 100-viewers[] cap.
-    # StreamMonitorWorker enqueues per-channel when cap detected; this flag is the runtime gate
-    # so the wire-up can ship behind a kill-switch and be enabled only after rake-probe
-    # measurement (validated 2026-06-03 on summit1g: 1781 unique viewers vs 100 cap-hit, dedupe
-    # 0.89, 602ms for 20-parallel). OFF by default; PR-A3 will add ChattersSnapshot persistence.
-    cross_channel_edges: "T1-057", # CrossChannelIntelligenceWorker edge-ledger section → cross_channel
-    # _presences (audience-overlap graph data source). OFF by default — enable per-env after DSV
-    # confirms the edge query populates sensible rows. Independent of digest/temporal.
-    temporal_cross_channel: "T1-057", # CrossChannelIntelligenceWorker temporal bot section +
-    # ContextBuilder read + TemporalCrossChannel TI signal. OFF by default — zero TI impact while OFF
-    # (ContextBuilder returns {} → signal insufficient → excluded from the weighted score). Enable
-    # per-env after the worker has populated cross_channel_temporal_flags and weighting is calibrated.
-    saas_lk_live: "LK-BACKEND" # SaaS ЛК visibility gate (screen 71 flag-off). OFF by default —
-    # enable per-env when the personal cabinet launches. GET /api/v1/lk/status reads it per-user actor.
     # NB: ti_v2_ie_shadow (i_event magnitude harvester, PR-i4) was PROMOTED to ALL_FLAGS 2026-07-23 —
     # the honest-corpus for the C_self floor calibration must accrue continuously across redeploys
     # (HOOK_FLAGS is Redis-only → reverts OFF on redeploy, PVA lesson). cost-DSV verified safe
