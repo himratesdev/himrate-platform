@@ -36,7 +36,7 @@ jobs:
       # deploy.yml accessories.whisper.image — authoritative version reference.
       - name: Read image reference from deploy.yml via pinned yq
         id: read_image
-        uses: mikefarah/yq@v4.53.2
+        uses: mikefarah/yq@v4.53.3
         with:
           cmd: yq '.accessories.whisper.image' config/deploy.yml
 
