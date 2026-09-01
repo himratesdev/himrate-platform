@@ -102,6 +102,11 @@ RSpec.describe "TI v2 contract finish", type: :request do
     end
   end
 
+  def auth_headers(user)
+    token = Auth::JwtService.encode_access(user.id)
+    { "Authorization" => "Bearer #{token}" }
+  end
+
   describe "band tooltip locale coverage" do
     it "resolves every TOOLTIP_KEYS_BY_ROW key in RU and EN" do
       TrustIndex::V2::BandClassifier::TOOLTIP_KEYS_BY_ROW.each_value do |key|
