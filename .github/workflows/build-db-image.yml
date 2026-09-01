@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7
 
       # Extract image tag из config/deploy.yml — SINGLE SOURCE OF TRUTH.
       # deploy.yml accessories.db.image — authoritative version reference.
@@ -63,18 +63,18 @@ jobs:
           echo "✓ Tag:   $TAG"
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3.3.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.8.0
+        uses: docker/setup-buildx-action@v4.2.0
 
       - name: Build and push Postgres + pg_partman image
         id: build
-        uses: docker/build-push-action@v6.9.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: ./db
           file: ./db/Dockerfile
@@ -103,7 +103,7 @@ jobs:
 
       - name: Upload Trivy scan results to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3.27.0
+        uses: github/codeql-action/upload-sarif@v4.27.0
         with:
           sarif_file: trivy-results.sarif
           category: postgres-db-image
