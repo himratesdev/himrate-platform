@@ -194,6 +194,32 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Host-aware robots.txt (moved out of public/ — a static file can't vary by host).
+  # App host: LK is an authenticated product surface → Disallow all (belt) on top of the
+  # per-page noindex meta (suspenders). Every other host serves the marketing policy.
+  APEX_ROBOTS = <<~ROBOTS.freeze
+    # See https://www.robotstxt.org/robotstxt.html for documentation on how to use the robots.txt file
+    User-agent: *
+    Allow: /
+
+    # Authenticated LK app shells, auth, API and internal endpoints carry no public
+    # search value (also noindex'd at the page level).
+    Disallow: /app/
+    Disallow: /login
+    Disallow: /api/
+    Disallow: /dashboard
+    Disallow: /po-debug
+    Disallow: /health
+
+    Sitemap: https://himrate.com/sitemap.xml
+  ROBOTS
+  APP_ROBOTS = "User-agent: *\nDisallow: /\n"
+
+  def robots
+    body = request.host == APP_HOST ? APP_ROBOTS : APEX_ROBOTS
+    render plain: body, content_type: "text/plain"
+  end
+
   # Legal pages (Privacy Policy + Terms). Own minimal readable layout (no Pencil JS).
   # Required for Chrome Web Store submission + footer trust links.
   def privacy
@@ -206,26 +232,57 @@ class PagesController < ApplicationController
 
   private
 
-  # A page request is a PRODUCT surface iff its path is the login page or under /app/*. Everything
-  # else PagesController serves (the marketing pages + the public channel card /c/:login) is
-  # marketing. This mirrors #resolve_layout but is PATH-based (not action/@page-based) because the
-  # before_action runs before the action body sets @page — and path rules can't drift out of sync
-  # as new actions are added. Redirect only fires on the real production himrate.com hosts; the
-  # staging test host serves every surface unredirected, and dev/localhost is left alone.
+  # Host-mapping (2026-09, canonical = app.himrate.com/<short>):
+  # A page request is a PRODUCT surface iff its path is the login page, under /app/* (legacy
+  # alias / staging canon), or one of the short LK paths (PRODUCT_SHORT_PATHS — must stay in
+  # sync with the app-host `constraints host:` block in config/routes.rb). PATH-based (not
+  # action/@page-based) because the before_action runs before the action body sets @page.
+  # Redirect matrix (all 301, exactly one hop from anywhere):
+  #   apex /app/x  → https://app.himrate.com/x   (strip prefix AND switch host in one hop)
+  #   app  /app/x  → https://app.himrate.com/x   (strip prefix)
+  #   app  /<marketing path> → apex              (unchanged)
+  #   app  /       → serves LK home (routes app-host root → pages#viewer_home; no redirect)
+  # Staging serves every surface unredirected on /app/*; dev/localhost untouched.
   APP_HOST  = "app.himrate.com"
   APEX_HOST = "himrate.com"
+
+  # Short (prefixless) LK paths on the app host. SIMPLE heads are product as bare segments;
+  # NESTED heads are product only WITH a second segment — a bare /streamers on the app host is
+  # the marketing page and must bounce to the apex (the app-host route is /streamers/:login).
+  PRODUCT_SHORT_HEADS_SIMPLE = %w[home search compare overlap watchlists settings activity
+                                  discover channel moments grow social creators].to_set.freeze
+  PRODUCT_SHORT_HEADS_NESTED = %w[streamers blogger].to_set.freeze
 
   def canonicalize_host
     host = request.host
     return unless host == APEX_HOST || host.end_with?(".himrate.com")
     return if host == "staging.himrate.com"
 
-    product = request.path == "/login" || request.path.start_with?("/app/")
+    path = request.path
+    return if path == "/robots.txt" # host-aware by design — must never redirect
+    if path == "/app" || path.start_with?("/app/")
+      # Legacy-prefixed product path: canonical form strips the prefix and lives on the app host.
+      short = path.delete_prefix("/app")
+      short = "/" if short.empty?
+      query = request.query_string.presence
+      return redirect_to "https://#{APP_HOST}#{short}#{query ? "?#{query}" : ""}",
+                         status: :moved_permanently, allow_other_host: true
+    end
+
+    product = path == "/login" || (host == APP_HOST && (path == "/" || product_short_path?(path)))
     target  = product ? APP_HOST : APEX_HOST
     return if host == target
 
     redirect_to "https://#{target}#{request.fullpath}",
                 status: :moved_permanently, allow_other_host: true
+  end
+
+  def product_short_path?(path)
+    head, rest = path.split("/", 3)[1, 2]
+    return false if head.blank?
+    return true if PRODUCT_SHORT_HEADS_SIMPLE.include?(head)
+
+    PRODUCT_SHORT_HEADS_NESTED.include?(head) && rest.present?
   end
 
   # The product surfaces — login + the /app/* dashboards (@brand_dashboard) — render on the `app`

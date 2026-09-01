@@ -192,6 +192,39 @@ Rails.application.routes.draw do
   # get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
   # get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
 
+  # --- app.himrate.com canonical short paths (host-mapping, 2026-09) ---
+  # Canonical LK URLs on the product host drop the /app prefix: app.himrate.com/home.
+  # The path-prefixed `get "app/..."` routes below REMAIN as working aliases — they are the
+  # canonical form on staging.himrate.com (single host serves both surfaces there) and the
+  # redirect source everywhere else (PagesController#canonicalize_host 301s them to the
+  # canonical host+path in one hop). Declared BEFORE the marketing `root` so the app-host
+  # root wins; host constraint keeps `/streamers/:login` (LK) from shadowing the apex
+  # marketing page `/streamers`.
+  # NB: literal host (not PagesController::APP_HOST) — referencing autoloadable app constants
+  # from routes.rb breaks zeitwerk reload semantics; keep the two in sync (spec pins both).
+  constraints host: "app.himrate.com" do
+    root "pages#viewer_home", as: :app_root
+    get "home",       to: "pages#viewer_home"
+    get "search",     to: "pages#brand_search"
+    get "compare",    to: "pages#brand_compare"
+    get "overlap",    to: "pages#brand_overlap"
+    get "streamers/:login", to: "pages#brand_streamer_card", constraints: { login: /[A-Za-z0-9_]+/ }
+    get "watchlists", to: "pages#watchlists"
+    get "settings",   to: "pages#settings"
+    get "activity",   to: "pages#my_activity"
+    get "discover",   to: "pages#discover"
+    get "channel",    to: "pages#my_channel"
+    get "moments",    to: "pages#moments"
+    get "grow",       to: "pages#grow"
+    get "social",     to: "pages#my_socials"
+    get "blogger/:login", to: "pages#blogger_profile", constraints: { login: /[A-Za-z0-9_]+/ }
+    get "creators",   to: "pages#brand_creators"
+    # On the app host the sitemap belongs to the apex (avoid duplicate-content signal).
+    get "sitemap.xml", to: redirect("https://himrate.com/sitemap.xml", status: 301)
+  end
+  # robots.txt is host-aware (app host = Disallow all); served from PagesController, not public/.
+  get "robots.txt", to: "pages#robots", defaults: { format: "text" }
+
   # --- Public marketing landing (TASK-060) ---
   # Public, unauthenticated HTML pages (Pencil-export port). API (api/v1/*) is
   # unaffected. Legal pages + responsive merge land in later phases.

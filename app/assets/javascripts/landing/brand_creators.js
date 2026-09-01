@@ -13,6 +13,11 @@
 (function () {
   "use strict";
 
+  // Host-mapping (2026-09): links must stay in the path scheme the page was served under
+  // (canonical short paths on app.himrate.com, /app-prefixed on staging/dev). Local fallback —
+  // page scripts load BEFORE brand_nav.js, so window.hrAppPath may not exist yet.
+  var hrApp = window.hrAppPath || function (p) { var pre = (location.pathname === "/app" || location.pathname.indexOf("/app/") === 0) ? "/app" : ""; return pre + p; };
+
   var API = "/api/v1/brand/streamers/search";
   var SORTS = [
     { key: "real_avg", label: "Реальная аудитория" },
@@ -110,7 +115,7 @@
     var realNode = qp(card, "RealV · "); if (realNode) realNode.style.color = color;
 
     // Open → the cross-platform blogger profile (screen 61).
-    var openTo = "/app/blogger/" + encodeURIComponent(s.login);
+    var openTo = hrApp("/blogger/" + encodeURIComponent(s.login));
     var chev = qp(card, "Chev · "); if (chev) chev.style.cursor = "pointer";
     card.style.cursor = "pointer";
     card.addEventListener("click", function () { window.location.href = openTo; });

@@ -74,8 +74,8 @@
       if(s.indexOf('расширение')>-1) return soon('Расширение скоро появится в Chrome Web Store');
       if(s.indexOf('биржу')>-1 || s.indexOf('биржа')>-1) return soon('Биржа скоро откроется');
       var dest;
-      if(s.indexOf('открыть сервис')>-1) dest='/app/home';        // viewer dashboard (gates to login)
-      else if(s.indexOf('подключить')>-1) dest='/app/channel';    // streamer dashboard (gates to login)
+      if(s.indexOf('открыть сервис')>-1) dest=(location.hostname==='himrate.com')?'https://app.himrate.com/home':'/app/home';        // viewer dashboard (gates to login)
+      else if(s.indexOf('подключить')>-1) dest=(location.hostname==='himrate.com')?'https://app.himrate.com/channel':'/app/channel';    // streamer dashboard (gates to login)
       else if(s.indexOf('я бренд')>-1) dest='/brands';
       else if(s.indexOf('я зритель')>-1) dest='/viewers';
       else if(s.indexOf('связаться')>-1) dest='/brands';

@@ -10,6 +10,11 @@
 (function () {
   "use strict";
 
+  // Host-mapping (2026-09): links must stay in the path scheme the page was served under
+  // (canonical short paths on app.himrate.com, /app-prefixed on staging/dev). Local fallback —
+  // page scripts load BEFORE brand_nav.js, so window.hrAppPath may not exist yet.
+  var hrApp = window.hrAppPath || function (p) { var pre = (location.pathname === "/app" || location.pathname.indexOf("/app/") === 0) ? "/app" : ""; return pre + p; };
+
   var API = "/api/v1/brand/overlap";
   var RISK_RU = { max_reach: "Макс. охват", optimal: "Оптимально", caution: "Осторожно" };
   var RISK_NOTE = { max_reach: "максимум уникального охвата", optimal: "минимальное пересечение", caution: "высокое пересечение" };
@@ -230,7 +235,7 @@
     fullScreenMsg(
       '<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Пересечение аудиторий</div>' +
       '<div style="font-size:14px;color:#9A9AA9;max-width:460px;margin:0 auto 20px;">Выберите 2–4 стримеров, чтобы увидеть, сколько у них общей аудитории и как не переплачивать за дубли.</div>' +
-      '<a href="/app/search" style="display:inline-block;background:#7B5CFA;color:#fff;text-decoration:none;padding:11px 20px;border-radius:12px;font-weight:600;font-size:14px;">Найти стримеров</a>'
+      '<a href="' + hrApp("/search") + '" style="display:inline-block;background:#7B5CFA;color:#fff;text-decoration:none;padding:11px 20px;border-radius:12px;font-weight:600;font-size:14px;">Найти стримеров</a>'
     );
   }
   function renderPaywall() {
@@ -264,7 +269,7 @@
   function boot() {
     if (!capture()) return;
     var rc = q(document, "Btn · Пересчитать");
-    if (rc) { rc.style.cursor = "pointer"; rc.addEventListener("click", function () { location.href = "/app/search"; }); }
+    if (rc) { rc.style.cursor = "pointer"; rc.addEventListener("click", function () { location.href = hrApp("/search"); }); }
     load();
   }
 

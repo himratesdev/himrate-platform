@@ -9,8 +9,14 @@ module Web
     # After a successful web login, land the user INSIDE the dashboard — not back on /login. Previously
     # web_redirect was "/login", so the callback bounced the user to the login page in a "logged-in"
     # limbo (login.js showed «Вы вошли» + a repurposed Twitch-icon logout button) instead of entering
-    # the LK. /app/home (viewer home) is the default landing; role-specific sections open from the nav.
+    # the LK. Host-mapping (2026-09): production canon is the absolute app-host short URL (one hop,
+    # no canonicalize_host bounce); staging/dev keep the relative /app/home (single-host scheme).
     DASHBOARD_HOME = "/app/home"
+    DASHBOARD_HOME_PROD = "https://app.himrate.com/home"
+
+    def dashboard_home
+      Rails.env.production? ? DASHBOARD_HOME_PROD : DASHBOARD_HOME
+    end
 
     # Login must reach the widest audience — skip the modern-browser guard (mirrors PagesController).
     def browser_guard_enabled?
@@ -24,7 +30,7 @@ module Web
 
       Rails.cache.write(
         "pkce:#{result[:state]}",
-        { code_verifier: result[:code_verifier], redirect_uri: redirect_uri, web: true, web_redirect: DASHBOARD_HOME },
+        { code_verifier: result[:code_verifier], redirect_uri: redirect_uri, web: true, web_redirect: dashboard_home },
         expires_in: 10.minutes
       )
       redirect_to result[:redirect_url], allow_other_host: true
@@ -39,7 +45,7 @@ module Web
 
       Rails.cache.write(
         "google_state:#{result[:state]}",
-        { redirect_uri: redirect_uri, web: true, web_redirect: DASHBOARD_HOME },
+        { redirect_uri: redirect_uri, web: true, web_redirect: dashboard_home },
         expires_in: 10.minutes
       )
       redirect_to result[:redirect_url], allow_other_host: true

@@ -10,6 +10,11 @@
 (function () {
   "use strict";
 
+  // Host-mapping (2026-09): links must stay in the path scheme the page was served under
+  // (canonical short paths on app.himrate.com, /app-prefixed on staging/dev). Local fallback —
+  // page scripts load BEFORE brand_nav.js, so window.hrAppPath may not exist yet.
+  var hrApp = window.hrAppPath || function (p) { var pre = (location.pathname === "/app" || location.pathname.indexOf("/app/") === 0) ? "/app" : ""; return pre + p; };
+
   var API = "/api/v1/brand/compare";
   var GREEN = "#25D9A4";
   var DEFAULT_TXT = "#F4F4F7";
@@ -119,7 +124,7 @@
     });
     if (addBtn) {
       addBtn.style.cursor = "pointer";
-      addBtn.addEventListener("click", function () { location.href = "/app/search"; });
+      addBtn.addEventListener("click", function () { location.href = hrApp("/search"); });
     }
   }
 
@@ -219,7 +224,7 @@
     var rest = channelsParam().filter(function (l) { return l.toLowerCase() !== login.toLowerCase(); });
     var u = new URLSearchParams();
     if (rest.length) u.set("channels", rest.join(","));
-    location.href = rest.length ? "/app/compare?" + u.toString() : "/app/compare";
+    location.href = rest.length ? hrApp("/compare?" + u.toString()) : hrApp("/compare");
   }
 
   function disableDeferred() {
@@ -228,7 +233,7 @@
       if (n) { n.style.opacity = "0.4"; n.style.pointerEvents = "none"; n.title = "Скоро"; }
     });
     var add = q(document, "Btn · Добавить стримера");
-    if (add) { add.style.cursor = "pointer"; add.addEventListener("click", function () { location.href = "/app/search"; }); }
+    if (add) { add.style.cursor = "pointer"; add.addEventListener("click", function () { location.href = hrApp("/search"); }); }
   }
 
   // ---- states ----
@@ -249,7 +254,7 @@
     fullScreenMsg(
       '<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Сравнение стримеров</div>' +
       '<div style="font-size:14px;color:#9A9AA9;max-width:460px;margin:0 auto 20px;">Выберите 2–4 стримеров, чтобы сравнить их по реальной аудитории, надёжности и цене за реального зрителя.</div>' +
-      '<a href="/app/search" style="display:inline-block;background:#7B5CFA;color:#fff;text-decoration:none;padding:11px 20px;border-radius:12px;font-weight:600;font-size:14px;">Найти стримеров</a>'
+      '<a href="' + hrApp("/search") + '" style="display:inline-block;background:#7B5CFA;color:#fff;text-decoration:none;padding:11px 20px;border-radius:12px;font-weight:600;font-size:14px;">Найти стримеров</a>'
     );
   }
 

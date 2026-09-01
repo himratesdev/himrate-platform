@@ -2,12 +2,22 @@
 
 require "rails_helper"
 
-# Subdomain split step 2 — host canonicalization (301). Marketing surfaces live on the apex
-# (himrate.com, SEO-indexed); the product / LK lives on app.himrate.com (noindex). Each surface
-# has exactly ONE canonical URL. Scoped to PagesController — API / auth / og / up are untouched.
+# Host canonicalization (301) — host-mapping 2026-09. Marketing surfaces live on the apex
+# (himrate.com, SEO-indexed); the product / LK lives on app.himrate.com under SHORT paths
+# (app.himrate.com/home — the /app prefix is a legacy alias that 301s to the canon in one hop
+# from anywhere). staging.himrate.com serves both surfaces unredirected on the /app/* scheme.
+# Scoped to PagesController — API / auth / og / up are untouched.
 RSpec.describe "Host canonicalization", type: :request do
   describe "marketing surfaces belong on the apex" do
     it "301s a marketing page served on the app host → apex" do
+      host! "app.himrate.com"
+      get "/brands"
+
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://himrate.com/brands")
+    end
+
+    it "301s the BARE /streamers on the app host → apex (marketing page; LK owns only /streamers/:login)" do
       host! "app.himrate.com"
       get "/streamers"
 
@@ -31,7 +41,7 @@ RSpec.describe "Host canonicalization", type: :request do
     end
   end
 
-  describe "product / LK surfaces belong on the app host" do
+  describe "product / LK canon = app host SHORT paths" do
     it "301s the login page served on the apex → app host" do
       host! "himrate.com"
       get "/login"
@@ -40,17 +50,39 @@ RSpec.describe "Host canonicalization", type: :request do
       expect(response.location).to eq("https://app.himrate.com/login")
     end
 
-    it "301s an /app/* page served on the apex → app host, preserving the query string" do
+    it "301s an apex /app/* page STRAIGHT to the app-host short path (one hop), preserving the query string" do
       host! "himrate.com"
       get "/app/discover?game=42"
 
       expect(response).to have_http_status(:moved_permanently)
-      expect(response.location).to eq("https://app.himrate.com/app/discover?game=42")
+      expect(response.location).to eq("https://app.himrate.com/discover?game=42")
     end
 
-    it "serves an /app/* page on the app host without redirect" do
+    it "301s an app-host /app/* alias to the short path (strip prefix)" do
       host! "app.himrate.com"
       get "/app/social"
+
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://app.himrate.com/social")
+    end
+
+    it "serves a short LK path on the app host without redirect" do
+      host! "app.himrate.com"
+      get "/social"
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "serves the LK streamer card on the app host short path" do
+      host! "app.himrate.com"
+      get "/streamers/ninja"
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "serves the app-host ROOT as the LK home (no redirect to apex)" do
+      host! "app.himrate.com"
+      get "/"
 
       expect(response).to have_http_status(:ok)
     end
@@ -75,9 +107,20 @@ RSpec.describe "Host canonicalization", type: :request do
       expect(response).to have_http_status(:ok)
     end
 
-    it "product apex→app resolves to a 200" do
+    it "product apex /app/* → app-host short resolves to a 200" do
       host! "himrate.com"
-      get "/login"
+      get "/app/home"
+      redirected = URI(response.location)
+
+      host! redirected.host
+      get redirected.path
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "app-host /app/* alias → short resolves to a 200" do
+      host! "app.himrate.com"
+      get "/app/home"
       redirected = URI(response.location)
 
       host! redirected.host
@@ -87,8 +130,44 @@ RSpec.describe "Host canonicalization", type: :request do
     end
   end
 
+  describe "host-aware robots.txt / sitemap (SEO)" do
+    it "app host robots.txt disallows everything and never redirects" do
+      host! "app.himrate.com"
+      get "/robots.txt"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Disallow: /")
+      expect(response.body).not_to include("Allow: /")
+    end
+
+    it "apex robots.txt keeps the marketing policy" do
+      host! "himrate.com"
+      get "/robots.txt"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Allow: /")
+      expect(response.body).to include("Disallow: /app/")
+      expect(response.body).to include("Sitemap: https://himrate.com/sitemap.xml")
+    end
+
+    it "app host sitemap.xml 301s to the apex sitemap (no duplicate content)" do
+      host! "app.himrate.com"
+      get "/sitemap.xml"
+
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://himrate.com/sitemap.xml")
+    end
+  end
+
   describe "non-production hosts are left untouched" do
-    it "does NOT redirect the staging test host (serves product on staging)" do
+    it "does NOT redirect the staging test host (serves product on /app/* scheme)" do
+      host! "staging.himrate.com"
+      get "/app/home"
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "does NOT redirect the staging login" do
       host! "staging.himrate.com"
       get "/login"
 
@@ -106,6 +185,15 @@ RSpec.describe "Host canonicalization", type: :request do
       get "/login" # default host is www.example.com — not a himrate.com host
 
       expect(response).to have_http_status(:ok)
+    end
+  end
+
+  describe "routes/controller host constants stay in sync" do
+    it "the routes host constraint matches PagesController::APP_HOST" do
+      # routes.rb uses a literal (zeitwerk: no app constants in routes); this spec pins the pair.
+      expect(PagesController::APP_HOST).to eq("app.himrate.com")
+      expect(Rails.application.routes.routes.map { |r| r.constraints[:host] }.compact.uniq)
+        .to eq(["app.himrate.com"])
     end
   end
 end
