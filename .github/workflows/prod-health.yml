@@ -1,0 +1,106 @@
+name: Prod Health
+# Production watchdog for the home-server era: the box has no external monitoring, so a dead
+# tunnel / stalled collectors / silent backup failure would otherwise go unnoticed for days
+# (the mass-AMBER incident pattern). Red run = GitHub failure e-mail to the repo owner.
+# Public checks run even if the tailnet is down; tailnet checks SSH into the box.
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: prod-health
+  cancel-in-progress: true
+
+jobs:
+  public:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Site + app host + API reachable through the CF tunnel
+        run: |
+          check() {
+            url=$1; want=$2
+            code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url") || code=000
+            if [ "$code" != "$want" ]; then
+              sleep 15
+              code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 20 "$url") || code=000
+            fi
+            echo "$url -> $code (want $want)"
+            [ "$code" = "$want" ]
+          }
+          fail=0
+          check "https://himrate.com/up" 200 || fail=1
+          check "https://himrate.com/" 200 || fail=1
+          check "https://app.himrate.com/home" 200 || fail=1
+          check "https://himrate.com/api/v1/discover/live" 401 || fail=1  # auth wall up = API alive
+          exit $fail
+
+      - name: Public /top renders (server-rendered page end-to-end)
+        run: |
+          body=$(curl -s --max-time 20 "https://himrate.com/top") || true
+          echo "$body" | grep -qi "himrate" || { echo "public /top did not render"; exit 1; }
+
+  tailnet:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Connect Tailscale (home server is tailnet-only)
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          ping: 100.78.102.60
+      - name: Set up SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          cat >> ~/.ssh/config <<SSH_CONFIG
+          Host himrate
+            HostName 100.78.102.60
+            User himych
+            StrictHostKeyChecking accept-new
+            IdentityFile ~/.ssh/id_ed25519
+            ConnectTimeout 30
+          SSH_CONFIG
+          chmod 600 ~/.ssh/config
+
+      - name: Containers up (web / irc / compute×3 / db / redis / clickhouse / proxy)
+        run: |
+          names=$(ssh himrate 'docker ps --format "{{.Names}}"')
+          echo "$names"
+          fail=0
+          for want in himrate-web himrate-irc himrate-compute_tier1 himrate-compute_tier2 himrate-compute_tier3 himrate-db himrate-redis himrate-clickhouse kamal-proxy; do
+            echo "$names" | grep -q "$want" || { echo "MISSING: $want"; fail=1; }
+          done
+          exit $fail
+
+      - name: Collectors alive (fresh v2 verdict rows)
+        run: |
+          # RU Twitch always has live monitored channels; >45 min with zero new v2 rows = the
+          # signal-compute pipeline is stalled (flags lost / sidekiq dead / IRC down).
+          age=$(ssh himrate "docker exec himrate-db psql -U himrate -d himrate_staging -tAc \"SELECT COALESCE(EXTRACT(EPOCH FROM (now() - MAX(calculated_at)))::int, 999999) FROM trust_index_histories WHERE engine_version = 'v2'\"")
+          echo "latest v2 row age: ${age}s"
+          [ "$age" -lt 2700 ]
+
+      - name: Backup fresh + last run OK + HDD mounted
+        run: |
+          out=$(ssh himrate '
+            mountpoint -q /backup || { echo NOMOUNT; exit 0; }
+            last=$(tail -1 /backup/backup.log)
+            newest=$(find /backup/pg -name "*.dump" -mmin -1560 | wc -l)
+            echo "LAST:$last"; echo "FRESH:$newest"')
+          echo "$out"
+          echo "$out" | grep -q "NOMOUNT" && { echo "backup HDD not mounted"; exit 1; }
+          echo "$out" | grep -q "BACKUP OK" || { echo "last backup log line not OK"; exit 1; }
+          echo "$out" | grep -q "FRESH:0" && { echo "no pg dump in last 26h"; exit 1; }
+          exit 0
+
+      - name: Disk headroom (root + backup HDD < 85%)
+        run: |
+          out=$(ssh himrate 'df --output=pcent / /backup | tail -2 | tr -dc "0-9\n"')
+          echo "usage%: $out"
+          root=$(echo "$out" | sed -n 1p); back=$(echo "$out" | sed -n 2p)
+          [ "${root:-100}" -lt 85 ] || { echo "root disk ${root}%"; exit 1; }
+          [ "${back:-100}" -lt 85 ] || { echo "backup disk ${back}%"; exit 1; }
