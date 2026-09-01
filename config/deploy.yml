@@ -401,6 +401,11 @@ volumes:
 
 builder:
   arch: amd64
+  # EMERGENCY mode companion to the 127.0.0.1:5000 registry above: the default
+  # docker-container buildx driver lives in its own netns where the box-local registry
+  # is unreachable — the plain docker driver builds/pushes via the HOST daemon, which
+  # both resolves 127.0.0.1:5000 and treats it as an allowed insecure (localhost) registry.
+  driver: docker
 
 aliases:
   console: app exec --interactive --reuse "bin/rails console"
