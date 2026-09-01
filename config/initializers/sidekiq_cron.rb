@@ -120,6 +120,14 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-251.B: classify captured IRC raids into RaidAttribution (signal #9), gated :raid_detection"
       },
+      # TASK-H8 Day-0: nightly close-out of expired promo grants (subscription deactivate +
+      # tier recompute). 03:30 UTC — staggered from the 03:00/03:15 heavy jobs; itself light.
+      "promo_expiry_nightly" => {
+        "cron" => "30 3 * * *", # Daily at 03:30 UTC
+        "class" => "PromoExpiryWorker",
+        "queue" => "monitoring",
+        "description" => "TASK-H8: deactivate expired promo subscriptions + recompute user tiers"
+      },
       # TASK-086 FR-010 (ADR-086 §4.8): daily retention cleanup. 03:15 UTC — staggered
       # away from bot_list_refresh (03:00) to avoid DB contention (CleanupWorker is heavy).
       "cleanup_worker_daily" => {

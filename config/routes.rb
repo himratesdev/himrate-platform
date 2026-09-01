@@ -62,6 +62,8 @@ Rails.application.routes.draw do
       # Descriptive Twitch → socials funnel (value-roadmap C2) — temporal correlation, not causation.
       get "social/streamers/:login/attribution", to: "social/attribution#show", constraints: { login: /[A-Za-z0-9_]+/ }
       post "lk/notify", to: "lk#notify"
+      # TASK-H8 Day-0: promo code redemption (Soft Launch invite grants).
+      post "promo/redeem", to: "promo#redeem"
 
       # TASK-031: User profile
       get "user/me", to: "users#me"

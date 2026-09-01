@@ -1,0 +1,7 @@
+# TASK-H8 Day-0: promo redemption error codes (wire PROMO_*) — LK settings promo block.
+en:
+  promo:
+    errors:
+      promo_invalid: "This promo code does not exist or is no longer valid"
+      promo_exhausted: "This promo code has reached its redemption limit"
+      promo_already_redeemed: "You have already redeemed this promo code"

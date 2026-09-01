@@ -4,6 +4,7 @@ class User < ApplicationRecord
   include Flipper::Identifier
   has_many :auth_providers, dependent: :destroy
   has_many :subscriptions, dependent: :destroy
+  has_many :promo_redemptions, dependent: :destroy
   has_many :tracked_channels, dependent: :destroy
   has_many :channels, through: :tracked_channels
   has_many :watchlists, dependent: :destroy

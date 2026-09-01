@@ -874,6 +874,51 @@
               data-pencil-name="Settings Left"
               class="box-border [flex:1_1_0] h-fit flex flex-col gap-[24px] justify-start items-start"
             >
+              <!-- TASK-H8 Day-0: promo redemption card (no Pencil frame exists — additive block in the
+                   export's own card language; JS wiring in landing/settings.js). -->
+              <div
+                data-pencil-name="Card · Промокод"
+                class="box-border w-full h-fit shrink-0 flex flex-col gap-0 justify-start items-start bg-[#141419] [border:1px_solid_#25252F] rounded-[16px] overflow-hidden"
+              >
+                <div
+                  data-pencil-name="Card Head · Промокод"
+                  class="box-border w-full h-fit shrink-0 flex flex-row gap-[12px] p-[16px_20px] justify-between items-center [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#25252F]"
+                >
+                  <div class="box-border w-fit shrink-0 h-fit flex flex-row gap-[10px] justify-start items-center">
+                    <div
+                      data-pencil-name="Card Title · Промокод"
+                      class="text-[16px]/[normal] box-border text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold text-left [white-space:nowrap]"
+                    >
+                      Промокод
+                    </div>
+                  </div>
+                </div>
+                <div
+                  data-pencil-name="Card Body · Промокод"
+                  class="box-border w-full h-fit shrink-0 flex flex-col gap-[12px] p-[16px_20px] justify-start items-start"
+                >
+                  <div class="text-[13px]/[1.5] box-border text-[#9A9AA9] font-[Inter,system-ui,sans-serif] text-left">
+                    Есть код приглашения? Активируйте его — доступ откроется сразу.
+                  </div>
+                  <div class="box-border w-full h-fit flex flex-row gap-[10px] justify-start items-center">
+                    <input
+                      id="hr-promo-input"
+                      type="text"
+                      placeholder="HR-XXXXXXXX"
+                      autocomplete="off"
+                      class="box-border [flex:1_1_0] h-[38px] px-[12px] bg-[#0D0D12] text-[#F4F4F7] text-[13px] font-[Inter,system-ui,sans-serif] [border:1px_solid_#25252F] rounded-[10px] outline-none"
+                    />
+                    <button
+                      id="hr-promo-btn"
+                      type="button"
+                      class="box-border h-[38px] px-[16px] bg-[#7C5CFF] text-[#FFFFFF] text-[13px] font-semibold font-[Inter,system-ui,sans-serif] rounded-[10px] cursor-pointer [border:none]"
+                    >
+                      Активировать
+                    </button>
+                  </div>
+                  <div id="hr-promo-msg" class="text-[12px]/[1.4] box-border font-[Inter,system-ui,sans-serif] text-left" hidden></div>
+                </div>
+              </div>
               <div
                 data-pencil-name="Card · Приватность"
                 class="box-border w-full h-fit shrink-0 flex flex-col gap-0 justify-start items-start bg-[#141419] [border:1px_solid_#25252F] rounded-[16px] overflow-hidden"
