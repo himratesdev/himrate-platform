@@ -24,10 +24,12 @@ module Promo
 
       ActiveRecord::Base.transaction do
         promo.lock!
-        return Result.failure("PROMO_EXHAUSTED") if promo.exhausted?
+        # Already-redeemed wins over exhausted: the user who holds the grant should hear
+        # "you already have it", not "the code ran out" (which reads as losing access).
         if PromoRedemption.exists?(promo_code: promo, user: @user)
           return Result.failure("PROMO_ALREADY_REDEEMED")
         end
+        return Result.failure("PROMO_EXHAUSTED") if promo.exhausted?
 
         expires_at = promo.duration_days&.days&.from_now
         PromoRedemption.create!(promo_code: promo, user: @user,
