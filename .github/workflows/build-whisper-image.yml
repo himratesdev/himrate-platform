@@ -30,13 +30,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20 # whisper.cpp compile + 466MB model download
     steps:
-      - uses: actions/checkout@v4.2.2
+      - uses: actions/checkout@v7
 
       # Extract image tag из config/deploy.yml — SINGLE SOURCE OF TRUTH.
       # deploy.yml accessories.whisper.image — authoritative version reference.
       - name: Read image reference from deploy.yml via pinned yq
         id: read_image
-        uses: mikefarah/yq@v4.53.2
+        uses: mikefarah/yq@v4.53.3
         with:
           cmd: yq '.accessories.whisper.image' config/deploy.yml
 
@@ -63,20 +63,20 @@ jobs:
           echo "✓ Tag:   $TAG"
 
       - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3.3.0
+        uses: docker/login-action@v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3.8.0
+        uses: docker/setup-buildx-action@v4.2.0
 
       # BUG-110-A: build → load locally → SMOKE TEST → push. Smoke gates the push so
       # a runtime-broken image (missing .so libs → exit 127) НИКОГДА не попадает на ghcr.
       - name: Build whisper.cpp HTTP server image (load locally, no push yet)
         id: build
-        uses: docker/build-push-action@v6.9.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: ./whisper
           file: ./whisper/Dockerfile
@@ -120,7 +120,7 @@ jobs:
 
       - name: Upload Trivy scan results to GitHub Security tab
         if: always()
-        uses: github/codeql-action/upload-sarif@v3.27.0
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-results.sarif
           category: whisper-image
