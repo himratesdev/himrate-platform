@@ -54,31 +54,112 @@ module Trust
       {
         channel_id: @channel.id,
         channel_login: @channel.login,
+        is_live: @channel.live?,
+        state: @channel.live? ? "live" : "offline",
         erv: tih&.erv,
         erv_interval: { lo: tih&.erv_lo, hi: tih&.erv_hi },
+        # Flat authenticity stays as a SUPERSET bridge (landing JS + the extension's flat-first
+        # readAuthenticity read it); the SRS-canonical nested form lives in axes below.
         authenticity: tih&.authenticity&.to_f,
+        axes: axes_v2(tih),
         band: band,
         # Server-resolved band label (RU/EN via I18n) — serves landing JS / server-rendered
         # surfaces; the extension translates label_key itself.
         erv_label: I18n.t(band[:label_key], default: nil),
-        reason_codes: tih&.reason_codes || [],
-        confirmed_anomaly: { shown: tih&.confirmed_anomaly || false },
+        # Contract: bare code strings on the headline; {code, label_key, params} objects are the
+        # drill's reason_codes_detail (extension + SRS both expect string[] here).
+        reason_codes: reason_code_strings(tih),
+        confirmed_anomaly: { shown: tih&.confirmed_anomaly || false, provenance: provenance_v2(tih) },
         cold_start_tier: tih&.cold_start_tier,
         confidence_marker: tih&.confidence_marker || "provisional",
         engine_version: "v2",
-        is_live: @channel.live?,
         ccv: latest_ccv,
         calculated_at: tih&.calculated_at&.iso8601
       }
     end
 
-    # v2 drill: reason_codes replace the retired 14-signal breakdown (already in headline);
-    # the post-stream window fields are engine-agnostic.
+    # SRS §4A axes — single source: TrustIndex::V2::AxesBuilder (same shape the engine emits).
+    # Reputation from the domain cache; chat_share = persisted windowed/cumulative ρ_obs; CPS null
+    # until the protection-score pipeline feeds the v2 context (extension tolerates null).
+    def axes_v2(tih)
+      TrustIndex::V2::AxesBuilder.call(
+        authenticity: tih&.authenticity&.to_f,
+        authenticity_lo: tih&.authenticity_lo&.to_f,
+        authenticity_hi: tih&.authenticity_hi&.to_f,
+        reputation: reputation_band_cached,
+        rho_obs: tih&.rho_obs&.to_f,
+        cps: nil
+      ).to_h
+    end
+
+    def reputation_band_cached
+      @reputation_band_cached ||= Reputation::BandService.cached_for(@channel)
+    rescue StandardError
+      nil
+    end
+
+    # Persisted reason_codes are [{"code"=>..., "params"=>...}] hashes (V2::Persistence writes
+    # Code#to_h); tolerate legacy bare strings.
+    def reason_code_strings(tih)
+      (tih&.reason_codes || []).map { |c| c.is_a?(Hash) ? (c["code"] || c[:code]) : c }.compact
+    end
+
+    # SRS: provenance names the corroboration that let the plashka render — hard named-bot
+    # evidence or the channel's own inflation self-history. nil when nothing is confirmed.
+    def provenance_v2(tih)
+      return nil unless tih&.confirmed_anomaly
+
+      return "HARD_NAMED_FRACTION" if tih.c_hard
+      return "SELF_HISTORY_INFLATION_EVENT" if tih.c_self
+
+      nil
+    end
+
+    # v2 drill (SRS §4A :drill_down / extension CardLiveDrillData — every key REQUIRED, empty
+    # collections over missing keys): the F̂ decomposition + detailed reason codes + the L0/L2
+    # signal breakdown, plus the engine-agnostic post-stream window fields.
     def build_drill_down_v2
+      tih = latest_v2_ti
       {
+        erv_breakdown: erv_breakdown_v2(tih),
+        reason_codes_detail: reason_codes_detail_v2(tih),
+        signal_breakdown: signal_breakdown_v2(tih),
         post_stream_expires_at: PostStreamWindowService.expires_at(@channel)&.iso8601,
         post_stream_window_expired: !@channel.live? && !PostStreamWindowService.open?(@channel) && @user&.tier == "free"
       }
+    end
+
+    # Drill detail objects: {code, label_key, params}. label_key = deterministic derivation
+    # ("reason.<code downcased>") — clients resolve against their own bundle and hide unknown
+    # keys (same defence as band label_key); no server-side copywriting here (legal-safe copy
+    # ships with the i18n pass, not this contract PR).
+    def reason_codes_detail_v2(tih)
+      (tih&.reason_codes || []).filter_map do |c|
+        code = c.is_a?(Hash) ? (c["code"] || c[:code]) : c
+        next nil if code.blank?
+
+        params = c.is_a?(Hash) ? (c["params"] || c[:params] || {}) : {}
+        { code: code, label_key: "reason.#{code.to_s.downcase}", params: params }
+      end
+    end
+
+    # v2 signal breakdown [{layer, source, kind, value}] from TIH.signal_breakdown. The v2 engine
+    # currently persists {} (the L0/L2 per-signal trace is a follow-up on the persistence side) —
+    # the key still ships with [] because the extension's CardLiveDrillData requires it.
+    def signal_breakdown_v2(tih)
+      breakdown = tih&.signal_breakdown
+      return [] unless breakdown.is_a?(Hash) && breakdown.any?
+
+      breakdown.filter_map do |key, data|
+        next nil unless data.is_a?(Hash)
+
+        {
+          layer: data["layer"] || data[:layer],
+          source: (data["source"] || data[:source] || key).to_s,
+          kind: data["kind"] || data[:kind],
+          value: (data["value"] || data[:value])&.to_f
+        }
+      end
     end
 
     def build_full_v2
@@ -112,17 +193,22 @@ module Trust
         v: tih.ccv&.to_i,
         f_hard: tih.f_hard&.to_f,
         f_soft: tih.f_soft&.to_f,
-        f_hat: tih.f_hat&.to_f
+        f_hat: tih.f_hat&.to_f,
+        interval: { lo: tih.f_hat_lo&.to_f, hi: tih.f_hat_hi&.to_f }
       }
     end
 
     def band_payload(tih)
-      return { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil } unless tih&.band_row
+      unless tih&.band_row
+        return { row: 5, color: "grey", label_key: "band.grey_insufficient",
+                 tooltip_key: "band.tooltip.grey_insufficient", sub: nil }
+      end
 
       {
         row: tih.band_row,
         color: tih.band_color,
         label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row),
+        tooltip_key: TrustIndex::V2::BandClassifier.tooltip_key_for(tih.band_row),
         sub: tih.band_sub
       }
     end

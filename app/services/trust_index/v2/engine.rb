@@ -105,9 +105,13 @@ module TrustIndex
                            :rho_convention,
                            :b_hard, :engine_version) do
         # DEC-7 adapter — the engine maps its own fields to the publish payload; SCW calls this.
+        # SRS §4A Surface 5 (WS trust_update): headline-only, FLAT authenticity — no axes object
+        # (nesting is a /trust + /card REST concern), reason_codes as bare code strings (the
+        # {code, params} objects live in TIH / reason_codes_detail; the extension WS parser
+        # filters non-strings). The worker wraps this with type/channel_id/ccv/calculated_at.
         def to_headline_payload
           { erv: erv, erv_interval: { lo: erv_lo, hi: erv_hi }, authenticity: authenticity,
-            axes: axes.to_h, band: band.to_h, reason_codes: reason_codes.map(&:to_h),
+            band: band.to_h, reason_codes: reason_codes.map(&:code),
             confirmed_anomaly: { shown: confirmed_anomaly }, cold_start_tier: cold_start_tier,
             confidence_marker: confidence_marker, engine_version: engine_version }
         end
@@ -399,14 +403,17 @@ module TrustIndex
         # observability persisted to TIH + read back by the ledgers: eihc/rho_obs (→ρ* miner + self-history),
         # f_soft/f_soft_lo/f_soft_hi (→ C_self^SP sustained_count + C_pop pop_deficit_density), f_self.
         # Dormant → fraud_disp == fraud → both bases identical → byte-identical.
+        a_lo = authenticity_pct(fraud_disp.f_hat_hi, v)
+        a_hi = authenticity_pct(fraud_disp.f_hat_lo, v)
         { axes: AxesBuilder.call(authenticity: emit.authenticity, reputation: @ctx.reputation,
-                                 rho_obs: soft.rho_obs, cps: @ctx.cps),
+                                 rho_obs: soft.rho_obs, cps: @ctx.cps,
+                                 authenticity_lo: a_lo, authenticity_hi: a_hi),
           eihc: soft.eihc, rho_obs: soft.rho_obs, f_hat: fraud_disp.f_hat, f_hat_lo: fraud_disp.f_hat_lo,
           f_hat_hi: fraud_disp.f_hat_hi, f_hard: hard.f_hard, f_hard_lo: hard.f_hard_lo,
           f_self: fraud.f_self,
           f_soft: soft.f_soft, f_soft_lo: soft.f_soft_lo, f_soft_hi: soft.f_soft_hi,
           # authenticity interval mirrors the DISPLAY ERV interval: MORE fraud (f_hat_hi) → LOWER authenticity.
-          authenticity_lo: authenticity_pct(fraud_disp.f_hat_hi, v), authenticity_hi: authenticity_pct(fraud_disp.f_hat_lo, v),
+          authenticity_lo: a_lo, authenticity_hi: a_hi,
           q_score: @ctx.q,
           # P0.5: stamp which ρ_obs convention this row used (windowed? = flag-ON co-windowed frame).
           rho_convention: (windowed? ? "windowed" : "cumulative"),

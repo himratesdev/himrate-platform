@@ -502,12 +502,25 @@ RSpec.describe TrustIndex::V2::Engine do
     expect(r.to_headline_payload[:erv]).to be_nil
   end
 
-  it "to_headline_payload emits the engine-agnostic publish contract (DEC-7)" do
+  it "to_headline_payload emits the WS-shaped publish contract (DEC-7 + SRS §4A Surface 5)" do
     r = described_class.compute(context: context([ chatter("a") ], n_chat_eff: 1), k: k)
     payload = r.to_headline_payload
-    expect(payload.keys).to include(:erv, :erv_interval, :axes, :band, :reason_codes,
+    expect(payload.keys).to include(:erv, :erv_interval, :authenticity, :band, :reason_codes,
                                     :confirmed_anomaly, :cold_start_tier, :confidence_marker, :engine_version)
+    # Contract-finish: WS frames are FLAT — no axes object (nesting is a /trust + /card REST
+    # concern), and reason_codes ride as bare code strings.
+    expect(payload.keys).not_to include(:axes)
+    expect(payload[:reason_codes]).to all(be_a(String))
     expect(payload[:erv_interval].keys).to contain_exactly(:lo, :hi)
     expect(payload[:engine_version]).to eq("v2")
+  end
+
+  it "axes carry the nested authenticity {value, interval} + normalized reputation axis" do
+    r = described_class.compute(context: context([ chatter("a") ], n_chat_eff: 1), k: k)
+    axes = r.axes.to_h
+    expect(axes[:authenticity]).to include(:value, :interval)
+    expect(axes[:authenticity][:interval].keys).to contain_exactly(:lo, :hi)
+    expect(axes[:reputation]).to include(:tier, :band, :label_key)
+    expect(axes[:engagement_context].keys).to contain_exactly(:chat_share, :cps)
   end
 end

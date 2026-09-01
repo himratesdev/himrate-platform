@@ -22,6 +22,20 @@ module TrustIndex
         4 => "band.green_no_anomaly", 5 => "band.grey_insufficient", 6 => "band.amber_exceeds"
       }.freeze
 
+      # Contract-finish (2026-09): reader-side tooltip keys, same derivation pattern as
+      # label_key_for. Values live in config/locales/band.{ru,en}.yml (band.tooltip.*);
+      # the extension resolves the key against its own bundle (resolveBandTooltip hides
+      # the tooltip when the key is missing — safe degradation).
+      TOOLTIP_KEYS_BY_ROW = {
+        1 => "band.tooltip.red_significant", 2 => "band.tooltip.yellow_anomaly",
+        3 => "band.tooltip.green_real", 4 => "band.tooltip.green_no_anomaly",
+        5 => "band.tooltip.grey_insufficient", 6 => "band.tooltip.amber_exceeds"
+      }.freeze
+
+      def self.tooltip_key_for(row)
+        TOOLTIP_KEYS_BY_ROW[row] || "band.tooltip.grey_insufficient"
+      end
+
       # Surface-audit sweep (T1-074): the ONE derivation point for reader-side label_key —
       # nil/unknown row → grey key, mirroring the grey fallback contract every surface uses.
       def self.label_key_for(row)

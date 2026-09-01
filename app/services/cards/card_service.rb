@@ -83,8 +83,9 @@ module Cards
     def headline_data
       if v2_engine?
         trust_payload.slice(
-          :erv, :erv_interval, :authenticity, :band, :erv_label, :reason_codes, :confirmed_anomaly,
-          :cold_start_tier, :confidence_marker, :engine_version, :is_live, :ccv, :calculated_at
+          :erv, :erv_interval, :authenticity, :axes, :band, :erv_label, :reason_codes,
+          :confirmed_anomaly, :cold_start_tier, :confidence_marker, :engine_version,
+          :is_live, :state, :ccv, :calculated_at
         )
       else
         trust_payload.slice(
@@ -99,7 +100,8 @@ module Cards
     # v2: signal_breakdown retired (reason_codes live in the headline layer).
     def live_drill_layer(granted)
       if granted
-        keys = v2_engine? ? [ :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired ] :
+        keys = v2_engine? ? [ :erv_breakdown, :reason_codes_detail, :signal_breakdown,
+                              :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired ] :
                             [ :signal_breakdown, :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired ]
         return { available: true, data: trust_payload.slice(*keys) }
       end
