@@ -7,3 +7,11 @@ en:
     green_no_anomaly: "No anomalies detected"
     grey_insufficient: "Insufficient data"
     amber_exceeds: "Online exceeds observed activity"
+    # Tooltip copy = SRS §10A verbatim (mirrors the extension's sp.band.tooltip.rowN values).
+    tooltip:
+      red_significant: "Reported viewership is significantly unsupported by audience activity."
+      yellow_anomaly: "Reported viewership is partly unsupported by audience activity."
+      green_real: "The audience matches real activity — no anomalies detected."
+      green_no_anomaly: "Audience activity is normal, no anomalies noticed."
+      grey_insufficient: "Not enough channel history to assess yet."
+      amber_exceeds: "Reported viewership is higher than the observed chat activity explains; no confirmed anomalies found."

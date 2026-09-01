@@ -115,7 +115,7 @@ class SignalComputeWorker
 
     # FR-005: Redis publish
     instrument_stage("publish_update", stream_id) do
-      publish_update(stream, result)
+      publish_update(stream, result, ccv: context[:latest_ccv])
     end
 
     # FR-010: Signal health tracking
@@ -326,10 +326,16 @@ class SignalComputeWorker
 
   # DEC-7 MF-1: engine-agnostic publish — the Result maps its OWN fields to the wire payload
   # (#to_headline_payload). Default/shadow → v1 legacy shape (unchanged); cutover → v2 NEW contract.
-  def publish_update(stream, result)
+  # SRS §4A Surface 5 wrap: the engine payload is headline-shaped (flat authenticity, string
+  # reason_codes); the worker adds the frame identity — type / channel_id / ccv / calculated_at.
+  def publish_update(stream, result, ccv: nil)
     return unless result
 
-    payload = result.to_headline_payload.merge(timestamp: Time.current.iso8601).to_json
+    now = Time.current.iso8601
+    payload = result.to_headline_payload.merge(
+      type: "trust_update", channel_id: stream.channel_id, ccv: ccv,
+      calculated_at: now, timestamp: now
+    ).to_json
     redis.publish("#{PUBLISH_CHANNEL_PREFIX}#{stream.channel_id}", payload)
   rescue Redis::BaseError => e
     Rails.logger.warn("SignalComputeWorker: Redis publish failed (#{e.message})")

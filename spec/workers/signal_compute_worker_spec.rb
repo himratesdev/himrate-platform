@@ -175,6 +175,14 @@ RSpec.describe SignalComputeWorker do
       expect(parsed).to include("engine_version" => "v2")
       expect(parsed.keys).to include("erv", "erv_interval", "authenticity", "band", "reason_codes")
       expect(parsed.keys).not_to include("ti_score", "classification")
+      # Contract-finish (SRS §4A Surface 5): frame identity + FLAT wire — no axes object on WS,
+      # reason_codes as bare code strings (objects live in TIH / REST reason_codes_detail).
+      expect(parsed["type"]).to eq("trust_update")
+      expect(parsed["channel_id"]).to be_present
+      expect(parsed).to have_key("ccv")
+      expect(parsed["calculated_at"]).to be_present
+      expect(parsed.keys).not_to include("axes")
+      expect(parsed["reason_codes"]).to all(be_a(String))
     end
 
     it "keeps the calibration-observables stream alive (SCW shadow line, v1 fields null)" do

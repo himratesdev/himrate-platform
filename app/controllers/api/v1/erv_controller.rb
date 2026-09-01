@@ -101,6 +101,9 @@ module Api
         payload = {
           erv: ti.erv,
           erv_interval: { lo: ti.erv_lo, hi: ti.erv_hi },
+          # SRS §4A Surface 2: FLAT authenticity + confidence_marker belong to the /erv HEADLINE
+          # (promoted from :details, contract-finish 2026-09). No axes here — nesting is /trust + /card.
+          authenticity: ti.authenticity&.to_f,
           band: { row: ti.band_row, color: ti.band_color, label_key: label_key, sub: ti.band_sub },
           erv_label: I18n.t(label_key, default: nil),
           confirmed_anomaly: { shown: ti.confirmed_anomaly },
@@ -111,7 +114,6 @@ module Api
 
         if view == :details || view == :full
           payload.merge!(
-            authenticity: ti.authenticity&.to_f,
             ccv: ti.ccv&.to_i,
             erv_breakdown: { v: ti.ccv&.to_i, f_hard: ti.f_hard&.to_f, f_soft: ti.f_soft&.to_f, f_hat: ti.f_hat&.to_f }
           )

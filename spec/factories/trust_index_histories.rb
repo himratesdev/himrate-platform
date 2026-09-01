@@ -30,6 +30,9 @@ FactoryBot.define do
       authenticity_lo { 68.0 }
       authenticity_hi { 76.0 }
       f_hat { 1400.0 }
+      f_hat_lo { 1200.0 }
+      f_hat_hi { 1600.0 }
+      rho_obs { 0.23 }
       f_hard { 120.0 }
       f_hard_lo { 110.0 }
       f_soft { 1400.0 }
