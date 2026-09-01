@@ -23,7 +23,8 @@
     }
   }
 
-  var DASHBOARD_HOME = "/app/home";
+  // Host-mapping (2026-09): on the app host the canonical LK home is the short path.
+  var DASHBOARD_HOME = location.hostname.indexOf("app.") === 0 ? "/home" : "/app/home";
   var twitchBtn = el("OAuth Twitch");
   var googleBtn = el("OAuth Google");
 

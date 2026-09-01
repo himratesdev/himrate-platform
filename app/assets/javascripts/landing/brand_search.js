@@ -12,6 +12,11 @@
 (function () {
   "use strict";
 
+  // Host-mapping (2026-09): links must stay in the path scheme the page was served under
+  // (canonical short paths on app.himrate.com, /app-prefixed on staging/dev). Local fallback —
+  // page scripts load BEFORE brand_nav.js, so window.hrAppPath may not exist yet.
+  var hrApp = window.hrAppPath || function (p) { var pre = (location.pathname === "/app" || location.pathname.indexOf("/app/") === 0) ? "/app" : ""; return pre + p; };
+
   // ---- config ----
   var API = "/api/v1/brand/streamers/search";
   // ti_avg → colour band, kept in lockstep with the ERV label the API returns (both derive from ti).
@@ -174,7 +179,7 @@
     if (open) {
       open.style.cursor = "pointer";
       open.addEventListener("click", function () {
-        window.location.href = "/app/streamers/" + encodeURIComponent(s.login);
+        window.location.href = hrApp("/streamers/" + encodeURIComponent(s.login));
       });
     }
     // Whole card is also a click target for discoverability.
@@ -182,7 +187,7 @@
     card.addEventListener("click", function (e) {
       if (e.target.closest('[data-pencil-name="Open"]')) return;
       if (e.target.closest("[data-hr-select]")) return;
-      window.location.href = "/app/streamers/" + encodeURIComponent(s.login);
+      window.location.href = hrApp("/streamers/" + encodeURIComponent(s.login));
     });
 
     // Selection pill — pick 2-4 streamers, then compare / overlap them. Injected into the footer's
@@ -355,13 +360,13 @@
     if (!cmp) return;
     // Handlers read `selected` live; a click with <2 picked is a no-op (bar stays dimmed).
     cmp.addEventListener("click", function () {
-      if (selected.length >= 2) window.location.href = "/app/compare?channels=" + selected.map(encodeURIComponent).join(",");
+      if (selected.length >= 2) window.location.href = hrApp("/compare?channels=" + selected.map(encodeURIComponent).join(","));
     });
     // Inject a sibling "Пересечение" action (overlap has no sidebar entry — this is its way in).
     overlapBtn = cmp.cloneNode(true);
     overlapBtn.setAttribute("data-pencil-name", "Btn · Пересечение выбранных");
     overlapBtn.addEventListener("click", function () {
-      if (selected.length >= 2) window.location.href = "/app/overlap?channels=" + selected.map(encodeURIComponent).join(",");
+      if (selected.length >= 2) window.location.href = hrApp("/overlap?channels=" + selected.map(encodeURIComponent).join(","));
     });
     cmp.parentNode.insertBefore(overlapBtn, cmp.nextSibling);
     updateActionBar();

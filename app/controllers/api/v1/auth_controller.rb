@@ -331,9 +331,15 @@ module Api
         request.host.to_s.end_with?("himrate.com") ? ".himrate.com" : nil
       end
 
-      # Only same-origin relative paths (open-redirect guard) — never an absolute/protocol URL.
+      # Open-redirect guard: relative same-origin paths, plus EXACTLY our own app-host origin
+      # (host-mapping 2026-09 — production web_redirect is the absolute LK canon so login lands
+      # in one hop without a canonicalize_host bounce). Never any other absolute/protocol URL.
+      APP_ORIGIN = "https://app.himrate.com/"
+
       def safe_web_redirect(target)
-        return "/login" unless target.is_a?(String) && target.start_with?("/") && !target.start_with?("//")
+        return "/login" unless target.is_a?(String)
+        return target if target.start_with?(APP_ORIGIN)
+        return "/login" unless target.start_with?("/") && !target.start_with?("//")
 
         target
       end

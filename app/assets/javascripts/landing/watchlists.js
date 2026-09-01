@@ -8,6 +8,11 @@
 (function () {
   "use strict";
 
+  // Host-mapping (2026-09): links must stay in the path scheme the page was served under
+  // (canonical short paths on app.himrate.com, /app-prefixed on staging/dev). Local fallback —
+  // page scripts load BEFORE brand_nav.js, so window.hrAppPath may not exist yet.
+  var hrApp = window.hrAppPath || function (p) { var pre = (location.pathname === "/app" || location.pathname.indexOf("/app/") === 0) ? "/app" : ""; return pre + p; };
+
   var LABEL_COLOR = { green: "#25D9A4", yellow: "#F5C451", red: "#F0616D", grey: "#9A9AA9", amber: "#F6A823" };
   var DOT_PALETTE = ["#7B5CFA", "#4FA9FF", "#25D9A4", "#F6A823", "#FB4E55"];
 
@@ -190,7 +195,7 @@
     var empty = T.emptyStateNode.cloneNode(true);
     setP(empty, "ES Tag T", "СПИСОК «" + ((wl && wl.name) || "").toUpperCase() + "»");
     var primary = q(empty, "ES Primary");
-    if (primary) { primary.style.cursor = "pointer"; primary.addEventListener("click", function () { window.location.href = "/app/search"; }); }
+    if (primary) { primary.style.cursor = "pointer"; primary.addEventListener("click", function () { window.location.href = hrApp("/search"); }); }
     var secondary = q(empty, "ES Secondary"); if (secondary) secondary.style.display = "none"; // import = deferred
     T.table.parentNode.insertBefore(empty, T.table.nextSibling);
   }

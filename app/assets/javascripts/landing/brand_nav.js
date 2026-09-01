@@ -5,30 +5,39 @@
 (function () {
   "use strict";
 
-  // Sidebar nav anchor → live route. (Overlap has no sidebar entry in the design — reached from the
-  // channel-comparison flow; it highlights "Сравнение".)
+  // Host-mapping (2026-09): LK pages are served under TWO path schemes — canonical short paths on
+  // app.himrate.com (/home) and the /app-prefixed scheme on staging/dev (/app/home). All internal
+  // navigation therefore goes through hrAppPath(), which prepends the prefix the CURRENT page was
+  // served under, so links stay same-scheme (no redirect hop) on both hosts.
+  var APP_PREFIX = (window.location.pathname === "/app" || window.location.pathname.indexOf("/app/") === 0) ? "/app" : "";
+  window.hrAppPath = function (p) { return APP_PREFIX + p; };
+
+  // Sidebar nav anchor → live route (short form; hrAppPath adds the scheme prefix). (Overlap has no
+  // sidebar entry in the design — reached from the channel-comparison flow; it highlights "Сравнение".)
   var NAV = {
-    "Nav · Главная": "/app/home",
-    "Nav · Моя активность": "/app/activity",
-    "Nav · Куда пойти": "/app/discover",
-    "Nav · Watchlists": "/app/watchlists",
-    "Nav · Лучшие моменты": "/app/moments",
-    "Nav · Поиск стримеров": "/app/search",
-    "Nav · Поиск блогеров": "/app/creators",
-    "Nav · Сравнение": "/app/compare",
-    "Nav · Настройки": "/app/settings",
-    "Nav · Мой канал": "/app/channel",
-    "Nav · Рост": "/app/grow",
-    "Nav · Мои соцсети": "/app/social",
+    "Nav · Главная": "/home",
+    "Nav · Моя активность": "/activity",
+    "Nav · Куда пойти": "/discover",
+    "Nav · Watchlists": "/watchlists",
+    "Nav · Лучшие моменты": "/moments",
+    "Nav · Поиск стримеров": "/search",
+    "Nav · Поиск блогеров": "/creators",
+    "Nav · Сравнение": "/compare",
+    "Nav · Настройки": "/settings",
+    "Nav · Мой канал": "/channel",
+    "Nav · Рост": "/grow",
+    "Nav · Мои соцсети": "/social",
   };
   var ACTIVE_BG = "#19152E";
 
   function q(name) { return document.querySelector('[data-pencil-name="' + name + '"]'); }
 
+  // Compare against the DE-PREFIXED current path so highlight logic is scheme-agnostic.
   var path = window.location.pathname;
+  if (APP_PREFIX && path.indexOf(APP_PREFIX) === 0) path = path.slice(APP_PREFIX.length) || "/";
   function isActive(route) {
-    if (route === "/app/search") return path === "/app/search" || path.indexOf("/app/streamers") === 0;
-    if (route === "/app/compare") return path === "/app/compare" || path === "/app/overlap";
+    if (route === "/search") return path === "/search" || path.indexOf("/streamers") === 0;
+    if (route === "/compare") return path === "/compare" || path === "/overlap";
     return path === route;
   }
 
@@ -37,7 +46,7 @@
     if (!el) return;
     var route = NAV[anchor];
     el.style.cursor = "pointer";
-    el.addEventListener("click", function () { window.location.href = route; });
+    el.addEventListener("click", function () { window.location.href = window.hrAppPath(route); });
     el.style.backgroundColor = isActive(route) ? ACTIVE_BG : ""; // route-authoritative highlight
   });
 

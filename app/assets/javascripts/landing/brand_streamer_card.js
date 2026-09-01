@@ -11,7 +11,12 @@
 (function () {
   "use strict";
 
-  // /app/streamers/:login → login
+  // Host-mapping (2026-09): links must stay in the path scheme the page was served under
+  // (canonical short paths on app.himrate.com, /app-prefixed on staging/dev). Local fallback —
+  // page scripts load BEFORE brand_nav.js, so window.hrAppPath may not exist yet.
+  var hrApp = window.hrAppPath || function (p) { var pre = (location.pathname === "/app" || location.pathname.indexOf("/app/") === 0) ? "/app" : ""; return pre + p; };
+
+  // /app/streamers/:login OR /streamers/:login (app-host short form) → login (last segment)
   var parts = window.location.pathname.split("/").filter(Boolean);
   var login = parts.length ? decodeURIComponent(parts[parts.length - 1]) : null;
 
@@ -236,7 +241,7 @@
   function renderNotFound() {
     fullScreenMsg('<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Стример не найден</div>' +
       '<div style="font-size:14px;color:#9A9AA9;max-width:460px;margin:0 auto 20px;">Канал «' + (login || "") + '» ещё не проанализирован или не существует.</div>' +
-      '<a href="/app/search" style="display:inline-block;background:#7B5CFA;color:#fff;text-decoration:none;padding:11px 20px;border-radius:12px;font-weight:600;font-size:14px;">К поиску стримеров</a>');
+      '<a href="' + hrApp("/search") + '" style="display:inline-block;background:#7B5CFA;color:#fff;text-decoration:none;padding:11px 20px;border-radius:12px;font-weight:600;font-size:14px;">К поиску стримеров</a>');
   }
   function renderPaywall() {
     fullScreenMsg('<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Карточка стримера — для бренд-аккаунтов</div>' +
