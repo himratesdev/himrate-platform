@@ -187,9 +187,13 @@ proxy:
   # на accessory). Public access (grafana.himrate.com) — separate setup через
   # Cloudflare Tunnel (cloudflared accessory) post-PR1. См. accessory_ops.md.
 
+# EMERGENCY (2026-09-01, GitHub account suspension): registry = the box's own authed
+# localhost registry (docker `registry:2`, data on /backup HDD). kamal runs ON the server
+# for this mode, so build-push-pull all resolve 127.0.0.1:5000. Revert to ghcr.io (or move
+# to a tailnet-bound self-hosted registry permanently) once the suspension resolves — PO call.
 registry:
-  server: ghcr.io
-  username: himratesdev
+  server: 127.0.0.1:5000
+  username: himrate
   password:
     - KAMAL_REGISTRY_PASSWORD
 
