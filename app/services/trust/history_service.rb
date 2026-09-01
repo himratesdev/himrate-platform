@@ -135,14 +135,16 @@ module Trust
           {
             timestamp: row.day.to_s,
             ccv: row.max_ccv&.to_i,
-            erv: nil, # daily aggregate — counts are V-scale-dependent, no single value
+            erv_count: nil, # daily aggregate — counts are V-scale-dependent, no single value
             authenticity: row.avg_auth&.to_f&.round(1)
           }
         end
     end
 
-    # v2 point shape: {timestamp, ccv, erv (native count), authenticity, band_color} — the
-    # ccv×ti/100 derivation is retired (erv is the engine's subtracted count).
+    # v2 point shape: {timestamp, ccv, erv_count (native V−F̂ count), authenticity, band_color}.
+    # `erv_count` is the wire key the sparkline contract (extension SparklinePoint) has always
+    # used — v1 derived it as ccv×ti/100, v2 serves the engine's subtracted count under the SAME
+    # key. T1-075: the v2 branch briefly emitted `erv`, which no reader consumed → charts empty.
     def merge_timeseries_v2(ccv_points, ti_points)
       return [] if ccv_points.empty?
 
@@ -157,7 +159,7 @@ module Trust
         {
           timestamp: ts.iso8601,
           ccv: ccv&.to_i,
-          erv: ti_row&.[](1),
+          erv_count: ti_row&.[](1)&.round,
           authenticity: ti_row&.[](2)&.to_f&.round(1),
           band_color: ti_row&.[](3)
         }

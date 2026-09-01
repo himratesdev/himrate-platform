@@ -75,6 +75,50 @@ RSpec.describe "Trust History API" do
       expect(response.parsed_body.dig("error", "code")).to eq("SUBSCRIPTION_REQUIRED")
     end
 
+    # T1-075: the v2 branch emitted per-point `erv` while the sparkline contract (extension
+    # SparklinePoint) reads `erv_count` — no consumer saw the count, charts stayed empty. v2 30m
+    # points must carry erv_count = the engine's native V−F̂ count (NOT the retired ccv×ti/100).
+    describe "v2 point shape (T1-075)" do
+      before do
+        allow(Flipper).to receive(:enabled?).and_call_original
+        allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+      end
+
+      it "30m points carry erv_count (native count) + authenticity + band_color" do
+        stream = create(:stream, channel: channel, started_at: 20.minutes.ago, ended_at: nil)
+        create(:ccv_snapshot, stream: stream, timestamp: 5.minutes.ago, ccv_count: 1000)
+        create(:trust_index_history, :v2, channel: channel, stream: stream,
+          erv: 553.4, authenticity: 55.3, band_color: "yellow", calculated_at: 6.minutes.ago)
+
+        get "/api/v1/channels/#{channel.id}/trust/history", headers: auth_headers(user)
+        expect(response).to have_http_status(:ok)
+
+        point = response.parsed_body["data"]["points"].first
+        expect(point["erv_count"]).to eq(553)
+        expect(point["ccv"]).to eq(1000)
+        expect(point["authenticity"]).to eq(55.3)
+        expect(point["band_color"]).to eq("yellow")
+        expect(point).not_to have_key("erv")
+      end
+
+      it "7d aggregate points carry the erv_count key (nil) + authenticity" do
+        premium_user = create(:user, tier: "premium")
+        create(:tracked_channel, user: premium_user, channel: channel, tracking_enabled: true)
+        create(:subscription, user: premium_user, tier: "premium", is_active: true)
+        create(:trust_index_history, :v2, channel: channel, authenticity: 82.0,
+          calculated_at: 1.day.ago)
+
+        get "/api/v1/channels/#{channel.id}/trust/history",
+            params: { period: "7d" }, headers: auth_headers(premium_user)
+        expect(response).to have_http_status(:ok)
+
+        point = response.parsed_body["data"]["points"].first
+        expect(point).to have_key("erv_count")
+        expect(point["erv_count"]).to be_nil
+        expect(point["authenticity"]).to eq(82.0)
+      end
+    end
+
     it "returns 400 for invalid period" do
       get "/api/v1/channels/#{channel.id}/trust/history",
           params: { period: "invalid" },
