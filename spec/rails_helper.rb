@@ -8,7 +8,14 @@ abort("The Rails environment is running in production mode!") if Rails.env.produ
 require "rspec/rails"
 require "webmock/rspec"
 
-WebMock.disable_net_connect!(allow_localhost: true)
+# The real-integration specs (ClickHouse client / MVs, context builder) talk to live test
+# services. On GitHub CI those run on localhost; on the self-hosted CI replica (docker network,
+# 2026-09 GitHub-suspension contingency) they resolve by container name — WEBMOCK_EXTRA_ALLOW
+# is a comma-separated host allowlist for that case (empty/unset on GitHub CI = no change).
+WebMock.disable_net_connect!(
+  allow_localhost: true,
+  allow: ENV.fetch("WEBMOCK_EXTRA_ALLOW", "").split(",").map(&:strip).reject(&:empty?)
+)
 
 begin
   ActiveRecord::Migration.maintain_test_schema!
