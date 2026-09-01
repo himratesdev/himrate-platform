@@ -133,7 +133,7 @@ module Brand
 
       channels = Channel.where(id: ids).index_by(&:id)
       latest_streams = latest_streams_by_channel(ids)
-      classifications = latest_classification_by_channel(ids)
+      load_latest_bands(ids)
 
       rows.filter_map do |r|
         channel = channels[r.channel_id]
@@ -154,9 +154,10 @@ module Brand
           # single source of truth: derive from the SQL real_pct (not the rounded avgs) so
           # real_pct + |bot_correction_pct| == 100 exactly (CR nit).
           bot_correction_pct: real_pct && shown_avg.positive? ? -(100 - real_pct).round(1) : nil,
-          classification: classifications[r.channel_id],
           # PR3b: label from the persisted band when present (5-color, legal-safe i18n); the
-          # ErvCalculator TI-scale resolver serves only pre-cutover rows.
+          # ErvCalculator TI-scale resolver serves only pre-cutover rows. The raw v1
+          # `classification` enum is no longer emitted — no client read it, and v2-era
+          # aggregate rows persist it as NULL (band_* is the verdict now).
           classification_label: classification_label_for(r.channel_id, ti_avg),
           category: stream&.game_name,
           language: stream&.language,
@@ -173,16 +174,14 @@ module Brand
             .index_by(&:channel_id)
     end
 
-    # Bounded to the page's channel_ids (not the whole population).
-    def latest_classification_by_channel(ids)
-      @latest_bands = {}
-      TrendsDailyAggregate.where(date: window, channel_id: ids)
-                          .select("DISTINCT ON (channel_id) channel_id, classification_at_end, band_row_at_end, band_color_at_end")
-                          .order("channel_id, date DESC")
-                          .each_with_object({}) do |r, h|
-                            h[r.channel_id] = r.classification_at_end
-                            @latest_bands[r.channel_id] = r[:band_row_at_end]
-                          end
+    # Latest in-window band_row per page channel (bounded to the page's channel_ids, not the
+    # whole population) — feeds classification_label_for.
+    def load_latest_bands(ids)
+      @latest_bands = TrendsDailyAggregate
+                      .where(date: window, channel_id: ids)
+                      .select("DISTINCT ON (channel_id) channel_id, band_row_at_end")
+                      .order("channel_id, date DESC")
+                      .to_h { |r| [ r.channel_id, r[:band_row_at_end] ] }
     end
 
     def classification_label_for(channel_id, ti_avg)

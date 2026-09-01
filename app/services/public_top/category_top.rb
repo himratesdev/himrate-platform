@@ -50,9 +50,8 @@ module PublicTop
     end
 
     # login => latest in-window band color ("green"/"yellow"/"amber"/"red"/"grey").
-    # Mirrors Brand::StreamerSearchQuery#latest_classification_by_channel, which selects
-    # band_color_at_end but does not expose it — re-derived here instead of widening the
-    # brand contract for a public page.
+    # Mirrors Brand::StreamerSearchQuery#load_latest_bands (which keeps band_row for its label) —
+    # re-derived here instead of widening the brand contract for a public page.
     def band_colors(logins)
       return {} if logins.empty?
 
