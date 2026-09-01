@@ -193,7 +193,7 @@ RSpec.describe "Host canonicalization", type: :request do
       # routes.rb uses a literal (zeitwerk: no app constants in routes); this spec pins the pair.
       expect(PagesController::APP_HOST).to eq("app.himrate.com")
       expect(Rails.application.routes.routes.map { |r| r.constraints[:host] }.compact.uniq)
-        .to eq(["app.himrate.com"])
+        .to eq([ "app.himrate.com" ])
     end
   end
 end
