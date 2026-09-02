@@ -128,4 +128,28 @@ RSpec.describe "Flipper Feature Flags" do
       expect(Rails.env.test?).to be true # → the STAGING_ALL_FLAGS boot loop is skipped here (cumulative verdict)
     end
   end
+
+  # 2026-09-01 deploy-proof sweep: the cutover selector must never again live as Redis-only state
+  # (home-server first boot 2026-08-26 wrote ~28.6k v1 TIH rows before the manual re-flip).
+  describe "engine cutover flag (ti_v2_engine)" do
+    it "is in the always-on ALL_FLAGS (authoritative engine on every environment)" do
+      expect(FlipperDefaults::ALL_FLAGS).to include(:ti_v2_engine)
+    end
+
+    # NB: this asserts the ALL_FLAGS sync (spec/rails_helper.rb applies the same list before each
+    # example) — it is a membership guard, not proof that the initializer boot loop ran.
+    it "is enabled by the ALL_FLAGS sync" do
+      expect(Flipper.enabled?(:ti_v2_engine)).to be true
+    end
+  end
+
+  describe "registered-but-off operational hooks" do
+    it "registers ti_v2_shadow as a hook (dormant while the cutover flag is ON)" do
+      expect(FlipperDefaults::HOOK_FLAGS).to include(:ti_v2_shadow)
+    end
+
+    it "registers po_debug_dashboard as a hook (togglable in the UI without a migration; still OFF)" do
+      expect(FlipperDefaults::HOOK_FLAGS).to include(:po_debug_dashboard)
+    end
+  end
 end

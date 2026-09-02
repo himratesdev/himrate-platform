@@ -104,6 +104,20 @@ module FlipperDefaults
   # got whitespace-split into ~40 symbol "flags" (:the, :boot, :"2026-07-29.", :"#", …) that
   # the boot loop below registered AND enabled on every Rails boot (incident 2026-08-05).
   # Name shape is pinned by spec/flipper/flipper_flag_registry_spec.rb.
+  #
+  # NB #2 (blast radius): ALL_FLAGS is not just boot behaviour — spec/rails_helper.rb enables every
+  # entry before EVERY example, so adding a flag here silently flips the default for the whole test
+  # suite. Specs written against the OFF branch stop covering it and start failing (that is exactly
+  # what :ti_v2_engine did when it was promoted). Before adding a flag: grep its readers in app/,
+  # find the specs that exercise the OFF branch, and give them an explicit stance
+  # (`allow(Flipper).to receive(:enabled?).with(:flag).and_return(false)`) rather than leaving them
+  # on an implicit default.
+  #
+  # Scale of the :ti_v2_engine promotion, for calibration: 17 spec files needed an explicit stance
+  # — 6 under spec/requests, 9 under spec/services, 2 under spec/workers. The first sweep covered
+  # only services+workers and reported "done"; the request layer (same flag, read through
+  # controllers/serializers) was still red. Sweep every layer that reaches the reader, and treat a
+  # full-suite run — not a subset — as the criterion for closing the work.
   ALL_FLAGS = [
     :pundit_authorization,
     :bot_raid_chain,
@@ -131,7 +145,14 @@ module FlipperDefaults
     # Redis-only → reverted OFF on a redeploy, stalling the backfill at ~1026/5232 (the recurring
     # PVA «flag not deploy-proof» pattern). ALL_FLAGS makes the bounded (≤100/run) cron auto-enable
     # every boot so the pool keeps indexing. Promoted 2026-07-29.
-    :social_footprint_index
+    :social_footprint_index,
+    # T1-074 PR3b cutover engine selector (48 read sites). Was NEVER registered here — flipped
+    # manually via flipper-toggle.yml → Redis-only state. Every fresh boot after a Redis/DB loss
+    # silently fell back to the v1 engine (4-band ERV, ti_score writers) until someone re-flipped:
+    # exactly what happened on the home-server first boot 2026-08-26 21:50 → 2026-08-27 (≈28.6k
+    # v1 TIH rows on a "v2-era" DB). PO 2026-09-01: v2 is the authoritative engine everywhere →
+    # deploy-proof in ALL_FLAGS. Rollback path stays: pause-override key or emergency disable.
+    :ti_v2_engine
   ].freeze
 
   # Verdict-flip flags that must be DEPLOY-PROOF on staging (survive a kamal-setup Redis flush) but stay
@@ -140,6 +161,12 @@ module FlipperDefaults
   # development (the boot loop skips production AND test — test specs assume the cumulative/dormant
   # verdict, so the flag must not flip in RAILS_ENV=test). Prod rollout = seed prod windowed cells + move
   # the flag to ALL_FLAGS (or drop the env guard). Battle-mode windowing flip 2026-07-25.
+  # 2026-09-01 PO decision («прод = staging»): the single Kamal destination `staging` on the
+  # home server IS the public production (himrate.com / app. / api.) until a dedicated
+  # production destination exists. These flags are therefore the de-facto production operating
+  # set. When a real production destination appears, that cutover is an explicit task: promote
+  # to ALL_FLAGS (or drop the env guard) + seed prod windowed ρ* cells + rotate PAT — see
+  # docs/runbooks/production_cutover.md.
   STAGING_ALL_FLAGS = %i[
     ti_v2_cowindowed_rho
     follower_snapshot
@@ -185,9 +212,17 @@ module FlipperDefaults
     # chat_reads_clickhouse). All paths now CH-only; backfill service deleted. Any future
     # re-backfill would require new source + new service implementation, не re-using these flags.
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
-    accessory_auto_remediation: "BUG-010 PR3" # Kill switch для AutoRemediation::TriggerService
+    accessory_auto_remediation: "BUG-010 PR3", # Kill switch для AutoRemediation::TriggerService
     # GitHub workflow_dispatch. Default OFF — operators enable через
     # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.
+    ti_v2_shadow: "T1-074 PR2b", # v1-primary shadow compute (log-only). Meaningful only while
+    # ti_v2_engine is OFF; with the cutover flag in ALL_FLAGS this stays a dormant kill-switch-era
+    # hook. Registered so the flag exists deploy-proof instead of living as Redis-only state.
+    po_debug_dashboard: "TASK-PO-DEBUG-DASHBOARD" # /dashboard/po-debug gate. Registration does NOT
+    # change the 503 (add-only ⇒ still OFF, and Flipper.enabled? on an unknown feature is already
+    # false, not a raise). What it buys: the flag exists on every box, visible and togglable in the
+    # Flipper UI without a migration, instead of depending on whether 20260606030000 ever ran on
+    # this DB. PO enables it manually when the dashboard is needed.
     # NB: ti_v2_ie_shadow (i_event magnitude harvester, PR-i4) was PROMOTED to ALL_FLAGS 2026-07-23 —
     # the honest-corpus for the C_self floor calibration must accrue continuously across redeploys
     # (HOOK_FLAGS is Redis-only → reverts OFF on redeploy, PVA lesson). cost-DSV verified safe

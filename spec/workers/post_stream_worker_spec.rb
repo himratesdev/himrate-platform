@@ -12,6 +12,12 @@ RSpec.describe PostStreamWorker do
   # mean(5000, 3000) = 4000 → ccv_avg=4000, max=5000 → ccv_peak=5000 (preserves the
   # pre-PR-A1 numerics, just sourced from the right table).
   before do
+    # Legacy v1 fixtures (trust_index_score / erv_percent / signal_breakdown). ti_v2_engine is in
+    # ALL_FLAGS → rails_helper enables it per example, so the v1 stance is explicit at the top of
+    # the file; the examples that need the cutover branch re-stub it to true individually.
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+
     create(:ccv_snapshot, stream: stream, timestamp: 2.5.hours.ago, ccv_count: 3000)
     create(:ccv_snapshot, stream: stream, timestamp: 2.hours.ago, ccv_count: 5000)
     create(:ccv_snapshot, stream: stream, timestamp: 1.5.hours.ago, ccv_count: 4000)

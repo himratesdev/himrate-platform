@@ -12,6 +12,13 @@ RSpec.describe "Trust API", type: :request do
   let(:headers_business) { auth_headers(user_business) }
 
   before do
+    # Legacy v1 contract (ti_score / erv_percent / classification / cold_start_status /
+    # signal_breakdown — the keys build_headline emits). :ti_v2_engine now lives in ALL_FLAGS, and
+    # rails_helper enables every entry before each example, so the v1 stance has to be explicit;
+    # the v2 payload of the same endpoints is covered by spec/requests/api/v1/v2_contract_finish_spec.rb.
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+
     # Create stream + TI history for channel
     # PR-A1: peak_ccv / avg_ccv dropped from streams — explicit PSR carries the stats.
     stream = create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago,

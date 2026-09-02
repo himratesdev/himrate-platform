@@ -14,6 +14,15 @@ RSpec.describe "Api::V1::WatchlistChannels", type: :request do
   let!(:channel) { create(:channel) }
 
   describe "GET /api/v1/watchlists/:id/channels" do
+    # Legacy v1 payload (erv_percent / ti_score / erv_label_color / last_ti_at). :ti_v2_engine is
+    # in ALL_FLAGS, so rails_helper enables it per example — the v1 stance has to be explicit.
+    # The v2 payload of the same endpoint (erv count + authenticity + band_row/label_key/
+    # band_color + last_calculated_at) has its own example below.
+    before do
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+    end
+
     it "returns enriched channels" do
       create(:watchlist_channel, watchlist: watchlist, channel: channel)
 
@@ -27,6 +36,29 @@ RSpec.describe "Api::V1::WatchlistChannels", type: :request do
       expect(data.first).to have_key("is_live")
       expect(data.first).to have_key("inactive")
       expect(data.first).to have_key("tags")
+    end
+
+    it "returns the v2 contract (erv count + authenticity + band) under the cutover flag" do
+      # PR3b: T2 reads erv/authenticity/band_row/label_key/band_color — the v1 keys are retired,
+      # and a reader still asking for erv_percent must get nothing rather than a stale field.
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+      create(:watchlist_channel, watchlist: watchlist, channel: channel)
+      stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
+      TrustIndexHistory.create!(channel: channel, stream: stream, engine_version: "v2",
+                                erv: 1200, authenticity: 87.4, band_row: 3, band_color: "green",
+                                cold_start_tier: "full", calculated_at: 30.minutes.ago)
+
+      get "/api/v1/watchlists/#{watchlist.id}/channels", headers: auth_headers
+      expect(response).to have_http_status(:ok)
+      row = response.parsed_body["data"].first
+      expect(row["erv"]).to eq(1200)
+      expect(row["authenticity"]).to eq(87.4)
+      expect(row["band_row"]).to eq(3)
+      expect(row["band_color"]).to eq("green")
+      expect(row["label_key"]).to be_present
+      expect(row).to have_key("last_calculated_at")
+      expect(row).not_to have_key("erv_percent")
+      expect(row).not_to have_key("ti_score")
     end
 
     it "returns empty for empty watchlist" do

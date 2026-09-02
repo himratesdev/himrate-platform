@@ -13,7 +13,14 @@ RSpec.describe TrustIndex::Signals::ErvDivergenceDetector do
     )
   end
 
+  # Legacy v1 basis (ErvEstimate.erv_percent). ti_v2_engine now lives in ALL_FLAGS, so rails_helper
+  # enables it per example — the v1 stance is explicit here; v2 is covered by the describe below.
   describe ".check" do
+    before do
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+    end
+
     it "creates erv_divergence anomaly when |delta| > 10% в 15min window" do
       make_estimate(percent: 80, timestamp: 12.minutes.ago)
       make_estimate(percent: 60, timestamp: 1.minute.ago)
@@ -84,7 +91,10 @@ RSpec.describe TrustIndex::Signals::ErvDivergenceDetector do
 
   # T1-074 PR3b (gap D-4) — v2 basis: TIH.authenticity (the erv_percent heir); ErvEstimate retired.
   describe ".check under ti_v2_engine" do
-    before { allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true) }
+    before do
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+    end
 
     def make_v2(authenticity:, calculated_at:)
       TrustIndexHistory.create!(

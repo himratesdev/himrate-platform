@@ -103,8 +103,13 @@ RSpec.describe StreamOnlineWorker do
     expect { worker.perform(event) }.to change(Stream, :count).by(1)
   end
 
-  # TASK-033 TC-004: Merge increments merged_parts_count and records part_boundaries
+  # TASK-033 TC-004: Merge increments merged_parts_count and records part_boundaries.
+  # Legacy v1 boundary shape (ti_score / erv_percent) — ti_v2_engine is in ALL_FLAGS, so the
+  # stance is explicit; the production v2 boundary (authenticity + erv) is covered below.
   it "increments merged_parts_count and records part_boundaries on merge" do
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+
     old_stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: 10.minutes.ago,
       game_name: "Just Chatting", merged_parts_count: 1, part_boundaries: [])
 
@@ -120,6 +125,25 @@ RSpec.describe StreamOnlineWorker do
     expect(old_stream.merged_parts_count).to eq(2)
     expect(old_stream.part_boundaries.size).to eq(1)
     expect(old_stream.part_boundaries.first["ti_score"]).to eq(65.0)
+  end
+
+  # PR3b (T1-074): the boundary TiDivergenceAlerter actually reads in production.
+  it "records an authenticity + erv boundary under ti_v2_engine" do
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+
+    old_stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: 10.minutes.ago,
+      game_name: "Just Chatting", merged_parts_count: 1, part_boundaries: [])
+    TrustIndexHistory.create!(channel: channel, stream: old_stream, engine_version: "v2",
+      authenticity: 65.0, erv: 1950, band_row: 2, band_color: "green",
+      cold_start_tier: "full", calculated_at: 11.minutes.ago)
+
+    worker.perform(event_data)
+
+    boundary = old_stream.reload.part_boundaries.first
+    expect(boundary["authenticity"]).to eq(65.0)
+    expect(boundary["erv"]).to eq(1950)
+    expect(boundary).not_to have_key("ti_score")
   end
 
   # TASK-033 TC-005: =30min → NOT merge

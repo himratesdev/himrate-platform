@@ -17,6 +17,10 @@ RSpec.describe "Channels API", type: :request do
     # — HOOK_FLAG, default OFF, individual specs enable as needed).
     allow(Flipper).to receive(:enabled?).and_call_original
     allow(Flipper).to receive(:enabled?).with(:pundit_authorization).and_return(true)
+    # Legacy v1 payload (signal_breakdown / ti_score keys the v1 blueprint emits). :ti_v2_engine is
+    # in ALL_FLAGS now, so the stance must be explicit; the v2 channel payload is covered by
+    # spec/requests/api/v1/v2_contract_finish_spec.rb + spec/services/cards/card_service_spec.rb.
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
   end
 
   describe "GET /api/v1/channels/:id" do

@@ -18,6 +18,12 @@ RSpec.describe TiDivergenceAlerter do
       signal_breakdown: {}, calculated_at: 30.minutes.ago)
 
     allow(TelegramAlertWorker).to receive(:perform_async)
+
+    # ti_v2_engine is in ALL_FLAGS → rails_helper enables it for every example. The seed above is
+    # a v1 row (trust_index_score / boundary "ti_score"), so the legacy stance is stated explicitly.
+    # The production axis (authenticity) is covered by "under ti_v2_engine" at the bottom.
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
   end
 
   describe ".check" do
@@ -88,6 +94,41 @@ RSpec.describe TiDivergenceAlerter do
 
         expect(TelegramAlertWorker).to have_received(:perform_async).twice
       end
+    end
+  end
+  # PR3b (T1-074, M13b): under the cutover engine the divergence axis is `authenticity`
+  # (same 0-100 scale, so DIVERGENCE_THRESHOLD=20 keeps its meaning).
+  describe ".check under ti_v2_engine" do
+    before do
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+      TrustIndexHistory.where(stream_id: stream.id).delete_all
+      TrustIndexHistory.create!(channel: channel, stream: stream, engine_version: "v2",
+                                authenticity: 75.0, cold_start_tier: "full", calculated_at: 30.minutes.ago)
+    end
+
+    it "alerts on an authenticity divergence > 20" do
+      stream.update!(part_boundaries: [ { "ended_at" => 3.hours.ago.iso8601, "authenticity" => 50.0, "part_number" => 1 } ])
+      described_class.check(stream)
+      expect(TelegramAlertWorker).to have_received(:perform_async)
+        .with(a_string_including("25.0 points"))
+    end
+
+    it "falls back to the pre-cutover ti_score on boundaries written before the flip" do
+      # Merged streams spanning the cutover keep boundaries that only carry "ti_score" — without
+      # the fallback those parts would silently drop out of divergence detection.
+      stream.update!(part_boundaries: [ { "ended_at" => 3.hours.ago.iso8601, "ti_score" => 50.0, "part_number" => 1 } ])
+      described_class.check(stream)
+      expect(TelegramAlertWorker).to have_received(:perform_async)
+        .with(a_string_including("TI Divergence Alert"))
+    end
+
+    it "ignores v1 rows for the final value (no cross-engine mixing)" do
+      TrustIndexHistory.where(stream_id: stream.id).delete_all
+      create(:trust_index_history, channel: channel, stream: stream, trust_index_score: 75.0,
+                                   cold_start_status: "full", calculated_at: 30.minutes.ago)
+      stream.update!(part_boundaries: [ { "ended_at" => 3.hours.ago.iso8601, "authenticity" => 50.0, "part_number" => 1 } ])
+      described_class.check(stream)
+      expect(TelegramAlertWorker).not_to have_received(:perform_async)
     end
   end
 end

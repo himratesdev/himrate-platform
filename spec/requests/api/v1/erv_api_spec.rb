@@ -8,6 +8,12 @@ RSpec.describe "ERV API", type: :request do
   let(:headers_free) { auth_headers(user_free) }
 
   before do
+    # Legacy v1 ERV payload (erv_percent basis). ti_v2_engine is in ALL_FLAGS → enabled per example
+    # by rails_helper, so the v1 stance is explicit here; the v2 /erv headline (flat authenticity +
+    # confidence_marker) is covered by spec/requests/api/v1/v2_contract_finish_spec.rb.
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+
     stream = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: nil)
     create(:trust_index_history,
       channel: channel,

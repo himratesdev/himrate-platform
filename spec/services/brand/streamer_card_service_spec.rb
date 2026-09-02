@@ -60,6 +60,13 @@ RSpec.describe Brand::StreamerCardService do
   end
 
   describe "layer2 authenticity" do
+    # v1 layer2 = signal_breakdown checks. ti_v2_engine is in ALL_FLAGS (enabled per example by
+    # rails_helper) → legacy stance explicit; the v2 layer2 (band + reason codes) is asserted below.
+    before do
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+    end
+
     it "exposes only present signals + real overall classification (no fabricated verdict)" do
       create(:trust_index_history, channel: channel, classification: "trusted", trust_index_score: 88.0,
                                    signal_breakdown: {
@@ -79,6 +86,34 @@ RSpec.describe Brand::StreamerCardService do
     end
 
     it "is unavailable when there is no trust-index history" do
+      expect(payload_for("streamer").payload[:layer2_authenticity]).to eq({ available: false })
+    end
+  end
+
+  # PR3b (T1-074, M11a): under the cutover engine layer2 is the 6-row band + reason codes —
+  # the retired ti_score scalar and the 14-signal breakdown must not reappear on a brand card.
+  describe "layer2 authenticity under ti_v2_engine" do
+    before do
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+    end
+
+    it "exposes the band + authenticity from the v2 row (no ti_score, no checks)" do
+      TrustIndexHistory.create!(channel: channel, engine_version: "v2", authenticity: 91.0,
+                                erv: 5200, band_row: 1, band_color: "green",
+                                cold_start_tier: "full", calculated_at: 10.minutes.ago)
+
+      l2 = payload_for("streamer").payload[:layer2_authenticity]
+
+      expect(l2[:available]).to be(true)
+      expect(l2[:authenticity]).to eq(91.0)
+      expect(l2[:band]).to include(row: 1, color: "green")
+      expect(l2).not_to have_key(:ti_score)
+      expect(l2).not_to have_key(:checks)
+    end
+
+    it "is unavailable when only v1 history exists (no cross-engine fallback)" do
+      create(:trust_index_history, channel: channel, trust_index_score: 88.0, classification: "trusted")
       expect(payload_for("streamer").payload[:layer2_authenticity]).to eq({ available: false })
     end
   end
