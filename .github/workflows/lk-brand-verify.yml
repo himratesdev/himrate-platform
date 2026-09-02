@@ -22,7 +22,7 @@ on:
         required: true
         type: choice
         options:
-          - hostkey
+          - home
         default: home
 
 jobs:
