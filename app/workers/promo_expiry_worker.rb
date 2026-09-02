@@ -16,15 +16,7 @@ class PromoExpiryWorker
 
     expired.update_all(is_active: false, cancelled_at: Time.current, updated_at: Time.current)
 
-    User.where(id: user_ids).find_each { |user| recompute_tier!(user) }
+    User.where(id: user_ids).find_each { |user| Subscriptions::TierRecompute.call(user) }
     Rails.logger.info("PromoExpiryWorker: closed promo grants for #{user_ids.size} user(s)")
-  end
-
-  private
-
-  def recompute_tier!(user)
-    tiers = user.subscriptions.active.pluck(:tier)
-    best = tiers.max_by { |t| Promo::RedeemService::TIER_RANK.fetch(t, 0) } || "free"
-    user.update!(tier: best) if user.tier != best
   end
 end

@@ -9,6 +9,11 @@
 class Subscription < ApplicationRecord
   PLAN_TYPES = %w[per_channel promo].freeze
 
+  # Ordering of access tiers — a domain fact about grants, not promo specifics. Lives here so
+  # Subscriptions::TierRecompute (cancel/expiry) and Promo::RedeemService (never downgrade on
+  # redeem) share one definition instead of the service namespace depending on Promo::.
+  TIER_RANK = { "free" => 0, "premium" => 1, "business" => 2 }.freeze
+
   belongs_to :user
   has_many :tracked_channels, dependent: :nullify
 

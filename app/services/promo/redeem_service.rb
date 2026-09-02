@@ -12,7 +12,9 @@ module Promo
   # (it does not — PromoExpiryWorker recomputes from the remaining grants). Error codes are
   # wire-ready PROMO_*.
   class RedeemService
-    TIER_RANK = { "free" => 0, "premium" => 1, "business" => 2 }.freeze
+    # Tier ordering lives on the model (Subscription::TIER_RANK) — shared with
+    # Subscriptions::TierRecompute. Kept as a local alias so existing callers/specs keep working.
+    TIER_RANK = Subscription::TIER_RANK
 
     Result = Data.define(:ok, :error, :tier, :granted_tier, :expires_at) do
       def self.failure(code) = new(ok: false, error: code, tier: nil, granted_tier: nil, expires_at: nil)

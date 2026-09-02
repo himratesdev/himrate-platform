@@ -60,11 +60,14 @@ RSpec.describe "API Scaffold", type: :request do
     end
   end
 
-  # TC-007: POST /subscriptions → 200
+  # TC-007: POST /subscriptions → 501. The TASK-008 scaffold answered 200 with a placeholder
+  # body; P5 (screen 40) replaced it with an honest BILLING_NOT_AVAILABLE — checkout needs a
+  # payment provider (TASK-042), and a 200 here would read as "subscription created".
   describe "POST /api/v1/subscriptions" do
-    it "returns placeholder" do
+    it "answers 501 BILLING_NOT_AVAILABLE until a payment provider is wired" do
       post "/api/v1/subscriptions", headers: auth_headers
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:not_implemented)
+      expect(response.parsed_body.dig("error", "code")).to eq("BILLING_NOT_AVAILABLE")
     end
   end
 

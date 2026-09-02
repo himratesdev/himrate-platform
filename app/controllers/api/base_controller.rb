@@ -14,6 +14,10 @@ module Api
     after_action :log_authorized
 
     rescue_from Pundit::NotAuthorizedError, with: :render_forbidden
+    # Scoped `.find` misses (someone else's id, a bogus uuid) must answer in the same
+    # {error: {code, message}} envelope as every other API response — not Rails' default
+    # {"status":404,"error":"Not Found"} HTML-ish body (CR P5 Nit-5).
+    rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
 
     private
 
@@ -108,6 +112,12 @@ module Api
       )
 
       render json: error_payload, status: :forbidden
+    end
+
+    def render_not_found(_exception)
+      render json: {
+        error: { code: "NOT_FOUND", message: I18n.t("api.errors.not_found") }
+      }, status: :not_found
     end
 
     def log_authorized

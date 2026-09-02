@@ -3,6 +3,7 @@ ru:
     errors:
       unauthorized: "Не авторизован"
       not_found: "Не найдено"
+      billing_not_available: "Оплата подписки ещё не подключена — доступ открывается промокодом."
       internal_error: "Внутренняя ошибка сервера"
     # TASK-090 OQ-4: MAINTENANCE_MODE middleware default message
     # (overridable via MAINTENANCE_MODE_MESSAGE env var).

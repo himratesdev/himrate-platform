@@ -3,6 +3,7 @@ en:
     errors:
       unauthorized: "Unauthorized"
       not_found: "Not found"
+      billing_not_available: "Billing is not available yet — access is granted via promo codes."
       internal_error: "Internal server error"
     # TASK-090 OQ-4: MAINTENANCE_MODE middleware default message
     # (overridable via MAINTENANCE_MODE_MESSAGE env var).

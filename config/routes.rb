@@ -217,6 +217,7 @@ Rails.application.routes.draw do
     get "streamers/:login", to: "pages#brand_streamer_card", constraints: { login: /[A-Za-z0-9_]+/ }
     get "watchlists", to: "pages#watchlists"
     get "settings",   to: "pages#settings"
+    get "subscription", to: "pages#subscription"
     get "activity",   to: "pages#my_activity"
     get "discover",   to: "pages#discover"
     get "channel",    to: "pages#my_channel"
@@ -282,6 +283,7 @@ Rails.application.routes.draw do
   get "app/watchlists", to: "pages#watchlists"
   # Viewer settings (screen 06) — privacy toggles + connected accounts.
   get "app/settings", to: "pages#settings"
+  get "app/subscription", to: "pages#subscription"
   # Viewer personal activity (screen 03, PVA) — watch time / top channels / insights / feed.
   get "app/activity", to: "pages#my_activity"
   # Viewer discover «Куда пойти» (screen 04) — live-now ranked by real audience.

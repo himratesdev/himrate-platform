@@ -18,6 +18,9 @@
         that hijacks buttons to /methodology). The product UI must stay free of it (it broke the login
         Twitch button, and PO: «не вставляй везде анимцию на фон»). %>
     <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
+    <%# Shared promo-redemption card — every page whose export carries the «Промокод» card sets
+        @promo_card in PagesController (a page allowlist here silently skipped the third one). %>
+    <% if @promo_card %><%= javascript_include_tag "landing/promo-card" %><% end %>
     <% if @brand_dashboard %><%= javascript_include_tag "landing/brand_nav" %><% end %>
     <%= javascript_include_tag "landing/hr-i18n" %>
     <%= javascript_include_tag "landing/mobile-nav" %>
