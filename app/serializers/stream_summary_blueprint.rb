@@ -35,13 +35,6 @@ class StreamSummaryBlueprint < Blueprinter::Base
     stream.current_avg_ccv
   end
 
-  # T1-074: permanently nil under the v2 cutover (PSR Option 1 stop-writes the retired rescale
-  # scalar) — kept for v1-consumer compat; the v2 verdict (authenticity + band + engine_version)
-  # is merged in by Streams::LatestSummaryService#v2_verdict_block.
-  field :erv_percent_final do |stream|
-    stream.post_stream_report&.erv_percent_final&.to_f
-  end
-
   field :erv_count_final do |stream|
     stream.post_stream_report&.erv_final
   end

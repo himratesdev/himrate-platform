@@ -107,8 +107,8 @@
       })
       .then(function (card) {
         var hl = card && card.data && card.data.layers && card.data.layers.headline && card.data.layers.headline.data || {};
-        // v2 /card (post-cutover): the real-viewer count is `erv`; v1 legacy: `erv_count`.
-        var count = hl.engine_version === "v2" ? hl.erv : hl.erv_count;
+        // The real-viewer count is the native `erv` (V1-RETIRE: legacy erv_count reader gone).
+        var count = hl.erv;
         if (count == null) { hide(q(document, "Goal Banner")); return; }
         setT(document, "GP Now N", fmt(count));
         var fill = q(document, "GP Fill");

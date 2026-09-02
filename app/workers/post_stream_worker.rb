@@ -88,11 +88,7 @@ class PostStreamWorker
       Trends::Cache::Invalidator.call(stream.channel_id)
 
       duration_ms = ((Time.current - started_at) * 1000).to_i
-      headline = if ti_v2_engine?
-        "ERV=#{report&.erv_final} band=#{final_tih(stream)&.band_color}"
-      else
-        "TI=#{report&.trust_index_final} ERV=#{report&.erv_percent_final}%"
-      end
+      headline = "ERV=#{report&.erv_final} band=#{final_tih(stream)&.band_color}"
       Rails.logger.info(
         "PostStreamWorker: stream #{stream_id} — #{headline} " \
         "merged=#{stream.merged_parts_count > 1} parts=#{stream.merged_parts_count} " \
@@ -174,7 +170,7 @@ class PostStreamWorker
     Rails.logger.error("PostStreamWorker: band refresh failed for channel #{channel.id} — #{e.message}")
   end
 
-  # PR3b (T1-074, PSR Option 1): under ti_v2_engine the retired v1 scalars (trust_index_final /
+  # PSR Option 1: the retired v1 scalars (trust_index_final /
   # erv_percent_final) are STOP-WRITTEN (nil); `erv_final` keeps its column+unit and carries the v2
   # subtracted COUNT directly (no ErvCalculator rescale). authenticity/band/interval for an ended
   # stream stay losslessly readable off the append-only TIH v2 row (PSR = denormalized cache, not
@@ -197,26 +193,13 @@ class PostStreamWorker
       ((stream.ended_at - stream.started_at) * 1000).to_i
     end
 
-    attrs = if ti_v2_engine?
-      {
-        trust_index_final: nil,
-        erv_percent_final: nil,
-        erv_final: ti_history&.erv
-      }
-    else
-      erv_data = if ti_history
-                    TrustIndex::ErvCalculator.compute(
-                      ti_score: ti_history.trust_index_score.to_f,
-                      ccv: ti_history.ccv.to_i,
-                      confidence: ti_history.confidence.to_f
-                    )
-      end
-      {
-        trust_index_final: ti_history&.trust_index_score,
-        erv_percent_final: ti_history&.erv_percent,
-        erv_final: erv_data&.dig(:erv_count)
-      }
-    end
+    # V1-RETIRE: the retired v1 scalars stay STOP-WRITTEN (nil) — PSR is a denormalized
+    # cache, columns dropped separately if/when the table is next migrated.
+    attrs = {
+      trust_index_final: nil,
+      erv_percent_final: nil,
+      erv_final: ti_history&.erv
+    }
 
     attrs.merge!(
       ccv_peak: peak,
@@ -233,22 +216,14 @@ class PostStreamWorker
     report
   end
 
-  # Engine-aware FINAL TIH for this stream (memoized — also feeds the C1 broadcast interval).
-  # Explicit engine_version filter on BOTH branches: pre-flip protective, post-flip mandatory
-  # (an unfiltered latest read would pick whichever engine wrote last).
+  # FINAL v2 TIH for this stream (memoized — also feeds the C1 broadcast interval).
   def final_tih(stream)
     return @final_tih if defined?(@final_tih)
 
     @final_tih = TrustIndexHistory
-      .where(stream_id: stream.id, engine_version: ti_v2_engine? ? "v2" : "v1")
+      .where(stream_id: stream.id, engine_version: "v2")
       .order(calculated_at: :desc)
       .first
-  end
-
-  def ti_v2_engine?
-    Flipper.enabled?(:ti_v2_engine)
-  rescue StandardError
-    false
   end
 
   # BUG-TI-SIGNAL-BREAKDOWN (2026-06-01): read signals from latest TIH.signal_breakdown
@@ -259,21 +234,9 @@ class PostStreamWorker
     tih = final_tih(stream)
     return {} unless tih
 
-    # PR3b: v2 rows carry no signal_breakdown (14-signal taxonomy retired) — the v2 explainability
+    # v2 rows carry no signal_breakdown (14-signal taxonomy retired) — the v2 explainability
     # is reason_codes (already on the row). The $4.99 report reads them from here.
-    return { "reason_codes" => tih.reason_codes || [] } if ti_v2_engine?
-
-    breakdown = tih.signal_breakdown
-    return {} unless breakdown.is_a?(Hash)
-
-    breakdown.each_with_object({}) do |(signal_type, data), summary|
-      next unless data.is_a?(Hash)
-      summary[signal_type] = {
-        value: data["value"]&.to_f,
-        confidence: data["confidence"]&.to_f,
-        weight: data["weight"]&.to_f
-      }
-    end
+    { "reason_codes" => tih.reason_codes || [] }
   end
 
   def schedule_expiring_warning(stream)

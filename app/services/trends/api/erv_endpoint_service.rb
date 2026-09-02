@@ -66,40 +66,28 @@ module Trends
           .map { |date, avg, min, max, ccv, cnt, bcolor| point_for(date, avg, min, max, ccv, erv_count: cnt, band_color: bcolor) }
       end
 
-      # PR3b: per-row engine discrimination. v2 rows emit the NATIVE count (erv) + interval +
-      # engine band color; erv_percent for v2 = authenticity (same "% real" meaning). The 3-color
-      # reader-side erv_color fn only ever sees v1 rows.
+      # V1-RETIRE: v2-only per-stream series — NATIVE count (erv) + interval + band color;
+      # `erv_percent` carries authenticity (same "% real" meaning, legacy wire name kept).
       def per_stream_points
         from_ts, to_ts = range
         TrustIndexHistory
           .for_channel(channel.id)
-          .where(calculated_at: from_ts..to_ts)
-          .where("(engine_version = 'v1' AND erv_percent IS NOT NULL) OR (engine_version = 'v2' AND erv IS NOT NULL)")
+          .where(calculated_at: from_ts..to_ts, engine_version: "v2")
+          .where.not(erv: nil)
           .order(:calculated_at)
-          .pluck(:calculated_at, :erv_percent, :ccv, :stream_id, :engine_version, :erv, :erv_lo, :erv_hi, :authenticity, :band_color)
-          .map do |ts, erv_pct, ccv, stream_id, engine, erv, erv_lo, erv_hi, auth, band_color|
-            if engine == "v2"
-              {
-                date: ts.iso8601,
-                erv: erv,
-                erv_interval: { lo: erv_lo, hi: erv_hi },
-                erv_percent: auth&.to_f&.round(2),
-                erv_absolute: erv,
-                ccv: ccv.to_i,
-                stream_id: stream_id,
-                color: band_color,
-                engine_version: "v2"
-              }
-            else
-              {
-                date: ts.iso8601,
-                erv_percent: erv_pct.to_f.round(2),
-                erv_absolute: erv_absolute(erv_pct, ccv),
-                ccv: ccv.to_i,
-                stream_id: stream_id,
-                engine_version: "v1"
-              }
-            end
+          .pluck(:calculated_at, :ccv, :stream_id, :erv, :erv_lo, :erv_hi, :authenticity, :band_color)
+          .map do |ts, ccv, stream_id, erv, erv_lo, erv_hi, auth, band_color|
+            {
+              date: ts.iso8601,
+              erv: erv,
+              erv_interval: { lo: erv_lo, hi: erv_hi },
+              erv_percent: auth&.to_f&.round(2),
+              erv_absolute: erv,
+              ccv: ccv.to_i,
+              stream_id: stream_id,
+              color: band_color,
+              engine_version: "v2"
+            }
           end
       end
 

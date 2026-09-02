@@ -38,20 +38,7 @@ module Trends
 
           # Idempotent via stream_id — seeder creates ровно одну TIH per stream.
           # PR3b: seeds BOTH engine shapes so Visual QA covers whichever engine is flagged —
-          # v1 row (legacy fields) + v2 row (authenticity/erv/band derived from the same curve).
-          TrustIndexHistory.find_or_create_by!(channel_id: @channel.id, stream_id: stream.id, engine_version: "v1") do |tih|
-            tih.trust_index_score = ti.round(2)
-            tih.confidence = 0.85
-            tih.classification = classification
-            tih.cold_start_status = "full"
-            tih.erv_percent = erv.round(2)
-            # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): stream.avg_ccv column dropped — derive
-            # via Stream#current_avg_ccv (reads PSR.ccv_avg для ended streams; the sibling
-            # StreamHistorySeeder creates the PSR row in the same seeding flow).
-            tih.ccv = stream.current_avg_ccv
-            tih.signal_breakdown = build_signal_breakdown(idx, total)
-            tih.calculated_at = stream.ended_at
-          end
+          # V1-RETIRE: v2 row only (authenticity/erv/band derived from the seeded curve).
           ccv = stream.current_avg_ccv
           band_row = ti >= 90 ? 3 : (ti >= 80 ? 4 : (ti >= 50 ? 2 : 1))
           band_color = { 3 => "green", 4 => "green", 2 => "yellow", 1 => "red" }[band_row]

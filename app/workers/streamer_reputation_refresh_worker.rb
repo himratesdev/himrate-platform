@@ -135,12 +135,10 @@ class StreamerReputationRefreshWorker
 
     # PR3b (T1-074): dual predicate — the denominator is ALL-TIME ended streams, so the numerator
     # window is inherently mixed-engine for the full TIH retention. A v2-only filter would silently
-    # zero pre-cutover botted streams (score inflates to 100 — leniency drift); bare authenticity<50
-    # would NULL-skip v1 rows the same way. Requires the MV recreate exposing engine_version +
-    # authenticity (same PR).
+    # (V1-RETIRE: v2-only predicate — the MV carries only v2 rows.)
     botted = LatestTihPerStream
       .where(channel_id: channel.id)
-      .where("(engine_version = 'v2' AND authenticity < 50) OR (engine_version = 'v1' AND trust_index_score < 50)")
+      .where("engine_version = 'v2' AND authenticity < 50")
       .count
 
     ratio = botted.to_f / total

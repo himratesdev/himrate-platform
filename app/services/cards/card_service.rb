@@ -78,21 +78,13 @@ module Cards
       end
     end
 
-    # PR3b (T1-074, B4): the slice auto-flows from Trust::ShowService — v2 keys when ti_v2_engine
-    # is ON (build_headline_v2), v1 keys otherwise. Landing channel_card.js ports in the same PR.
+    # The slice auto-flows from Trust::ShowService#build_headline_v2.
     def headline_data
-      if v2_engine?
-        trust_payload.slice(
-          :erv, :erv_interval, :authenticity, :axes, :band, :erv_label, :reason_codes,
-          :confirmed_anomaly, :cold_start_tier, :confidence_marker, :engine_version,
-          :is_live, :state, :ccv, :calculated_at
-        )
-      else
-        trust_payload.slice(
-          :ti_score, :classification, :erv_percent, :erv_count, :erv_label, :erv_label_color,
-          :cold_start_status, :confidence, :is_live, :ccv, :calculated_at
-        )
-      end
+      trust_payload.slice(
+        :erv, :erv_interval, :authenticity, :axes, :band, :erv_label, :reason_codes,
+        :confirmed_anomaly, :cold_start_tier, :confidence_marker, :engine_version,
+        :is_live, :state, :ccv, :calculated_at
+      )
     end
 
     # Layer 2: free, but registered + (live OR post-stream window). Guest on a live/window channel
@@ -100,9 +92,8 @@ module Cards
     # v2: signal_breakdown retired (reason_codes live in the headline layer).
     def live_drill_layer(granted)
       if granted
-        keys = v2_engine? ? [ :erv_breakdown, :reason_codes_detail, :signal_breakdown,
-                              :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired ] :
-                            [ :signal_breakdown, :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired ]
+        keys = [ :erv_breakdown, :reason_codes_detail, :signal_breakdown,
+                 :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired ]
         return { available: true, data: trust_payload.slice(*keys) }
       end
 
@@ -185,7 +176,7 @@ module Cards
       max_end = streams.map { |s| s.ended_at || Time.current }.max
 
       all_ti = TrustIndexHistory
-        .where(channel_id: channel_id, engine_version: v2_engine? ? "v2" : "v1")
+        .where(channel_id: channel_id, engine_version: "v2")
         .where(calculated_at: min_start..max_end)
         .order(calculated_at: :desc)
 
@@ -203,29 +194,15 @@ module Cards
         peak_ccv: stream.current_peak_ccv,
         avg_ccv: stream.current_avg_ccv
       }
-      if v2_engine?
-        # Surface-audit sweep: band_row + canonical label_key + grey fallback — mirrors the
-        # Watchlists::EnrichmentService flat contract (row3/row4 green must be distinguishable).
-        base.merge(
-          erv: ti&.erv, authenticity: ti&.authenticity&.to_f&.round(1),
-          band_row: ti&.band_row,
-          label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
-          band_color: ti&.band_color || "grey"
-        )
-      else
-        base.merge(ti_score: ti&.trust_index_score&.to_f&.round(1), erv_percent: ti&.erv_percent&.to_f&.round(1))
-      end
+      # Surface-audit sweep: band_row + canonical label_key + grey fallback — mirrors the
+      # Watchlists::EnrichmentService flat contract (row3/row4 green must be distinguishable).
+      base.merge(
+        erv: ti&.erv, authenticity: ti&.authenticity&.to_f&.round(1),
+        band_row: ti&.band_row,
+        label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
+        band_color: ti&.band_color || "grey"
+      )
     end
 
-    def v2_engine?
-      return @v2_engine if defined?(@v2_engine)
-
-      @v2_engine =
-        begin
-          Flipper.enabled?(:ti_v2_engine)
-        rescue StandardError
-          false
-        end
-    end
   end
 end

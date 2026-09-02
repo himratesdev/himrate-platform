@@ -132,41 +132,19 @@ class SignalComputeWorker
 
   private
 
-  # T1-074 PR2b/PR3b (ADR DEC-2/DEC-7) — engine selection.
-  # ti_v2_engine ON (PR3b CUTOVER): v2 is AUTHORITATIVE — v1 is not computed, not persisted, not
-  #   published (the discredited v1 verdict layer dies here; signals/anomaly stages above still run —
-  #   they are real measurements both engines share). v2 persists via V2::Persistence and publishes
-  #   through the engine-agnostic to_headline_payload. NO rescue: a v2 failure fails the stage
-  #   (Sidekiq retry + dead-letter), unlike shadow — v2 is the product now.
-  # ti_v2_engine OFF: v1 authoritative exactly as before; ti_v2_shadow optionally logs the v1↔v2
-  #   diff (compute+log only, no persist — zero TIH pollution).
-  def compute_engine(stream, context, signal_results)
-    return cutover_compute_v2(stream, context) if ti_v2_engine?
-
-    v1 = TrustIndex::Engine.new.compute(
-      signal_results: signal_results, stream: stream,
-      ccv: context[:latest_ccv] || 0, category: context[:category] || "default"
-    )
-    shadow_compute_v2(stream, context, v1) if ti_v2_shadow?
-    v1
+  # V1-RETIRE (2026-09-02): TI v2 is the UNCONDITIONAL engine — the ti_v2_engine flag, the v1
+  # blender (TrustIndex::Engine) and the shadow-diff mode are gone (v1 was proven blind to
+  # botting; rolling back to it was never a real mitigation). signal_results still feed the
+  # anomaly/persist stages — the signals are real measurements the v2 context builds on.
+  # NO rescue: a v2 failure fails the stage (Sidekiq retry + dead-letter) — v2 is the product.
+  def compute_engine(stream, context, _signal_results)
+    cutover_compute_v2(stream, context)
   end
 
-  def ti_v2_shadow?
-    Flipper.enabled?(:ti_v2_shadow)
-  rescue StandardError
-    false
-  end
-
-  def ti_v2_engine?
-    Flipper.enabled?(:ti_v2_engine)
-  rescue StandardError
-    false
-  end
-
-  # PR3b cutover path: build v2 context (reuses the v1-built context Hash — no second CH scan),
-  # compute, persist (TIH engine_version='v2' + NamedBotEvidence on C_hard), and keep the
+  # Build v2 context (reuses the signal-stage context Hash — no second CH scan), compute,
+  # persist (TIH engine_version='v2' + NamedBotEvidence on C_hard), and keep the
   # calibration-observables stream alive (mining continuity: ti-v2-shadow-mine parses "SCW shadow"
-  # lines; v1_* keys are null post-cutover — the miner only reads the v2_* observables).
+  # lines; v1_* keys emit null — the miner only reads the v2_* observables).
   def cutover_compute_v2(stream, context)
     v2_context = TrustIndex::ContextBuilder.build_v2(stream, context)
     v2 = TrustIndex::V2::Engine.compute(context: v2_context, k: Calibration::Registry.load)
@@ -229,25 +207,11 @@ class SignalComputeWorker
     false
   end
 
-  # Run the v2 engine on the live stream (Context reused from the v1 build — no second CH scan) and
-  # log the v1↔v2 headline diff for offline validation across the bot-channel cohort before the flip.
-  # A v2 defect is swallowed here — shadow must NEVER perturb the live v1 path.
-  def shadow_compute_v2(stream, context, v1)
-    v2_context = TrustIndex::ContextBuilder.build_v2(stream, context)
-    v2 = TrustIndex::V2::Engine.compute(context: v2_context, k: Calibration::Registry.load)
-    log_shadow(stream, v1, v2, v2_context)
-  rescue StandardError => e
-    Rails.logger.error("SignalComputeWorker: v2 shadow failed (stream #{stream.id}) — #{e.message}")
-    Sentry.capture_exception(e) if defined?(Sentry)
-  end
-
-  # Structured (parseable) shadow-diff line — v1 headline vs v2 headline. Log-only; aggregated across
-  # the cohort to validate the v2 engine (does the botter now read RED/AMBER where v1 read "trusted"?).
-  # Also carries the GATE-0 calibration observables (v/rho_obs/eihc + the ρ* baseline in effect): with
-  # ti_v2_shadow ON, every SCW cycle streams a calibration sample per live channel — the continuous
-  # ρ*-mining source (probe `ti-v2-rho-build` = bootstrap; this = steady-state). Cell key is re-derived
-  # at mining time from stream_id (category/chat_mode/language live on stream/channel records).
-  # v1 is nil on the cutover path (v1 no longer computed) — v1_* keys emit null, same line shape.
+  # Structured (parseable) calibration-observables line (historic name «SCW shadow» kept — the
+  # ti-v2-shadow-mine parser greps it): v/rho_obs/eihc + the ρ* baseline in effect, one sample per
+  # SCW cycle per live channel — the continuous ρ*-mining source (probe `ti-v2-rho-build` =
+  # bootstrap; this = steady-state). Cell key is re-derived at mining time from stream_id.
+  # V1-RETIRE: v1 is never computed — v1_* keys emit null, line shape unchanged for the miner.
   def log_shadow(stream, v1, v2, v2c)
     diff = {
       stream_id: stream.id, channel_id: stream.channel_id,

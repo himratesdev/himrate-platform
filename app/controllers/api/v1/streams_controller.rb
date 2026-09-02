@@ -79,8 +79,7 @@ module Api
 
       # PR3b (T1-074, M1): engine-aware — Ruby-side engine pick preserves the preload (no N+1).
       def stream_summary(stream)
-        engine = v2_engine? ? "v2" : "v1"
-        ti = stream.trust_index_histories.select { |t| t.engine_version == engine }.max_by(&:calculated_at)
+        ti = stream.trust_index_histories.select { |t| t.engine_version == "v2" }.max_by(&:calculated_at)
 
         # PR-A1: peak_ccv / avg_ccv / duration_ms derived (columns dropped, single source).
         base = {
@@ -95,32 +94,19 @@ module Api
           # CR #12: real parts count
           merged_parts_count: stream.merged_parts_count
         }
-        if v2_engine?
-          # Surface-audit sweep: band_row + canonical label_key + grey fallback + engine_version
-          # (the dual-shape consumers rely on engine_version to branch).
-          base.merge(
-            erv: ti&.erv,
-            authenticity: ti&.authenticity&.to_f,
-            band_row: ti&.band_row,
-            label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
-            band_color: ti&.band_color || "grey",
-            confirmed_anomaly: ti&.confirmed_anomaly,
-            engine_version: "v2"
-          )
-        else
-          base.merge(
-            ti_score: ti&.trust_index_score&.to_f,
-            erv_percent: ti&.erv_percent&.to_f&.clamp(0.0, 100.0),
-            classification: ti&.classification
-          )
-        end
+        # Surface-audit sweep: band_row + canonical label_key + grey fallback + engine_version
+        # (the dual-shape consumers rely on engine_version to branch).
+        base.merge(
+          erv: ti&.erv,
+          authenticity: ti&.authenticity&.to_f,
+          band_row: ti&.band_row,
+          label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
+          band_color: ti&.band_color || "grey",
+          confirmed_anomaly: ti&.confirmed_anomaly,
+          engine_version: "v2"
+        )
       end
 
-      def v2_engine?
-        Flipper.enabled?(:ti_v2_engine)
-      rescue StandardError
-        false
-      end
     end
   end
 end

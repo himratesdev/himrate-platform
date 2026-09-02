@@ -25,16 +25,11 @@
     return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
   }
   function initials(s) { s = (s || "").replace(/[^A-Za-zА-Яа-я0-9]/g, ""); return (s.slice(0, 1) || "?").toUpperCase(); }
-  // Flat shape, dual-contract (PR3b TI v2): v2 rows carry {erv (count), authenticity, band_color
-  // (green|yellow|red|grey|amber)}; v1 rows {erv_percent, erv_label_color, ti_score}.
-  function colorOf(c) { return (c && LABEL_COLOR[c.band_color || c.erv_label_color]) || "#9A9AA9"; }
-  function pctOf(c) { return c == null ? null : (c.authenticity != null ? c.authenticity : c.erv_percent); }
-  function realOf(c) {
-    if (!c) return null;
-    if (c.erv != null) return c.erv; // v2: native engine count
-    return (c.ccv != null && c.erv_percent != null) ? Math.round(c.ccv * c.erv_percent / 100) : null;
-  }
-  // Legal-safe ERV label derived from erv% (the endpoint gives only the colour) — matches ErvCalculator bands.
+  // Flat v2 shape: {erv (native count), authenticity, band_color (green|yellow|red|grey|amber)}.
+  function colorOf(c) { return (c && LABEL_COLOR[c.band_color]) || "#9A9AA9"; }
+  function pctOf(c) { return c == null ? null : c.authenticity; }
+  function realOf(c) { return c ? c.erv : null; }
+  // Legal-safe ERV label derived from erv% (the endpoint gives only the colour) — canonical band thresholds.
   function ervLabel(p) {
     if (p == null) return "—";
     if (p >= 90) return "Аудитория реальная";

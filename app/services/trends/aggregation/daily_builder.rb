@@ -57,24 +57,23 @@ module Trends
         TrendsDailyAggregate.upsert(attributes, unique_by: %i[channel_id date])
       end
 
-      # PR3b (T1-074): data-driven dual aggregation — v1 stats over v1 rows, v2 stats over v2 rows,
-      # every night, flag-free. Mixed cutover days populate both column families; endpoints COALESCE.
+      # V1-RETIRE: v2-only aggregation. The retired v1 TDA column families (ti_* /
+      # erv_*_percent / classification_at_end) are stop-written nil — readers moved to
+      # the authenticity_* / erv_avg_count / band_*_at_end family.
       def build_attributes(streams, tih)
-        tih_v1 = tih.where(engine_version: "v1")
-        tih_v2 = tih.where(engine_version: "v2")
-        ti_stats = ti_aggregates(tih_v1)
-        erv_stats = erv_aggregates(tih_v1)
         ccv_stats = ccv_aggregates(streams)
-        v2_stats = v2_aggregates(tih_v2)
+        v2_stats = v2_aggregates(tih.where(engine_version: "v2"))
 
         {
           channel_id: @channel_id,
           date: @date,
           streams_count: streams.count,
           categories: categories_breakdown(streams),
-          classification_at_end: latest_classification(tih_v1),
+          classification_at_end: nil,
+          ti_avg: nil, ti_std: nil, ti_min: nil, ti_max: nil,
+          erv_avg_percent: nil, erv_min_percent: nil, erv_max_percent: nil,
           schema_version: SCHEMA_VERSION
-        }.merge(ti_stats).merge(erv_stats).merge(ccv_stats).merge(v2_stats)
+        }.merge(ccv_stats).merge(v2_stats)
       end
 
       # authenticity_* (0-100, heir of ti_*) + erv_avg_count (native count) + band at end.
@@ -96,38 +95,6 @@ module Trends
           erv_avg_count: stats&.[](4)&.to_f&.round(2),
           band_row_at_end: band_row,
           band_color_at_end: band_color
-        }
-      end
-
-      def ti_aggregates(tih)
-        stats = tih.pick(
-          Arel.sql("AVG(trust_index_score)"),
-          Arel.sql("STDDEV_POP(trust_index_score)"),
-          Arel.sql("MIN(trust_index_score)"),
-          Arel.sql("MAX(trust_index_score)")
-        )
-        return { ti_avg: nil, ti_std: nil, ti_min: nil, ti_max: nil } if stats.nil?
-
-        {
-          ti_avg: stats[0]&.to_f&.round(2),
-          ti_std: stats[1]&.to_f&.round(2),
-          ti_min: stats[2]&.to_f&.round(2),
-          ti_max: stats[3]&.to_f&.round(2)
-        }
-      end
-
-      def erv_aggregates(tih)
-        stats = tih.where.not(erv_percent: nil).pick(
-          Arel.sql("AVG(erv_percent)"),
-          Arel.sql("MIN(erv_percent)"),
-          Arel.sql("MAX(erv_percent)")
-        )
-        return { erv_avg_percent: nil, erv_min_percent: nil, erv_max_percent: nil } if stats.nil?
-
-        {
-          erv_avg_percent: stats[0]&.to_f&.round(2),
-          erv_min_percent: stats[1]&.to_f&.round(2),
-          erv_max_percent: stats[2]&.to_f&.round(2)
         }
       end
 
@@ -155,9 +122,6 @@ module Trends
         streams.where.not(game_name: nil).group(:game_name).count
       end
 
-      def latest_classification(tih)
-        tih.order(calculated_at: :desc).pick(:classification)
-      end
     end
   end
 end

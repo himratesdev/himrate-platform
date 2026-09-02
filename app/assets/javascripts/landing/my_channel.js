@@ -74,11 +74,10 @@
       var rl = q(document, "Rel Label"); if (rl) rl.style.color = BAND_COLOR[band] || "#9A9AA9";
     }
 
-    // Real vs shown — v2 (post-cutover /card): authenticity = % real, erv = the native subtracted
-    // real-viewer COUNT (ccv = shown V). v1 legacy: erv_percent + erv_count (backed out when offline).
-    var isV2 = hl.engine_version === "v2";
-    var erv = isV2 ? hl.authenticity : hl.erv_percent; // % real
-    var ervCount = isV2 ? hl.erv : hl.erv_count;       // real-viewer count
+    // Real vs shown: authenticity = % real, erv = the native subtracted real-viewer COUNT
+    // (ccv = shown V). V1-RETIRE: the legacy erv_percent/erv_count readers are gone.
+    var erv = hl.authenticity;   // % real
+    var ervCount = hl.erv;       // real-viewer count
     var real, shown;
     if (hl.is_live && hl.ccv != null) {
       shown = hl.ccv;

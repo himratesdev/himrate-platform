@@ -12,18 +12,11 @@ class ChannelBlueprint < Blueprinter::Base
   # TrustIndexBlueprint is per-row engine-aware, so the pick only decides WHICH engine's latest row
   # renders.
   def self.latest_tih_for(channel)
-    engine = ti_v2_engine? ? "v2" : "v1"
     if channel.trust_index_histories.loaded?
-      channel.trust_index_histories.select { |t| t.engine_version == engine }.max_by(&:calculated_at)
+      channel.trust_index_histories.select { |t| t.engine_version == "v2" }.max_by(&:calculated_at)
     else
-      channel.trust_index_histories.where(engine_version: engine).order(calculated_at: :desc).first
+      channel.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
     end
-  end
-
-  def self.ti_v2_engine?
-    Flipper.enabled?(:ti_v2_engine)
-  rescue StandardError
-    false
   end
 
   # === Headline view (Guest — always available) ===

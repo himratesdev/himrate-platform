@@ -57,25 +57,22 @@ module Trends
           .map { |date, avg, std, min, max, cls, brow, bcolor| point_for(date, avg, std, min, max, cls, band_row: brow, band_color: bcolor) }
       end
 
-      # PR3b: per-row engine discrimination — each row emits its own engine's scalar (mixed series
-      # across the cutover stays continuous; ti key carries authenticity for v2 rows — same scale).
+      # V1-RETIRE: v2-only per-stream series — `ti` key carries authenticity (same 0-100 scale,
+      # legacy wire name kept for the chart readers).
       def per_stream_points
         from_ts, to_ts = range
         TrustIndexHistory
           .for_channel(channel.id)
-          .where(calculated_at: from_ts..to_ts)
-          .where("(engine_version = 'v1' AND trust_index_score IS NOT NULL) OR (engine_version = 'v2' AND authenticity IS NOT NULL)")
+          .where(calculated_at: from_ts..to_ts, engine_version: "v2")
+          .where.not(authenticity: nil)
           .order(:calculated_at)
-          .pluck(:calculated_at,
-                 Arel.sql("CASE WHEN engine_version = 'v2' THEN authenticity ELSE trust_index_score END"),
-                 :classification, :stream_id, :confidence, :engine_version, :band_row, :band_color)
-          .map do |ts, ti, cls, stream_id, confidence, engine, brow, bcolor|
+          .pluck(:calculated_at, :authenticity, :stream_id, :band_row, :band_color)
+          .map do |ts, auth, stream_id, brow, bcolor|
             point = {
-              date: ts.iso8601, ti: ti.to_f.round(2),
-              classification: cls, stream_id: stream_id, confidence: confidence&.to_f&.round(3),
-              engine_version: engine
+              date: ts.iso8601, ti: auth.to_f.round(2),
+              stream_id: stream_id, engine_version: "v2"
             }
-            point[:band] = { row: brow, color: bcolor, label_key: TrustIndex::V2::BandClassifier.label_key_for(brow) } if engine == "v2" && brow
+            point[:band] = { row: brow, color: bcolor, label_key: TrustIndex::V2::BandClassifier.label_key_for(brow) } if brow
             point
           end
       end

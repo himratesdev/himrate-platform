@@ -105,18 +105,17 @@ module Reputation
 
     # Final TIH per stream (DISTINCT ON), index_by stream_id. Mirrors BandService#window_ti_scores;
     # hits idx_tih_stream_calculated_id (stream_id, calculated_at DESC).
-    # PR3b (T1-074): per-row engine discrimination, IDENTICAL to BandService#window_ti_scores
-    # (MF-1 coherence — current.band must equal BandService#call). For v2 rows
-    # real_audience_pct == authenticity EXACTLY (A = ERV/V·100) — one value serves both.
+    # V1-RETIRE: v2-only, IDENTICAL to BandService#window_ti_scores (MF-1 coherence —
+    # current.band must equal BandService#call). real_audience_pct == authenticity
+    # EXACTLY (A = ERV/V·100) — one value serves both.
     def load_final_tih(stream_ids)
       return {} if stream_ids.empty?
 
       TrustIndexHistory
-        .where(stream_id: stream_ids)
+        .where(stream_id: stream_ids, engine_version: "v2")
         .select(<<~SQL.squish)
-          DISTINCT ON (stream_id) stream_id, engine_version,
-          CASE WHEN engine_version = 'v2' THEN authenticity ELSE trust_index_score END AS window_score,
-          CASE WHEN engine_version = 'v2' THEN authenticity ELSE erv_percent END AS audience_pct
+          DISTINCT ON (stream_id) stream_id,
+          authenticity AS window_score, authenticity AS audience_pct
         SQL
         .order(Arel.sql("stream_id, calculated_at DESC"))
         .index_by(&:stream_id)

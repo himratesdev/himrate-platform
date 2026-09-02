@@ -10,11 +10,10 @@
 # per-stream FINAL TIH only — it reads it here so it stays correct regardless of
 # how much intermediate TIH CleanupWorker has pruned. NEVER writeable (it's a view).
 #
-# Columns (verify against migration 20260720190000 — TI v2 recreate):
-#   stream_id (PK), channel_id, engine_version, trust_index_score, erv_percent (v1 bridge),
-#   authenticity, erv, erv_lo, erv_hi, band_row, band_sub, band_color, reason_codes,
-#   confirmed_anomaly, cold_start_tier, confidence_marker, ccv, confidence, signal_breakdown,
-#   calculated_at, trust_index_history_id.
+# Columns (verify against migration 20260902100000 — V1-RETIRE recreate):
+#   stream_id (PK), channel_id, engine_version, authenticity, erv, erv_lo, erv_hi,
+#   band_row, band_sub, band_color, reason_codes, confirmed_anomaly, cold_start_tier,
+#   confidence_marker, ccv, signal_breakdown, calculated_at, trust_index_history_id.
 
 class LatestTihPerStream < ApplicationRecord
   self.table_name = "latest_tih_per_stream"

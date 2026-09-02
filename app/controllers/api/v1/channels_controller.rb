@@ -125,40 +125,23 @@ module Api
           svg_url: svg_url
         }
 
-        if v2_engine?
-          ti = channel.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
-          render json: {
-            data: base.merge(
-              html: badge_html(channel, svg_url, ti&.erv),
-              erv: ti&.erv,
-              # Surface-audit sweep: canonical band {row, color, label_key} on the labeled surface;
-              # band_color kept for compat with earlier readers.
-              band: {
-                row: ti&.band_row || 5,
-                color: ti&.band_color || "grey",
-                label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
-                sub: ti&.band_sub
-              },
-              band_color: ti&.band_color || "grey",
-              engine_version: "v2"
-            )
-          }
-        else
-          ti = channel.trust_index_histories.where(engine_version: "v1").order(calculated_at: :desc).first
-          ti_score = ti&.trust_index_score&.to_f&.round(0) || 0
-          erv_data = ti ? TrustIndex::ErvCalculator.compute(
-            ti_score: ti.trust_index_score.to_f,
-            ccv: ti.ccv.to_i,
-            confidence: ti.confidence.to_f
-          ) : {}
-          render json: {
-            data: base.merge(
-              html: badge_html(channel, svg_url, ti_score),
-              ti_score: ti_score,
-              color: erv_data[:label_color] || "grey"
-            )
-          }
-        end
+        ti = channel.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
+        render json: {
+          data: base.merge(
+            html: badge_html(channel, svg_url, ti&.erv),
+            erv: ti&.erv,
+            # Surface-audit sweep: canonical band {row, color, label_key} on the labeled surface;
+            # band_color kept for compat with earlier readers.
+            band: {
+              row: ti&.band_row || 5,
+              color: ti&.band_color || "grey",
+              label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
+              sub: ti&.band_sub
+            },
+            band_color: ti&.band_color || "grey",
+            engine_version: "v2"
+          )
+        }
       end
 
       # TASK-035 FR-036: GET /api/v1/channels/:id/card — Channel Card data
@@ -214,17 +197,10 @@ module Api
       def badge_html(channel, svg_url, value)
         login = ERB::Util.html_escape(channel.login)
         # v2 alt-text: real-viewer count, no retired "Trust Index" scalar, no bot wording (legal).
-        # Surface-audit: resolved via I18n (RU variant exists); v1 branch = flag-OFF legacy, untouched.
-        alt = v2_engine? ? I18n.t("channels.badge_alt_v2", value: value || "—") : "HimRate Trust Index: #{value}"
+        alt = I18n.t("channels.badge_alt_v2", value: value || "—")
         %(<a href="https://himrate.com/channel/#{login}" target="_blank" rel="noopener">) +
           %(<img src="#{ERB::Util.html_escape(svg_url)}" alt="#{alt}" width="200" height="40" />) +
           %(</a>)
-      end
-
-      def v2_engine?
-        Flipper.enabled?(:ti_v2_engine)
-      rescue StandardError
-        false
       end
 
       # FR-007/011: Find channel by UUID, login, or twitch_id

@@ -154,8 +154,7 @@ module Brand
           # single source of truth: derive from the SQL real_pct (not the rounded avgs) so
           # real_pct + |bot_correction_pct| == 100 exactly (CR nit).
           bot_correction_pct: real_pct && shown_avg.positive? ? -(100 - real_pct).round(1) : nil,
-          # PR3b: label from the persisted band when present (5-color, legal-safe i18n); the
-          # ErvCalculator TI-scale resolver serves only pre-cutover rows. The raw v1
+          # Label from the persisted band (5-color, legal-safe i18n). The raw v1
           # `classification` enum is no longer emitted — no client read it, and v2-era
           # aggregate rows persist it as NULL (band_* is the verdict now).
           classification_label: classification_label_for(r.channel_id, ti_avg),
@@ -184,13 +183,13 @@ module Brand
                       .to_h { |r| [ r.channel_id, r[:band_row_at_end] ] }
     end
 
-    def classification_label_for(channel_id, ti_avg)
+    # Label from the persisted band only (V1-RETIRE: the ErvCalculator TI-scale fallback is
+    # gone — a window day without a band row honestly gets no label).
+    def classification_label_for(channel_id, _ti_avg)
       band_row = @latest_bands&.[](channel_id)
-      if band_row
-        I18n.t(TrustIndex::V2::BandClassifier.label_key_for(band_row), locale: :ru, default: nil)
-      elsif ti_avg
-        TrustIndex::ErvCalculator.resolve_label(ti_avg)[:ru]
-      end
+      return nil unless band_row
+
+      I18n.t(TrustIndex::V2::BandClassifier.label_key_for(band_row), locale: :ru, default: nil)
     end
   end
 end

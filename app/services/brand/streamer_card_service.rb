@@ -91,35 +91,7 @@ module Brand
     # overall classification (the engine's actual verdict). Per-signal norm/attention verdict deferred
     # (non-uniform value semantics — ADR DEC-3). Only signals actually present render.
     def layer2(channel)
-      return layer2_v2(channel) if v2_engine?
-
-      tih = TrustIndexHistory.where(channel_id: channel.id, engine_version: "v1").order(calculated_at: :desc).first
-      return { available: false } if tih.nil? || tih.signal_breakdown.blank?
-
-      checks = tih.signal_breakdown.filter_map do |key, v|
-        next unless v.is_a?(Hash)
-        value = fetch(v, "value")
-        next if value.nil?
-
-        {
-          signal: key,
-          label_ru: SIGNAL_LABELS_RU[key] || key,
-          value: value.to_f,
-          confidence: fetch(v, "confidence")&.to_f,
-          weight: fetch(v, "weight")&.to_f,
-          contribution: fetch(v, "contribution")&.to_f
-        }
-      end
-
-      {
-        available: true,
-        classification: tih.classification,
-        ti_score: tih.trust_index_score&.to_f,
-        checks_total: checks.size,
-        checks: checks,
-        calculated_at: tih.calculated_at&.iso8601,
-        basis: "trust_index_history.signal_breakdown"
-      }
+      layer2_v2(channel)
     end
 
     # PR3b (T1-074, M11a): v2 layer2 — the 6-row band + reason_codes replace the retired
@@ -147,81 +119,5 @@ module Brand
       }
     end
 
-    def v2_engine?
-      return @v2_engine if defined?(@v2_engine)
-
-      @v2_engine =
-        begin
-          Flipper.enabled?(:ti_v2_engine)
-        rescue StandardError
-          false
-        end
-    end
-
-    # Layer 3 — reputation band + trend + trajectory (the free trust-summary, T1-065) + read-only
-    # dispute status. HistoryService returns honest-empty (band nil) for cold-start.
-    def layer3(channel)
-      rep = Reputation::HistoryService.cached_for(channel)
-      current = rep[:current] || {}
-      {
-        band: current[:band],
-        band_label_ru: Brand::ReputationBands.label_ru(current[:band]),
-        tier: current[:tier],
-        stream_count: current[:stream_count],
-        trend: rep[:trend],
-        trajectory: rep[:real_audience_trajectory],
-        components: components_block(rep),
-        dispute: latest_open_dispute(channel)
-      }
-    end
-
-    # SRS §4A shape: the 3 public reputation components; follower_quality carries the honest stub flag.
-    def components_block(rep)
-      latest = rep[:components_history]&.last || {}
-      {
-        growth_pattern: latest[:growth_pattern],
-        engagement_consistency: latest[:engagement_consistency],
-        follower_quality: { score: latest[:follower_quality], stubbed: rep[:follower_quality_stubbed] }
-      }
-    end
-
-    def latest_open_dispute(channel)
-      dispute = ScoreDispute
-                .where(channel_id: channel.id, resolution_status: OPEN_DISPUTE_STATUSES)
-                .order(submitted_at: :desc)
-                .first
-      return nil unless dispute
-
-      { status: dispute.resolution_status, dispute_id: dispute.id, submitted_at: dispute.submitted_at&.iso8601 }
-    end
-
-    # Layer 5 — anomalies over the window. Anomaly is keyed by stream_id (DSV) → join through streams.
-    def layer5(channel)
-      Anomaly
-        .joins(:stream)
-        .where(streams: { channel_id: channel.id })
-        .where("anomalies.timestamp > ?", window_from)
-        .includes(:anomaly_attributions)
-        .order("anomalies.timestamp DESC")
-        .limit(ANOMALY_LIMIT)
-        .map do |a|
-          top = a.anomaly_attributions.max_by { |att| att.confidence.to_f }
-          {
-            at: a.timestamp&.iso8601,
-            type: a.anomaly_type,
-            cause: a.cause,
-            ccv_impact: a.ccv_impact,
-            attribution: top && { source: top.source, confidence: top.confidence&.to_f }
-          }
-        end
-    end
-
-    def window_from
-      @window_from ||= WINDOW_DAYS.days.ago.to_date
-    end
-
-    def fetch(hash, key)
-      hash[key].nil? ? hash[key.to_sym] : hash[key]
-    end
   end
 end

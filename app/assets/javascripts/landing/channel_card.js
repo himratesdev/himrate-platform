@@ -66,25 +66,10 @@
     //   • v2 headline: erv = the engine's subtracted real-viewer COUNT (native), ccv = V (shown),
     //     authenticity = % real, band.color = 5-colour verdict. shown−real = engine's F̂ — no
     //     client-side re-derivation.
-    //   • v1 headline (pre-flip): erv_count/erv_percent as before (shown backed out when offline).
     // Wording is legal-safe: neutral "скрытая разница" — never "боты/накрутка" (v3 doctrine).
-    var isV2 = hl.engine_version === "v2";
-    var ervPct = isV2 ? hl.authenticity : hl.erv_percent;
-    var live = !!hl.is_live && hl.ccv != null;
-    var shown, real;
-    if (isV2) {
-      real = hl.erv;
-      shown = hl.ccv != null ? hl.ccv : (real != null && ervPct ? Math.round(real / (ervPct / 100)) : null);
-    } else if (live) {
-      shown = hl.ccv;
-      real = ervPct != null ? Math.round(shown * ervPct / 100) : hl.erv_count;
-    } else if (hl.erv_count != null && ervPct != null && ervPct > 0) {
-      real = hl.erv_count;
-      shown = Math.round(real / (ervPct / 100));
-    } else {
-      real = hl.erv_count;
-      shown = hl.ccv; // may be null → "—"
-    }
+    var ervPct = hl.authenticity;
+    var real = hl.erv;
+    var shown = hl.ccv != null ? hl.ccv : (real != null && ervPct ? Math.round(real / (ervPct / 100)) : null);
     // Clamp at 0: v2 live shown (current CCV snapshot) can dip below the last-computed real
     // (row up to ~30s stale) — a negative "difference" is a display artifact, not data (CR SF-1).
     var bots = shown != null && real != null ? Math.max(0, shown - real) : null;
@@ -94,7 +79,7 @@
     // Offline card is last-stream data, not "now" — keep the label honest.
     if (!live) setText("L1 Label", "РЕАЛЬНЫЕ ЗРИТЕЛИ · ПОСЛЕДНИЙ ЭФИР");
 
-    var bandColor = isV2 ? (hl.band && hl.band.color) : hl.erv_label_color;
+    var bandColor = hl.band && hl.band.color;
     setText("L1 Real", fmt(real));
     var realNode = el("L1 Real");
     if (realNode && bandColor && LABEL_COLOR[bandColor]) {

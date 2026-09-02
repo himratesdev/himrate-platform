@@ -25,7 +25,7 @@ module Streams
     def build_from_psr(psr)
       # PR3b: v2 PSRs stop-write the retired scalars (nil) — enrich from the stream's final v2 TIH
       # (band/authenticity/interval live there, PSR = denormalized cache). v1 PSRs render as before.
-      trust_index = if v2_engine?
+      trust_index = begin
         tih = final_v2_tih
         # Surface-audit sweep: +label_key, grey fallback instead of nil, and PSR/assembled parity
         # (cold_start_tier/confidence_marker/reason_codes — the two v2 branches of the same
@@ -40,12 +40,6 @@ module Streams
           confidence_marker: tih&.confidence_marker,
           reason_codes: tih&.reason_codes || [],
           engine_version: "v2"
-        }
-      else
-        {
-          ti_score: psr.trust_index_final&.to_f,
-          erv_percent: psr.erv_percent_final&.to_f&.clamp(0.0, 100.0),
-          erv_count: psr.erv_final
         }
       end
 
@@ -65,34 +59,7 @@ module Streams
     end
 
     def build_assembled
-      return build_assembled_v2 if v2_engine?
-
-      ti = @stream.trust_index_histories.where(engine_version: "v1").order(calculated_at: :desc).first
-      erv = ErvEstimate.where(stream: @stream).order(timestamp: :desc).first
-
-      {
-        stream: stream_detail,
-        trust_index: ti ? {
-          ti_score: ti.trust_index_score.to_f,
-          erv_percent: ti.erv_percent&.to_f&.clamp(0.0, 100.0),
-          erv_count: ti.ccv.to_i > 0 ? (ti.ccv * ti.trust_index_score.to_f / 100.0).round : nil,
-          classification: ti.classification,
-          cold_start_status: ti.cold_start_status,
-          confidence: ti.confidence&.to_f,
-          signal_breakdown: ti.signal_breakdown
-        } : nil,
-        erv: erv ? {
-          erv_count: erv.erv_count,
-          erv_percent: erv.erv_percent.to_f.clamp(0.0, 100.0),
-          confidence: erv.confidence&.to_f,
-          label: erv.label
-        } : nil,
-        signals: signals,
-        chat_stats: chat_stats,
-        anomalies: anomalies,
-        ccv_timeline: ccv_timeline,
-        raids: raids
-      }
+      build_assembled_v2
     end
 
     # v2 fallback (no PSR yet): read the final v2 TIH directly; ErvEstimate is retired (v2 writes
@@ -137,17 +104,6 @@ module Streams
         label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row), sub: tih.band_sub }
     end
 
-    def v2_engine?
-      return @v2_engine if defined?(@v2_engine)
-
-      @v2_engine =
-        begin
-          Flipper.enabled?(:ti_v2_engine)
-        rescue StandardError
-          false
-        end
-    end
-
     def stream_detail
       # PR-A1: peak_ccv / avg_ccv / duration_ms derived (columns dropped, single source).
       {
@@ -170,25 +126,8 @@ module Streams
     # JSON column. The `signals` PG table is dead-write since TrustIndex::Engine refactor.
     # Same fix pattern as Trust::ShowService + PostStreamWorker.
     def signals
-      # PR3b: v2 rows carry no signal_breakdown — reason_codes (in trust_index above) replace it.
-      return [] if v2_engine?
-
-      tih = TrustIndexHistory.where(stream_id: @stream.id, engine_version: "v1").order(calculated_at: :desc).first
-      return [] unless tih
-
-      breakdown = tih.signal_breakdown
-      return [] unless breakdown.is_a?(Hash)
-
-      breakdown.map do |signal_type, data|
-        next nil unless data.is_a?(Hash)
-        {
-          type: signal_type,
-          value: data["value"]&.to_f,
-          confidence: data["confidence"]&.to_f,
-          weight: data["weight"]&.to_f,
-          metadata: nil
-        }
-      end.compact
+      # v2 rows carry no signal_breakdown — reason_codes (in trust_index above) replace it.
+      []
     end
 
     def chat_stats

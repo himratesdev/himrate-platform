@@ -46,60 +46,23 @@ module Trust
         .order(:timestamp)
         .pluck(:timestamp, :ccv_count)
 
-      # TI histories for the same period (PR3b: engine-aware — v2 plucks the native contract)
-      ti_points = if v2_engine?
-        TrustIndexHistory
-          .where(channel_id: @channel.id, engine_version: "v2")
-          .where("calculated_at > ?", cutoff)
-          .order(:calculated_at)
-          .pluck(:calculated_at, :erv, :authenticity, :band_color)
-      else
-        TrustIndexHistory
-          .where(channel_id: @channel.id, engine_version: "v1")
-          .where("calculated_at > ?", cutoff)
-          .order(:calculated_at)
-          .pluck(:calculated_at, :trust_index_score, :erv_percent)
-      end
+      # v2 TI histories for the same period (native contract: erv count + authenticity + band).
+      ti_points = TrustIndexHistory
+                  .where(channel_id: @channel.id, engine_version: "v2")
+                  .where("calculated_at > ?", cutoff)
+                  .order(:calculated_at)
+                  .pluck(:calculated_at, :erv, :authenticity, :band_color)
 
       # Merge by nearest timestamp (CCV as base, TI interpolated)
-      v2_engine? ? merge_timeseries_v2(ccv_points, ti_points) : merge_timeseries(ccv_points, ti_points)
+      merge_timeseries_v2(ccv_points, ti_points)
     end
 
-    # 7d: daily aggregates (last record per day)
-    # PR3b: v2 branch aggregates authenticity (%, scale-safe across days) — averaging raw erv
+    # 7d: daily aggregates of authenticity (%, scale-safe across days) — averaging raw erv
     # COUNTS across days with different V baselines is meaningless; erv arrives per-point in 30m.
     def points_7d
-      cutoff = 7.days.ago
-
-      return points_7d_v2(cutoff) if v2_engine?
-
-      TrustIndexHistory
-        .where(channel_id: @channel.id, engine_version: "v1")
-        .where("calculated_at > ?", cutoff)
-        .select(
-          "DATE(calculated_at) as day",
-          "AVG(trust_index_score) as avg_ti",
-          "AVG(erv_percent) as avg_erv",
-          "MAX(ccv) as max_ccv",
-          "COUNT(*) as sample_count"
-        )
-        .group("DATE(calculated_at)")
-        .order("day")
-        .map do |row|
-          {
-            timestamp: row.day.to_s,
-            ccv: row.max_ccv&.to_i,
-            erv_count: nil, # daily aggregate — no single erv_count
-            erv_percent: row.avg_erv&.to_f&.round(1),
-            ti_score: row.avg_ti&.to_f&.round(1)
-          }
-        end
+      points_7d_v2(7.days.ago)
     end
 
-    # TASK-085 FR-023: fix broken Anomaly query (channel_id/detected_at/severity/delta_value
-    # columns не существуют в actual Anomaly schema — pre-fix wrapped в silent rescue, dead code).
-    # Correct mapping: Anomaly belongs_to :stream, stream belongs_to :channel.
-    # Filter via JOIN; timestamp column instead of detected_at; expose details jsonb instead of severity.
     def build_anomalies
       cutoff = @period == "30m" ? 30.minutes.ago : 7.days.ago
 
@@ -162,43 +125,6 @@ module Trust
           erv_count: ti_row&.[](1)&.round,
           authenticity: ti_row&.[](2)&.to_f&.round(1),
           band_color: ti_row&.[](3)
-        }
-      end
-    end
-
-    def v2_engine?
-      return @v2_engine if defined?(@v2_engine)
-
-      @v2_engine =
-        begin
-          Flipper.enabled?(:ti_v2_engine)
-        rescue StandardError
-          false
-        end
-    end
-
-    def merge_timeseries(ccv_points, ti_points)
-      return [] if ccv_points.empty?
-
-      ti_index = 0
-      ccv_points.map do |ts, ccv|
-        # Find nearest TI point
-        while ti_index < ti_points.size - 1 &&
-              ti_points[ti_index + 1][0] <= ts
-          ti_index += 1
-        end
-
-        ti_row = ti_points[ti_index]
-        ti_score = ti_row&.[](1)&.to_f
-        erv_percent = ti_row&.[](2)&.to_f
-        erv_count = ti_score && ccv ? (ccv * ti_score / 100.0).round : nil
-
-        {
-          timestamp: ts.iso8601,
-          ccv: ccv&.to_i,
-          erv_count: erv_count,
-          erv_percent: erv_percent&.round(1),
-          ti_score: ti_score&.round(1)
         }
       end
     end

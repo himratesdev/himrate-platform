@@ -7,8 +7,8 @@
 class PostStreamNotificationService
   # FR-006: Broadcast stream_ended via Action Cable (TrustChannel).
   # Includes mini-summary so Extension can show notification without extra API call.
-  # PR3b (T1-074, C1): under ti_v2_engine the summary is {erv, erv_interval, band} — ti_score /
-  # erv_percent retired (T2 handler reads message.erv / message.erv_interval with cache fallbacks).
+  # The summary is {erv, erv_interval, band} — v1 ti_score/erv_percent retired
+  # (T2 handler reads message.erv / message.erv_interval with cache fallbacks).
   # `tih:` = the stream's FINAL v2 TIH row (PSR has no interval columns); nil-safe.
   def self.broadcast_stream_ended(stream, report = nil, tih: nil)
     channel = stream.channel
@@ -26,39 +26,26 @@ class PostStreamNotificationService
       timestamp: Time.current.iso8601
     }
 
-    if ti_v2_engine?
-      # Surface-audit sweep: canonical band {row, color, label_key, sub} (label_key derived —
-      # TIH stores no label_key column) with the grey fallback shape instead of nil.
-      band = if tih&.band_row
-        { row: tih.band_row, color: tih.band_color,
-          label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row), sub: tih.band_sub }
-      else
-        { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil }
-      end
-      payload.merge!(
-        erv: report&.erv_final,
-        erv_interval: tih&.erv_lo ? { lo: tih.erv_lo, hi: tih.erv_hi } : nil,
-        band: band,
-        engine_version: "v2"
-      )
+    # Surface-audit sweep: canonical band {row, color, label_key, sub} (label_key derived —
+    # TIH stores no label_key column) with the grey fallback shape instead of nil.
+    band = if tih&.band_row
+      { row: tih.band_row, color: tih.band_color,
+        label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row), sub: tih.band_sub }
     else
-      payload.merge!(
-        ti_score: report&.trust_index_final&.to_f,
-        erv_percent: report&.erv_percent_final&.to_f
-      )
+      { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil }
     end
+    payload.merge!(
+      erv: report&.erv_final,
+      erv_interval: tih&.erv_lo ? { lo: tih.erv_lo, hi: tih.erv_hi } : nil,
+      band: band,
+      engine_version: "v2"
+    )
 
     TrustChannel.broadcast_to(channel, payload)
   rescue StandardError => e
     Rails.logger.warn("PostStreamNotificationService: broadcast_stream_ended failed — #{e.message}")
   end
 
-  def self.ti_v2_engine?
-    Flipper.enabled?(:ti_v2_engine)
-  rescue StandardError
-    false
-  end
-  private_class_method :ti_v2_engine?
 
   # FR-009: Broadcast stream_expiring warning (1h before 18h window closes).
   def self.broadcast_stream_expiring(stream)

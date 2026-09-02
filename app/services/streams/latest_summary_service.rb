@@ -21,7 +21,7 @@ module Streams
       return NOT_FOUND unless stream
 
       payload = StreamSummaryBlueprint.render_as_hash(stream)
-      payload.merge!(v2_verdict_block(stream)) if v2_engine?
+      payload.merge!(v2_verdict_block(stream))
       meta = build_meta(stream)
 
       { data: payload, meta: meta }
@@ -46,12 +46,6 @@ module Streams
         band: band,
         engine_version: "v2"
       }
-    end
-
-    def v2_engine?
-      Flipper.enabled?(:ti_v2_engine)
-    rescue StandardError
-      false
     end
 
     def latest_completed_stream

@@ -38,13 +38,8 @@ module Watchlists
           tracked_count: ch_ids.count { |cid| tracked_set.include?(cid) },
           total: ch_ids.size
         }
-        stats = if v2_engine?
-          a_values = ch_ids.filter_map { |cid| ti_map[cid]&.authenticity&.to_f }
-          base.merge(avg_authenticity: a_values.any? ? (a_values.sum / a_values.size).round(1) : nil)
-        else
-          erv_values = ch_ids.filter_map { |cid| ti_map[cid]&.erv_percent&.to_f }
-          base.merge(avg_erv: erv_values.any? ? (erv_values.sum / erv_values.size).round(1) : nil)
-        end
+        a_values = ch_ids.filter_map { |cid| ti_map[cid]&.authenticity&.to_f }
+        stats = base.merge(avg_authenticity: a_values.any? ? (a_values.sum / a_values.size).round(1) : nil)
         [ wl_id, stats ]
       end
     end
@@ -52,42 +47,19 @@ module Watchlists
     private
 
     def empty_stats_for(wl_ids)
-      empty = if v2_engine?
-        { avg_authenticity: nil, live_count: 0, tracked_count: 0, total: 0 }
-      else
-        { avg_erv: nil, live_count: 0, tracked_count: 0, total: 0 }
-      end
+      empty = { avg_authenticity: nil, live_count: 0, tracked_count: 0, total: 0 }
       wl_ids.to_h { |id| [ id, empty ] }
     end
 
     # CR #425 N-4 + CR #427 Nit-1: SELECT only what this service reads — stats are aggregate-only
-    # (v2 reads authenticity, v1 reads erv_percent; channel_id/calculated_at drive DISTINCT ON).
+    # (authenticity only; channel_id/calculated_at drive DISTINCT ON).
     # The per-row label contract lives in EnrichmentService, not here.
     def latest_ti_for_channels(channel_ids)
-      if v2_engine?
-        TrustIndexHistory
-          .where(channel_id: channel_ids, engine_version: "v2")
-          .select("DISTINCT ON (channel_id) channel_id, authenticity, calculated_at")
-          .order(:channel_id, calculated_at: :desc)
-          .index_by(&:channel_id)
-      else
-        TrustIndexHistory
-          .where(channel_id: channel_ids, engine_version: "v1")
-          .select("DISTINCT ON (channel_id) channel_id, erv_percent, calculated_at")
-          .order(:channel_id, calculated_at: :desc)
-          .index_by(&:channel_id)
-      end
-    end
-
-    def v2_engine?
-      return @v2_engine if defined?(@v2_engine)
-
-      @v2_engine =
-        begin
-          Flipper.enabled?(:ti_v2_engine)
-        rescue StandardError
-          false
-        end
+      TrustIndexHistory
+        .where(channel_id: channel_ids, engine_version: "v2")
+        .select("DISTINCT ON (channel_id) channel_id, authenticity, calculated_at")
+        .order(:channel_id, calculated_at: :desc)
+        .index_by(&:channel_id)
     end
 
     def live_channel_ids(channel_ids)

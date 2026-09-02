@@ -22,21 +22,9 @@ module Api
       def show
         channel = Channel.find_by(id: params[:channel_id]) || Channel.find_by!(login: params[:channel_id])
 
-        if v2_engine?
-          ti = channel.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
-          color = BAND_HEX.fetch(ti&.band_color, "#6b7280")
-          value = ti&.erv ? "ERV #{ti.erv}" : "—"
-        else
-          ti = channel.trust_index_histories.where(engine_version: "v1").order(calculated_at: :desc).first
-          ti_score = ti&.trust_index_score&.to_f&.round(0) || 0
-          color = case ti_score
-          when 80..100 then "#22c55e"
-          when 50..79 then "#eab308"
-          when 25..49 then "#f97316"
-          else "#ef4444"
-          end
-          value = "TI #{ti_score}"
-        end
+        ti = channel.trust_index_histories.where(engine_version: "v2").order(calculated_at: :desc).first
+        color = BAND_HEX.fetch(ti&.band_color, "#6b7280")
+        value = ti&.erv ? "ERV #{ti.erv}" : "—"
 
         svg = <<~SVG
           <svg xmlns="http://www.w3.org/2000/svg" width="200" height="40">
@@ -56,11 +44,6 @@ module Api
 
       private
 
-      def v2_engine?
-        Flipper.enabled?(:ti_v2_engine)
-      rescue StandardError
-        false
-      end
     end
   end
 end
