@@ -2,6 +2,8 @@
 # Invokes trends:visual_qa:{seed,clear,status} rake task на staging app container
 # через `kamal app exec -d staging`. Zero PAT exchange с локалкой — CI uses
 # существующий KAMAL_REGISTRY_PASSWORD из repo secrets.
+# NB: deliberately NOT on the tailnet-ssh composite — kamal needs its own `Host *` SSH
+# config; only the Tailscale join step is inlined (P2 CR iter-1).
 #
 # Staging-only: destination hardcoded, production path невозможен. Additional belt:
 # Rails.env.production? guard в DataSeeder raises если кто-то попытается override.

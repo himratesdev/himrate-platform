@@ -7,8 +7,9 @@ name: host-safety-baseline
 # wedged (no ping/SSH/HTTP ~6h). This job runs read-only every 15 min and turns RED
 # (→ GitHub notifies) the moment a host-safety invariant is violated.
 #
-# It is READ-ONLY by construction — no docker update / no host writes. Remediation lives
-# in hostkey-probe.yml (gated apply_bft_caps / add_swap manual steps).
+# It is READ-ONLY by construction — no docker update / no host writes. Remediation is a
+# manual `ssh himrate` procedure (the HOSTKEY-era hostkey-probe.yml one-click path is
+# archived — that box is dead; see the FAIL messages below for the exact commands).
 #
 # KEY invariant it guards: `docker update` CPU/mem caps do NOT survive container
 # recreation. When the bft developer redeploys, the emergency caps vanish and the host
@@ -42,7 +43,10 @@ jobs:
           SWAP_KB=$(awk '/SwapTotal/{print $2}' /proc/meminfo)
           if [ "${SWAP_KB:-0}" -eq 0 ]; then
             echo "FAIL  swap=0 — no OOM cushion; a memory spike detonates OOM instead of paging."
-            echo "      Fix (one-click): gh workflow run hostkey-probe.yml --ref probe/vps-cpu -f add_swap=true"
+            echo "      Fix (manual, home server): ssh himrate, then:"
+            echo "        sudo fallocate -l 4G /swapfile && sudo chmod 600 /swapfile"
+            echo "        sudo mkswap /swapfile && sudo swapon /swapfile"
+            echo "        echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab   # persist"
             FAIL=1
           else
             echo "ok    swap = $((SWAP_KB/1024)) MB"
@@ -93,7 +97,9 @@ jobs:
               NANO=$(docker inspect "$c" --format '{{.HostConfig.NanoCpus}}' 2>/dev/null || echo 0)
               MEM=$(docker inspect "$c" --format '{{.HostConfig.Memory}}' 2>/dev/null || echo 0)
               if [ "${NANO:-0}" -eq 0 ]; then
-                echo "FAIL  $c has cpus=0 (UNLIMITED CPU) — caps lost (redeploy?). Re-apply: hostkey-probe.yml -f apply_bft_caps=true"
+                echo "FAIL  $c has cpus=0 (UNLIMITED CPU). HOSTKEY-era co-tenant guard: no bft-/xray"
+                echo "      container should exist on the home server AT ALL — find who started it"
+                echo "      (docker inspect) before capping; the old apply_bft_caps path is archived."
                 FAIL=1
               fi
               if [ "${MEM:-0}" -eq 0 ]; then

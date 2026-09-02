@@ -6,6 +6,77 @@
 # illustrative floor; this task asserts them on whatever a flip's data-write actually produced. Run it
 # in EVERY LLR flip runbook, AFTER seeding, BEFORE declaring the flip done: a bad seed that stacks a
 # sub-confirmed temporal tier into public naming exits non-zero here (fail-loud), never in production.
+# CR P2 iter-1 (SF3): helpers extracted from `def`s inside the `task do` blocks — those define
+# methods on Object and leak into every process that loads the tasks (rspec included), and the
+# task-local UPPERCASE names were top-level constants that reassigned on repeat invoke. The task
+# bodies below stay byte-close to the workflow heredocs; only the call sites gained a `tv.` receiver.
+module TiV2Calibration
+  module_function
+
+  def pct(a, p)
+    return nil if a.nil? || a.empty?
+    s = a.sort
+    s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
+  end
+
+  def vbucket(v)
+    return "0" if v.nil? || v <= 0
+    return "0-1k" if v < 1000
+    return "1k-5k" if v < 5000
+    return "5k-20k" if v < 20000
+    "20k+"
+  end
+
+  def chat_mode(cfg)
+    return "open" unless cfg
+    return "sub-only" if cfg.subs_only_enabled
+    fol = cfg.followers_only_duration_min
+    return "followers-only" if fol && fol >= 0
+    return "slow" if cfg.slow_mode_seconds.to_i.positive?
+    return "emote-only" if cfg.emote_only_enabled
+    "open"
+  end
+
+  def amber(bands) = bands.select { |k, _| k.start_with?("amber") }.values.sum
+
+  def accus(bands) = bands.select { |k, _| k.start_with?("red") || k.start_with?("yellow") }.values.sum
+
+  # Live honest RU cohort band mix via the REAL engine (reads the seeded cells through Registry/cell
+  # resolver). c_hard=false honest anchors only. Returns [band_mix, n].
+  def honest_scan(n_target)
+    cb = TrustIndex::ContextBuilder
+    live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(1000).to_a
+    bands = Hash.new(0); n = 0
+    live.each do |s|
+      break if n >= n_target
+      t = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(calculated_at: :desc).first
+      next unless t && t.c_hard == false
+      ctx = cb.build(s)
+      roster, v_w, n_w = cb.windowed_inputs(s)
+      v2c = cb.build_v2(s, ctx)
+      next if v2c.v.nil? || v2c.v <= 0
+      wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w) : v2c
+      res = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
+      bands["#{res.band&.color}/#{res.band&.row}"] += 1
+      n += 1
+    rescue StandardError
+      nil
+    end
+    [ bands, n ]
+  end
+
+  def upsert!(rows)
+    rows.each do |r|
+      b = CalibrationCellBaseline.find_or_initialize_by(
+        category: r["cat"], v_bucket: r["vb"], chat_mode: r["cm"], language: r["lang"]
+      )
+      b.assign_attributes(rho_star: r["star"], rho_lo: r["lo"], rho_hi: r["hi"],
+                          sample_size: r["n"], calibrated: true)
+      b.save!
+    end
+  end
+end
+
 namespace :ti_v2 do
   desc "Verify the L0 LLR naming-stack invariants (I1/I2/I3) on the live DB-merged table"
   task verify_llr_invariants: :environment do
@@ -56,33 +127,10 @@ namespace :ti_v2 do
     require "json"
     require "set"
 
+    tv = TiV2Calibration
     # P0.5: pool ONLY one ρ_obs convention (cumulative vs windowed) — mixing corrupts ρ*. Pre-P0.5
     # shadow lines have no v2_rho_conv key → treated as "cumulative" (they predate the flag).
-    WANTED_CONV = ENV.fetch("MINE_CONV", "cumulative")
-
-    def pct(a, p)
-      return nil if a.nil? || a.empty?
-      s = a.sort
-      s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
-    end
-
-    def vbucket(v)
-      return "0" if v.nil? || v <= 0
-      return "0-1k" if v < 1000
-      return "1k-5k" if v < 5000
-      return "5k-20k" if v < 20000
-      "20k+"
-    end
-
-    def chat_mode(cfg)
-      return "open" unless cfg
-      return "sub-only" if cfg.subs_only_enabled
-      fol = cfg.followers_only_duration_min
-      return "followers-only" if fol && fol >= 0
-      return "slow" if cfg.slow_mode_seconds.to_i.positive?
-      return "emote-only" if cfg.emote_only_enabled
-      "open"
-    end
+    wanted_conv = ENV.fetch("MINE_CONV", "cumulative")
 
     # ===== parse shadow lines → per-stream samples =====
     samples = Hash.new { |h, k| h[k] = { rho: [], v: [], div: [] } }
@@ -95,7 +143,7 @@ namespace :ti_v2 do
       rho = j["v2_rho_obs"]
       next if rho.nil? || rho.to_f <= 0 # pre-#384 lines / offline streams — skip
       conv = j["v2_rho_conv"] || "cumulative" # P0.5: nil = pre-stamp line = cumulative
-      (skipped_conv += 1; next) unless conv == WANTED_CONV
+      (skipped_conv += 1; next) unless conv == wanted_conv
       sid = j["stream_id"]
       next unless sid
       samples[sid][:rho] << rho.to_f
@@ -104,7 +152,7 @@ namespace :ti_v2 do
       samples[sid][:div] << j["v2_ccv_chat_divergence"].to_f if j["v2_ccv_chat_divergence"]
       usable += 1
     end
-    puts "convention filter: WANTED=#{WANTED_CONV} (skipped #{skipped_conv} other-convention lines)"
+    puts "convention filter: WANTED=#{wanted_conv} (skipped #{skipped_conv} other-convention lines)"
     puts "shadow lines: #{total} total, #{usable} usable, #{samples.size} distinct streams"
 
     # ===== honest-anchor filter (mirrors ti-v2-rho-build hygiene) =====
@@ -131,10 +179,10 @@ namespace :ti_v2 do
       spam = flagged.reject { |_, d| d[:bot_type] == "utility" }
       (rejected[:spam] += 1; next) if spam.size.to_f / roster.size > 0.05
 
-      rho_med = pct(data[:rho], 0.50)
-      v_med = pct(data[:v], 0.50) || 0
+      rho_med = tv.pct(data[:rho], 0.50)
+      v_med = tv.pct(data[:v], 0.50) || 0
       cat = (TrustIndex::Signals::CategoryResolver.resolve(s.game_name) rescue "default")
-      cell = [ cat, vbucket(v_med), chat_mode(ch.channel_protection_config), (s.language.presence || "default") ].join("|")
+      cell = [ cat, tv.vbucket(v_med), tv.chat_mode(ch.channel_protection_config), (s.language.presence || "default") ].join("|")
       cell_rho[cell] << rho_med
       all_rho << rho_med
       # phi_inflation: the honest anchor's PEAK divergence over the window (0 if the corroborator
@@ -155,10 +203,10 @@ namespace :ti_v2 do
       cat, vb, cm, lang = cell.split("|")
       puts format("  [ %-16s %-8s %-16s %-6s ] n=%-3d ρ*=%.4f ρ_lo=%.4f ρ_hi=%.4f",
                   "\"#{cat}\",", "\"#{vb}\",", "\"#{cm}\",", "\"#{lang}\",", a.size, # lang VERBATIM — the .downcase cosmetic caused the ru/RU seed-miss bug
-                  pct(a, 0.50), pct(a, 0.10), pct(a, 0.90))
+                  tv.pct(a, 0.50), tv.pct(a, 0.10), tv.pct(a, 0.90))
     end
-    puts "\nGLOBAL: n=#{all_rho.size} ρ_lo=#{pct(all_rho, 0.10)&.round(4)} ρ*=#{pct(all_rho, 0.50)&.round(4)} ρ_hi=#{pct(all_rho, 0.90)&.round(4)}"
-    puts "→ update _tasks/T1-074/gate0-seed.rb CELLS with the n>=8 rows above."
+    puts "\nGLOBAL: n=#{all_rho.size} ρ_lo=#{tv.pct(all_rho, 0.10)&.round(4)} ρ*=#{tv.pct(all_rho, 0.50)&.round(4)} ρ_hi=#{tv.pct(all_rho, 0.90)&.round(4)}"
+    puts "→ pool the n>=8 rows into verivio-clode/_tasks/T1-074/rho-raw/ (aggregate_windowed.rb) → CELLS_JSON for ti_v2:rho_reseed."
 
     # ===== phi_inflation calibration: honest-anchor divergence distribution =====
     # The inflation corroborator (dormant) fires when ccv_chat_divergence >= phi_inflation (∧ ¬raid).
@@ -169,8 +217,8 @@ namespace :ti_v2 do
     puts "  honest anchors: #{anchor_div_max.size} | with any divergence (>0): #{nz.size}"
     if anchor_div_max.any?
       puts format("  per-anchor MAX divergence: P50=%.4f P90=%.4f P95=%.4f P99=%.4f max=%.4f",
-                  pct(anchor_div_max, 0.50) || 0, pct(anchor_div_max, 0.90) || 0, pct(anchor_div_max, 0.95) || 0,
-                  pct(anchor_div_max, 0.99) || 0, anchor_div_max.max || 0)
+                  tv.pct(anchor_div_max, 0.50) || 0, tv.pct(anchor_div_max, 0.90) || 0, tv.pct(anchor_div_max, 0.95) || 0,
+                  tv.pct(anchor_div_max, 0.99) || 0, anchor_div_max.max || 0)
       [ 0.2, 0.3, 0.5 ].each do |phi|
         trip = anchor_div_max.count { |d| d >= phi }
         puts format("  phi_inflation=%.2f → %d/%d honest anchors TRIP C_inflation (%.1f%% honest false-positive)",
@@ -188,82 +236,46 @@ namespace :ti_v2 do
   task rho_reseed: :environment do
     $stdout.sync = true
     require "json"
-    MODE   = ENV.fetch("RESEED_MODE", "dryrun")
-    HN     = ENV.fetch("HONEST_SAMPLE", "80").to_i.clamp(20, 300)
-    ROWS   = JSON.parse(ENV.fetch("CELLS_JSON", "[]")) rescue []
-    CB = TrustIndex::ContextBuilder
-    abort "no cells provided (cells_json empty)" if ROWS.empty?
+    tv   = TiV2Calibration
+    mode = ENV.fetch("RESEED_MODE", "dryrun")
+    hn   = ENV.fetch("HONEST_SAMPLE", "80").to_i.clamp(20, 300)
+    rows = JSON.parse(ENV.fetch("CELLS_JSON", "[]")) rescue []
+    abort "no cells provided (cells_json empty)" if rows.empty?
 
-    def amber(bands) bands.select { |k, _| k.start_with?("amber") }.values.sum end
-    def accus(bands) bands.select { |k, _| k.start_with?("red") || k.start_with?("yellow") }.values.sum end
 
-    # Live honest RU cohort band mix via the REAL engine (reads the seeded cells through Registry/cell
-    # resolver). c_hard=false honest anchors only. Returns [band_mix, n].
-    def honest_scan(n_target)
-      live = Stream.where(ended_at: nil).where(language: "RU").order(started_at: :desc).limit(1000).to_a
-      bands = Hash.new(0); n = 0
-      live.each do |s|
-        break if n >= n_target
-        t = TrustIndexHistory.where(stream_id: s.id, engine_version: "v2").order(calculated_at: :desc).first
-        next unless t && t.c_hard == false
-        ctx = CB.build(s)
-        roster, v_w, n_w = CB.windowed_inputs(s)
-        v2c = CB.build_v2(s, ctx)
-        next if v2c.v.nil? || v2c.v <= 0
-        wctx = v_w ? v2c.with(l2_roster_usernames: roster, v_w: v_w, n_roster: n_w) : v2c
-        res = TrustIndex::V2::Engine.compute(context: wctx, k: Calibration::Registry.load)
-        bands["#{res.band&.color}/#{res.band&.row}"] += 1
-        n += 1
-      rescue StandardError
-        nil
-      end
-      [ bands, n ]
-    end
+    puts "===== ρ* RE-SEED windowed MODE=#{mode} — #{rows.size} cells @ #{Time.current.iso8601} ====="
+    rows.each { |r| puts "  #{r['cat']}|#{r['vb']}|#{r['cm']}|#{r['lang']} → rho*=#{r['star']} lo=#{r['lo']} hi=#{r['hi']} n=#{r['n']}" }
 
-    def upsert!(rows)
-      rows.each do |r|
-        b = CalibrationCellBaseline.find_or_initialize_by(
-          category: r["cat"], v_bucket: r["vb"], chat_mode: r["cm"], language: r["lang"]
-        )
-        b.assign_attributes(rho_star: r["star"], rho_lo: r["lo"], rho_hi: r["hi"],
-                            sample_size: r["n"], calibrated: true)
-        b.save!
-      end
-    end
-
-    puts "===== ρ* RE-SEED windowed MODE=#{MODE} — #{ROWS.size} cells @ #{Time.current.iso8601} ====="
-    ROWS.each { |r| puts "  #{r['cat']}|#{r['vb']}|#{r['cm']}|#{r['lang']} → rho*=#{r['star']} lo=#{r['lo']} hi=#{r['hi']} n=#{r['n']}" }
-
-    if MODE == "dryrun"
-      before, nb = honest_scan(HN)
+    if mode == "dryrun"
+      before, nb = tv.honest_scan(hn)
       ActiveRecord::Base.transaction do
-        upsert!(ROWS)
-        after, na = honest_scan(HN)
+        tv.upsert!(rows)
+        after, na = tv.honest_scan(hn)
         puts "\n-- honest band mix BEFORE: #{before.sort_by { |_, v| -v }.to_h} (n=#{nb})"
         puts "-- honest band mix AFTER (simulated, rolls back): #{after.sort_by { |_, v| -v }.to_h} (n=#{na})"
-        puts "-- honest AMBER #{amber(before)}→#{amber(after)} (want DOWN — false-AMBER cleanup); honest RED/YELLOW after=#{accus(after)} (want 0)"
-        safe = amber(after) <= amber(before) && accus(after) == 0
+        puts "-- honest AMBER #{tv.amber(before)}→#{tv.amber(after)} (want DOWN — false-AMBER cleanup); honest RED/YELLOW after=#{tv.accus(after)} (want 0)"
+        safe = tv.amber(after) <= tv.amber(before) && tv.accus(after) == 0
         puts(safe ? "\n✅ DRYRUN SAFE → dispatch MODE=apply" : "\n🔴 DRYRUN UNSAFE (honest not improved / accused) → DO NOT apply; investigate")
         raise ActiveRecord::Rollback
       end
     else
       # snapshot prior values (nil = new cell) for rollback
-      snap = ROWS.map do |r|
+      snap = rows.map do |r|
         c = CalibrationCellBaseline.find_by(category: r["cat"], v_bucket: r["vb"], chat_mode: r["cm"], language: r["lang"])
         [ r, c && { rho_star: c.rho_star, rho_lo: c.rho_lo, rho_hi: c.rho_hi, sample_size: c.sample_size, calibrated: c.calibrated } ]
       end
-      upsert!(ROWS)
-      after, na = honest_scan(HN)
-      puts "\n-- POST-RESEED honest band mix: #{after.sort_by { |_, v| -v }.to_h} (n=#{na}); honest RED/YELLOW=#{accus(after)}"
-      if accus(after) > [ (0.02 * na).ceil, 1 ].max
+      tv.upsert!(rows)
+      after, na = tv.honest_scan(hn)
+      puts "\n-- POST-RESEED honest band mix: #{after.sort_by { |_, v| -v }.to_h} (n=#{na}); honest RED/YELLOW=#{tv.accus(after)}"
+      if tv.accus(after) > [ (0.02 * na).ceil, 1 ].max
         snap.each do |r, prev|
           c = CalibrationCellBaseline.find_by(category: r["cat"], v_bucket: r["vb"], chat_mode: r["cm"], language: r["lang"])
           next unless c
           prev ? c.update!(prev) : c.update!(calibrated: false) # new cell → un-calibrate (never accuse off it)
         end
-        puts "\n== 🔴 AUTO-ROLLBACK: #{accus(after)} honest accused → reverted #{ROWS.size} cells. Investigate. =="
+        puts "\n== 🔴 AUTO-ROLLBACK: #{tv.accus(after)} honest accused → reverted #{rows.size} cells. Investigate. =="
       else
-        puts "\n== 🟢 RE-SEED APPLIED: #{ROWS.size} cells calibrated, honest RED/YELLOW=#{accus(after)} (~0)."
+        puts "\n== 🟢 RE-SEED APPLIED: #{rows.size} cells calibrated, honest RED/YELLOW=#{tv.accus(after)} (~0)."
         puts "   NEXT: STRICT live-verify (honest RU GREEN + dariya labeled-botter deficit) + C_pop quantiles"
         puts "   (rho_p1=P5-margin@n≥150 + ccv_typical) — needs a miner harvest change (gate0-seed/ti-v2-anchor-rho)."
       end

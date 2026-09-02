@@ -5,7 +5,8 @@ name: host-rightsize
 # `kamal accessory reboot`, then verify the settings are live. Idempotent: re-running re-applies
 # the same config. `kamal deploy` does NOT recreate accessories — this reboot is the only path
 # that applies new cmd/memory/cpus/files. Host resolves from config/accessory_hosts.yml
-# (home server, tailnet-only → the Tailnet step below).
+# (home server, tailnet-only → the Tailnet step below). Deliberately NOT on the
+# tailnet-ssh composite: kamal writes its own `Host *` SSH config — only the join step is inline.
 
 on:
   workflow_dispatch:
