@@ -135,6 +135,8 @@
       // to the apex anyway — this saves the hop); everywhere else a relative path keeps staging
       // and localhost inside their own host instead of bouncing QA into production (CR P5 SF-2,
       // mirrors the host-conditional convention in hr-shared.js / index.js).
+      // NB merge order: the /pricing route ships in branch feat/pricing-page-canon (P4). Until that
+      // lands this link 404s — P4 MUST merge before P5 (recorded in automation/runs/INDEX.md).
       cmp.addEventListener("click", function () {
         window.location.href = location.hostname === "app.himrate.com" ? "https://himrate.com/pricing" : "/pricing";
       });

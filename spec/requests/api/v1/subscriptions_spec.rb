@@ -67,6 +67,9 @@ RSpec.describe "Api::V1::Subscriptions", type: :request do
       other = create(:subscription)
       delete "/api/v1/subscriptions/#{other.id}", headers: headers
       expect(response).to have_http_status(:not_found)
+      # Pins the envelope introduced in Api::BaseController (rescue_from RecordNotFound) — it now
+      # shapes every bare .find across the API, so the contract belongs in a spec (CR iter-2).
+      expect(response.parsed_body.dig("error", "code")).to eq("NOT_FOUND")
       expect(other.reload).to be_is_active
     end
   end
