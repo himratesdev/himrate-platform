@@ -15,6 +15,7 @@
   // Sidebar nav anchor → live route (short form; hrAppPath adds the scheme prefix). (Overlap has no
   // sidebar entry in the design — reached from the channel-comparison flow; it highlights "Сравнение".)
   var NAV = {
+    "Nav · Подписка": "/subscription",
     "Nav · Главная": "/home",
     "Nav · Моя активность": "/activity",
     "Nav · Куда пойти": "/discover",
@@ -54,7 +55,7 @@
   // don't read as active clickable rows with a silent dead click (SITE-AUDIT-2). "Поиск блогеров"
   // is deliberately NOT here — it has a live route (/app/creators) and is now wired above.
   var DEFERRED = ["Nav · Алерты", "Nav · Биржа", "Nav · Измерение", "Nav · Кампании",
-    "Nav · Команда", "Nav · Подключение", "Nav · Подписка", "Nav · Шаблоны"];
+    "Nav · Команда", "Nav · Подключение", "Nav · Шаблоны"];
   DEFERRED.forEach(function (name) {
     var el = q(name);
     if (!el) return;

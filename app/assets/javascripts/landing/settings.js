@@ -166,44 +166,6 @@
     setP(document, "TG Av", "?");
   }
 
-  // ---- promo card (TASK-H8 Day-0) ----
-  function wirePromo() {
-    var input = document.getElementById("hr-promo-input");
-    var btn = document.getElementById("hr-promo-btn");
-    var msg = document.getElementById("hr-promo-msg");
-    if (!input || !btn || !msg) return;
-
-    function show(text, ok) {
-      msg.textContent = text;
-      msg.style.color = ok ? "#25D9A4" : "#FF6B81";
-      msg.hidden = false;
-    }
-
-    function redeem() {
-      var code = (input.value || "").trim();
-      if (!code) { show("Введите промокод", false); return; }
-      btn.disabled = true; btn.style.opacity = "0.6";
-      fetch("/api/v1/promocodes/redeem", {
-        method: "POST", headers: HEADERS, credentials: "same-origin",
-        body: JSON.stringify({ code: code }),
-      })
-        .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j }; }); })
-        .then(function (res) {
-          if (res.ok) {
-            var d = res.j.data || {};
-            show(d.message || "Готово! Промокод активирован.", true);
-            input.value = "";
-          } else {
-            show((res.j.error && res.j.error.message) || "Не удалось активировать промокод", false);
-          }
-        })
-        .catch(function () { show("Сеть недоступна — попробуйте ещё раз", false); })
-        .then(function () { btn.disabled = false; btn.style.opacity = ""; });
-    }
-
-    btn.addEventListener("click", redeem);
-    input.addEventListener("keydown", function (e) { if (e.key === "Enter") redeem(); });
-  }
 
   // ---- boot ----
   function boot() {
@@ -212,7 +174,6 @@
     renderPrivacy();
     renderAccounts();
     deferTelegramCard();
-    wirePromo();
   }
 
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })

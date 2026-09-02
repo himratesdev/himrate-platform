@@ -125,6 +125,14 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Screen 40 «Подписка и биллинг» — faithful export host (P5). Current plan + promo redemptions
+  # from GET /api/v1/subscriptions; billing-only chrome (cards/invoices/checkout) honestly dimmed
+  # until TASK-042. Promo redemption card shares landing/promo-card.js with settings.
+  def subscription
+    @page = "subscription"
+    @brand_dashboard = true
+  end
+
   # Viewer personal activity (screen 03, PVA M-modules) — faithful export host. Real analytics wired
   # client-side by landing/my_activity.js against GET /api/v1/me/analytics/* (ownership-free).
   def my_activity
@@ -250,7 +258,7 @@ class PagesController < ApplicationController
   # NESTED heads are product only WITH a second segment — a bare /streamers on the app host is
   # the marketing page and must bounce to the apex (the app-host route is /streamers/:login).
   PRODUCT_SHORT_HEADS_SIMPLE = %w[home search compare overlap watchlists settings activity
-                                  discover channel moments grow social creators].to_set.freeze
+                                  discover channel moments grow social creators subscription].to_set.freeze
   PRODUCT_SHORT_HEADS_NESTED = %w[streamers blogger].to_set.freeze
 
   def canonicalize_host
