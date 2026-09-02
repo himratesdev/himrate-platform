@@ -113,10 +113,11 @@ module FlipperDefaults
   # (`allow(Flipper).to receive(:enabled?).with(:flag).and_return(false)`) rather than leaving them
   # on an implicit default.
   #
-  # Scale of the :ti_v2_engine promotion, for calibration: 37 examples in 15 spec files across
-  # three layers (spec/requests 15, spec/services 20, spec/workers 2) needed an explicit stance.
-  # The first sweep covered only services+workers, so CI would still have been red — sweep every
-  # layer that reaches the reader, not just the one the reader class lives in.
+  # Scale of the :ti_v2_engine promotion, for calibration: 17 spec files needed an explicit stance
+  # — 6 under spec/requests, 9 under spec/services, 2 under spec/workers. The first sweep covered
+  # only services+workers and reported "done"; the request layer (same flag, read through
+  # controllers/serializers) was still red. Sweep every layer that reaches the reader, and treat a
+  # full-suite run — not a subset — as the criterion for closing the work.
   ALL_FLAGS = [
     :pundit_authorization,
     :bot_raid_chain,
