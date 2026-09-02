@@ -1,0 +1,8 @@
+# TASK-H8 CR iter-1: explicit EN date formats so I18n.l does not depend on the ActiveSupport
+# default (which renders ISO %Y-%m-%d). Pairs with date.ru.yml — both locales are now pinned.
+en:
+  date:
+    formats:
+      default: "%b %-d, %Y"
+      short: "%b %-d"
+      long: "%B %-d, %Y"

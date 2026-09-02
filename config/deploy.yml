@@ -187,9 +187,13 @@ proxy:
   # на accessory). Public access (grafana.himrate.com) — separate setup через
   # Cloudflare Tunnel (cloudflared accessory) post-PR1. См. accessory_ops.md.
 
+# EMERGENCY (2026-09-01, GitHub account suspension): registry = the box's own authed
+# localhost registry (docker `registry:2`, data on /backup HDD). kamal runs ON the server
+# for this mode, so build-push-pull all resolve 127.0.0.1:5000. Revert to ghcr.io (or move
+# to a tailnet-bound self-hosted registry permanently) once the suspension resolves — PO call.
 registry:
-  server: ghcr.io
-  username: himratesdev
+  server: 127.0.0.1:5000
+  username: himrate
   password:
     - KAMAL_REGISTRY_PASSWORD
 
@@ -397,6 +401,11 @@ volumes:
 
 builder:
   arch: amd64
+  # EMERGENCY mode companion to the 127.0.0.1:5000 registry above: the default
+  # docker-container buildx driver lives in its own netns where the box-local registry
+  # is unreachable — the plain docker driver builds/pushes via the HOST daemon, which
+  # both resolves 127.0.0.1:5000 and treats it as an allowed insecure (localhost) registry.
+  driver: docker
 
 aliases:
   console: app exec --interactive --reuse "bin/rails console"

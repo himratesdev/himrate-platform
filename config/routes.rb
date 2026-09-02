@@ -62,6 +62,12 @@ Rails.application.routes.draw do
       # Descriptive Twitch → socials funnel (value-roadmap C2) — temporal correlation, not causation.
       get "social/streamers/:login/attribution", to: "social/attribution#show", constraints: { login: /[A-Za-z0-9_]+/ }
       post "lk/notify", to: "lk#notify"
+      # TASK-H8 Day-0: promo code redemption (Soft Launch invite grants; canonical path payments.md §7).
+      post "promocodes/redeem", to: "promocodes#redeem"
+      # Pre-rename alias — the deployed build (c50d0226) serves settings.js pointing at the old
+      # path, so a tab opened before this deploy would 404 into "Сеть недоступна". Costs nothing,
+      # DROP after one release once no client requests /promo/redeem (check the access log).
+      post "promo/redeem", to: "promocodes#redeem"
 
       # TASK-031: User profile
       get "user/me", to: "users#me"

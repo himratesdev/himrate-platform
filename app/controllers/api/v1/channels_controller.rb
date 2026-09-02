@@ -193,7 +193,7 @@ module Api
       class BillingNotConfigured < StandardError; end
 
       def ensure_active_subscription_for(user)
-        existing = user.subscriptions.where(is_active: true).first
+        existing = user.subscriptions.active.first
         return existing if existing
 
         unless Flipper.enabled?(:billing_auto_subscription_creation)
