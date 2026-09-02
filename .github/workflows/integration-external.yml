@@ -1,0 +1,49 @@
+# 4.3 External-integration lane: REAL third-party round-trips (Twitch Helix / GQL / IRC /
+# EventSub-list; whisper stays local-only — no service here). Nightly + on demand; NOT a
+# required PR check — the default `bundle exec rspec` excludes the `external` tag entirely
+# (spec/spec_helper.rb), so PR CI behavior is unchanged.
+name: integration-external
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "40 4 * * *" # nightly 04:40 UTC (after the 03:00-03:30 cron cluster)
+
+jobs:
+  external:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: himrate_test
+          POSTGRES_PASSWORD: himrate_test
+          POSTGRES_DB: himrate_test
+        ports:
+          - 5432:5432
+        options: --health-cmd="pg_isready -U himrate_test" --health-interval=3s --health-timeout=3s --health-retries=10
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: --health-cmd="redis-cli ping" --health-interval=3s --health-timeout=3s --health-retries=10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ruby/setup-ruby@v1
+        with:
+          bundler-cache: true
+      - name: Setup DB
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://himrate_test:himrate_test@localhost:5432/himrate_test
+          REDIS_URL: redis://localhost:6379/0
+        run: bundle exec rails db:create db:migrate
+      - name: Run external integration specs
+        env:
+          RAILS_ENV: test
+          EXTERNAL_INTEGRATION: "1"
+          DATABASE_URL: postgres://himrate_test:himrate_test@localhost:5432/himrate_test
+          REDIS_URL: redis://localhost:6379/0
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+        run: bundle exec rspec spec/integration/external --tag external

@@ -8,7 +8,19 @@ abort("The Rails environment is running in production mode!") if Rails.env.produ
 require "rspec/rails"
 require "webmock/rspec"
 
-WebMock.disable_net_connect!(allow_localhost: true)
+# Default: no real network in specs. External-integration lane (EXTERNAL_INTEGRATION=1,
+# spec/integration/external, tag `external`) opens exactly the third-party hosts the clients
+# use: Helix api.twitch.tv + id.twitch.tv (app token), GQL gql.twitch.tv. (IRC is a raw
+# TLS socket — WebMock does not intercept it; listed nowhere.) whisper is reached via
+# WHISPER_URL (localhost in practice → already allowed).
+if ENV["EXTERNAL_INTEGRATION"] == "1"
+  WebMock.disable_net_connect!(
+    allow_localhost: true,
+    allow: %w[api.twitch.tv id.twitch.tv gql.twitch.tv]
+  )
+else
+  WebMock.disable_net_connect!(allow_localhost: true)
+end
 
 begin
   ActiveRecord::Migration.maintain_test_schema!
