@@ -5,12 +5,17 @@ module Promo
   # validate → record the redemption (unique per user+code, counter-capped) → open a
   # `plan_type: "promo"` Subscription row (the billing-era shape — grace/tracking logic
   # already reads subscriptions) → lift user.tier if the grant outranks the current tier.
-  # Returns Result(ok:, error:, tier:, expires_at:). Error codes are wire-ready PROMO_*.
+  # Returns Result(ok:, error:, tier:, granted_tier:, expires_at:) — `tier` is the user's
+  # EFFECTIVE tier after the lift (wire contract), `granted_tier` is what this code actually
+  # granted. They differ when a business user redeems a premium code: the message must say
+  # "premium … until <date>", otherwise it implies the business access expires with the grant
+  # (it does not — PromoExpiryWorker recomputes from the remaining grants). Error codes are
+  # wire-ready PROMO_*.
   class RedeemService
     TIER_RANK = { "free" => 0, "premium" => 1, "business" => 2 }.freeze
 
-    Result = Data.define(:ok, :error, :tier, :expires_at) do
-      def self.failure(code) = new(ok: false, error: code, tier: nil, expires_at: nil)
+    Result = Data.define(:ok, :error, :tier, :granted_tier, :expires_at) do
+      def self.failure(code) = new(ok: false, error: code, tier: nil, granted_tier: nil, expires_at: nil)
     end
 
     def initialize(user:, code:)
@@ -42,7 +47,8 @@ module Promo
 
         lift_tier!(promo.grants_tier)
 
-        Result.new(ok: true, error: nil, tier: @user.tier, expires_at: expires_at)
+        Result.new(ok: true, error: nil, tier: @user.tier,
+                   granted_tier: promo.grants_tier, expires_at: expires_at)
       end
     end
 

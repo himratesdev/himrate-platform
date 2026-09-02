@@ -94,11 +94,14 @@ class ApplicationPolicy
     user.tracked_channels
         .joins(:subscription)
         .where(channel: channel, tracking_enabled: true)
-        .where(subscriptions: { is_active: true })
+        .merge(Subscription.active)
         .exists? ||
       channel_in_grace_period?(channel)
   end
 
+  # NB: the documented "use Subscription.active" convention covers the POSITIVE entitlement
+  # reads only — this one deliberately asks for the inverse (a just-cancelled grant inside its
+  # 7-day grace window), so it stays an explicit `is_active: false` predicate.
   def channel_in_grace_period?(channel)
     user.tracked_channels
         .joins(:subscription)

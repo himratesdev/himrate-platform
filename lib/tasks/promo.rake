@@ -15,19 +15,32 @@ namespace :promo do
     "stream_featured"  => { tier: "premium",  days: 30,  max: 1 }
   }.freeze
 
-  desc "Report codes + redemptions: promo:report"
+  desc "Report codes + redemptions: promo:report (MASK=1 to obfuscate emails)"
   task report: :environment do
-    PromoCode.order(:created_at).find_each do |c|
+    mask = ENV["MASK"].present?
+    puts "# promo:report — #{mask ? 'emails masked' : 'CONTAINS PII (redeemer emails)'}; " \
+         "#{mask ? 'safe to paste' : 'do NOT paste verbatim into Notion/Slack — use MASK=1'}"
+    # .each, not find_each: find_each forces batch order by PK (a random uuid here) and drops the
+    # scoped order, which would scramble the mint waves this report exists to read chronologically.
+    # Ops-scale table — batching buys nothing.
+    PromoCode.order(:created_at).each do |c|
       cap = c.max_redemptions || "∞"
       exp = c.expires_at ? c.expires_at.to_date : "—"
       puts format("%-14s %-16s %-8s %s/%s exp:%-10s active:%-5s note:%s",
                   c.code, c.kind, c.grants_tier, c.redemptions_count, cap, exp, c.active, c.note)
       c.promo_redemptions.includes(:user).order(:created_at).each do |r|
-        who = r.user.email.presence || r.user.username
+        who = mask ? mask_identity(r.user) : (r.user.email.presence || r.user.username)
         upto = r.grant_expires_at ? r.grant_expires_at.to_date : "lifetime"
         puts format("    ↳ %-30s %-8s until:%-10s at:%s", who, r.granted_tier, upto, r.created_at.to_date)
       end
     end
+  end
+
+  # Keeps the domain + a 2-char prefix so waves stay distinguishable without exposing the address.
+  def mask_identity(user)
+    raw = user.email.presence || user.username.to_s
+    local, _, domain = raw.partition("@")
+    domain.present? ? "#{local[0, 2]}***@#{domain}" : "#{raw[0, 2]}***"
   end
 
   desc "Mint promo codes: promo:mint[kind,count]"

@@ -15,10 +15,14 @@ module Api
         result = Promo::RedeemService.new(user: current_user, code: params[:code]).call
 
         if result.ok
+          # granted_tier (not the effective tier): a business user redeeming a premium code must
+          # read "premium … until <date>", not "business … until <date>" — the latter implies the
+          # business access lapses with this grant. `data.tier` still carries the effective tier.
           message = if result.expires_at
-            I18n.t("promo.success_until", tier: result.tier, until: I18n.l(result.expires_at.to_date))
+            I18n.t("promo.success_until", tier: result.granted_tier,
+                                          until: I18n.l(result.expires_at.to_date))
           else
-            I18n.t("promo.success_lifetime", tier: result.tier)
+            I18n.t("promo.success_lifetime", tier: result.granted_tier)
           end
           render json: { data: { tier: result.tier, expires_at: result.expires_at&.iso8601, message: message } }
         else
