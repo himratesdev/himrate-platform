@@ -60,4 +60,13 @@ RSpec.describe Promo::RedeemService do
     expect(redeem("HR-ONE").error).to eq("PROMO_ALREADY_REDEEMED")
     expect(redeem("HR-ONE", as: create(:user, tier: "free")).error).to eq("PROMO_EXHAUSTED")
   end
+
+  it "enqueues the confirmation mail only on a successful redeem (P7)" do
+    PromoCode.create!(code: "HR-MAIL", kind: "trial", grants_tier: "premium",
+                      duration_days: 14, max_redemptions: 1)
+
+    expect { redeem("HR-MAIL") }.to have_enqueued_mail(PromoMailer, :activated)
+    expect { redeem("HR-MAIL") }.not_to have_enqueued_mail(PromoMailer, :activated) # already redeemed
+    expect { redeem("NOPE") }.not_to have_enqueued_mail(PromoMailer, :activated)
+  end
 end

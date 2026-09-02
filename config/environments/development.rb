@@ -42,6 +42,9 @@ Rails.application.configure do
   # Set localhost to be used by links generated in mailer templates.
   config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
 
+  # Mailer previews live with the specs (repo has no test/ tree).
+  config.action_mailer.preview_paths << Rails.root.join("spec/mailers/previews").to_s
+
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
 

@@ -1,0 +1,18 @@
+# P7 (3.5): transactional mail (Resend). Legal canon v3 — no fraud wording.
+en:
+  mailers:
+    signature: "— The HimRate team"
+    user:
+      welcome:
+        subject: "Welcome to HimRate"
+        greeting: "Hi %{name}!"
+        body: "Your account is ready. The extension shows a channel's real audience right on Twitch; your lists, activity and analytics live in the dashboard."
+        cta_site: "Website"
+        cta_lk: "Dashboard"
+    promo:
+      activated:
+        subject: "Promo code activated"
+        greeting: "Hi %{name}!"
+        body_until: "Your \"%{tier}\" access is active until %{until}."
+        body_lifetime: "Your \"%{tier}\" access is active with no expiry."
+        cta: "Subscription & access"

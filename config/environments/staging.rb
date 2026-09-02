@@ -70,12 +70,19 @@ Rails.application.configure do
 
   # Postmark transactional delivery — only wired when the API token is present, so
   # deploys without it don't error (email-marketing foundation).
-  if ENV["POSTMARK_API_TOKEN"].present?
-    config.action_mailer.delivery_method = :postmark
-    config.action_mailer.postmark_settings = { api_token: ENV["POSTMARK_API_TOKEN"] }
+  # Transactional email via Resend (CO-002: Postmark отклонил Gmail-signup; Resend держит
+  # verified-домен himrate.com, RESEND_API_KEY в GH secrets). The resend gem's Railtie
+  # registers delivery_method :resend (Resend::Mailer); the API key is the gem-global
+  # `Resend.api_key` — verified against resend-1.13.0 sources (mailer.rb raises unless set).
+  # Mail jobs ride the existing :notifications queue (compute_tier3) — deliver_later_queue_name
+  # below; a dedicated `mailers` queue would need a deploy.yml consumer for zero gain at this volume.
+  if ENV["RESEND_API_KEY"].present?
+    Resend.api_key = ENV["RESEND_API_KEY"]
+    config.action_mailer.delivery_method = :resend
     config.action_mailer.raise_delivery_errors = true
     config.action_mailer.perform_deliveries = true
   end
+  config.action_mailer.deliver_later_queue_name = :notifications
 
   # Enable locale fallbacks for I18n (makes lookups for any locale fall back to
   # the I18n.default_locale when a translation cannot be found).

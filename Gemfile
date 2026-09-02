@@ -57,7 +57,7 @@ gem "connection_pool", "~> 2.5"
 
 # Transactional email delivery via Postmark (email-marketing foundation). Delivery
 # is only wired when POSTMARK_API_TOKEN is present (see config/environments).
-gem "postmark-rails", "~> 0.22"
+gem "resend", "~> 1.13"
 
 # Error tracking + structured telemetry. DSN configured via SENTRY_DSN env;
 # absent DSN = silent no-op (initializer doesn't raise). PVA enrollment chain

@@ -1,0 +1,10 @@
+<p><%= t("mailers.promo.activated.greeting", name: @user.display_name.presence || @user.username) %></p>
+<p>
+  <% if @expires_at %>
+    <%= t("mailers.promo.activated.body_until", tier: @tier, until: I18n.l(@expires_at.to_date)) %>
+  <% else %>
+    <%= t("mailers.promo.activated.body_lifetime", tier: @tier) %>
+  <% end %>
+</p>
+<p><a href="https://app.himrate.com/subscription"><%= t("mailers.promo.activated.cta") %></a></p>
+<p><%= t("mailers.signature") %></p>

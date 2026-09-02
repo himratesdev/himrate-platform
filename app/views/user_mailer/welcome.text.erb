@@ -1,0 +1,8 @@
+<%= t("mailers.user.welcome.greeting", name: @user.display_name.presence || @user.username) %>
+
+<%= t("mailers.user.welcome.body") %>
+
+<%= t("mailers.user.welcome.cta_site") %>: https://himrate.com
+<%= t("mailers.user.welcome.cta_lk") %>: https://app.himrate.com/home
+
+<%= t("mailers.signature") %>
