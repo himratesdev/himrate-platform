@@ -131,7 +131,14 @@ module FlipperDefaults
     # Redis-only → reverted OFF on a redeploy, stalling the backfill at ~1026/5232 (the recurring
     # PVA «flag not deploy-proof» pattern). ALL_FLAGS makes the bounded (≤100/run) cron auto-enable
     # every boot so the pool keeps indexing. Promoted 2026-07-29.
-    :social_footprint_index
+    :social_footprint_index,
+    # T1-074 PR3b cutover engine selector (48 read sites). Was NEVER registered here — flipped
+    # manually via flipper-toggle.yml → Redis-only state. Every fresh boot after a Redis/DB loss
+    # silently fell back to the v1 engine (4-band ERV, ti_score writers) until someone re-flipped:
+    # exactly what happened on the home-server first boot 2026-08-26 21:50 → 2026-08-27 (≈28.6k
+    # v1 TIH rows on a "v2-era" DB). PO 2026-09-01: v2 is the authoritative engine everywhere →
+    # deploy-proof in ALL_FLAGS. Rollback path stays: pause-override key or emergency disable.
+    :ti_v2_engine
   ].freeze
 
   # Verdict-flip flags that must be DEPLOY-PROOF on staging (survive a kamal-setup Redis flush) but stay
@@ -140,6 +147,12 @@ module FlipperDefaults
   # development (the boot loop skips production AND test — test specs assume the cumulative/dormant
   # verdict, so the flag must not flip in RAILS_ENV=test). Prod rollout = seed prod windowed cells + move
   # the flag to ALL_FLAGS (or drop the env guard). Battle-mode windowing flip 2026-07-25.
+  # 2026-09-01 PO decision («прод = staging»): the single Kamal destination `staging` on the
+  # home server IS the public production (himrate.com / app. / api.) until a dedicated
+  # production destination exists. These flags are therefore the de-facto production operating
+  # set. When a real production destination appears, that cutover is an explicit task: promote
+  # to ALL_FLAGS (or drop the env guard) + seed prod windowed ρ* cells + rotate PAT — see
+  # docs/runbooks/production_cutover.md.
   STAGING_ALL_FLAGS = %i[
     ti_v2_cowindowed_rho
     follower_snapshot
@@ -185,7 +198,13 @@ module FlipperDefaults
     # chat_reads_clickhouse). All paths now CH-only; backfill service deleted. Any future
     # re-backfill would require new source + new service implementation, не re-using these flags.
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
-    accessory_auto_remediation: "BUG-010 PR3" # Kill switch для AutoRemediation::TriggerService
+    accessory_auto_remediation: "BUG-010 PR3", # Kill switch для AutoRemediation::TriggerService
+    ti_v2_shadow: "T1-074 PR2b", # v1-primary shadow compute (log-only). Meaningful only while
+    # ti_v2_engine is OFF; with the cutover flag in ALL_FLAGS this stays a dormant kill-switch-era
+    # hook. Registered so the flag exists deploy-proof instead of living as Redis-only state.
+    po_debug_dashboard: "TASK-PO-DEBUG-DASHBOARD" # /dashboard/po-debug gate. Was registered only by
+    # migration 20260606030000 (Flipper.disable in `up`) → absent on any DB созданной после неё →
+    # controller 503'd on a fresh box. Registered add-only here; PO enables manually when needed.
     # GitHub workflow_dispatch. Default OFF — operators enable через
     # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.
     # NB: ti_v2_ie_shadow (i_event magnitude harvester, PR-i4) was PROMOTED to ALL_FLAGS 2026-07-23 —
