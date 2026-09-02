@@ -169,6 +169,10 @@ GEM
     http-cookie (1.1.0)
       domain_name (~> 0.5)
     http-form_data (2.3.0)
+    httparty (0.24.2)
+      csv
+      mini_mime (>= 1.0.0)
+      multi_xml (>= 0.5.2)
     i18n (1.15.2)
       concurrent-ruby (~> 1.0)
     image_processing (1.14.0)
@@ -218,6 +222,8 @@ GEM
       drb (~> 2.0)
       prism (~> 1.5)
     msgpack (1.8.4)
+    multi_xml (0.9.1)
+      bigdecimal (>= 3.1, < 5)
     net-imap (0.6.6)
       date
       net-protocol
@@ -261,11 +267,6 @@ GEM
     pg (1.6.3-x86_64-darwin)
     pg (1.6.3-x86_64-linux)
     pg (1.6.3-x86_64-linux-musl)
-    postmark (1.25.1)
-      json
-    postmark-rails (0.22.1)
-      actionmailer (>= 3.0.0)
-      postmark (>= 1.21.3, < 2.0)
     pp (0.6.4)
       prettyprint
     prettyprint (0.2.0)
@@ -350,6 +351,9 @@ GEM
     regexp_parser (2.11.3)
     reline (0.7.0)
       io-console (~> 0.5)
+    resend (1.13.0)
+      base64
+      httparty (>= 0.22.0)
     rexml (3.4.4)
     rspec-core (3.13.6)
       rspec-support (~> 3.13.0)
@@ -514,7 +518,6 @@ DEPENDENCIES
   jwt (~> 2.10, >= 2.10.3)
   kamal
   pg (~> 1.1)
-  postmark-rails (~> 0.22)
   propshaft
   puma (>= 5.0)
   pundit (~> 2.4)
@@ -523,6 +526,7 @@ DEPENDENCIES
   rack-cors (~> 2.0)
   rails (~> 8.1.2)
   redis (~> 5.0)
+  resend (~> 1.13)
   rspec-rails (~> 7.0)
   rubocop-rails-omakase
   selenium-webdriver

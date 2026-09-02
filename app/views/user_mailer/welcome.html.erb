@@ -1,0 +1,7 @@
+<p><%= t("mailers.user.welcome.greeting", name: @user.display_name.presence || @user.username) %></p>
+<p><%= t("mailers.user.welcome.body") %></p>
+<p>
+  <a href="https://himrate.com"><%= t("mailers.user.welcome.cta_site") %></a> ·
+  <a href="https://app.himrate.com/home"><%= t("mailers.user.welcome.cta_lk") %></a>
+</p>
+<p><%= t("mailers.signature") %></p>

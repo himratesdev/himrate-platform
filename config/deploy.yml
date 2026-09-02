@@ -237,6 +237,9 @@ env:
     # also gates access, so until PO sets both this secret AND flips the flag the
     # surface is fully dormant.
     - PO_DEBUG_PASSWORD
+    # CO-002 email provider = Resend (Postmark rejected the signup; domain himrate.com verified,
+    # SPF send.himrate.com). Read by config/mailer_delivery.rb (shared by all environments).
+    - RESEND_API_KEY
   clear:
     RAILS_LOG_TO_STDOUT: true
     RAILS_SERVE_STATIC_FILES: true
@@ -250,6 +253,8 @@ env:
     # accessory's full container name. Port defaults to 8123 in Clickhouse::Client; database is
     # per-destination (config/deploy.{staging,production}.yml CLICKHOUSE_DATABASE).
     CLICKHOUSE_HOST: himrate-clickhouse
+    # Verified Resend sender identity (override per-destination if ever needed).
+    MAIL_FROM: HimRate <noreply@himrate.com>
 
 # Accessories: PostgreSQL + Redis + observability stack on the same VPS
 # BUG-010 PR1: +grafana, prometheus, loki, promtail, alertmanager, prometheus-pushgateway

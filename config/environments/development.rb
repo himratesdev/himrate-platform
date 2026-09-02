@@ -2,6 +2,8 @@
 
 require "active_support/core_ext/integer/time"
 
+require_relative "../mailer_delivery"
+
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
@@ -41,6 +43,16 @@ Rails.application.configure do
 
   # Set localhost to be used by links generated in mailer templates.
   config.action_mailer.default_url_options = { host: "localhost", port: 3000 }
+
+  # Mailer previews live with the specs (repo has no test/ tree).
+  config.action_mailer.preview_paths << Rails.root.join("spec/mailers/previews").to_s
+
+  # Same deliver_later queue as staging/production, so a local sidekiq picks mail off the queue it
+  # actually consumes instead of the unconsumed default `mailers` (CR iter-1 Nit-7).
+  # Provider stays OFF by default even when RESEND_API_KEY is exported in the shell — otherwise a
+  # local `deliver_now` would send a REAL email to a real address (CR iter-2 Nit-1; test/ has the
+  # same guard). Opt in deliberately: MAIL_DELIVER_LOCALLY=1 bin/rails …
+  HimRate::MailerDelivery.configure(config, provider: ENV["MAIL_DELIVER_LOCALLY"] == "1")
 
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log

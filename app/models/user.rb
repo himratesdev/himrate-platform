@@ -87,6 +87,9 @@ class User < ApplicationRecord
 
   def record_registration_event
     UserEvents::Recorder.record(self, UserEvent::REGISTERED, { email_source: email_source })
+    # P7 (3.5): first action-triggered campaign hooked on the registered event —
+    # transactional welcome (Resend). Guarded: mail must never break a signup.
+    UserMailer.welcome(self).deliver_later if email.present?
   rescue StandardError => e
     # A logging failure must never surface to the just-registered user.
     Rails.logger.error("[User#record_registration_event] #{id}: #{e.class} #{e.message}")

@@ -1,6 +1,11 @@
 # TASK-H8 Day-0: promo redemption error codes (wire PROMO_*) — LK settings promo block.
 en:
   promo:
+    # Plan names are brand names (PRICING v4.2) — the key exists so the raw enum (`premium`)
+    # never reaches user-facing copy (CR iter-1 Nit-6).
+    tiers:
+      premium: "Premium"
+      business: "Business"
     success_until: "%{tier} access activated until %{until}"
     success_lifetime: "%{tier} access activated — lifetime"
     errors:

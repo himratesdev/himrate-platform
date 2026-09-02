@@ -27,14 +27,17 @@ module Promo
       promo = PromoCode.find_redeemable(@raw_code)
       return Result.failure("PROMO_INVALID") unless promo
 
-      ActiveRecord::Base.transaction do
+      # `next` (not `return`) so failures exit the BLOCK and `result` is assigned — the
+      # confirmation mail below must enqueue strictly AFTER the grant transaction commits
+      # (a mail enqueued inside the transaction could announce a rolled-back grant).
+      result = ActiveRecord::Base.transaction do
         promo.lock!
         # Already-redeemed wins over exhausted: the user who holds the grant should hear
         # "you already have it", not "the code ran out" (which reads as losing access).
         if PromoRedemption.exists?(promo_code: promo, user: @user)
-          return Result.failure("PROMO_ALREADY_REDEEMED")
+          next Result.failure("PROMO_ALREADY_REDEEMED")
         end
-        return Result.failure("PROMO_EXHAUSTED") if promo.exhausted?
+        next Result.failure("PROMO_EXHAUSTED") if promo.exhausted?
 
         expires_at = promo.duration_days&.days&.from_now
         PromoRedemption.create!(promo_code: promo, user: @user,
@@ -50,9 +53,25 @@ module Promo
         Result.new(ok: true, error: nil, tier: @user.tier,
                    granted_tier: promo.grants_tier, expires_at: expires_at)
       end
+
+      deliver_activation_mail(result)
+      result
     end
 
     private
+
+    # The grant is already committed by the time this runs, so the mail is best-effort: a Redis blip
+    # in deliver_later must not turn a successful redeem into a 500 (Api::BaseController only rescues
+    # Pundit errors → the user would see an error on a tier they already hold, and the retry would
+    # answer PROMO_ALREADY_REDEEMED). Same guard as User#record_registration_event.
+    def deliver_activation_mail(result)
+      return unless result.ok && @user.email.present?
+
+      PromoMailer.activated(@user, tier: result.granted_tier, expires_at: result.expires_at).deliver_later
+    rescue StandardError => e
+      Rails.logger.error("[Promo::RedeemService] mail enqueue failed for user #{@user.id}: #{e.class} #{e.message}")
+      Sentry.capture_exception(e) if defined?(Sentry)
+    end
 
     # Never downgrade: a business user redeeming a premium code keeps business.
     def lift_tier!(granted)
