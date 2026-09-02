@@ -121,7 +121,6 @@ module Trends
       def categories_breakdown(streams)
         streams.where.not(game_name: nil).group(:game_name).count
       end
-
     end
   end
 end

@@ -203,6 +203,5 @@ module Cards
         band_color: ti&.band_color || "grey"
       )
     end
-
   end
 end

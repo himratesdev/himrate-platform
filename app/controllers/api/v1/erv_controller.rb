@@ -121,7 +121,6 @@ module Api
       def latest_auth_ratio
         nil
       end
-
     end
   end
 end

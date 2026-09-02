@@ -167,6 +167,5 @@ module Watchlists
       else channels
       end
     end
-
   end
 end
