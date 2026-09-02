@@ -9,7 +9,7 @@ class SitemapsController < ApplicationController
   # pages (/privacy, /terms) are self-canonical and required for the Chrome Web Store
   # listing (privacy-policy URL); the marketing nav does not link them, so the sitemap
   # is their only discovery channel.
-  PATHS = %w[/ /streamers /brands /viewers /methodology /privacy /terms].freeze
+  PATHS = %w[/ /streamers /brands /viewers /methodology /pricing /privacy /terms].freeze
 
   # EPIC-64: the long-deferred «curated real-data set» gate for /c/:login entries — a
   # channel earns a sitemap slot with ≥ MIN_STREAMS tracked streams over the 30-day

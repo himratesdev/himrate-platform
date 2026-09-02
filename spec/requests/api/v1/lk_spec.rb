@@ -65,6 +65,24 @@ RSpec.describe "Api::V1::Lk", type: :request do
       expect(NotifyRequest.last).to have_attributes(source: "pricing_interest", plan: "pro")
     end
 
+    it "drops an unknown plan instead of writing it (public endpoint, CR SF-3)" do
+      post "/api/v1/lk/notify", params: { email: "x@example.com", source: "pricing_interest", plan: "platinum" }
+
+      expect(response).to have_http_status(:ok)
+      expect(NotifyRequest.last).to have_attributes(source: "pricing_interest", plan: nil)
+    end
+
+    it "records a second interest for an address already subscribed on screen 71 (CR MF-1)" do
+      post "/api/v1/lk/notify", params: { email: "early@example.com" }
+
+      expect do
+        post "/api/v1/lk/notify", params: { email: "early@example.com", source: "pricing_interest", plan: "premium" }
+      end.to change(NotifyRequest, :count).by(1)
+
+      expect(NotifyRequest.where(email: "early@example.com").pluck(:source, :plan))
+        .to contain_exactly([ "lk_launch", nil ], %w[pricing_interest premium])
+    end
+
     it "falls back to lk_launch for an unknown source" do
       post "/api/v1/lk/notify", params: { email: "x@example.com", source: "hax" }
 

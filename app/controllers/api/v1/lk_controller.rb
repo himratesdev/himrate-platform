@@ -23,9 +23,12 @@ module Api
       # A signed-in caller may omit the email — their account email is used.
       def notify
         source = NotifyRequest::SOURCES.include?(notify_params[:source]) ? notify_params[:source] : "lk_launch"
+        # Unknown plan → nil, not 422: this POST is public and unauthenticated, so an unrecognized
+        # id is treated as "no plan" rather than polluting the only demand table we have (CR SF-3).
+        plan   = notify_params[:plan].presence
+        plan   = nil unless NotifyRequest::PLANS.include?(plan)
         email  = notify_params[:email].presence || current_user&.email
-        NotifyRequest.capture(email: email, user: current_user, source: source,
-                              plan: notify_params[:plan].presence&.slice(0, 32))
+        NotifyRequest.capture(email: email, user: current_user, source: source, plan: plan)
         render json: { subscribed: true }
       rescue ActiveRecord::RecordInvalid
         render json: { error: { code: "INVALID_EMAIL" } }, status: :unprocessable_entity

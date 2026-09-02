@@ -13,16 +13,15 @@
 
   function q(root, name) { return (root || document).querySelector('[data-pencil-name="' + name + '"]'); }
   function qa(root, sel) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
-  function setP(root, prefix, t) {
-    var n = (root || document).querySelector('[data-pencil-name^="' + prefix + '"]');
-    if (n != null && t != null) n.textContent = t;
-  }
 
   var HEADERS = { Accept: "application/json", "Content-Type": "application/json", "Accept-Language": "ru" };
 
   var knownEmail = null;
 
   // ---- annual toggle (canon: Premium $99/год · Business $999/год · −16%) ----
+  // Scope note: the toggle rewrites the two subscription CARDS only. The comparison matrix and the
+  // «Годовая оплата» footnotes stay monthly on purpose — PRICING v4.2 defines no annual price for
+  // the brand tiers, and re-deriving one in the matrix would invent a number.
   var yearly = false;
   var PRICES = {
     premium: { m: ["$9.99", "/мес за канал"], y: ["$99", "/год за канал · −16%"] },
@@ -50,9 +49,26 @@
   }
 
   // ---- interest capture (no checkout yet — honest plashka) ----
+  // The panel is MOVED next to the row that owns the clicked card: the page has two plan rows
+  // («SPlans Row» = streamer/viewer, «Plans Row» = brand), and anchoring it once to the brand row
+  // scrolled a Premium click past the fold into the wrong section (CR iter-1 SF-7). The annual note
+  // keeps its brand-row anchor — it is about brand tiers.
   var plashka, plashkaMsg, plashkaInput, plashkaBtn, currentPlan = null;
+  function rowOf(card) {
+    var el = card;
+    while (el && el !== document.body) {
+      var name = el.getAttribute && el.getAttribute("data-pencil-name");
+      if (name === "Plans Row" || name === "SPlans Row") return el;
+      el = el.parentNode;
+    }
+    return null;
+  }
+  function moveTo(row) {
+    if (!plashka || !row || !row.parentNode) return;
+    if (plashka.previousSibling !== row) row.parentNode.insertBefore(plashka, row.nextSibling);
+  }
   function buildPlashka() {
-    var host = q(document, "Plans Row") || q(document, "SPlans Row");
+    var host = q(document, "SPlans Row") || q(document, "Plans Row");
     if (!host || !host.parentNode) return;
     plashka = document.createElement("div");
     plashka.id = "hr-plan-capture";
@@ -88,7 +104,8 @@
     note.style.cssText = "color:#9A9AA9;font-size:12px;font-family:Inter,system-ui,sans-serif;";
     note.textContent = "Годовые цены брендовых тарифов — по договорённости (Talk to Sales).";
     host.parentNode.insertBefore(plashka, host.nextSibling);
-    host.parentNode.insertBefore(note, plashka);
+    var brandRow = q(document, "Plans Row") || host;
+    brandRow.parentNode.insertBefore(note, brandRow.nextSibling);
     plashkaBtn.addEventListener("click", submitInterest);
     plashkaInput.addEventListener("keydown", function (e) { if (e.key === "Enter") submitInterest(); });
   }
@@ -97,18 +114,21 @@
     plashkaMsg.style.color = ok ? "#25D9A4" : "#FF6B81";
     plashkaMsg.hidden = false;
   }
-  function openCapture(plan, planTitle) {
+  function openCapture(plan, planTitle, card) {
     currentPlan = plan;
     if (!plashka) return;
+    moveTo(card ? rowOf(card) : q(document, "Plans Row"));
     document.getElementById("hr-plan-capture-title").textContent =
       "Оплата подключается · план «" + planTitle + "»";
     plashkaMsg.hidden = true;
     plashka.hidden = false;
+    // Scroll in BOTH paths: a signed-in visitor gets an instant «Готово», which is useless if it
+    // renders off-screen (CR iter-1 SF-7).
+    plashka.scrollIntoView({ behavior: "smooth", block: "center" });
     if (knownEmail) {
       plashkaInput.value = knownEmail;
       submitInterest();
     } else {
-      plashka.scrollIntoView({ behavior: "smooth", block: "center" });
       plashkaInput.focus();
     }
   }
@@ -142,13 +162,15 @@
       cta.style.cursor = "pointer";
       cta.addEventListener("click", function () {
         if (plan === "free") { window.location.href = "/viewers"; return; }
-        openCapture(plan, PLAN_TITLES[plan] || plan);
+        openCapture(plan, PLAN_TITLES[plan] || plan, card);
       });
     });
     var sales = q(document, "Btn · Talk to Sales");
     if (sales) {
       sales.style.cursor = "pointer";
-      sales.addEventListener("click", function () { openCapture("managed", PLAN_TITLES.managed); });
+      sales.addEventListener("click", function () {
+        openCapture("managed", PLAN_TITLES.managed, q(document, "Plan · Managed"));
+      });
     }
     var mBtn = q(document, "Per · Месяц"); var yBtn = q(document, "Per · Год");
     if (mBtn) { mBtn.style.cursor = "pointer"; mBtn.addEventListener("click", function () { yearly = false; applyPeriod(); }); }
