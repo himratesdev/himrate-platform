@@ -238,7 +238,7 @@ env:
     # surface is fully dormant.
     - PO_DEBUG_PASSWORD
     # CO-002 email provider = Resend (Postmark rejected the signup; domain himrate.com verified,
-    # SPF send.himrate.com). Read by config/environments/{staging,production}.rb mail block.
+    # SPF send.himrate.com). Read by config/mailer_delivery.rb (shared by all environments).
     - RESEND_API_KEY
   clear:
     RAILS_LOG_TO_STDOUT: true

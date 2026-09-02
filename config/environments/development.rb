@@ -48,9 +48,11 @@ Rails.application.configure do
   config.action_mailer.preview_paths << Rails.root.join("spec/mailers/previews").to_s
 
   # Same deliver_later queue as staging/production, so a local sidekiq picks mail off the queue it
-  # actually consumes instead of the unconsumed default `mailers` (CR iter-1 Nit-7). The provider is
-  # only wired if RESEND_API_KEY happens to be exported locally.
-  HimRate::MailerDelivery.configure(config)
+  # actually consumes instead of the unconsumed default `mailers` (CR iter-1 Nit-7).
+  # Provider stays OFF by default even when RESEND_API_KEY is exported in the shell — otherwise a
+  # local `deliver_now` would send a REAL email to a real address (CR iter-2 Nit-1; test/ has the
+  # same guard). Opt in deliberately: MAIL_DELIVER_LOCALLY=1 bin/rails …
+  HimRate::MailerDelivery.configure(config, provider: ENV["MAIL_DELIVER_LOCALLY"] == "1")
 
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
