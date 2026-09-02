@@ -79,7 +79,8 @@
       else if(s.indexOf('я бренд')>-1) dest='/brands';
       else if(s.indexOf('я зритель')>-1) dest='/viewers';
       else if(s.indexOf('связаться')>-1) dest='/brands';
-      // pricing / methodology / how-it-works + fallback
+      else if(s.indexOf('тариф')>-1||s.indexOf('цены')>-1||s.indexOf('прайс')>-1) dest='/pricing'; // P4: real page now
+      // methodology / how-it-works + fallback
       else dest='/methodology';
       go(dest);
     });

@@ -58,6 +58,46 @@ RSpec.describe "Api::V1::Lk", type: :request do
       expect(NotifyRequest.last.user).to eq(user)
     end
 
+    it "captures pricing interest with the plan (source pricing_interest)" do
+      post "/api/v1/lk/notify", params: { email: "brand@example.com", source: "pricing_interest", plan: "pro" }
+
+      expect(response).to have_http_status(:ok)
+      expect(NotifyRequest.last).to have_attributes(source: "pricing_interest", plan: "pro")
+    end
+
+    it "drops an unknown plan instead of writing it (public endpoint, CR SF-3)" do
+      post "/api/v1/lk/notify", params: { email: "x@example.com", source: "pricing_interest", plan: "platinum" }
+
+      expect(response).to have_http_status(:ok)
+      expect(NotifyRequest.last).to have_attributes(source: "pricing_interest", plan: nil)
+    end
+
+    it "records a second interest for an address already subscribed on screen 71 (CR MF-1)" do
+      post "/api/v1/lk/notify", params: { email: "early@example.com" }
+
+      expect do
+        post "/api/v1/lk/notify", params: { email: "early@example.com", source: "pricing_interest", plan: "premium" }
+      end.to change(NotifyRequest, :count).by(1)
+
+      expect(NotifyRequest.where(email: "early@example.com").pluck(:source, :plan))
+        .to contain_exactly([ "lk_launch", nil ], %w[pricing_interest premium])
+    end
+
+    it "falls back to lk_launch for an unknown source" do
+      post "/api/v1/lk/notify", params: { email: "x@example.com", source: "hax" }
+
+      expect(NotifyRequest.last.source).to eq("lk_launch")
+    end
+
+    it "subscribes a signed-in caller without an email param (account email used)" do
+      user = create(:user, email: "owner@example.com")
+
+      post "/api/v1/lk/notify", params: { source: "pricing_interest", plan: "premium" }, headers: auth_headers(user)
+
+      expect(response).to have_http_status(:ok)
+      expect(NotifyRequest.last).to have_attributes(email: "owner@example.com", user: user, plan: "premium")
+    end
+
     it "rejects an invalid email" do
       post "/api/v1/lk/notify", params: { email: "not-an-email" }
 

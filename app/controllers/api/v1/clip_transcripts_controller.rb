@@ -125,7 +125,7 @@ module Api
         render json: {
           error: "limit_reached",
           message: I18n.t("clip_transcripts.errors.free_limit"),
-          upgrade_url: "https://himrate.com/pricing#premium",
+          upgrade_url: "https://himrate.com/pricing?plan=premium",
           tier: "free",
           used: ClipTranscriptRequest.month_count_for(current_user),
           limit: ClipTranscriptPolicy::FREE_MONTHLY_LIMIT

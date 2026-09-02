@@ -159,9 +159,9 @@
     var CUR=location.pathname;
     var NAV={
       'СТРИМЕРАМ':'/streamers','БРЕНДАМ':'/brands','ЗРИТЕЛЯМ':'/viewers',
-      'МЕТОДОЛОГИЯ':'/methodology','ЦЕНЫ':'/methodology','МЕТОДОЛОГИЯ И ЦЕНЫ':'/methodology',
+      'МЕТОДОЛОГИЯ':'/methodology','ЦЕНЫ':'/pricing','МЕТОДОЛОГИЯ И ЦЕНЫ':'/methodology',
       'Стримерам':'/streamers','Брендам':'/brands','Зрителям':'/viewers',
-      'Цены':'/methodology','Методология':'/methodology','Главная':'/'
+      'Цены':'/pricing','Тарифы':'/pricing','Методология':'/methodology','Главная':'/'
     };
     window.__hrGo=function(href){
       if(!href) return;
@@ -207,7 +207,8 @@
         else if(s.indexOf('я зритель')>-1) dest='/viewers';
         else if(s.indexOf('я стример')>-1) dest='/streamers';
         else if(s.indexOf('связаться')>-1) dest='/brands';
-        else dest='/methodology'; // pricing / methodology / how-it-works + fallback
+        else if(s.indexOf('тариф')>-1||s.indexOf('цены')>-1||s.indexOf('прайс')>-1) dest='/pricing'; // P4: real page now
+        else dest='/methodology'; // methodology / how-it-works + fallback
         window.__hrGo(dest);
       });
     });

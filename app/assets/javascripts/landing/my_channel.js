@@ -197,8 +197,23 @@
       .catch(function () { hide(q(document, "Reputation · 30 стримов")); });
   }
 
+  // ---- paywall gate CTAs ----
+  // Both were dead nodes (no handler). Checkout does not exist (TASK-042), so the honest target is
+  // the canonical public pricing page. Relative path on purpose: on staging it serves in place, on
+  // app.himrate.com it 301s to the apex (PagesController#canonicalize_host) — a hardcoded
+  // https://himrate.com/... would bounce a staging tester into production. (P4 CR iter-1 MF-2)
+  function wireGateCtas() {
+    ["CTA Primary", "CTA Secondary"].forEach(function (name) {
+      var el = q(document, name);
+      if (!el) return;
+      el.style.cursor = "pointer";
+      el.addEventListener("click", function () { window.location.href = "/pricing"; });
+    });
+  }
+
   // ---- boot ----
   function boot() {
+    wireGateCtas();
     // per-signal verdicts don't exist yet (ADR DEC-3, post-TI-v2) — never fake pass/flag pills
     hide(q(document, "Checks · 7 проверок"));
 

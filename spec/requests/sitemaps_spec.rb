@@ -23,7 +23,7 @@ RSpec.describe "Sitemap + robots", type: :request do
     it "lists every indexable marketing + legal page on the canonical apex host" do
       get "/sitemap.xml"
 
-      %w[/ /streamers /brands /viewers /methodology /privacy /terms].each do |path|
+      %w[/ /streamers /brands /viewers /methodology /pricing /privacy /terms].each do |path|
         expect(response.body).to include("<loc>https://himrate.com#{path}</loc>")
       end
     end
