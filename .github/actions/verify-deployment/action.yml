@@ -2,7 +2,7 @@
 # Verifies that Kamal deploy completed successfully on VPS.
 # Used for both staging and production.
 #
-# 8 checks: containers, health, migrations, sidekiq, redis, flipper, cron, pg_partman
+# 9 checks: containers, health, migrations, sidekiq, redis(+bloom), flipper, cron, pg_partman, clickhouse
 
 name: 'Verify Deployment'
 description: 'Verify Kamal deployment health on target VPS'
@@ -16,9 +16,6 @@ inputs:
     required: true
   host:
     description: 'VPS host IP or hostname'
-    required: true
-  health_url:
-    description: 'URL for health check (e.g. https://staging.himrate.com/health)'
     required: true
   ssh_private_key:
     description: 'SSH private key for VPS access'
@@ -144,6 +141,12 @@ runs:
         BLOOM=$(ssh himych@${{ inputs.host }} \
           "docker exec ${{ inputs.redis_container }} redis-cli MODULE LIST 2>/dev/null | grep -c bf" || echo "0")
         echo "RedisBloom loaded: $BLOOM"
+        # P2 2026-09-02: blocking — KnownBotService silently degrades to plain SETs without the
+        # module (BF.* calls fail), gutting known-bot matching. A redis image drift must fail DV.
+        if [ "$BLOOM" = "0" ]; then
+          echo "::error::RedisBloom module not loaded in ${{ inputs.redis_container }} (redis-stack image drift?)"
+          exit 1
+        fi
 
         PING=$(ssh himych@${{ inputs.host }} "docker exec ${{ inputs.redis_container }} redis-cli PING" || echo "FAIL")
         echo "Redis PING: $PING"
@@ -238,4 +241,40 @@ runs:
           echo "::warning::Default partition имеет $DEFAULT_ROWS rows — retention НЕ применяется."
           echo "::warning::Investigate: docs/runbooks/pg_partman_recovery.md §Default partition accumulation"
           echo "::warning::Triage: oldest_date/newest_date distinguishes backfill drift vs premake gap vs data integrity"
+        fi
+
+    # P2 2026-09-02 (audit finding C-19): ClickHouse is deploy-critical (chat archive = the only
+    # copy) but DV never looked at it. Verifies the app MVs exist and the system-log caps from
+    # clickhouse/config.d/constrained.xml are ACTIVE (the caps only apply on accessory (re)boot —
+    # this is exactly the drift class that filled the disk twice in July 2026, BUG-DISK-FULL).
+    - name: 'Check 9/9: ClickHouse (MVs + system-log caps)'
+      shell: bash
+      run: |
+        CH_CONTAINER=$(ssh himych@${{ inputs.host }} "docker ps -qf name=himrate-clickhouse")
+        if [ -z "$CH_CONTAINER" ]; then
+          echo "::error::himrate-clickhouse container not found"
+          exit 1
+        fi
+        CHQ='docker exec '"$CH_CONTAINER"' sh -c '"'"'clickhouse-client --password "$CLICKHOUSE_PASSWORD" -q'"'"''
+        MVS=$(ssh himych@${{ inputs.host }}           "docker exec $CH_CONTAINER sh -c 'clickhouse-client --password \"\$CLICKHOUSE_PASSWORD\" -q \"SELECT count() FROM system.tables WHERE name IN ('\''mv_stream_minute'\'','\''mv_stream_user_minute'\'')\"'" || echo "ERROR")
+        echo "App MVs present: $MVS (expected 2)"
+        if [ "$MVS" = "ERROR" ]; then
+          echo "::error::Cannot query ClickHouse (container up but client/password failed)"
+          exit 1
+        fi
+        if [ "$MVS" -lt 2 ]; then
+          echo "::error::ClickHouse MVs missing (rake clickhouse:setup not applied?)"
+          exit 1
+        fi
+        TEXTLOG=$(ssh himych@${{ inputs.host }}           "docker exec $CH_CONTAINER sh -c 'clickhouse-client --password \"\$CLICKHOUSE_PASSWORD\" -q \"SELECT count() FROM system.tables WHERE database = '\''system'\'' AND name = '\''text_log'\''\"'" || echo "ERROR")
+        echo "system.text_log tables: $TEXTLOG (expected 0 — removed by constrained.xml)"
+        if [ "$TEXTLOG" != "0" ]; then
+          echo "::error::system.text_log exists — constrained.xml caps NOT active (accessory boot predates the config, or config not mounted). Reboot the clickhouse accessory (accessory-ops.yml)."
+          exit 1
+        fi
+        QTTL=$(ssh himych@${{ inputs.host }}           "docker exec $CH_CONTAINER sh -c 'clickhouse-client --password \"\$CLICKHOUSE_PASSWORD\" -q \"SELECT engine_full FROM system.tables WHERE database = '\''system'\'' AND name = '\''query_log'\''\"'" || echo "")
+        if echo "$QTTL" | grep -q "TTL"; then
+          echo "query_log TTL active"
+        else
+          echo "::warning::query_log has no TTL yet (table created before constrained.xml applied — will cap after the next accessory reboot + table rotation)"
         fi
