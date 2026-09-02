@@ -16,8 +16,8 @@ on:
       target:
         required: true
         type: choice
-        options: [hostkey]
-        default: hostkey
+        options: [home]
+        default: home
       hours:
         required: false
         type: string
@@ -28,26 +28,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - name: Connect Tailscale (home server is tailnet-only)
-        uses: tailscale/github-action@v3
+      - uses: actions/checkout@v7
+      - name: Tailnet SSH (home server)
+        uses: ./.github/actions/tailnet-ssh
         with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
-          ping: 100.78.102.60
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          cat >> ~/.ssh/config <<SSH_CONFIG
-          Host hostkey
-            HostName 100.78.102.60
-            User himych
-            StrictHostKeyChecking accept-new
-            IdentityFile ~/.ssh/id_ed25519
-            ConnectTimeout 30
-          SSH_CONFIG
-          chmod 600 ~/.ssh/config
-
+          ts_authkey: ${{ secrets.TS_AUTHKEY }}
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Build health script
         run: |
           cat > /tmp/health.rb <<'RUBY_EOF'
@@ -162,9 +148,9 @@ jobs:
           RUBY_EOF
           echo "Built ($(wc -l < /tmp/health.rb) lines)"
 
-      - name: Run health probe on ${{ inputs.target || 'hostkey' }}
+      - name: Run health probe on ${{ inputs.target || 'home' }}
         run: |
-          TARGET="${{ inputs.target || 'hostkey' }}" # inputs empty on schedule events
+          TARGET="${{ inputs.target || 'home' }}" # inputs empty on schedule events
           scp /tmp/health.rb ${TARGET}:/tmp/health.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER}"

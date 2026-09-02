@@ -2,7 +2,7 @@
 
 ## Текущая архитектура (MVP → early scale)
 
-**Один VPS** (82.21.7.48, HOSTKEY vm.v3-heavy, 8 vCPU / 32GB RAM / 240GB NVMe (Netherlands DC)):
+**Один хост** (исторически HOSTKEY vm.v3-heavy 82.21.7.48 — МЁРТВ с 2026-08; сейчас домашний сервер `ssh himrate`, i5-8500 / 16GB / NVMe):
 
 - **PostgreSQL 16.4 + pg_partman** — один Kamal accessory `db`, две database внутри:
   - `himrate_production` для prod

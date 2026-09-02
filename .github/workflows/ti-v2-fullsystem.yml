@@ -9,8 +9,8 @@ on:
       target:
         required: true
         type: choice
-        options: [hostkey]
-        default: hostkey
+        options: [home]
+        default: home
       login:
         required: true
         type: string
@@ -20,21 +20,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          cat >> ~/.ssh/config <<SSH_CONFIG
-          Host hostkey
-            HostName 82.21.7.48
-            User root
-            StrictHostKeyChecking accept-new
-            IdentityFile ~/.ssh/id_ed25519
-            ConnectTimeout 30
-          SSH_CONFIG
-          chmod 600 ~/.ssh/config
-
+      - uses: actions/checkout@v7
+      - name: Tailnet SSH (home server)
+        uses: ./.github/actions/tailnet-ssh
+        with:
+          ts_authkey: ${{ secrets.TS_AUTHKEY }}
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Build snapshot script
         run: |
           cat > /tmp/iefull.rb <<'RUBY_EOF'
@@ -82,7 +73,7 @@ jobs:
 
       - name: Run snapshot on ${{ inputs.target }}
         run: |
-          TARGET="${{ inputs.target || 'hostkey' }}"
+          TARGET="${{ inputs.target || 'home' }}"
           scp /tmp/iefull.rb ${TARGET}:/tmp/iefull.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER}"

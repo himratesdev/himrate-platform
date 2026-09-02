@@ -16,8 +16,8 @@ on:
       target:
         required: true
         type: choice
-        options: [hostkey]
-        default: hostkey
+        options: [home]
+        default: home
       hours:
         required: false
         type: string
@@ -34,179 +34,31 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 35 # mining BOTH conventions on the schedule doubles the honest-anchor filter pass
     steps:
-      - name: Connect Tailscale (home server is tailnet-only)
-        uses: tailscale/github-action@v3
+      - uses: actions/checkout@v7
+      - name: Tailnet SSH (home server)
+        uses: ./.github/actions/tailnet-ssh
         with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
-          ping: 100.78.102.60
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          cat >> ~/.ssh/config <<SSH_CONFIG
-          Host hostkey
-            HostName 100.78.102.60
-            User himych
-            StrictHostKeyChecking accept-new
-            IdentityFile ~/.ssh/id_ed25519
-            ConnectTimeout 30
-          SSH_CONFIG
-          chmod 600 ~/.ssh/config
-
+          ts_authkey: ${{ secrets.TS_AUTHKEY }}
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Collect shadow lines from containers
         run: |
-          TARGET="${{ inputs.target || 'hostkey' }}" # inputs empty on schedule events
+          TARGET="${{ inputs.target || 'home' }}" # inputs empty on schedule events
           HOURS="${{ inputs.hours || '1' }}"
           ssh ${TARGET} "rm -f /tmp/shadow_lines.txt; for c in \$(docker ps --filter 'name=himrate' --format '{{.Names}}'); do docker logs --since ${HOURS}h \$c 2>&1 | grep -F 'SCW shadow ' >> /tmp/shadow_lines.txt || true; done; wc -l /tmp/shadow_lines.txt"
 
-      - name: Build miner script
+
+      - name: Run miner on ${{ inputs.target || 'home' }}
         run: |
-          cat > /tmp/mine.rb <<'RUBY_EOF'
-          $stdout.sync = true
-          require "json"
-          require "set"
-
-          # P0.5: pool ONLY one ρ_obs convention (cumulative vs windowed) — mixing corrupts ρ*. Pre-P0.5
-          # shadow lines have no v2_rho_conv key → treated as "cumulative" (they predate the flag).
-          WANTED_CONV = ENV.fetch("MINE_CONV", "cumulative")
-
-          def pct(a, p)
-            return nil if a.nil? || a.empty?
-            s = a.sort
-            s[[ (p * (s.size - 1)).round, s.size - 1 ].min]
-          end
-
-          def vbucket(v)
-            return "0" if v.nil? || v <= 0
-            return "0-1k" if v < 1000
-            return "1k-5k" if v < 5000
-            return "5k-20k" if v < 20000
-            "20k+"
-          end
-
-          def chat_mode(cfg)
-            return "open" unless cfg
-            return "sub-only" if cfg.subs_only_enabled
-            fol = cfg.followers_only_duration_min
-            return "followers-only" if fol && fol >= 0
-            return "slow" if cfg.slow_mode_seconds.to_i.positive?
-            return "emote-only" if cfg.emote_only_enabled
-            "open"
-          end
-
-          # ===== parse shadow lines → per-stream samples =====
-          samples = Hash.new { |h, k| h[k] = { rho: [], v: [], div: [] } }
-          total = 0; usable = 0; skipped_conv = 0
-          File.foreach("/tmp/shadow_lines.txt") do |line|
-            total += 1
-            i = line.index("SCW shadow ")
-            next unless i
-            j = JSON.parse(line[(i + 11)..]) rescue next
-            rho = j["v2_rho_obs"]
-            next if rho.nil? || rho.to_f <= 0 # pre-#384 lines / offline streams — skip
-            conv = j["v2_rho_conv"] || "cumulative" # P0.5: nil = pre-stamp line = cumulative
-            (skipped_conv += 1; next) unless conv == WANTED_CONV
-            sid = j["stream_id"]
-            next unless sid
-            samples[sid][:rho] << rho.to_f
-            samples[sid][:v] << j["v2_v"].to_f if j["v2_v"]
-            # phi_inflation calibration: the corroborator (CcvChatCorrelation) value per SCW cycle.
-            samples[sid][:div] << j["v2_ccv_chat_divergence"].to_f if j["v2_ccv_chat_divergence"]
-            usable += 1
-          end
-          puts "convention filter: WANTED=#{WANTED_CONV} (skipped #{skipped_conv} other-convention lines)"
-          puts "shadow lines: #{total} total, #{usable} usable, #{samples.size} distinct streams"
-
-          # ===== honest-anchor filter (mirrors ti-v2-rho-build hygiene) =====
-          cell_rho = Hash.new { |h, k| h[k] = [] }
-          all_rho = []
-          anchor_div_max = [] # phi_inflation: per-honest-anchor MAX ccv_chat_divergence (C_inflation fires on the moment)
-          kept = 0; rejected = { not_found: 0, not_partner: 0, few_streams: 0, low_ti: 0, anomaly: 0, spam: 0, no_roster: 0 }
-          samples.each do |sid, data|
-            s = Stream.find_by(id: sid)
-            (rejected[:not_found] += 1; next) unless s
-            ch = s.channel
-            (rejected[:not_partner] += 1; next) unless ch.broadcaster_type == "partner"
-            (rejected[:few_streams] += 1; next) if Stream.where(channel_id: ch.id).where.not(ended_at: nil).count < 10
-            # engine-aware: post-cutover latest rows are v2 (trust_index_score nil, authenticity set)
-            ti = TrustIndexHistory.where(channel_id: ch.id).order(calculated_at: :desc).limit(1)
-                                  .pick(Arel.sql("CASE WHEN engine_version = 'v2' THEN authenticity ELSE trust_index_score END"))
-            (rejected[:low_ti] += 1; next) if ti.nil? || ti.to_f < 88
-            anom = Anomaly.where(anomaly_type: %w[viewbot_spike ccv_step_function], stream_id: sid)
-                          .where("timestamp > ?", 24.hours.ago).exists?
-            (rejected[:anomaly] += 1; next) if anom && !RaidAttribution.where(stream_id: sid).exists?
-            roster = (Clickhouse::ChatQueries.stream_chatters(s) rescue [])
-            (rejected[:no_roster] += 1; next) if roster.empty?
-            flagged = CrossChannelTemporalFlag.bulk_lookup(roster)
-            spam = flagged.reject { |_, d| d[:bot_type] == "utility" }
-            (rejected[:spam] += 1; next) if spam.size.to_f / roster.size > 0.05
-
-            rho_med = pct(data[:rho], 0.50)
-            v_med = pct(data[:v], 0.50) || 0
-            cat = (TrustIndex::Signals::CategoryResolver.resolve(s.game_name) rescue "default")
-            cell = [ cat, vbucket(v_med), chat_mode(ch.channel_protection_config), (s.language.presence || "default") ].join("|")
-            cell_rho[cell] << rho_med
-            all_rho << rho_med
-            # phi_inflation: the honest anchor's PEAK divergence over the window (0 if the corroborator
-            # never signalled). C_inflation fires on the transient max, so the max — not the median — is
-            # what phi_inflation must clear on honest channels.
-            dmax = data[:div].max
-            anchor_div_max << dmax if dmax
-            puts format("RAW %s %s %.5f (n_samples=%d) div_max=%.4f", ch.login, cell, rho_med, data[:rho].size, dmax || 0.0)
-            kept += 1
-          rescue => e
-            nil
-          end
-          puts "\nanchors kept: #{kept} | rejected: #{rejected.map { |k, v| "#{k}=#{v}" }.join(' ')}"
-
-          # ===== per-cell seed table =====
-          puts "\n===== SHADOW-MINED ρ* PER CELL (n>=3; SEED format) ====="
-          cell_rho.select { |_, a| a.size >= 3 }.sort_by { |_, a| -a.size }.each do |cell, a|
-            cat, vb, cm, lang = cell.split("|")
-            puts format("  [ %-16s %-8s %-16s %-6s ] n=%-3d ρ*=%.4f ρ_lo=%.4f ρ_hi=%.4f",
-                        "\"#{cat}\",", "\"#{vb}\",", "\"#{cm}\",", "\"#{lang}\",", a.size, # lang VERBATIM — the .downcase cosmetic caused the ru/RU seed-miss bug
-                        pct(a, 0.50), pct(a, 0.10), pct(a, 0.90))
-          end
-          puts "\nGLOBAL: n=#{all_rho.size} ρ_lo=#{pct(all_rho, 0.10)&.round(4)} ρ*=#{pct(all_rho, 0.50)&.round(4)} ρ_hi=#{pct(all_rho, 0.90)&.round(4)}"
-          puts "→ update _tasks/T1-074/gate0-seed.rb CELLS with the n>=8 rows above."
-
-          # ===== phi_inflation calibration: honest-anchor divergence distribution =====
-          # The inflation corroborator (dormant) fires when ccv_chat_divergence >= phi_inflation (∧ ¬raid).
-          # Honest anchors have natural non-raid CCV surges with flat chat (embeds / front-page) → nonzero
-          # divergence. phi_inflation must sit ABOVE the honest P99-of-max so honest channels ~never trip.
-          puts "\n===== HONEST-ANCHOR ccv_chat_divergence DISTRIBUTION (phi_inflation calibration) ====="
-          nz = anchor_div_max.reject(&:zero?)
-          puts "  honest anchors: #{anchor_div_max.size} | with any divergence (>0): #{nz.size}"
-          if anchor_div_max.any?
-            puts format("  per-anchor MAX divergence: P50=%.4f P90=%.4f P95=%.4f P99=%.4f max=%.4f",
-                        pct(anchor_div_max, 0.50) || 0, pct(anchor_div_max, 0.90) || 0, pct(anchor_div_max, 0.95) || 0,
-                        pct(anchor_div_max, 0.99) || 0, anchor_div_max.max || 0)
-            [ 0.2, 0.3, 0.5 ].each do |phi|
-              trip = anchor_div_max.count { |d| d >= phi }
-              puts format("  phi_inflation=%.2f → %d/%d honest anchors TRIP C_inflation (%.1f%% honest false-positive)",
-                          phi, trip, anchor_div_max.size, 100.0 * trip / anchor_div_max.size)
-            end
-            puts "  → set phi_inflation ABOVE honest P99; bring to PO before the flip."
-          else
-            puts "  no honest-anchor divergence samples yet (need accrued shadow lines carrying v2_ccv_chat_divergence)"
-          end
-          RUBY_EOF
-          echo "Built ($(wc -l < /tmp/mine.rb) lines)"
-
-      - name: Run miner on ${{ inputs.target || 'hostkey' }}
-        run: |
-          TARGET="${{ inputs.target || 'hostkey' }}"
+          TARGET="${{ inputs.target || 'home' }}"
           # On the hourly SCHEDULE (inputs empty) mine BOTH conventions so the windowed ρ_obs corpus is
           # captured before docker json-logs rotate (~30min) — the P2 re-seed needs windowed samples and
           # they can't be recovered once rotated. On manual dispatch, mine just the requested convention.
           CONV_IN="${{ inputs.convention }}"
           if [ -z "$CONV_IN" ]; then CONVS="cumulative windowed"; else CONVS="$CONV_IN"; fi
-          scp /tmp/mine.rb ${TARGET}:/tmp/mine.rb
           CONTAINER=$(ssh ${TARGET} "docker ps --filter 'name=himrate-web-staging' --format '{{.Names}}' | head -1")
           echo "container: ${CONTAINER} | conventions: ${CONVS}"
-          ssh ${TARGET} "docker cp /tmp/shadow_lines.txt ${CONTAINER}:/tmp/shadow_lines.txt && docker cp /tmp/mine.rb ${CONTAINER}:/tmp/mine.rb"
+          ssh ${TARGET} "docker cp /tmp/shadow_lines.txt ${CONTAINER}:/tmp/shadow_lines.txt"
           for c in $CONVS; do
             echo "===================== MINING convention=$c ====================="
-            ssh ${TARGET} "docker exec -e MINE_CONV=\"$c\" ${CONTAINER} sh -c 'bin/rails runner /tmp/mine.rb 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
+            ssh ${TARGET} "docker exec -e MINE_CONV=\"$c\" ${CONTAINER} sh -c 'bin/rails ti_v2:shadow_mine 2>&1; echo RAILS_EXIT=\$?'" 2>&1 | grep -vE 'Flipper audit|connecting to Redis|stackprof|Please add|KnownBotService: init' || true
           done

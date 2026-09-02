@@ -6,17 +6,19 @@ name: ti-v2-dv-fullchain
 on:
   workflow_dispatch:
     inputs:
-      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      target: { required: true, type: choice, options: [home], default: home }
 
 jobs:
   dv:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: SSH
-        run: |
-          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
-          printf 'Host hostkey\n  HostName 82.21.7.48\n  User root\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+      - uses: actions/checkout@v7
+      - name: Tailnet SSH (home server)
+        uses: ./.github/actions/tailnet-ssh
+        with:
+          ts_authkey: ${{ secrets.TS_AUTHKEY }}
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Build
         run: |
           cat > /tmp/dv.rb <<'RB'

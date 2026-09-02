@@ -1,16 +1,12 @@
-name: hostkey-rightsize
+name: host-rightsize
 
-# One-shot ops workflow (HOSTKEY migration #298): apply the 32 GB right-sized
-# accessory config (PostgreSQL / ClickHouse / whisper) to the staging box via
-# `kamal accessory reboot`, then verify the new settings are live on the box.
-#
-# Run this BEFORE the DNS cutover so the cutover lands on an already-right-sized
-# box (zero user impact — DNS still points at Time4VPS while this runs). Idempotent:
-# re-running just re-applies the same config. `kamal deploy` does NOT recreate
-# accessories, so this reboot is the only path that applies the new cmd/memory/cpus.
-#
-# Reads the accessory config from the `ref` input's checkout (default = the
-# migration branch carrying the right-sized deploy.yml + constrained.xml).
+# Ops workflow (ex hostkey-rightsize, HOSTKEY migration #298; renamed P2 2026-09-02): apply the
+# accessory config (PostgreSQL / ClickHouse / whisper) from the given ref to the target box via
+# `kamal accessory reboot`, then verify the settings are live. Idempotent: re-running re-applies
+# the same config. `kamal deploy` does NOT recreate accessories — this reboot is the only path
+# that applies new cmd/memory/cpus/files. Host resolves from config/accessory_hosts.yml
+# (home server, tailnet-only → the Tailnet step below). Deliberately NOT on the
+# tailnet-ssh composite: kamal writes its own `Host *` SSH config — only the join step is inline.
 
 on:
   workflow_dispatch:
@@ -19,7 +15,7 @@ on:
         description: 'Git ref whose config/deploy.yml + clickhouse/config.d/constrained.xml to apply'
         required: true
         type: string
-        default: feature/hostkey-migration
+        default: main
 
 jobs:
   rightsize:
@@ -36,6 +32,12 @@ jobs:
       - uses: ruby/setup-ruby@v1
 
       - run: gem install kamal
+
+      - name: Connect Tailscale (home server is tailnet-only)
+        uses: tailscale/github-action@v3
+        with:
+          authkey: ${{ secrets.TS_AUTHKEY }}
+          ping: 100.78.102.60
 
       - name: Set up SSH
         env:
@@ -90,7 +92,7 @@ jobs:
           HOST=$(ruby -ryaml -e 'puts YAML.load_file("config/accessory_hosts.yml").fetch("staging").first')
           echo "::notice::verifying right-sized config on ${HOST}"
           sleep 20  # let PG accept connections after container recreate
-          ssh "root@${HOST}" 'bash -s' <<'REMOTE'
+          ssh "himych@${HOST}" 'bash -s' <<'REMOTE'
           set +e
           echo "=== PostgreSQL (expect shared_buffers=4GB, effective_cache_size=12GB, work_mem=32MB, maintenance_work_mem=512MB, max_connections=200) ==="
           DB=$(docker ps --filter name=himrate-db --format "{{.Names}}" | head -1)
