@@ -8,7 +8,19 @@ abort("The Rails environment is running in production mode!") if Rails.env.produ
 require "rspec/rails"
 require "webmock/rspec"
 
-WebMock.disable_net_connect!(allow_localhost: true)
+# No real network in specs by default. Two independent lanes may widen that, and they must
+# compose — each was written against the same single `disable_net_connect!` call, so picking one
+# branch at merge time would silently close the other:
+#   * WEBMOCK_EXTRA_ALLOW — comma-separated hosts for the self-hosted CI replica, where the test
+#     services resolve by container name instead of localhost (2026-09 GitHub-suspension
+#     contingency). Empty/unset on GitHub CI = no change.
+#   * EXTERNAL_INTEGRATION=1 — the external-integration lane (spec/integration/external, tag
+#     `external`) opens exactly the third-party hosts the clients use: Helix api.twitch.tv +
+#     id.twitch.tv (app token), GQL gql.twitch.tv. IRC is a raw TLS socket (WebMock never sees
+#     it); whisper is reached over WHISPER_URL, localhost in practice → already allowed.
+webmock_allow = ENV.fetch("WEBMOCK_EXTRA_ALLOW", "").split(",").map(&:strip).reject(&:empty?)
+webmock_allow += %w[api.twitch.tv id.twitch.tv gql.twitch.tv] if ENV["EXTERNAL_INTEGRATION"] == "1"
+WebMock.disable_net_connect!(allow_localhost: true, allow: webmock_allow)
 
 begin
   ActiveRecord::Migration.maintain_test_schema!

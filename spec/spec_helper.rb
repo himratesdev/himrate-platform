@@ -11,6 +11,12 @@ RSpec.configure do |config|
 
   config.shared_context_metadata_behavior = :apply_to_host_groups
   config.filter_run_when_matching :focus
+
+  # 4.3 external-integration lane (ai-dev-team/CLAUDE.md: «для КАЖДОГО внешнего сервиса —
+  # реальный integration-спек»). Specs tagged `external: true` hit real third-party services
+  # (Twitch Helix/GQL/IRC, whisper) and are excluded from the default sweep; opt in with
+  # EXTERNAL_INTEGRATION=1 (CI: .github/workflows/integration-external.yml, nightly).
+  config.filter_run_excluding external: true unless ENV["EXTERNAL_INTEGRATION"] == "1"
   config.order = :random
   Kernel.srand config.seed
 end
