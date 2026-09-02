@@ -9,7 +9,7 @@ class PromoExpiryWorker
   sidekiq_options queue: :monitoring, retry: 3
 
   def perform
-    expired = Subscription.where(plan_type: "promo", is_active: true)
+    expired = Subscription.active.where(plan_type: "promo")
                           .where("billing_period_end IS NOT NULL AND billing_period_end < ?", Time.current)
     user_ids = expired.distinct.pluck(:user_id)
     return if user_ids.empty?
@@ -23,7 +23,7 @@ class PromoExpiryWorker
   private
 
   def recompute_tier!(user)
-    tiers = user.subscriptions.where(is_active: true).pluck(:tier)
+    tiers = user.subscriptions.active.pluck(:tier)
     best = tiers.max_by { |t| Promo::RedeemService::TIER_RANK.fetch(t, 0) } || "free"
     user.update!(tier: best) if user.tier != best
   end

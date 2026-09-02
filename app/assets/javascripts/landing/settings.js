@@ -183,7 +183,7 @@
       var code = (input.value || "").trim();
       if (!code) { show("Введите промокод", false); return; }
       btn.disabled = true; btn.style.opacity = "0.6";
-      fetch("/api/v1/promo/redeem", {
+      fetch("/api/v1/promocodes/redeem", {
         method: "POST", headers: HEADERS, credentials: "same-origin",
         body: JSON.stringify({ code: code }),
       })
@@ -191,8 +191,7 @@
         .then(function (res) {
           if (res.ok) {
             var d = res.j.data || {};
-            var until = d.expires_at ? " до " + new Date(d.expires_at).toLocaleDateString("ru-RU") : " (бессрочно)";
-            show("Готово! Доступ уровня «" + (d.tier || "premium") + "» активирован" + until + ".", true);
+            show(d.message || "Готово! Промокод активирован.", true);
             input.value = "";
           } else {
             show((res.j.error && res.j.error.message) || "Не удалось активировать промокод", false);

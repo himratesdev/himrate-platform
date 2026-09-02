@@ -1,6 +1,8 @@
 # TASK-H8 Day-0: коды ошибок редима промокода (wire PROMO_*) — LK settings блок «Промокод».
 ru:
   promo:
+    success_until: "Доступ уровня «%{tier}» активирован до %{until}"
+    success_lifetime: "Доступ уровня «%{tier}» активирован бессрочно"
     errors:
       promo_invalid: "Такого промокода нет или он больше не действует"
       promo_exhausted: "Лимит активаций этого промокода исчерпан"

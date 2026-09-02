@@ -11,7 +11,7 @@ RSpec.describe PromoExpiryWorker do
     keeps_user = create(:user, tier: "business")
     Subscription.create!(user: keeps_user, tier: "premium", plan_type: "promo", price: 0,
                          started_at: 20.days.ago, is_active: true, billing_period_end: 1.day.ago)
-    Subscription.create!(user: keeps_user, tier: "business", plan_type: "monthly", price: 99,
+    Subscription.create!(user: keeps_user, tier: "business", plan_type: "per_channel", price: 99,
                          started_at: 10.days.ago, is_active: true)
 
     lifetime_user = create(:user, tier: "premium")
