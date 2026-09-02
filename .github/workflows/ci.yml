@@ -314,13 +314,17 @@ jobs:
         with:
           authkey: ${{ secrets.TS_AUTHKEY }}
           ping: 100.78.102.60
+      # P2 2026-09-02: host comes from config/deploy.yml (the deploy SoT) — not from the
+      # STAGING_HOST repo variable, which silently kept the dead HOSTKEY IP after the migration.
+      - name: Resolve staging host from config/deploy.yml
+        id: staging_host
+        run: echo "host=$(ruby -ryaml -e 'puts YAML.load_file("config/deploy.yml").dig("servers","web","hosts").first')" >> "$GITHUB_OUTPUT"
       - name: Verify staging deployment
         uses: ./.github/actions/verify-deployment
         with:
           destination: staging
           expected_sha: ${{ github.sha }}
-          host: ${{ vars.STAGING_HOST }}
-          health_url: https://staging.himrate.com/health
+          host: ${{ steps.staging_host.outputs.host }}
           ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
 
   # === Deploy to Production — on tag v*.*.* ===
