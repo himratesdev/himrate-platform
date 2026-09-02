@@ -7,6 +7,12 @@ RSpec.describe "Api::V1::Brand::StreamerCards", type: :request do
   let!(:channel) { create(:channel, login: "teststreamer", display_name: "Test Streamer") }
 
   before do
+    # Legacy v1 layer2 (signal_breakdown checks + ti_score). :ti_v2_engine is in ALL_FLAGS → stance
+    # explicit; the v2 layer2 (band + authenticity) is covered by
+    # spec/services/brand/streamer_card_service_spec.rb "layer2 authenticity under ti_v2_engine".
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+
     create(:stream, channel: channel, game_name: "Dota 2", language: "ru")
     # Explicit in-window dates — the factory's sequence(:date) is a leaky global counter that
     # drifts outside the 30-day window in the full suite.

@@ -85,6 +85,12 @@ RSpec.describe Ml::FeatureExtractor do
     # PR6: StabilitySignals delegation — extractor returns numeric stability features when
     # TIH + Stream history sufficient (≥5 streams).
     it "delegates stability features to Ml::Features::StabilitySignals (PR6)" do
+      # Legacy v1 basis: the rows below carry trust_index_score, which StabilitySignals only reads
+      # when the cutover flag is OFF. :ti_v2_engine lives in ALL_FLAGS (rails_helper enables it per
+      # example), so the stance is explicit here; the v2 authenticity basis — including the
+      # poisoned-zero guard — is covered in spec/services/ml/features/stability_signals_spec.rb.
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
       allow(Clickhouse::ChatQueries).to receive(:chat_feature_aggregates).and_return({})
       allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams).and_return({})
       channel = stream.channel

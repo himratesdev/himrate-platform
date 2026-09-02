@@ -10,6 +10,12 @@ RSpec.describe "Streams API", type: :request do
   let(:headers_premium) { auth_headers(user_premium) }
 
   before do
+    # Legacy v1 stream payload (ti_score / erv_percent per row). :ti_v2_engine sits in ALL_FLAGS
+    # and rails_helper enables it per example → the v1 stance is explicit here; under v2 the rows
+    # carry authenticity + band_row/band_color instead.
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+
     # PR-A1 (EPIC SCALE ARCHITECTURE Step 2): peak_ccv / avg_ccv columns dropped — explicit
     # PSR carries the stats. Create completed streams + their PSR rows + TIH.
     3.times do |i|

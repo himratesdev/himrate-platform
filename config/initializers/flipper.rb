@@ -108,10 +108,15 @@ module FlipperDefaults
   # NB #2 (blast radius): ALL_FLAGS is not just boot behaviour — spec/rails_helper.rb enables every
   # entry before EVERY example, so adding a flag here silently flips the default for the whole test
   # suite. Specs written against the OFF branch stop covering it and start failing (that is exactly
-  # what :ti_v2_engine did across 8 files when it was promoted). Before adding a flag: grep its
-  # readers in app/, find the specs that exercise the OFF branch, and give them an explicit stance
+  # what :ti_v2_engine did when it was promoted). Before adding a flag: grep its readers in app/,
+  # find the specs that exercise the OFF branch, and give them an explicit stance
   # (`allow(Flipper).to receive(:enabled?).with(:flag).and_return(false)`) rather than leaving them
   # on an implicit default.
+  #
+  # Scale of the :ti_v2_engine promotion, for calibration: 37 examples in 15 spec files across
+  # three layers (spec/requests 15, spec/services 20, spec/workers 2) needed an explicit stance.
+  # The first sweep covered only services+workers, so CI would still have been red — sweep every
+  # layer that reaches the reader, not just the one the reader class lives in.
   ALL_FLAGS = [
     :pundit_authorization,
     :bot_raid_chain,

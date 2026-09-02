@@ -205,9 +205,9 @@ RSpec.describe Ml::Features::StabilitySignals do
                                   calculated_at: (18 + i).hours.ago)
       end
       std = stability.call[:trust_index_30d_std]
-      # Same five v2 rows (75..79) as the happy path — the low-scoring v1 rows must not widen it.
-      expect(std).to be_within(0.001).of(described_class.new(stream).call[:trust_index_30d_std])
-      expect(std).to be < 5.0
+      # Population std of the five v2 rows [75..79] = √2 ≈ 1.4142. If the v1 rows (10) leaked into
+      # the pluck the std would be ≈31 — the pinned constant is what makes this a real assertion.
+      expect(std).to be_within(0.001).of(1.4142)
     end
   end
 end
