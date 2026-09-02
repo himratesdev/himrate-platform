@@ -54,13 +54,24 @@ module Promo
                    granted_tier: promo.grants_tier, expires_at: expires_at)
       end
 
-      if result.ok && @user.email.present?
-        PromoMailer.activated(@user, tier: result.tier, expires_at: result.expires_at).deliver_later
-      end
+      deliver_activation_mail(result)
       result
     end
 
     private
+
+    # The grant is already committed by the time this runs, so the mail is best-effort: a Redis blip
+    # in deliver_later must not turn a successful redeem into a 500 (Api::BaseController only rescues
+    # Pundit errors → the user would see an error on a tier they already hold, and the retry would
+    # answer PROMO_ALREADY_REDEEMED). Same guard as User#record_registration_event.
+    def deliver_activation_mail(result)
+      return unless result.ok && @user.email.present?
+
+      PromoMailer.activated(@user, tier: result.granted_tier, expires_at: result.expires_at).deliver_later
+    rescue StandardError => e
+      Rails.logger.error("[Promo::RedeemService] mail enqueue failed for user #{@user.id}: #{e.class} #{e.message}")
+      Sentry.capture_exception(e) if defined?(Sentry)
+    end
 
     # Never downgrade: a business user redeeming a premium code keeps business.
     def lift_tier!(granted)

@@ -55,8 +55,8 @@ gem "sidekiq", "~> 7.0"
 gem "sidekiq-cron", "~> 2.0"
 gem "connection_pool", "~> 2.5"
 
-# Transactional email delivery via Postmark (email-marketing foundation). Delivery
-# is only wired when POSTMARK_API_TOKEN is present (see config/environments).
+# Transactional email delivery via Resend (CO-002). Delivery is only wired when
+# RESEND_API_KEY is present — see config/mailer_delivery.rb.
 gem "resend", "~> 1.13"
 
 # Error tracking + structured telemetry. DSN configured via SENTRY_DSN env;

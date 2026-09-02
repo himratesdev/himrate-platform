@@ -1,6 +1,11 @@
 # TASK-H8 Day-0: коды ошибок редима промокода (wire PROMO_*) — LK settings блок «Промокод».
 ru:
   promo:
+    # Названия планов — бренд-имена (PRICING v4.2), не переводятся; ключ существует, чтобы
+    # в user-facing копию не утекал сырой enum (`premium`) — CR iter-1 Nit-6.
+    tiers:
+      premium: "Premium"
+      business: "Business"
     success_until: "Доступ уровня «%{tier}» активирован до %{until}"
     success_lifetime: "Доступ уровня «%{tier}» активирован бессрочно"
     errors:

@@ -69,4 +69,19 @@ RSpec.describe Promo::RedeemService do
     expect { redeem("HR-MAIL") }.not_to have_enqueued_mail(PromoMailer, :activated) # already redeemed
     expect { redeem("NOPE") }.not_to have_enqueued_mail(PromoMailer, :activated)
   end
+
+  # CR iter-1 SF-1: the grant commits inside the transaction, the mail is enqueued after it. A Redis
+  # blip in deliver_later used to escape #call → 500 on an already-granted tier, and the retry would
+  # answer PROMO_ALREADY_REDEEMED (grant unrecoverable through the UI).
+  it "still returns the grant when the mail enqueue fails" do
+    user = create(:user, email: "po@example.com")
+    PromoCode.create!(code: "HR-MAILFAIL", kind: "trial", grants_tier: "premium", duration_days: 14)
+    allow(PromoMailer).to receive(:activated).and_raise(Redis::CannotConnectError.new("boom"))
+
+    result = described_class.new(user: user, code: "HR-MAILFAIL").call
+
+    expect(result.ok).to be true
+    expect(result.granted_tier).to eq("premium")
+    expect(user.reload.tier).to eq("premium")
+  end
 end

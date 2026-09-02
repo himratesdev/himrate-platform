@@ -2,6 +2,8 @@
 
 require "active_support/core_ext/integer/time"
 
+require_relative "../mailer_delivery"
+
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
@@ -44,6 +46,11 @@ Rails.application.configure do
 
   # Mailer previews live with the specs (repo has no test/ tree).
   config.action_mailer.preview_paths << Rails.root.join("spec/mailers/previews").to_s
+
+  # Same deliver_later queue as staging/production, so a local sidekiq picks mail off the queue it
+  # actually consumes instead of the unconsumed default `mailers` (CR iter-1 Nit-7). The provider is
+  # only wired if RESEND_API_KEY happens to be exported locally.
+  HimRate::MailerDelivery.configure(config)
 
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log

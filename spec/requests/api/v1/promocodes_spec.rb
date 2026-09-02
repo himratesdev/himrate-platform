@@ -21,7 +21,7 @@ RSpec.describe "Promocodes API" do
       data = response.parsed_body["data"]
       expect(data["tier"]).to eq("premium")
       expect(data["expires_at"]).to be_present
-      expect(data["message"]).to include("premium")
+      expect(data["message"]).to include("Premium") # brand plan name, never the raw enum
       expect(user.reload.tier).to eq("premium")
     end
 
@@ -32,7 +32,7 @@ RSpec.describe "Promocodes API" do
            headers: auth_headers(user).merge("Accept-Language" => "en")
 
       expect(response).to have_http_status(:ok)
-      expect(response.parsed_body.dig("data", "message")).to eq("premium access activated — lifetime")
+      expect(response.parsed_body.dig("data", "message")).to eq("Premium access activated — lifetime")
     end
 
     it "renders the RU date format in the success message (I18n.l path)" do
@@ -46,7 +46,7 @@ RSpec.describe "Promocodes API" do
 
       expect(response).to have_http_status(:ok)
       expect(response.parsed_body.dig("data", "message"))
-        .to eq("Доступ уровня «premium» активирован до #{expected_date}")
+        .to eq("Доступ уровня «Premium» активирован до #{expected_date}")
       # Guard the regression precisely: the ActiveSupport fallback would render ISO %Y-%m-%d.
       expect(response.parsed_body.dig("data", "message")).not_to match(/\d{4}-\d{2}-\d{2}/)
     end
@@ -60,7 +60,7 @@ RSpec.describe "Promocodes API" do
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
       expect(data["tier"]).to eq("business")          # effective tier is never downgraded
-      expect(data["message"]).to include("premium")   # …but the message names the grant
+      expect(data["message"]).to include("Premium")   # …but the message names the grant (brand name, not the enum)
       expect(data["message"]).not_to include("business")
     end
 

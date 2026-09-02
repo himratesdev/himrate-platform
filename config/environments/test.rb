@@ -5,6 +5,8 @@
 # your test database is "scratch space" for the test suite and is wiped
 # and recreated between test runs. Don't rely on the data there!
 
+require_relative "../mailer_delivery"
+
 Rails.application.configure do
   # Settings specified here will take precedence over those in config/application.rb.
 
@@ -36,6 +38,9 @@ Rails.application.configure do
   # Tell Action Mailer not to deliver emails to the real world.
   # The :test delivery method accumulates sent emails in the
   # ActionMailer::Base.deliveries array.
+  # Queue name parity with staging/production; provider: false so a RESEND_API_KEY exported in the
+  # shell can never turn a spec run into a live send (CR iter-1 Nit-7).
+  HimRate::MailerDelivery.configure(config, provider: false)
   config.action_mailer.delivery_method = :test
 
   # Set host to be used by links generated in mailer templates.
