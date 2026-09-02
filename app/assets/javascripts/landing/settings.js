@@ -166,7 +166,6 @@
     setP(document, "TG Av", "?");
   }
 
-
   // ---- boot ----
   function boot() {
     savedChip = q(document, "Saved Chip");

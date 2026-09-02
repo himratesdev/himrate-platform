@@ -7,7 +7,7 @@ module Subscriptions
   class TierRecompute
     def self.call(user)
       tiers = user.subscriptions.active.pluck(:tier)
-      best = tiers.max_by { |t| Promo::RedeemService::TIER_RANK.fetch(t, 0) } || "free"
+      best = tiers.max_by { |t| Subscription::TIER_RANK.fetch(t, 0) } || "free"
       user.update!(tier: best) if user.tier != best
       best
     end

@@ -22,10 +22,31 @@
     el.style.opacity = "0.45"; el.style.pointerEvents = "none";
     if (title) el.title = title;
   }
+  // Paired with dim(): render() runs again after «hr:promo-redeemed», so a control dimmed in the
+  // no-subscription branch has to come back to life once a grant exists — without it the cancel
+  // button stayed inert until F5 (CR P5 SF-1).
+  function undim(name, title) {
+    var el = q(document, name);
+    if (!el) return;
+    el.style.opacity = ""; el.style.pointerEvents = "";
+    el.title = title || "";
+  }
 
   function fmtDate(iso) {
     if (!iso) return null;
     return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", year: "numeric" });
+  }
+
+  // The export paints the status pill green (dot + text + background) for its «Активна» sample.
+  // Without a grant that green reads as an active subscription, so the whole pill goes neutral
+  // (CR P5 Nit-4).
+  function setStatusTone(active) {
+    var dot = q(document, "Status Dot");
+    var pill = q(document, "Status Pill");
+    var text = q(document, "Status T");
+    if (dot) dot.style.background = active ? "#25D9A4" : "#5E5E6B";
+    if (pill) pill.style.background = active ? "#10271F" : "#1A1A20";
+    if (text) text.style.color = active ? "#25D9A4" : "#9A9AA9";
   }
 
   function renderIncluded(tier) {
@@ -41,7 +62,12 @@
   function render(data) {
     var tier = data.tier || "free";
     var subs = (data.subscriptions || []).filter(function (s) { return s.is_active; });
-    activeSub = subs[0] || null;
+    // Pick the grant that actually backs the displayed tier: the header reads data.tier (the
+    // highest-ranked active grant server-side), so price/date/cancel must come from THAT row.
+    // With a business + premium grant held at once, subs[0] (newest by started_at) showed the
+    // premium term under a «Business» header and cancelled the wrong grant (CR P5 Nit-3).
+    // Fallback to the newest row when nothing matches (tier from a non-subscription source).
+    activeSub = subs.filter(function (s) { return s.tier === data.tier; })[0] || subs[0] || null;
 
     setT("Plan Name", TIER_LABEL[tier] || tier);
     setT("Plan Tier T", activeSub && activeSub.plan_type === "promo" ? "Промо-доступ" : (tier === "free" ? "Зритель" : "Подписка"));
@@ -49,12 +75,14 @@
       setT("Price", Number(activeSub.price) === 0 ? "$0" : "$" + activeSub.price);
       setT("Price Period", Number(activeSub.price) === 0 ? "промокод" : "/ мес");
       setT("Status T", "Активна");
-      var dot = q(document, "Status Dot"); if (dot) dot.style.background = "#25D9A4";
+      setStatusTone(true);
       setT("Renewal", activeSub.billing_period_end ? "Действует до " + fmtDate(activeSub.billing_period_end) : "Действует бессрочно");
+      undim("Btn · Отменить");
     } else {
       setT("Price", "$0");
       setT("Price Period", "/ мес");
       setT("Status T", tier === "free" ? "Расширение — без ограничений" : "Нет активной подписки");
+      setStatusTone(false);
       setT("Renewal", "—");
       dim("Btn · Отменить", "Нет активной подписки");
     }
@@ -102,7 +130,14 @@
     var cmp = q(document, "Btn · Сравнить тарифы");
     if (cmp) {
       cmp.style.cursor = "pointer";
-      cmp.addEventListener("click", function () { window.location.href = "https://himrate.com/pricing"; });
+      // Marketing pages live on the apex; LK runs on app.himrate.com (prod) or staging under
+      // /app/*. Absolute apex URL ONLY from the prod app host (app.himrate.com/pricing would 301
+      // to the apex anyway — this saves the hop); everywhere else a relative path keeps staging
+      // and localhost inside their own host instead of bouncing QA into production (CR P5 SF-2,
+      // mirrors the host-conditional convention in hr-shared.js / index.js).
+      cmp.addEventListener("click", function () {
+        window.location.href = location.hostname === "app.himrate.com" ? "https://himrate.com/pricing" : "/pricing";
+      });
     }
   }
 

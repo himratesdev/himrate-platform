@@ -123,6 +123,7 @@ class PagesController < ApplicationController
   def settings
     @page = "settings"
     @brand_dashboard = true
+    @promo_card = true # export carries the «Промокод» card (TASK-H8) → layout loads landing/promo-card
   end
 
   # Screen 40 «Подписка и биллинг» — faithful export host (P5). Current plan + promo redemptions
@@ -131,6 +132,7 @@ class PagesController < ApplicationController
   def subscription
     @page = "subscription"
     @brand_dashboard = true
+    @promo_card = true # export carries the «Промокод» card (TASK-H8) → layout loads landing/promo-card
   end
 
   # Viewer personal activity (screen 03, PVA M-modules) — faithful export host. Real analytics wired
