@@ -32,7 +32,12 @@ RSpec.describe PersonalAnalytics::Api::OverviewService do
     expect(data[:heatmap][:matrix].length).to eq(7)
   end
 
+  # Legacy v1 basis (trust_index_score). ti_v2_engine is in ALL_FLAGS → stance explicit; the v2
+  # basis (authenticity, what PVA surfaces in production) is the example right below.
   it "enriches top_streamers with channel display_name + ti_score for tracked channels" do
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+
     channel = create(:channel, twitch_id: "555", login: "xqc", display_name: "xQc")
     create(:trust_index_history, channel: channel, trust_index_score: 78.5, calculated_at: 1.hour.ago)
     rollup(channel: "555", login: "xqc")
@@ -41,6 +46,26 @@ RSpec.describe PersonalAnalytics::Api::OverviewService do
 
     expect(streamer[:display_name]).to eq("xQc")
     expect(streamer[:ti_score]).to eq(78.5)
+  end
+
+  it "enriches top_streamers from the v2 authenticity column under ti_v2_engine" do
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+
+    channel = create(:channel, twitch_id: "555", login: "xqc", display_name: "xQc")
+    TrustIndexHistory.create!(channel: channel, engine_version: "v2", authenticity: 91.5,
+                              cold_start_tier: "full", calculated_at: 1.hour.ago)
+    # A stale v1 row must not win the enrichment — cross-engine mixing was the cutover bug class.
+    create(:trust_index_history, channel: channel, trust_index_score: 10.0, calculated_at: 2.hours.ago)
+    rollup(channel: "555", login: "xqc")
+
+    streamer = described_class.new(user: user, window: "30d").call[:data][:top_streamers].first
+
+    expect(streamer[:display_name]).to eq("xQc")
+    # Contract (PR3b): the v2 value ships under `authenticity`; `ti_score` stays nil for the
+    # current PVA frontend instead of carrying a cross-engine number under a retired name.
+    expect(streamer[:authenticity]).to eq(91.5)
+    expect(streamer[:ti_score]).to be_nil
   end
 
   it "raises InvalidWindow for an unknown window" do

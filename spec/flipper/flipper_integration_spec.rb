@@ -136,7 +136,9 @@ RSpec.describe "Flipper Feature Flags" do
       expect(FlipperDefaults::ALL_FLAGS).to include(:ti_v2_engine)
     end
 
-    it "is enabled after boot" do
+    # NB: this asserts the ALL_FLAGS sync (spec/rails_helper.rb applies the same list before each
+    # example) — it is a membership guard, not proof that the initializer boot loop ran.
+    it "is enabled by the ALL_FLAGS sync" do
       expect(Flipper.enabled?(:ti_v2_engine)).to be true
     end
   end
@@ -146,7 +148,7 @@ RSpec.describe "Flipper Feature Flags" do
       expect(FlipperDefaults::HOOK_FLAGS).to include(:ti_v2_shadow)
     end
 
-    it "registers po_debug_dashboard as a hook (fresh DB no longer 503s from an unknown flag)" do
+    it "registers po_debug_dashboard as a hook (togglable in the UI without a migration; still OFF)" do
       expect(FlipperDefaults::HOOK_FLAGS).to include(:po_debug_dashboard)
     end
   end

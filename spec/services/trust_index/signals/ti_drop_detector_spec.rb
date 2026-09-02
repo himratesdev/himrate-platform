@@ -14,7 +14,15 @@ RSpec.describe TrustIndex::Signals::TiDropDetector do
     )
   end
 
+  # Legacy v1 branch (engine_version='v1' rows, trust_index_score basis). ti_v2_engine now lives in
+  # ALL_FLAGS, so rails_helper enables it for every example — the v1 stance must be explicit here.
+  # The v2 path is covered by ".check under ti_v2_engine" below.
   describe ".check" do
+    before do
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+    end
+
     it "creates ti_drop anomaly when TI drop > 15 pts в 30min window" do
       make_history(score: 90, calculated_at: 25.minutes.ago)
       make_history(score: 70, calculated_at: 1.minute.ago)
@@ -93,7 +101,10 @@ RSpec.describe TrustIndex::Signals::TiDropDetector do
 
   # T1-074 PR3b — engine-aware branch: authenticity basis on engine_version='v2' rows.
   describe ".check under ti_v2_engine" do
-    before { allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true) }
+    before do
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+    end
 
     def make_v2(authenticity:, calculated_at:, tier: "full")
       TrustIndexHistory.create!(

@@ -104,6 +104,14 @@ module FlipperDefaults
   # got whitespace-split into ~40 symbol "flags" (:the, :boot, :"2026-07-29.", :"#", …) that
   # the boot loop below registered AND enabled on every Rails boot (incident 2026-08-05).
   # Name shape is pinned by spec/flipper/flipper_flag_registry_spec.rb.
+  #
+  # NB #2 (blast radius): ALL_FLAGS is not just boot behaviour — spec/rails_helper.rb enables every
+  # entry before EVERY example, so adding a flag here silently flips the default for the whole test
+  # suite. Specs written against the OFF branch stop covering it and start failing (that is exactly
+  # what :ti_v2_engine did across 8 files when it was promoted). Before adding a flag: grep its
+  # readers in app/, find the specs that exercise the OFF branch, and give them an explicit stance
+  # (`allow(Flipper).to receive(:enabled?).with(:flag).and_return(false)`) rather than leaving them
+  # on an implicit default.
   ALL_FLAGS = [
     :pundit_authorization,
     :bot_raid_chain,
@@ -199,14 +207,16 @@ module FlipperDefaults
     # re-backfill would require new source + new service implementation, не re-using these flags.
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
     accessory_auto_remediation: "BUG-010 PR3", # Kill switch для AutoRemediation::TriggerService
+    # GitHub workflow_dispatch. Default OFF — operators enable через
+    # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.
     ti_v2_shadow: "T1-074 PR2b", # v1-primary shadow compute (log-only). Meaningful only while
     # ti_v2_engine is OFF; with the cutover flag in ALL_FLAGS this stays a dormant kill-switch-era
     # hook. Registered so the flag exists deploy-proof instead of living as Redis-only state.
-    po_debug_dashboard: "TASK-PO-DEBUG-DASHBOARD" # /dashboard/po-debug gate. Was registered only by
-    # migration 20260606030000 (Flipper.disable in `up`) → absent on any DB созданной после неё →
-    # controller 503'd on a fresh box. Registered add-only here; PO enables manually when needed.
-    # GitHub workflow_dispatch. Default OFF — operators enable через
-    # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.
+    po_debug_dashboard: "TASK-PO-DEBUG-DASHBOARD" # /dashboard/po-debug gate. Registration does NOT
+    # change the 503 (add-only ⇒ still OFF, and Flipper.enabled? on an unknown feature is already
+    # false, not a raise). What it buys: the flag exists on every box, visible and togglable in the
+    # Flipper UI without a migration, instead of depending on whether 20260606030000 ever ran on
+    # this DB. PO enables it manually when the dashboard is needed.
     # NB: ti_v2_ie_shadow (i_event magnitude harvester, PR-i4) was PROMOTED to ALL_FLAGS 2026-07-23 —
     # the honest-corpus for the C_self floor calibration must accrue continuously across redeploys
     # (HOOK_FLAGS is Redis-only → reverts OFF on redeploy, PVA lesson). cost-DSV verified safe

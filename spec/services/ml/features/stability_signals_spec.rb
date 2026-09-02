@@ -7,6 +7,16 @@ RSpec.describe Ml::Features::StabilitySignals do
   let(:stream) { create(:stream, channel: channel) }
   let(:stability) { described_class.new(stream) }
 
+  # Engine stance is explicit everywhere in this file: ti_v2_engine sits in ALL_FLAGS (deploy-proof
+  # cutover selector), so rails_helper turns it ON for every example. The blocks below seed v1 TIH
+  # rows (trust_index_score basis) and therefore state the legacy stance; the v2 basis (authenticity
+  # on engine_version='v2' rows — what MLFE actually extracts in production) has its own describe at
+  # the bottom, including the poisoned-zero guard the service comment calls out.
+  before do
+    allow(Flipper).to receive(:enabled?).and_call_original
+    allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+  end
+
   describe "#call (cold-start — no history)" do
     before do
       # CH stub: no chat data for any stream → privmsg_counts_for_streams returns {}.
@@ -164,6 +174,40 @@ RSpec.describe Ml::Features::StabilitySignals do
       std = stability.call[:trust_index_30d_std]
       # Only 5 in-window rows all 80 → std = 0.
       expect(std).to be_within(0.001).of(0.0)
+    end
+  end
+  # PR3b (T1-074, M12): the production basis — authenticity on engine_version='v2' rows.
+  describe "#call (v2 engine — authenticity basis)" do
+    before do
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+      allow(Clickhouse::ChatQueries).to receive(:privmsg_counts_for_streams).and_return({})
+      5.times do |i|
+        s = create(:stream, channel: channel, started_at: (3 + i).hours.ago, ended_at: (1 + i).hours.ago)
+        TrustIndexHistory.create!(
+          channel: channel, stream: s, engine_version: "v2",
+          authenticity: 75 + i, cold_start_tier: "full", calculated_at: (1 + i).hours.ago
+        )
+      end
+    end
+
+    it "computes std from the authenticity column" do
+      std = stability.call[:trust_index_30d_std]
+      expect(std).to be_a(Numeric)
+      expect(std).to be > 0.0
+    end
+
+    it "ignores v1 rows under the flag — a NULL authenticity never becomes a poisoned 0.0" do
+      # Pre-cutover rows carry trust_index_score only; if they leaked into the v2 pluck the
+      # nil→0.0 coercion would feed a confidently-wrong std into the LightGBM feature vector.
+      3.times do |i|
+        s = create(:stream, channel: channel, started_at: (20 + i).hours.ago, ended_at: (18 + i).hours.ago)
+        TrustIndexHistory.create!(channel: channel, stream: s, trust_index_score: 10,
+                                  calculated_at: (18 + i).hours.ago)
+      end
+      std = stability.call[:trust_index_30d_std]
+      # Same five v2 rows (75..79) as the happy path — the low-scoring v1 rows must not widen it.
+      expect(std).to be_within(0.001).of(described_class.new(stream).call[:trust_index_30d_std])
+      expect(std).to be < 5.0
     end
   end
 end

@@ -29,6 +29,12 @@ RSpec.describe Streams::ReportService do
     # Forces the build_assembled branch — :signals method is invoked only there
     # (build_from_psr surfaces psr.signals_summary, not ReportService#signals).
     before do
+      # Legacy v1 branch: signal_breakdown only exists on v1 rows. ti_v2_engine is in ALL_FLAGS
+      # (rails_helper enables it per example), so the v1 stance is explicit; the v2 contract
+      # (signals retired, reason_codes instead) is asserted in the describe below.
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(false)
+
       create(:trust_index_history,
         channel: channel,
         stream: stream,
@@ -77,6 +83,25 @@ RSpec.describe Streams::ReportService do
       TrustIndexHistory.where(stream: stream).update_all(signal_breakdown: {})
       result = described_class.new(stream: stream, channel: channel).call
 
+      expect(result[:signals]).to eq([])
+    end
+  end
+  # PR3b (T1-074): v2 rows carry no signal_breakdown — reason_codes replace the retired
+  # 14-signal array. The guard keeps a future reader from re-introducing a fabricated list.
+  describe "#call under ti_v2_engine" do
+    before do
+      allow(Flipper).to receive(:enabled?).and_call_original
+      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
+
+      TrustIndexHistory.create!(
+        channel: channel, stream: stream, engine_version: "v2",
+        authenticity: 88.0, erv: 4400, band_row: 2, band_color: "green",
+        cold_start_tier: "full", reason_codes: [ "CHATTER_QUALITY_HIGH" ], calculated_at: 1.minute.ago
+      )
+    end
+
+    it "returns an empty signals array (retired taxonomy, not a fabricated one)" do
+      result = described_class.new(stream: stream, channel: channel).call
       expect(result[:signals]).to eq([])
     end
   end

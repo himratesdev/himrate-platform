@@ -13,7 +13,7 @@
    GITHUB_TOKEN — production-путь требует PAT), Google OAuth secret (TASK-082),
    полный прогон «Validate required secrets» из accessory-ops.yml для production env.
 3. **Flipper**: перенести нужные флаги из `STAGING_ALL_FLAGS` в `ALL_FLAGS` (или снять
-   env-guard) — на проде иначе молчат sигналы #8/#9/#12, chatter-профили,
+   env-guard) — на проде иначе молчат сигналы #8/#9/#12, chatter-профили,
    follower-снапшоты, edges, ЛК (`saas_lk_live`). `billing_auto_subscription_creation`
    НЕ переносить (staging/dev-only by design).
 4. **Калибровка**: засеять production windowed ρ*-ячейки (gate0-seed / rho-reseed) ДО
