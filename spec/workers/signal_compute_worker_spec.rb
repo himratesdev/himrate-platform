@@ -91,8 +91,9 @@ RSpec.describe SignalComputeWorker do
   end
 
   it "logs info with the engine version and duration (DEC-7)" do
-    expect(Rails.logger).to receive(:info).with(/SignalComputeWorker: stream.*engine=v2.*duration=/)
+    allow(Rails.logger).to receive(:info) # the calibration "SCW shadow" line also logs at info
     worker.perform(stream.id)
+    expect(Rails.logger).to have_received(:info).with(/SignalComputeWorker: stream.*engine=v2.*duration=/)
   end
 
   # V1-RETIRE: v2 is the unconditional engine — persists TIH engine_version='v2' + ccv and
