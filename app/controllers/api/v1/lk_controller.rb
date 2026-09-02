@@ -18,9 +18,14 @@ module Api
         }
       end
 
-      # POST /api/v1/lk/notify — capture email for launch notification (flag-off, screen 71).
+      # POST /api/v1/lk/notify — capture email for launch notification (flag-off, screen 71) and
+      # for /pricing plan interest while checkout is not wired (source "pricing_interest" + plan).
+      # A signed-in caller may omit the email — their account email is used.
       def notify
-        NotifyRequest.capture(email: notify_params[:email], user: current_user)
+        source = NotifyRequest::SOURCES.include?(notify_params[:source]) ? notify_params[:source] : "lk_launch"
+        email  = notify_params[:email].presence || current_user&.email
+        NotifyRequest.capture(email: email, user: current_user, source: source,
+                              plan: notify_params[:plan].presence&.slice(0, 32))
         render json: { subscribed: true }
       rescue ActiveRecord::RecordInvalid
         render json: { error: { code: "INVALID_EMAIL" } }, status: :unprocessable_entity
@@ -29,7 +34,7 @@ module Api
       private
 
       def notify_params
-        params.permit(:email)
+        params.permit(:email, :source, :plan)
       end
     end
   end

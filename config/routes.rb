@@ -236,6 +236,9 @@ Rails.application.routes.draw do
   get "brands",      to: "pages#brands"
   get "viewers",     to: "pages#viewers"
   get "methodology", to: "pages#methodology"
+  # Canonical pricing page (PRICING v4.2 hosted; screen-41 design retargeted to the public
+  # apex — the LK screen 40 «Сравнить тарифы» and the paywall modal CTA link here). (P4 2026-09)
+  get "pricing", to: "pages#pricing"
   # Legal pages (own minimal readable layout) — required for Chrome Web Store
   # submission (privacy policy URL) + footer trust links. (TASK-060)
   get "privacy", to: "pages#privacy"

@@ -16,7 +16,7 @@ class PagesController < ApplicationController
   # is never touched. Skips the staging test host and dev/localhost.
   before_action :canonicalize_host
 
-  PAGES = %w[index streamers brands viewers methodology login].freeze
+  PAGES = %w[index streamers brands viewers methodology login pricing].freeze
 
   # One action per page; @page selects the per-page JS bundle in the layout.
   PAGES.each do |page|
