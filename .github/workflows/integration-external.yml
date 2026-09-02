@@ -1,10 +1,22 @@
 # 4.3 External-integration lane: REAL third-party round-trips (Twitch Helix / GQL / IRC /
-# EventSub-list; whisper stays local-only — no service here). Nightly + on demand; NOT a
-# required PR check — the default `bundle exec rspec` excludes the `external` tag entirely
-# (spec/spec_helper.rb), so PR CI behavior is unchanged.
+# EventSub-list). Nightly + on demand; NOT a required PR check — the default `bundle exec rspec`
+# excludes the `external` tag entirely (spec/spec_helper.rb), so PR CI behavior is unchanged.
+#
+# The whisper.cpp /inference probe is deliberately NOT wired to a service container here; it runs
+# against a reachable server supplied via WHISPER_URL (repo variable, or the workflow_dispatch
+# input). Rationale is recorded in spec/integration/external/whisper_stt_spec.rb — short version:
+# the image is private on ghcr, a service-container pull failure kills the whole job (including
+# the keyless Twitch probes that need nothing), and building it in-job costs a whisper.cpp
+# compile + a 466 MB model download every night to re-prove what build-whisper-image.yml already
+# smoke-tests on change.
 name: integration-external
 on:
   workflow_dispatch:
+    inputs:
+      whisper_url:
+        description: "whisper.cpp base URL (e.g. http://127.0.0.1:9000 tunnelled to the staging accessory). Empty = whisper probe skips."
+        required: false
+        default: ""
   schedule:
     - cron: "40 4 * * *" # nightly 04:40 UTC (after the 03:00-03:30 cron cluster)
 
@@ -27,11 +39,37 @@ jobs:
         ports:
           - 6379:6379
         options: --health-cmd="redis-cli ping" --health-interval=3s --health-timeout=3s --health-retries=10
+      # Parity with ci.yml's test job (same image tag, same password-protected default user):
+      # spec/support does not touch ClickHouse today, but the boot path is shared — a future
+      # CH-dependent support file must not fail only in this lane.
+      clickhouse:
+        image: clickhouse/clickhouse-server:24.8.14.39
+        env:
+          CLICKHOUSE_DB: himrate_test
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: himrate_test
+        ports:
+          - 8123:8123
+        options: --health-cmd="clickhouse-client --user default --password himrate_test --query 'SELECT 1'" --health-interval=5s --health-timeout=3s --health-retries=20
     steps:
       - uses: actions/checkout@v7
       - uses: ruby/setup-ruby@v1
         with:
           bundler-cache: true
+      # NB: the `secrets` context is not available in a step `if:` (only in env/with/run/
+      # credentials), so the presence checks happen inside the script, not in the condition.
+      - name: Report which probes this run can reach
+        env:
+          TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
+          TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
+          WHISPER_URL: ${{ inputs.whisper_url || vars.WHISPER_URL }}
+        run: |
+          if [ -z "${TWITCH_CLIENT_ID}" ] || [ -z "${TWITCH_CLIENT_SECRET}" ]; then
+            echo "::warning::TWITCH_CLIENT_ID/SECRET missing — Helix + EventSub specs will skip; only the keyless GQL/IRC probes run."
+          fi
+          if [ -z "${WHISPER_URL}" ]; then
+            echo "::warning::WHISPER_URL unset — the whisper /inference probe skips. This run does NOT prove STT works; run it against the staging accessory (see whisper_stt_spec.rb header)."
+          fi
       - name: Setup DB
         env:
           RAILS_ENV: test
@@ -44,6 +82,35 @@ jobs:
           EXTERNAL_INTEGRATION: "1"
           DATABASE_URL: postgres://himrate_test:himrate_test@localhost:5432/himrate_test
           REDIS_URL: redis://localhost:6379/0
+          CLICKHOUSE_URL: http://localhost:8123
+          CLICKHOUSE_DATABASE: himrate_test
+          CLICKHOUSE_USER: default
+          CLICKHOUSE_PASSWORD: himrate_test
+          WHISPER_URL: ${{ inputs.whisper_url || vars.WHISPER_URL }}
           TWITCH_CLIENT_ID: ${{ secrets.TWITCH_CLIENT_ID }}
           TWITCH_CLIENT_SECRET: ${{ secrets.TWITCH_CLIENT_SECRET }}
-        run: bundle exec rspec spec/integration/external --tag external
+        run: bundle exec rspec spec/integration/external --tag external --format progress --format json --out tmp/rspec-external.json
+      # Every spec in this lane can skip itself (credentials / no live channel / no WHISPER_URL).
+      # Without this the job would report green for years while proving nothing — the exact silent
+      # degradation the lane exists to prevent. rspec exits 0 on an all-pending run, so the gate
+      # has to read the report rather than the exit code.
+      - name: Guard — at least one external example actually executed
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f tmp/rspec-external.json || { echo "::error::rspec produced no JSON report"; exit 1; }
+          total=$(jq -r '.summary.example_count' tmp/rspec-external.json)
+          pending=$(jq -r '.summary.pending_count' tmp/rspec-external.json)
+          executed=$(( total - pending ))
+          echo "external examples: total=$total pending/skipped=$pending executed=$executed"
+          if [ "$executed" -le 0 ]; then
+            echo "::error::every external spec skipped — the lane proved nothing (check TWITCH_CLIENT_ID/SECRET, live-channel resolution, WHISPER_URL)"
+            exit 1
+          fi
+      - name: Upload rspec report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: external-rspec-report
+          path: tmp/rspec-external.json
+          if-no-files-found: warn
