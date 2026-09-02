@@ -13,9 +13,8 @@ RSpec.describe TiDivergenceAlerter do
   before do
     create(:trust_index_history,
       channel: channel, stream: stream,
-      trust_index_score: 75.0, erv_percent: 75.0, ccv: 5000,
-      confidence: 0.85, classification: "needs_review", cold_start_status: "full",
-      signal_breakdown: {}, calculated_at: 30.minutes.ago)
+      authenticity: 75.0, ccv: 5000,
+      calculated_at: 30.minutes.ago)
 
     allow(TelegramAlertWorker).to receive(:perform_async)
   end

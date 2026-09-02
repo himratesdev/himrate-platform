@@ -19,13 +19,8 @@ RSpec.describe PostStreamWorker do
     create(:trust_index_history,
       channel: channel,
       stream: stream,
-      trust_index_score: 72.0,
-      erv_percent: 72.0,
+      authenticity: 72.0,
       ccv: 5000,
-      confidence: 0.85,
-      classification: "needs_review",
-      cold_start_status: "full",
-      signal_breakdown: {},
       calculated_at: 1.minute.ago)
 
     allow(SignalComputeWorker).to receive(:new).and_return(instance_double(SignalComputeWorker, perform: nil))
@@ -45,33 +40,27 @@ RSpec.describe PostStreamWorker do
 
       report = PostStreamReport.last
       expect(report.stream_id).to eq(stream.id)
-      expect(report.trust_index_final).to eq(72.0)
-      expect(report.erv_percent_final).to eq(72.0)
+      # V1-RETIRE: the retired v1 scalars are STOP-WRITTEN (nil); erv_final carries the v2 count.
+      expect(report.trust_index_final).to be_nil
+      expect(report.erv_percent_final).to be_nil
+      expect(report.erv_final).to eq(3600)
       expect(report.ccv_peak).to eq(5000)
       expect(report.ccv_avg).to eq(4000)
       expect(report.generated_at).to be_present
     end
 
-    # BUG-TI-SIGNAL-BREAKDOWN regression guard (2026-06-01): build_signals_summary MUST
-    # populate from TIH.signal_breakdown JSON column. The `signals` PG table is dead-write
-    # post TrustIndex::Engine refactor — old TiSignal.where(...) returned empty {} for every
-    # post-stream report. The summary is the canonical per-signal trace stored in
-    # PostStreamReport.signals_summary; empty broke the $4.99 stream report endpoint.
-    it "populates signals_summary from TIH.signal_breakdown JSON column (not empty signals PG table)" do
+    # V1-RETIRE: the 14-signal breakdown taxonomy is retired — v2 explainability is the
+    # engine-emitted reason_codes on the TIH row. build_signals_summary ALWAYS returns
+    # {"reason_codes" => [...]} for a stream with a final v2 TIH; the $4.99 report reads them here.
+    it "populates signals_summary with reason_codes from the final v2 TIH row" do
       tih = TrustIndexHistory.find_by!(stream: stream)
-      tih.update!(signal_breakdown: {
-        "auth_ratio" => { "value" => 0.0, "weight" => 0.21, "confidence" => 1.0, "contribution" => 0.0 },
-        "chat_behavior" => { "value" => 0.13, "weight" => 0.17, "confidence" => 0.95, "contribution" => 0.0221 }
-      })
+      tih.update!(reason_codes: %w[rho_high eihc_low])
 
       described_class.new.perform(stream.id)
 
       report = PostStreamReport.last
       summary = report.signals_summary
-      expect(summary).to be_a(Hash)
-      expect(summary.keys).to contain_exactly("auth_ratio", "chat_behavior")
-      expect(summary["auth_ratio"]).to include("value" => 0.0, "weight" => 0.21, "confidence" => 1.0)
-      expect(summary["chat_behavior"]).to include("value" => 0.13, "weight" => 0.17, "confidence" => 0.95)
+      expect(summary).to eq("reason_codes" => %w[rho_high eihc_low])
     end
 
     it "broadcasts stream_ended notification" do
@@ -122,7 +111,7 @@ RSpec.describe PostStreamWorker do
     end
 
     it "runs TI divergence check for merged streams" do
-      stream.update!(merged_parts_count: 2, part_boundaries: [ { "ended_at" => 2.hours.ago.iso8601, "ti_score" => 50.0 } ])
+      stream.update!(merged_parts_count: 2, part_boundaries: [ { "ended_at" => 2.hours.ago.iso8601, "authenticity" => 50.0, "erv" => 2000 } ])
 
       described_class.new.perform(stream.id)
 
@@ -150,6 +139,7 @@ RSpec.describe PostStreamWorker do
       report = PostStreamReport.last
       expect(report.trust_index_final).to be_nil
       expect(report.erv_percent_final).to be_nil
+      expect(report.erv_final).to be_nil
     end
   end
 
@@ -162,7 +152,7 @@ RSpec.describe PostStreamWorker do
 
     it "creates compute_failure Anomaly + schedules deferred retry when TIH missing AND flag is OFF" do
       TrustIndexHistory.where(stream_id: stream.id).delete_all
-      allow(Flipper).to receive(:enabled?).and_return(false) # default (ti_v2_engine etc.)
+      allow(Flipper).to receive(:enabled?).and_return(false) # default for other flags
       allow(Flipper).to receive(:enabled?).with(:signal_compute).and_return(false)
       allow(SignalComputeWorker).to receive(:new).and_return(instance_double(SignalComputeWorker, perform: nil))
       allow(SignalComputeWorker).to receive(:perform_in)
@@ -194,7 +184,7 @@ RSpec.describe PostStreamWorker do
       # No bots, no chat, no chatters — empty stream legitimately produces no TIH.
       # We don't want to spam Anomaly for every such empty stream.
       TrustIndexHistory.where(stream_id: stream.id).delete_all
-      allow(Flipper).to receive(:enabled?).and_return(false) # default (ti_v2_engine etc.)
+      allow(Flipper).to receive(:enabled?).and_return(false) # default for other flags
       allow(Flipper).to receive(:enabled?).with(:signal_compute).and_return(true)
       allow(SignalComputeWorker).to receive(:new).and_return(instance_double(SignalComputeWorker, perform: nil))
       allow(SignalComputeWorker).to receive(:perform_in)

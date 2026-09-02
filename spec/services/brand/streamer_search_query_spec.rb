@@ -4,14 +4,14 @@ require "rails_helper"
 
 RSpec.describe Brand::StreamerSearchQuery do
   # real_avg = ccv × erv/100. Explicit in-window dates (factory sequence(:date) leaks globally).
-  def make_channel(login:, ccv:, erv:, ti: 85.0, classification: "trusted", game: "Dota 2", language: "ru", streams_count: 1, n_days: 3)
+  def make_channel(login:, ccv:, erv:, ti: 85.0, classification: "trusted", game: "Dota 2", language: "ru", streams_count: 1, n_days: 3, band_row: nil)
     ch = create(:channel, login: login)
     create(:stream, channel: ch, game_name: game, language: language, started_at: 1.hour.ago)
     n_days.times do |i|
       create(:trends_daily_aggregate, channel: ch, date: (i + 1).days.ago.to_date,
                                       ccv_avg: ccv, erv_avg_percent: erv, ti_avg: ti,
                                       classification_at_end: classification, categories: { game => 1 },
-                                      streams_count: streams_count)
+                                      streams_count: streams_count, band_row_at_end: band_row)
     end
     ch
   end
@@ -127,8 +127,8 @@ RSpec.describe Brand::StreamerSearchQuery do
     expect(result[:total]).to eq(0)
   end
 
-  it "labels via the canonical ERV label map (not the stale design text)" do
-    make_channel(login: "real", ccv: 10_000, erv: 95.0, ti: 95.0) # excellent band
+  it "labels via the persisted v2 band (not the stale design text)" do
+    make_channel(login: "real", ccv: 10_000, erv: 95.0, ti: 95.0, band_row: 3) # green_real band
     label = described_class.new({}).call[:results].first[:classification_label]
     expect(label).to eq("Аудитория реальная")
     expect(label).not_to eq("точно не бот")

@@ -32,15 +32,16 @@ RSpec.describe PersonalAnalytics::Api::OverviewService do
     expect(data[:heatmap][:matrix].length).to eq(7)
   end
 
-  it "enriches top_streamers with channel display_name + ti_score for tracked channels" do
+  it "enriches top_streamers with channel display_name + authenticity (ti_score kept nil for the tolerant reader)" do
     channel = create(:channel, twitch_id: "555", login: "xqc", display_name: "xQc")
-    create(:trust_index_history, channel: channel, trust_index_score: 78.5, calculated_at: 1.hour.ago)
+    create(:trust_index_history, channel: channel, authenticity: 78.5, calculated_at: 1.hour.ago)
     rollup(channel: "555", login: "xqc")
 
     streamer = described_class.new(user: user, window: "30d").call[:data][:top_streamers].first
 
     expect(streamer[:display_name]).to eq("xQc")
-    expect(streamer[:ti_score]).to eq(78.5)
+    expect(streamer[:authenticity]).to eq(78.5) # v2 scalar (same 0-100 meaning)
+    expect(streamer[:ti_score]).to be_nil       # retired v1 scalar — key kept, always nil
   end
 
   it "raises InvalidWindow for an unknown window" do

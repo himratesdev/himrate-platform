@@ -41,8 +41,8 @@ RSpec.describe "ML feature extraction determinism (CR-253 M1)" do
                     started_at: stream.ended_at - (i + 2).hours,
                     ended_at: stream.ended_at - (i + 1).hours)
       TrustIndexHistory.create!(
-        channel: channel, stream: past,
-        trust_index_score: 75 + i,
+        channel: channel, stream: past, engine_version: "v2",
+        authenticity: 75 + i,
         calculated_at: stream.ended_at - (i + 1).hours
       )
     end
@@ -129,8 +129,8 @@ RSpec.describe "ML feature extraction determinism (CR-253 M1)" do
                              started_at: stream.ended_at + 1.hour,
                              ended_at: stream.ended_at + 2.hours)
       TrustIndexHistory.create!(
-        channel: channel, stream: future_stream,
-        trust_index_score: 10, # outlier — would shift std if leaked
+        channel: channel, stream: future_stream, engine_version: "v2",
+        authenticity: 10, # outlier — would shift std if leaked
         calculated_at: stream.ended_at + 2.hours
       )
       travel(5.hours) do

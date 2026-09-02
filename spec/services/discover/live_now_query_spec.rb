@@ -31,31 +31,33 @@ RSpec.describe Discover::LiveNowQuery do
       expect(en_row[:erv_label]).to eq("Audience is real") # same key, EN request locale
     end
 
-    it "still serves a v1 legacy row within the transition window (ccv × erv%)" do
-      channel = create(:channel, login: "v1chan", display_name: "V1 Chan", is_monitored: true)
+    # V1-RETIRE: the wire keys erv_percent/ti_score are legacy NAMES only — both carry
+    # authenticity now (landing/discover.js reads them; renaming the wire is a separate task).
+    it "carries authenticity under both legacy wire names (erv_percent AND ti_score)" do
+      channel = create(:channel, login: "wirechan", display_name: "Wire Chan", is_monitored: true)
       live_stream(channel)
       create(:trust_index_history, channel: channel, stream: nil,
-                                    engine_version: "v1", ccv: 1000, erv_percent: 80.0,
-                                    trust_index_score: 85.0, calculated_at: 1.minute.ago)
+                                    ccv: 1000, erv: 800, authenticity: 80.0,
+                                    calculated_at: 1.minute.ago)
 
-      row = described_class.new(user: user).call.find { |r| r[:login] == "v1chan" }
+      row = described_class.new(user: user).call.find { |r| r[:login] == "wirechan" }
 
       expect(row).to be_present
       expect(row[:shown_viewers]).to eq(1000)
-      expect(row[:real_viewers]).to eq(800)         # 1000 × 80 / 100
-      expect(row[:erv_percent]).to eq(80.0)
-      expect(row[:ti_score]).to eq(85.0)
+      expect(row[:real_viewers]).to eq(800)         # NATIVE erv
+      expect(row[:erv_percent]).to eq(80.0)         # authenticity under the legacy name
+      expect(row[:ti_score]).to eq(80.0)            # same value — legacy wire alias
       expect(row[:erv_label]).to be_present
     end
 
-    it "ranks channels by real audience across mixed engine versions" do
+    it "ranks channels by real audience (native erv DESC)" do
       big = create(:channel, login: "big", is_monitored: true)
       small = create(:channel, login: "small", is_monitored: true)
       live_stream(big)
       live_stream(small)
       create(:trust_index_history, :v2, channel: big, stream: nil, ccv: 9000, erv: 8000, calculated_at: 1.minute.ago)
-      create(:trust_index_history, channel: small, stream: nil, engine_version: "v1",
-                                    ccv: 1000, erv_percent: 50.0, calculated_at: 1.minute.ago)
+      create(:trust_index_history, :v2, channel: small, stream: nil, ccv: 1000, erv: 500,
+                                         authenticity: 50.0, calculated_at: 1.minute.ago)
 
       logins = described_class.new(user: user).call.map { |r| r[:login] }
       expect(logins.index("big")).to be < logins.index("small") # 8000 real > 500 real

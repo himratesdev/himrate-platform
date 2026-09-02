@@ -110,16 +110,17 @@ RSpec.describe StreamOnlineWorker do
 
     create(:trust_index_history,
       channel: channel, stream: old_stream,
-      trust_index_score: 65.0, erv_percent: 65.0, ccv: 3000,
-      confidence: 0.8, classification: "needs_review", cold_start_status: "full",
-      signal_breakdown: {}, calculated_at: 11.minutes.ago)
+      authenticity: 65.0, erv: 2600, ccv: 3000,
+      calculated_at: 11.minutes.ago)
 
     worker.perform(event_data)
 
     old_stream.reload
     expect(old_stream.merged_parts_count).to eq(2)
     expect(old_stream.part_boundaries.size).to eq(1)
-    expect(old_stream.part_boundaries.first["ti_score"]).to eq(65.0)
+    # V1-RETIRE: boundary carries the v2 trust scalars (authenticity + erv count).
+    expect(old_stream.part_boundaries.first["authenticity"]).to eq(65.0)
+    expect(old_stream.part_boundaries.first["erv"]).to eq(2600)
   end
 
   # TASK-033 TC-005: =30min → NOT merge
@@ -134,13 +135,12 @@ RSpec.describe StreamOnlineWorker do
   it "handles multiple reconnects with cumulative part_boundaries" do
     old_stream = create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 10.minutes.ago,
       game_name: "Just Chatting", merged_parts_count: 2,
-      part_boundaries: [ { "ended_at" => 1.hour.ago.iso8601, "ti_score" => 60.0, "erv_percent" => 60.0, "part_number" => 1 } ])
+      part_boundaries: [ { "ended_at" => 1.hour.ago.iso8601, "authenticity" => 60.0, "erv" => 2400, "part_number" => 1 } ])
 
     create(:trust_index_history,
       channel: channel, stream: old_stream,
-      trust_index_score: 70.0, erv_percent: 70.0, ccv: 4000,
-      confidence: 0.85, classification: "needs_review", cold_start_status: "full",
-      signal_breakdown: {}, calculated_at: 11.minutes.ago)
+      authenticity: 70.0, erv: 2800, ccv: 4000,
+      calculated_at: 11.minutes.ago)
 
     worker.perform(event_data)
 

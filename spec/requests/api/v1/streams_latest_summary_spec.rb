@@ -64,8 +64,9 @@ RSpec.describe "Streams Latest Summary API", type: :request do
       data = response.parsed_body["data"]
       expect(data["session_id"]).to eq(stream.id)
       expect(data["peak_viewers"]).to eq(5234)
-      expect(data["erv_percent_final"]).to be_within(0.1).of(85.5)
+      expect(data).not_to have_key("erv_percent_final") # V1-RETIRE: retired blueprint field
       expect(data["erv_count_final"]).to eq(4200)
+      expect(data["engine_version"]).to eq("v2") # v2 verdict block merged unconditionally
       expect(data["category"]).to eq("Just Chatting")
       expect(data["partial"]).to be(false)
       expect(response.parsed_body["meta"]["preliminary"]).to be(false)
@@ -127,7 +128,7 @@ RSpec.describe "Streams Latest Summary API", type: :request do
 
       data = response.parsed_body["data"]
       expect(data["peak_viewers"]).to eq(5000)  # CcvSnapshot.max fallback
-      expect(data["erv_percent_final"]).to be_nil
+      expect(data).not_to have_key("erv_percent_final") # V1-RETIRE: retired blueprint field
       expect(data["erv_count_final"]).to be_nil
       expect(response.parsed_body["meta"]["preliminary"]).to be(true)
     end

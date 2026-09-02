@@ -6,10 +6,13 @@ RSpec.describe "Api::V1::Discover", type: :request do
   let(:user) { create(:user) }
   let(:headers) { { "Authorization" => "Bearer #{Auth::JwtService.encode_access(user.id)}" } }
 
-  def live_channel(login:, ccv:, ti:, started_at: 1.hour.ago)
+  # V1-RETIRE: v2 rows — native erv count + authenticity (ti = % real), band persisted.
+  def live_channel(login:, ccv:, ti:, started_at: 1.hour.ago, band_row: 3, band_color: "green")
     channel = create(:channel, login: login, is_monitored: true)
     create(:stream, channel: channel, started_at: started_at, ended_at: nil, game_name: "Dota 2")
-    create(:trust_index_history, channel: channel, ccv: ccv, erv_percent: ti, trust_index_score: ti, calculated_at: 5.minutes.ago)
+    create(:trust_index_history, channel: channel, ccv: ccv, erv: (ccv * ti / 100.0).round,
+                                 authenticity: ti.to_f, band_row: band_row, band_color: band_color,
+                                 calculated_at: 5.minutes.ago)
     channel
   end
 
@@ -19,21 +22,23 @@ RSpec.describe "Api::V1::Discover", type: :request do
       expect(response).to have_http_status(:unauthorized)
     end
 
-    it "returns live channels ranked by REAL audience (ccv × erv%), with headline fields" do
-      live_channel(login: "big_shown", ccv: 10_000, ti: 40)   # real 4000
+    it "returns live channels ranked by REAL audience (native v2 erv), with headline fields" do
+      live_channel(login: "big_shown", ccv: 10_000, ti: 40, band_row: 2, band_color: "yellow") # real 4000
       live_channel(login: "real_king", ccv: 6_000, ti: 95)    # real 5700 — must rank first
       # offline channel must not appear
       offline = create(:channel, login: "sleeper", is_monitored: true)
       create(:stream, channel: offline, started_at: 2.days.ago, ended_at: 1.day.ago)
 
-      get "/api/v1/discover/live", headers: headers
+      # V1-RETIRE: erv_label re-derived from band_row via band.<key> under the REQUEST locale
+      get "/api/v1/discover/live", headers: headers.merge("Accept-Language" => "ru")
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
       expect(data.map { |c| c["login"] }).to eq(%w[real_king big_shown])
       top = data.first
       expect(top["real_viewers"]).to eq(5700)
       expect(top["shown_viewers"]).to eq(6000)
-      expect(top["erv_label"]).to eq("Аудитория реальная")
+      expect(top["erv_percent"]).to eq(95.0) # authenticity under the legacy wire name
+      expect(top["erv_label"]).to eq("Аудитория реальная") # band_row 3 → band.green_real (ru)
       expect(top["erv_label_color"]).to eq("green")
       expect(top["game_name"]).to eq("Dota 2")
       expect(top["started_at"]).to be_present

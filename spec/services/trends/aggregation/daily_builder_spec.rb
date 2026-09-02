@@ -40,36 +40,44 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
                                       ccv_peak: 200 + (i * 100),
                                       generated_at: stream.ended_at)
 
+          # V1-RETIRE: v2 rows — authenticity (the "% real" heir of ti_*) + native erv count.
+          # Latest row (i=2) carries band_row 3 so band_*_at_end picks IT, not an earlier row.
           create(:trust_index_history,
                  channel: channel, stream: stream,
-                 trust_index_score: 70 + (i * 5),
-                 erv_percent: 75 + (i * 3),
-                 ccv: 100, confidence: 0.85,
-                 classification: "needs_review", cold_start_status: "full",
+                 authenticity: 70 + (i * 5),
+                 erv: 100 + (i * 10),
+                 ccv: 100,
+                 band_row: i == 2 ? 3 : 4, band_color: "green",
                  signal_breakdown: {},
                  calculated_at: target_date.beginning_of_day + (i + 2).hours)
         end
       end
 
-      it "aggregates TI values (avg/std/min/max)" do
+      it "aggregates authenticity values (avg/std/min/max) and stop-writes ti_* nil" do
         described_class.call(channel.id, target_date)
         tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
 
-        # TI values: 70, 75, 80 → avg=75, min=70, max=80
-        expect(tda.ti_avg).to eq(75.0)
-        expect(tda.ti_min).to eq(70.0)
-        expect(tda.ti_max).to eq(80.0)
-        expect(tda.ti_std).to be > 0
+        # authenticity values: 70, 75, 80 → avg=75, min=70, max=80
+        expect(tda.authenticity_avg).to eq(75.0)
+        expect(tda.authenticity_min).to eq(70.0)
+        expect(tda.authenticity_max).to eq(80.0)
+        expect(tda.authenticity_std).to be > 0
+        # retired v1 family — written nil
+        expect(tda.ti_avg).to be_nil
+        expect(tda.ti_min).to be_nil
+        expect(tda.ti_max).to be_nil
+        expect(tda.ti_std).to be_nil
       end
 
-      it "aggregates ERV values" do
+      it "aggregates the native ERV count and stop-writes erv_*_percent nil" do
         described_class.call(channel.id, target_date)
         tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
 
-        # ERV values: 75, 78, 81
-        expect(tda.erv_avg_percent).to eq(78.0)
-        expect(tda.erv_min_percent).to eq(75.0)
-        expect(tda.erv_max_percent).to eq(81.0)
+        # erv counts: 100, 110, 120 → avg = 110
+        expect(tda.erv_avg_count).to eq(110.0)
+        expect(tda.erv_avg_percent).to be_nil
+        expect(tda.erv_min_percent).to be_nil
+        expect(tda.erv_max_percent).to be_nil
       end
 
       it "aggregates CCV values" do
@@ -89,11 +97,13 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         expect(tda.categories).to eq({ "Just Chatting" => 1, "Valorant" => 2 })
       end
 
-      it "sets classification_at_end from latest TIH" do
+      it "sets band_*_at_end from latest TIH and stop-writes classification_at_end nil" do
         described_class.call(channel.id, target_date)
         tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
 
-        expect(tda.classification_at_end).to eq("needs_review")
+        expect(tda.band_row_at_end).to eq(3) # latest row (i=2), not an earlier band_row 4
+        expect(tda.band_color_at_end).to eq("green")
+        expect(tda.classification_at_end).to be_nil # retired v1 column — stop-written
       end
     end
 
@@ -134,9 +144,8 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         create(:post_stream_report, stream: stream_today, ccv_avg: 100, ccv_peak: 200,
           generated_at: stream_today.ended_at)
         create(:trust_index_history, channel: channel, stream: stream_today,
-                                     trust_index_score: 75, erv_percent: 75, ccv: 100,
-                                     confidence: 0.85, classification: "needs_review",
-                                     cold_start_status: "full", signal_breakdown: {},
+                                     authenticity: 75, erv: 75, ccv: 100,
+                                     signal_breakdown: {},
                                      calculated_at: target_date.beginning_of_day + 4.hours)
 
         # Stream previous day — shouldn't count
@@ -146,9 +155,8 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         create(:post_stream_report, stream: stream_prev, ccv_avg: 9999, ccv_peak: 9999,
           generated_at: stream_prev.ended_at)
         create(:trust_index_history, channel: channel, stream: stream_prev,
-                                     trust_index_score: 99, erv_percent: 99, ccv: 9999,
-                                     confidence: 0.85, classification: "trusted",
-                                     cold_start_status: "full", signal_breakdown: {},
+                                     authenticity: 99, erv: 9999, ccv: 9999,
+                                     signal_breakdown: {},
                                      calculated_at: (target_date - 1.day).beginning_of_day + 4.hours)
       end
 
@@ -157,7 +165,7 @@ RSpec.describe Trends::Aggregation::DailyBuilder, type: :service do
         tda = TrendsDailyAggregate.find_by(channel_id: channel.id, date: target_date)
 
         expect(tda.streams_count).to eq(1)
-        expect(tda.ti_avg).to eq(75.0) # not 99 from prev day
+        expect(tda.authenticity_avg).to eq(75.0) # not 99 from prev day
         expect(tda.ccv_avg).to eq(100)
       end
     end

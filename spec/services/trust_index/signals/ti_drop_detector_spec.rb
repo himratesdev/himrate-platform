@@ -6,11 +6,12 @@ RSpec.describe TrustIndex::Signals::TiDropDetector do
   let(:channel) { Channel.create!(twitch_id: "td_ch", login: "td_channel", display_name: "TD") }
   let(:stream) { Stream.create!(channel: channel, started_at: 1.hour.ago) }
 
-  def make_history(score:, calculated_at:, cold_start: "full")
+  # V1-RETIRE: basis = v2 `authenticity` (0-100, same scale/semantics as the old TI for
+  # drop purposes) + `cold_start_tier` precondition.
+  def make_history(score:, calculated_at:, tier: "full")
     TrustIndexHistory.create!(
-      channel: channel, stream: stream,
-      trust_index_score: score, calculated_at: calculated_at,
-      cold_start_status: cold_start, confidence: 1.0
+      channel: channel, stream: stream, engine_version: "v2",
+      authenticity: score, calculated_at: calculated_at, cold_start_tier: tier
     )
   end
 
@@ -41,9 +42,9 @@ RSpec.describe TrustIndex::Signals::TiDropDetector do
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
 
-    it "no-op when latest cold_start_status == 'insufficient' (ADR-085 D-6 precondition)" do
-      make_history(score: 90, calculated_at: 25.minutes.ago, cold_start: "insufficient")
-      make_history(score: 50, calculated_at: 1.minute.ago, cold_start: "insufficient")
+    it "no-op when latest cold_start_tier == 'insufficient' (ADR-085 D-6 precondition)" do
+      make_history(score: 90, calculated_at: 25.minutes.ago, tier: "insufficient")
+      make_history(score: 50, calculated_at: 1.minute.ago, tier: "insufficient")
 
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
@@ -77,53 +78,27 @@ RSpec.describe TrustIndex::Signals::TiDropDetector do
     it "cross-stream history (channel-scoped, ADR-085 D-6 default)" do
       other_stream = Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
       TrustIndexHistory.create!(
-        channel: channel, stream: other_stream,
-        trust_index_score: 90, calculated_at: 25.minutes.ago,
-        cold_start_status: "full", confidence: 1.0
+        channel: channel, stream: other_stream, engine_version: "v2",
+        authenticity: 90, calculated_at: 25.minutes.ago, cold_start_tier: "full"
       )
-      TrustIndexHistory.create!(
-        channel: channel, stream: stream,
-        trust_index_score: 70, calculated_at: 1.minute.ago,
-        cold_start_status: "full", confidence: 1.0
-      )
-
-      expect { described_class.check(stream) }.to change(Anomaly, :count).by(1)
-    end
-  end
-
-  # T1-074 PR3b — engine-aware branch: authenticity basis on engine_version='v2' rows.
-  describe ".check under ti_v2_engine" do
-    before { allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true) }
-
-    def make_v2(authenticity:, calculated_at:, tier: "full")
       TrustIndexHistory.create!(
         channel: channel, stream: stream, engine_version: "v2",
-        authenticity: authenticity, calculated_at: calculated_at, cold_start_tier: tier
+        authenticity: 70, calculated_at: 1.minute.ago, cold_start_tier: "full"
       )
-    end
 
-    it "fires on a >15pt authenticity drop over v2 rows" do
-      make_v2(authenticity: 90, calculated_at: 25.minutes.ago)
-      make_v2(authenticity: 70, calculated_at: 1.minute.ago)
       expect { described_class.check(stream) }.to change(Anomaly, :count).by(1)
-    end
-
-    it "ignores v1 rows under the flag (a v1 90→v2 70 mix is NOT a drop)" do
-      make_history(score: 90, calculated_at: 25.minutes.ago) # v1 row
-      make_v2(authenticity: 70, calculated_at: 1.minute.ago)
-      expect { described_class.check(stream) }.not_to change(Anomaly, :count) # <2 v2 rows
     end
 
     it "excludes EC-15 GREY rows (authenticity NULL) — no fake 90pt drop" do
-      make_v2(authenticity: 90, calculated_at: 25.minutes.ago)
+      make_history(score: 90, calculated_at: 25.minutes.ago)
       TrustIndexHistory.create!(channel: channel, stream: stream, engine_version: "v2",
                                 authenticity: nil, calculated_at: 1.minute.ago, cold_start_tier: "full")
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
 
-    it "skips cold-start tier insufficient" do
-      make_v2(authenticity: 90, calculated_at: 25.minutes.ago)
-      make_v2(authenticity: 60, calculated_at: 1.minute.ago, tier: "insufficient")
+    it "skips when only the latest row is cold-start tier insufficient" do
+      make_history(score: 90, calculated_at: 25.minutes.ago)
+      make_history(score: 60, calculated_at: 1.minute.ago, tier: "insufficient")
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
   end

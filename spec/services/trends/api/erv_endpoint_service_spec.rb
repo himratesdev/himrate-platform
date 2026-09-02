@@ -85,17 +85,24 @@ RSpec.describe Trends::Api::ErvEndpointService do
   end
 
   describe "per_stream granularity" do
+    # V1-RETIRE: v2-only series — native erv count + interval + authenticity (legacy wire
+    # name erv_percent) + band color.
     it "returns one point per stream" do
       3.times do |i|
         stream = create(:stream, channel: channel)
         create(:trust_index_history, channel: channel, stream: stream,
-          trust_index_score: 70, erv_percent: 75 + i, ccv: 500, calculated_at: (5 - i).days.ago)
+          erv: 375 + i, authenticity: 75.0 + i, ccv: 500, calculated_at: (5 - i).days.ago)
       end
 
       result = described_class.new(channel: channel, period: "7d", granularity: "per_stream").call
 
       expect(result[:data][:points].size).to eq(3)
-      expect(result[:data][:points].first).to include(:date, :erv_percent, :erv_absolute, :ccv, :stream_id)
+      point = result[:data][:points].first
+      expect(point).to include(:date, :erv, :erv_interval, :erv_percent, :erv_absolute, :ccv, :stream_id, :color)
+      expect(point[:erv]).to eq(375)
+      expect(point[:erv_absolute]).to eq(375)        # native count, not ccv × %
+      expect(point[:erv_percent]).to eq(75.0)        # authenticity under the legacy wire name
+      expect(point[:engine_version]).to eq("v2")
     end
   end
 

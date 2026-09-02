@@ -12,8 +12,9 @@ RSpec.describe PostStreamNotificationService do
   describe ".broadcast_stream_ended" do
     let(:report) do
       create(:post_stream_report, stream: stream,
-        trust_index_final: 72.0, erv_percent_final: 72.0, duration_ms: 7_200_000)
+        trust_index_final: nil, erv_percent_final: nil, erv_final: 3600, duration_ms: 7_200_000)
     end
+    let(:tih) { create(:trust_index_history, channel: channel, stream: stream) }
 
     it "broadcasts stream_ended via TrustChannel" do
       expect(TrustChannel).to receive(:broadcast_to).with(channel, hash_including(
@@ -21,13 +22,15 @@ RSpec.describe PostStreamNotificationService do
         channel_id: channel.id,
         channel_login: channel.login,
         stream_id: stream.id,
-        ti_score: 72.0,
-        erv_percent: 72.0,
+        erv: 3600,
+        erv_interval: { lo: 3400, hi: 3800 },
+        band: hash_including(row: 4, color: "green"),
+        engine_version: "v2",
         duration_ms: 7_200_000,
         merged_parts_count: 1
       ))
 
-      described_class.broadcast_stream_ended(stream, report)
+      described_class.broadcast_stream_ended(stream, report, tih: tih)
     end
 
     it "includes expires_at (ended_at + 18h)" do
@@ -40,8 +43,9 @@ RSpec.describe PostStreamNotificationService do
 
     it "handles nil report gracefully" do
       expect(TrustChannel).to receive(:broadcast_to).with(channel, hash_including(
-        ti_score: nil,
-        erv_percent: nil
+        erv: nil,
+        erv_interval: nil,
+        band: { row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil }
       ))
 
       described_class.broadcast_stream_ended(stream, nil)

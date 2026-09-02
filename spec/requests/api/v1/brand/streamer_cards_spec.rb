@@ -11,11 +11,7 @@ RSpec.describe "Api::V1::Brand::StreamerCards", type: :request do
     # Explicit in-window dates — the factory's sequence(:date) is a leaky global counter that
     # drifts outside the 30-day window in the full suite.
     3.times { |i| create(:trends_daily_aggregate, channel: channel, date: (i + 1).days.ago.to_date, ccv_avg: 12_400, erv_avg_percent: 72.0, ccv_peak: 18_100, streams_count: 1) }
-    create(:trust_index_history, channel: channel, classification: "trusted",
-                                 signal_breakdown: {
-                                   "auth_ratio" => { "value" => 1.0, "weight" => 0.14, "confidence" => 1.0, "contribution" => 0.14 },
-                                   "known_bot_match" => { "value" => 0.0, "weight" => 0.1, "confidence" => 1.0, "contribution" => 0.0 }
-                                 })
+    create(:trust_index_history, channel: channel)
   end
 
   it "returns the brand streamer card for a brand user" do
@@ -38,8 +34,9 @@ RSpec.describe "Api::V1::Brand::StreamerCards", type: :request do
 
     l2 = data["layer2_authenticity"]
     expect(l2["available"]).to be(true)
-    expect(l2["classification"]).to eq("trusted")
-    expect(l2["checks"].map { |c| c["signal"] }).to include("auth_ratio", "known_bot_match")
+    expect(l2["band"]).to include("row" => 4, "color" => "green")
+    expect(l2["authenticity"]).to eq(72.0)
+    expect(l2["reason_codes"]).to eq([])
 
     expect(data["deferred"]).to include("social_platforms", "layer2_per_signal_verdict")
   end

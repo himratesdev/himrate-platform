@@ -2,70 +2,76 @@
 
 require "rails_helper"
 
+# V1-RETIRE: basis = TIH.authenticity (the erv_percent heir, stream-scoped, 15min window);
+# ErvEstimate is a retired source the detector must ignore.
 RSpec.describe TrustIndex::Signals::ErvDivergenceDetector do
   let(:channel) { Channel.create!(twitch_id: "ed_ch", login: "ed_channel", display_name: "ED") }
   let(:stream) { Stream.create!(channel: channel, started_at: 1.hour.ago) }
 
-  def make_estimate(percent:, timestamp:)
-    ErvEstimate.create!(
-      stream: stream, timestamp: timestamp,
-      erv_count: (percent * 10).to_i, erv_percent: percent, confidence: 1.0
+  def make_history(authenticity:, calculated_at:)
+    TrustIndexHistory.create!(
+      channel: channel, stream: stream, engine_version: "v2",
+      authenticity: authenticity, calculated_at: calculated_at, cold_start_tier: "full"
     )
   end
 
   describe ".check" do
     it "creates erv_divergence anomaly when |delta| > 10% в 15min window" do
-      make_estimate(percent: 80, timestamp: 12.minutes.ago)
-      make_estimate(percent: 60, timestamp: 1.minute.ago)
+      make_history(authenticity: 80, calculated_at: 12.minutes.ago)
+      make_history(authenticity: 60, calculated_at: 1.minute.ago)
 
       expect { described_class.check(stream) }.to change(Anomaly, :count).by(1)
 
       anomaly = Anomaly.last
       expect(anomaly.anomaly_type).to eq("erv_divergence")
       expect(anomaly.details["delta_pct"]).to be_within(0.1).of(25.0)  # |60-80|/80 = 25%
-      expect(anomaly.details["from_erv_percent"]).to be_within(0.1).of(80.0)
+      # T1-074 surface-audit dual-emit: axis + authenticity keys alongside legacy erv_percent keys
+      expect(anomaly.details["axis"]).to eq("authenticity")
+      expect(anomaly.details["from_authenticity"]).to be_within(0.1).of(80.0)
+      expect(anomaly.details["to_authenticity"]).to be_within(0.1).of(60.0)
+      expect(anomaly.details["from_erv_percent"]).to be_within(0.1).of(80.0) # legacy keys kept
       expect(anomaly.details["to_erv_percent"]).to be_within(0.1).of(60.0)
       expect(anomaly.details["window_minutes"]).to eq(15)
     end
 
-    it "creates anomaly также для positive divergence (ERV jumped up)" do
-      make_estimate(percent: 50, timestamp: 12.minutes.ago)
-      make_estimate(percent: 70, timestamp: 1.minute.ago)
+    it "creates anomaly также для positive divergence (authenticity jumped up)" do
+      make_history(authenticity: 50, calculated_at: 12.minutes.ago)
+      make_history(authenticity: 70, calculated_at: 1.minute.ago)
 
       expect { described_class.check(stream) }.to change(Anomaly, :count).by(1)
       expect(Anomaly.last.details["delta_pct"]).to be_within(0.1).of(40.0)  # |70-50|/50 = 40%
     end
 
     it "does NOT create anomaly when |delta| <= 10%" do
-      make_estimate(percent: 80, timestamp: 12.minutes.ago)
-      make_estimate(percent: 75, timestamp: 1.minute.ago)  # 6.25% delta
+      make_history(authenticity: 80, calculated_at: 12.minutes.ago)
+      make_history(authenticity: 75, calculated_at: 1.minute.ago)  # 6.25% delta
 
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
 
     it "no-op when estimates.size < 2 (insufficient data — EC-22)" do
-      make_estimate(percent: 80, timestamp: 1.minute.ago)
+      make_history(authenticity: 80, calculated_at: 1.minute.ago)
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
 
     it "no-op when baseline = 0 (avoid division by zero)" do
-      make_estimate(percent: 0, timestamp: 12.minutes.ago)
-      make_estimate(percent: 50, timestamp: 1.minute.ago)
+      make_history(authenticity: 0, calculated_at: 12.minutes.ago)
+      make_history(authenticity: 50, calculated_at: 1.minute.ago)
 
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
 
     it "deduplicates within 5min window (FR-016 AnomalyAlerter pattern)" do
-      make_estimate(percent: 80, timestamp: 12.minutes.ago)
-      make_estimate(percent: 60, timestamp: 1.minute.ago)
+      make_history(authenticity: 80, calculated_at: 12.minutes.ago)
+      make_history(authenticity: 60, calculated_at: 1.minute.ago)
 
       described_class.check(stream)
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
 
     it "returns array of created anomaly IDs" do
-      make_estimate(percent: 80, timestamp: 12.minutes.ago)
-      make_estimate(percent: 60, timestamp: 1.minute.ago)
+      make_history(authenticity: 80, calculated_at: 12.minutes.ago)
+      make_history(authenticity: 60, calculated_at: 1.minute.ago)
 
       ids = described_class.check(stream)
       expect(ids).to be_an(Array)
@@ -73,55 +79,26 @@ RSpec.describe TrustIndex::Signals::ErvDivergenceDetector do
       expect(Anomaly.find(ids.first).anomaly_type).to eq("erv_divergence")
     end
 
-    it "ignores estimates outside 15min window" do
-      make_estimate(percent: 80, timestamp: 20.minutes.ago)  # outside window
-      make_estimate(percent: 60, timestamp: 1.minute.ago)
+    it "ignores rows outside 15min window" do
+      make_history(authenticity: 80, calculated_at: 20.minutes.ago)  # outside window
+      make_history(authenticity: 60, calculated_at: 1.minute.ago)
 
-      # Only 1 estimate inside window → no-op
-      expect { described_class.check(stream) }.not_to change(Anomaly, :count)
-    end
-  end
-
-  # T1-074 PR3b (gap D-4) — v2 basis: TIH.authenticity (the erv_percent heir); ErvEstimate retired.
-  describe ".check under ti_v2_engine" do
-    before { allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true) }
-
-    def make_v2(authenticity:, calculated_at:)
-      TrustIndexHistory.create!(
-        channel: stream.channel, stream: stream, engine_version: "v2",
-        authenticity: authenticity, calculated_at: calculated_at, cold_start_tier: "full"
-      )
-    end
-
-    it "fires on >10% authenticity divergence over v2 rows" do
-      make_v2(authenticity: 90, calculated_at: 10.minutes.ago)
-      make_v2(authenticity: 70, calculated_at: 1.minute.ago)
-      expect { described_class.check(stream) }.to change(Anomaly, :count).by(1)
-
-      # CR #432 N-2 (surface-audit dual-emit): axis + authenticity-named keys alongside legacy
-      details = Anomaly.last.details
-      expect(details["axis"]).to eq("authenticity")
-      expect(details["from_authenticity"]).to be_within(0.1).of(90.0)
-      expect(details["to_authenticity"]).to be_within(0.1).of(70.0)
-      expect(details["from_erv_percent"]).to be_within(0.1).of(90.0) # legacy keys kept
-    end
-
-    it "no-op below 10% divergence" do
-      make_v2(authenticity: 90, calculated_at: 10.minutes.ago)
-      make_v2(authenticity: 85, calculated_at: 1.minute.ago)
-      expect { described_class.check(stream) }.not_to change(Anomaly, :count)
-    end
-
-    it "ignores ErvEstimate rows under the flag (retired source)" do
-      make_estimate(percent: 90, timestamp: 10.minutes.ago)
-      make_estimate(percent: 40, timestamp: 1.minute.ago)
+      # Only 1 row inside window → no-op
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
 
     it "excludes GREY rows (authenticity NULL)" do
-      make_v2(authenticity: 90, calculated_at: 10.minutes.ago)
-      TrustIndexHistory.create!(channel: stream.channel, stream: stream, engine_version: "v2",
+      make_history(authenticity: 90, calculated_at: 10.minutes.ago)
+      TrustIndexHistory.create!(channel: channel, stream: stream, engine_version: "v2",
                                 authenticity: nil, calculated_at: 1.minute.ago, cold_start_tier: "full")
+      expect { described_class.check(stream) }.not_to change(Anomaly, :count)
+    end
+
+    it "ignores ErvEstimate rows (retired source)" do
+      ErvEstimate.create!(stream: stream, timestamp: 10.minutes.ago,
+                          erv_count: 900, erv_percent: 90, confidence: 1.0)
+      ErvEstimate.create!(stream: stream, timestamp: 1.minute.ago,
+                          erv_count: 400, erv_percent: 40, confidence: 1.0)
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
   end

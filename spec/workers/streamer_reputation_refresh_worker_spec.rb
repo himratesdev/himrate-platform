@@ -25,9 +25,9 @@ RSpec.describe StreamerReputationRefreshWorker, type: :worker do
       streams = Array.new(7) { create(:stream, channel: channel, started_at: 10.days.ago, ended_at: 9.days.ago) }
       streams.each_with_index do |s, i|
         # intermediate (older) — deliberately a deep dip on stream #0, but it ends ≥ 50
-        create(:trust_index_history, channel: channel, stream: s, calculated_at: 9.days.ago - 2.hours, trust_index_score: 5)
+        create(:trust_index_history, channel: channel, stream: s, calculated_at: 9.days.ago - 2.hours, authenticity: 5)
         final_score = i < 2 ? 30 : 80
-        create(:trust_index_history, channel: channel, stream: s, calculated_at: 9.days.ago - 1.hour, trust_index_score: final_score)
+        create(:trust_index_history, channel: channel, stream: s, calculated_at: 9.days.ago - 1.hour, authenticity: final_score)
       end
       refresh_mv!
 
@@ -45,7 +45,7 @@ RSpec.describe StreamerReputationRefreshWorker, type: :worker do
     it "treats streams not yet in the MV as not-botted (count = 0)" do
       7.times do |i|
         s = create(:stream, channel: channel, started_at: 10.days.ago, ended_at: 9.days.ago)
-        create(:trust_index_history, channel: channel, stream: s, calculated_at: 9.days.ago, trust_index_score: i.zero? ? 10 : 80)
+        create(:trust_index_history, channel: channel, stream: s, calculated_at: 9.days.ago, authenticity: i.zero? ? 10 : 80)
       end
       # NOT refreshed → MV empty → 0 botted → perfect score 100.0
       expect(worker.send(:compute_pattern_history, channel)).to eq(100.0)

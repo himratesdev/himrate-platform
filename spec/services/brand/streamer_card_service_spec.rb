@@ -60,22 +60,20 @@ RSpec.describe Brand::StreamerCardService do
   end
 
   describe "layer2 authenticity" do
-    it "exposes only present signals + real overall classification (no fabricated verdict)" do
-      create(:trust_index_history, channel: channel, classification: "trusted", trust_index_score: 88.0,
-                                   signal_breakdown: {
-                                     "auth_ratio" => { "value" => 1.0, "weight" => 0.14, "confidence" => 1.0, "contribution" => 0.14 },
-                                     "chatter_ccv_ratio" => { "value" => 0.12, "weight" => 0.15, "confidence" => 0.9, "contribution" => 0.02 }
-                                   })
+    it "exposes the v2 band + reason_codes (no ti_score scalar, no fabricated verdict)" do
+      create(:trust_index_history, channel: channel, authenticity: 88.0, reason_codes: %w[rho_high])
       l2 = payload_for("streamer").payload[:layer2_authenticity]
 
       expect(l2[:available]).to be(true)
-      expect(l2[:classification]).to eq("trusted")
-      expect(l2[:ti_score]).to eq(88.0)
-      expect(l2[:checks_total]).to eq(2)
-      auth = l2[:checks].find { |c| c[:signal] == "auth_ratio" }
-      expect(auth[:value]).to eq(1.0)
-      expect(auth[:label_ru]).to be_present
-      expect(l2[:checks].first).not_to have_key(:status) # per-signal verdict deferred (ADR DEC-3)
+      expect(l2[:band]).to include(row: 4, color: "green")
+      expect(l2[:band][:label_key]).to be_present
+      expect(l2[:authenticity]).to eq(88.0)
+      expect(l2[:erv]).to eq(3600)
+      expect(l2[:erv_interval]).to eq(lo: 3400, hi: 3800)
+      expect(l2[:reason_codes]).to eq(%w[rho_high])
+      expect(l2[:cold_start_tier]).to eq("full")
+      expect(l2[:confidence_marker]).to eq("reliable")
+      expect(l2[:basis]).to eq("trust_index_history.v2")
     end
 
     it "is unavailable when there is no trust-index history" do

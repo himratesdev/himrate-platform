@@ -5,7 +5,8 @@ require "rails_helper"
 # T1-065: Reputation history/trajectory — free trust-summary derivation.
 RSpec.describe Reputation::HistoryService do
   # Builds a channel with `ti_scores.size` completed streams (one final TIH per stream unless
-  # tih: :partial), an `erv_percent` per stream (defaults to the TI score), a severe (viewbot_spike)
+  # tih: :partial), a v2 `authenticity` per stream (erv_pcts overrides the TI score — under v2
+  # window_score and real_audience_pct are BOTH authenticity), a severe (viewbot_spike)
   # anomaly on the first `severe_streams`, and `rep_rows` StreamerReputation history rows.
   def build_channel(ti_scores, erv_pcts: nil, severe_streams: 0, tih: :all, rep_rows: 0)
     channel = create(:channel)
@@ -15,8 +16,7 @@ RSpec.describe Reputation::HistoryService do
       stream = create(:stream, channel: channel, started_at: ended - 2.hours, ended_at: ended)
       if tih == :all || (tih == :partial && i.even?)
         create(:trust_index_history, channel: channel, stream: stream,
-                                     trust_index_score: score,
-                                     erv_percent: erv_pcts ? erv_pcts[i] : score,
+                                     authenticity: erv_pcts ? erv_pcts[i] : score,
                                      calculated_at: ended)
       end
       create(:anomaly, stream: stream, anomaly_type: "viewbot_spike") if i < severe_streams
@@ -65,7 +65,7 @@ RSpec.describe Reputation::HistoryService do
       channel = build_channel(Array.new(10, 90), tih: :none)
       last_stream = channel.streams.where.not(ended_at: nil).order(:ended_at).last
       create(:trust_index_history, channel: channel, stream: last_stream,
-                                   trust_index_score: 90, erv_percent: 90, calculated_at: last_stream.ended_at)
+                                   authenticity: 90, calculated_at: last_stream.ended_at)
 
       payload = payload_for(channel)
       expect(Reputation::BandService.new(channel).call[:band]).to be_nil

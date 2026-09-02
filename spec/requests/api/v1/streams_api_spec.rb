@@ -24,13 +24,12 @@ RSpec.describe "Streams API", type: :request do
         duration_ms: 3 * 3_600_000,
         generated_at: stream.ended_at)
 
+      # V1-RETIRE: rows carry the v2 verdict (authenticity/erv/band), no v1 scalars.
       create(:trust_index_history,
         channel: channel, stream: stream,
-        trust_index_score: 75.0 - (i * 5),
-        erv_percent: 75.0 - (i * 5),
+        authenticity: 75.0 - (i * 5),
+        erv: 3000 - (i * 300),
         ccv: stream.current_peak_ccv, # PR-A1: derived (PSR.ccv_peak)
-        classification: "needs_review",
-        cold_start_status: "full",
         calculated_at: stream.ended_at)
     end
   end
@@ -54,9 +53,14 @@ RSpec.describe "Streams API", type: :request do
       expect(body["data"].size).to eq(3)
       expect(body["meta"]["total"]).to eq(3)
 
+      # V1-RETIRE: stream_summary merges the v2 verdict block.
       first_stream = body["data"].first
-      expect(first_stream).to have_key("ti_score")
-      expect(first_stream).to have_key("erv_percent")
+      expect(first_stream["erv"]).to eq(3000)
+      expect(first_stream["authenticity"]).to eq(75.0)
+      expect(first_stream["band_row"]).to eq(4)
+      expect(first_stream["label_key"]).to eq("band.green_no_anomaly")
+      expect(first_stream["band_color"]).to eq("green")
+      expect(first_stream["engine_version"]).to eq("v2")
       expect(first_stream).to have_key("peak_ccv")
     end
 

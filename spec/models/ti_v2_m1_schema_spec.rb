@@ -23,9 +23,11 @@ RSpec.describe "TI v2 M1 additive schema", type: :model do
     expect(v2_tih_columns - cols).to be_empty
   end
 
-  it "makes trust_index_score nullable (v2 rows carry no TI-scalar)" do
-    col = conn.columns(:trust_index_histories).find { |c| c.name == "trust_index_score" }
-    expect(col.null).to be(true)
+  it "drops the retired v1 scalar columns (V1-RETIRE 20260902100000)" do
+    cols = conn.columns(:trust_index_histories).map(&:name)
+    expect(cols).not_to include("trust_index_score", "erv_percent", "classification",
+                                "cold_start_status", "confidence")
+    expect(cols).to include("signal_breakdown") # STAYS — v2 owns it (L0/L2 per-signal trace)
   end
 
   it "defaults engine_version to 'v1' NOT NULL (fail-safe; ADR MF-4 supersedes SRS 'v2')" do

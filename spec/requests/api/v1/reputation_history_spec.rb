@@ -14,7 +14,7 @@ RSpec.describe "Reputation History API", type: :request do
       ended = (12 - i).hours.ago
       stream = create(:stream, channel: channel, started_at: ended - 2.hours, ended_at: ended)
       create(:trust_index_history, channel: channel, stream: stream,
-                                   trust_index_score: 90, erv_percent: 91, calculated_at: ended)
+                                   authenticity: 90, calculated_at: ended)
     end
   end
 

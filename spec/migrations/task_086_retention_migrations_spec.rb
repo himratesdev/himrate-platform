@@ -112,21 +112,29 @@ RSpec.describe "TASK-086 retention migrations", type: :model do
       expect(unique_idx).to eq(1)
     end
 
-    it "uses the ACTUAL TIH column names (v1 bridge + TI v2 columns — PR3b recreate 20260720190000)" do
-      expect(mv_columns).to include("trust_index_score", "erv_percent", "signal_breakdown", "ccv")
-      expect(mv_columns).to include("engine_version", "authenticity", "erv", "band_row", "band_color",
-                                    "confirmed_anomaly", "cold_start_tier", "confidence_marker")
-      expect(mv_columns).not_to include("ti_score", "signals_data", "classification", "cold_start_status")
+    it "uses the ACTUAL TIH column names (v2-only column set — V1-RETIRE recreate 20260902100000)" do
+      expect(mv_columns).to match_array(
+        %w[stream_id channel_id engine_version authenticity erv erv_lo erv_hi band_row band_sub
+           band_color reason_codes confirmed_anomaly cold_start_tier confidence_marker ccv
+           signal_breakdown calculated_at trust_index_history_id]
+      )
+      # retired v1 bridge columns — dropped with the source columns
+      expect(mv_columns).not_to include("trust_index_score", "erv_percent", "confidence",
+                                        "classification", "cold_start_status")
     end
 
     # CR Nit-2: re-running a CREATE-IF-NOT-EXISTS DDL after a half-applied migration must not
-    # error. NB (PR3b): the MV was recreated with the v2 column set (20260720190000); the legacy
-    # DDL below exercises only the IF NOT EXISTS no-op path against the existing MV.
+    # error. NB (V1-RETIRE): the MV was recreated with the v2-only column set (20260902100000);
+    # the DDL below mirrors that migration's V2_SQL and exercises the IF NOT EXISTS no-op path
+    # against the existing MV (PG still parses the SELECT, so it must reference live columns).
     it "is idempotent — re-running the CREATE-MV-IF-NOT-EXISTS DDL on the existing MV does not raise" do
       ddl = <<~SQL.squish
         CREATE MATERIALIZED VIEW IF NOT EXISTS latest_tih_per_stream AS
-        SELECT DISTINCT ON (t.stream_id) t.stream_id, t.channel_id, t.trust_index_score, t.erv_percent, t.ccv,
-          t.confidence, t.classification, t.cold_start_status, t.signal_breakdown, t.calculated_at, t.id AS trust_index_history_id
+        SELECT DISTINCT ON (t.stream_id)
+          t.stream_id, t.channel_id, t.engine_version, t.authenticity, t.erv, t.erv_lo, t.erv_hi,
+          t.band_row, t.band_sub, t.band_color, t.reason_codes, t.confirmed_anomaly,
+          t.cold_start_tier, t.confidence_marker, t.ccv, t.signal_breakdown,
+          t.calculated_at, t.id AS trust_index_history_id
         FROM trust_index_histories t JOIN streams s ON s.id = t.stream_id
         WHERE s.ended_at IS NOT NULL ORDER BY t.stream_id, t.calculated_at DESC, t.id DESC
       SQL
@@ -144,16 +152,16 @@ RSpec.describe "TASK-086 retention migrations", type: :model do
     it "REFRESH MATERIALIZED VIEW populates one row per ended stream with its final TIH (TC-036)" do
       channel = create(:channel)
       ended = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
-      create(:trust_index_history, channel: channel, stream: ended, calculated_at: 50.minutes.ago, trust_index_score: 40)
-      create(:trust_index_history, channel: channel, stream: ended, calculated_at: 30.minutes.ago, trust_index_score: 77)
+      create(:trust_index_history, channel: channel, stream: ended, calculated_at: 50.minutes.ago, authenticity: 40)
+      create(:trust_index_history, channel: channel, stream: ended, calculated_at: 30.minutes.ago, authenticity: 77)
       create(:stream, channel: channel, started_at: 1.hour.ago, ended_at: nil) # live → excluded
 
       conn.execute("REFRESH MATERIALIZED VIEW latest_tih_per_stream")
-      rows = conn.select_all("SELECT stream_id, trust_index_score FROM latest_tih_per_stream").to_a
+      rows = conn.select_all("SELECT stream_id, authenticity FROM latest_tih_per_stream").to_a
 
       expect(rows.size).to eq(1)
       expect(rows.first["stream_id"]).to eq(ended.id)
-      expect(rows.first["trust_index_score"].to_f).to eq(77.0)
+      expect(rows.first["authenticity"].to_f).to eq(77.0)
     end
   end
 end

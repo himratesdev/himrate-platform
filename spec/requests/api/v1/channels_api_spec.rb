@@ -45,18 +45,20 @@ RSpec.describe "Channels API", type: :request do
       expect(response).to have_http_status(:not_found)
     end
 
-    # TC-004: Free user during live stream → drill_down (signal_breakdown visible)
+    # TC-004: Free user during live stream → drill_down view (v2 headline + signal_breakdown key;
+    # v2 rows carry no 14-signal breakdown — the wire key stays with an empty hash).
     it "returns drill_down with signal_breakdown for Free user during live stream" do
       Stream.create!(channel: channel, started_at: 30.minutes.ago) # live stream (no ended_at)
-      TrustIndexHistory.create!(channel: channel, stream: channel.streams.last, trust_index_score: 72,
-        confidence: 0.9, signal_breakdown: { "auth_ratio" => { "value" => 0.15 } },
-        calculated_at: 5.minutes.ago, classification: "needs_review", cold_start_status: "full", erv_percent: 72.0)
+      create(:trust_index_history, channel: channel, stream: channel.streams.last,
+        authenticity: 72.0, calculated_at: 5.minutes.ago)
 
       get "/api/v1/channels/#{channel.id}", headers: headers
       expect(response).to have_http_status(:ok)
       ti = response.parsed_body["data"]["trust_index"]
       expect(ti).to have_key("signal_breakdown")
-      expect(ti["signal_breakdown"]).to have_key("auth_ratio")
+      expect(ti["signal_breakdown"]).to eq({})
+      expect(ti["authenticity"]).to eq(72.0)
+      expect(ti["band"]).to include("row" => 4, "color" => "green")
     end
 
     # TC-005: Premium user tracking channel → full (recent_streams visible)

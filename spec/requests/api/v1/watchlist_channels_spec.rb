@@ -22,8 +22,12 @@ RSpec.describe "Api::V1::WatchlistChannels", type: :request do
       data = response.parsed_body["data"]
       expect(data.size).to eq(1)
       expect(data.first["login"]).to eq(channel.login)
-      expect(data.first).to have_key("erv_percent")
-      expect(data.first).to have_key("ti_score")
+      # V1-RETIRE: rows carry the v2 contract {erv, authenticity, band_row, label_key, band_color}.
+      expect(data.first).to have_key("erv")
+      expect(data.first).to have_key("authenticity")
+      expect(data.first).to have_key("band_row")
+      expect(data.first).to have_key("label_key")
+      expect(data.first).to have_key("band_color")
       expect(data.first).to have_key("is_live")
       expect(data.first).to have_key("inactive")
       expect(data.first).to have_key("tags")

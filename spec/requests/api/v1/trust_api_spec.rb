@@ -22,13 +22,9 @@ RSpec.describe "Trust API", type: :request do
     create(:trust_index_history,
       channel: channel,
       stream: stream,
-      trust_index_score: 72.0,
-      erv_percent: 72.0,
+      authenticity: 72.0,
       ccv: 5000,
-      confidence: 0.85,
-      classification: "needs_review",
-      cold_start_status: "full",
-      signal_breakdown: { auth_ratio: { value: 0.15, weight: 0.21, confidence: 0.9, contribution: 0.0315 } },
+      band_row: 2, band_color: "yellow",
       calculated_at: 1.minute.ago)
   end
 
@@ -39,14 +35,10 @@ RSpec.describe "Trust API", type: :request do
 
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
-      expect(data["ti_score"]).to eq(72.0)
-      expect(data["classification"]).to eq("needs_review")
-      expect(data["erv_percent"]).to eq(72.0)
+      expect(data["authenticity"]).to eq(72.0)
+      expect(data.dig("band", "color")).to eq("yellow")
       expect(data["erv_label"]).to be_present
-      expect(data["erv_label_color"]).to eq("yellow")
-      # 1 completed stream = insufficient (need 10+ for "full")
-      expect(data["cold_start_status"]).to eq("insufficient")
-      # Guest should NOT get signal_breakdown
+      # Guest should NOT get the drill decomposition
       expect(data).not_to have_key("signal_breakdown")
     end
 
@@ -58,29 +50,9 @@ RSpec.describe "Trust API", type: :request do
 
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
-      expect(data["ti_score"]).to eq(72.0)
+      expect(data["authenticity"]).to eq(72.0)
       expect(data).to have_key("signal_breakdown")
       expect(data["is_live"]).to be true
-    end
-
-    # BUG-TI-SIGNAL-BREAKDOWN regression guard (2026-06-01): signal_breakdown MUST contain
-    # the signals from TIH.signal_breakdown JSON column (was always [] due to TiSignal table
-    # dead-write since TrustIndex::Engine refactor — extension drill_down panel empty).
-    it "populates signal_breakdown array from TIH.signal_breakdown JSON column for Free + live" do
-      create(:stream, channel: channel, started_at: 30.minutes.ago, ended_at: nil)
-
-      get "/api/v1/channels/#{channel.id}/trust", headers: headers_free
-
-      data = response.parsed_body["data"]
-      breakdown = data["signal_breakdown"]
-      expect(breakdown).to be_an(Array)
-      expect(breakdown).not_to be_empty
-      auth_ratio = breakdown.find { |s| s["type"] == "auth_ratio" }
-      expect(auth_ratio).to be_present
-      expect(auth_ratio["value"]).to eq(0.15)
-      expect(auth_ratio["weight"]).to eq(0.21)
-      expect(auth_ratio["confidence"]).to eq(0.9)
-      expect(auth_ratio["contribution"]).to eq(0.0315)
     end
 
     # TC-004: Free expired → headline + expired flag
@@ -92,7 +64,7 @@ RSpec.describe "Trust API", type: :request do
 
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
-      expect(data["ti_score"]).to eq(72.0)
+      expect(data["authenticity"]).to eq(72.0)
       expect(data).not_to have_key("streamer_reputation")
     end
 
@@ -105,7 +77,7 @@ RSpec.describe "Trust API", type: :request do
 
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
-      expect(data["ti_score"]).to eq(72.0)
+      expect(data["authenticity"]).to eq(72.0)
       expect(data).to have_key("signal_breakdown")
       expect(data).to have_key("erv_breakdown")
       # T1-064 FR-3/FR-7: Reputation Categorical band (additive to streamer_reputation).
@@ -124,8 +96,8 @@ RSpec.describe "Trust API", type: :request do
 
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
-      expect(data["ti_score"]).to be_nil
-      expect(data["cold_start_status"]).to eq("insufficient")
+      expect(data["authenticity"]).to be_nil
+      expect(data.dig("band", "color")).to eq("grey")
     end
 
     # TC-021: Channel lookup by login
@@ -161,7 +133,7 @@ RSpec.describe "Trust API", type: :request do
 
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
-      expect(data["ti_score"]).to eq(72.0)
+      expect(data["authenticity"]).to eq(72.0)
       expect(data).to have_key("erv_breakdown")
     end
 
@@ -172,7 +144,7 @@ RSpec.describe "Trust API", type: :request do
 
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
-      expect(data["ti_score"]).to eq(72.0)
+      expect(data["authenticity"]).to eq(72.0)
       # Guest still gets headline only
       expect(data).not_to have_key("signal_breakdown")
     end

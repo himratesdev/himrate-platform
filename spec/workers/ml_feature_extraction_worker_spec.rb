@@ -108,8 +108,8 @@ RSpec.describe MlFeatureExtractionWorker do
       # 29 prior streams created above — link 6 of them to TIH rows.
       Stream.where(channel: stream.channel).where.not(id: stream.id).limit(6).each_with_index do |s, i|
         TrustIndexHistory.create!(
-          channel: stream.channel, stream: s,
-          trust_index_score: 75 + i,
+          channel: stream.channel, stream: s, engine_version: "v2",
+          authenticity: 75 + i,
           calculated_at: (i + 1).hours.ago
         )
         s.update!(started_at: s.ended_at - 2.hours) # 2h duration для chat-rate calc

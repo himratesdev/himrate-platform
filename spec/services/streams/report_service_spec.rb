@@ -2,12 +2,11 @@
 
 require "rails_helper"
 
-# Created 2026-06-01 for BUG-TI-SIGNAL-BREAKDOWN regression coverage. Prior to this PR,
-# Streams::ReportService#signals queried the dead-write `signals` PG table (TiSignal model
-# via self.table_name = "signals") and always returned []. The fix reads from
-# TrustIndexHistory.signal_breakdown JSON column, the canonical signal storage post
-# TrustIndex::Engine refactor. This spec asserts the new code path returns the populated
-# signal array (regression guard against re-introduction of the dead-table query).
+# Created 2026-06-01 for BUG-TI-SIGNAL-BREAKDOWN regression coverage; reshaped for
+# V1-RETIRE (2026-09-02): the v1 signal_breakdown → signals array derivation is retired —
+# `signals` is ALWAYS [] (reason_codes inside the trust_index block replace it) and the
+# trust_index block always carries the v2 verdict {erv, erv_interval, authenticity, band,
+# confirmed_anomaly, cold_start_tier, confidence_marker, reason_codes, engine_version}.
 
 RSpec.describe Streams::ReportService do
   let(:channel) { create(:channel) }
@@ -26,58 +25,44 @@ RSpec.describe Streams::ReportService do
   end
 
   describe "#call (assembled, no PostStreamReport)" do
-    # Forces the build_assembled branch — :signals method is invoked only there
-    # (build_from_psr surfaces psr.signals_summary, not ReportService#signals).
+    # Forces the build_assembled branch — the trust_index block reads the final v2 TIH directly.
     before do
       create(:trust_index_history,
         channel: channel,
         stream: stream,
-        trust_index_score: 72.0,
-        erv_percent: 72.0,
-        ccv: 5000,
-        confidence: 0.85,
-        classification: "needs_review",
-        cold_start_status: "full",
         signal_breakdown: {
-          "auth_ratio" => { "value" => 0.05, "weight" => 0.21, "confidence" => 1.0, "contribution" => 0.0105 },
-          "chat_behavior" => { "value" => 0.13, "weight" => 0.17, "confidence" => 0.95, "contribution" => 0.0221 },
-          "known_bot_match" => { "value" => 0.0, "weight" => 0.14, "confidence" => 1.0, "contribution" => 0.0 }
+          "auth_ratio" => { "value" => 0.05, "weight" => 0.21, "confidence" => 1.0, "contribution" => 0.0105 }
         },
         calculated_at: 1.minute.ago)
     end
 
-    it "populates signals array from TIH.signal_breakdown JSON column (BUG-TI-SIGNAL-BREAKDOWN regression guard)" do
+    it "always returns signals: [] (v1 signal_breakdown derivation retired) even when the JSON column is populated" do
       result = described_class.new(stream: stream, channel: channel).call
 
-      signals = result[:signals]
-      expect(signals).to be_an(Array)
-      expect(signals.size).to eq(3)
-
-      auth_ratio = signals.find { |s| s[:type] == "auth_ratio" }
-      expect(auth_ratio).to be_present
-      expect(auth_ratio[:value]).to eq(0.05)
-      expect(auth_ratio[:weight]).to eq(0.21)
-      expect(auth_ratio[:confidence]).to eq(1.0)
-
-      chat_behavior = signals.find { |s| s[:type] == "chat_behavior" }
-      expect(chat_behavior[:value]).to eq(0.13)
-
-      types = signals.map { |s| s[:type] }
-      expect(types).to contain_exactly("auth_ratio", "chat_behavior", "known_bot_match")
+      expect(result[:signals]).to eq([])
     end
 
-    it "returns empty array when stream has no TIH (graceful degrade)" do
+    it "assembles the v2 trust_index block from the final v2 TIH" do
+      result = described_class.new(stream: stream, channel: channel).call
+
+      ti = result[:trust_index]
+      expect(ti[:erv]).to eq(3600)
+      expect(ti[:erv_interval]).to eq(lo: 3400, hi: 3800)
+      expect(ti[:authenticity]).to eq(72.0)
+      expect(ti[:band]).to eq(row: 4, color: "green", label_key: "band.green_no_anomaly", sub: nil)
+      expect(ti[:confirmed_anomaly]).to be(false)
+      expect(ti[:cold_start_tier]).to eq("full")
+      expect(ti[:confidence_marker]).to eq("reliable")
+      expect(ti[:reason_codes]).to eq([])
+      expect(ti[:engine_version]).to eq("v2")
+    end
+
+    it "returns signals: [] and trust_index: nil when stream has no TIH (graceful degrade)" do
       stream_without_tih = create(:stream, channel: channel, started_at: 2.hours.ago, ended_at: 30.minutes.ago)
       result = described_class.new(stream: stream_without_tih, channel: channel).call
 
       expect(result[:signals]).to eq([])
-    end
-
-    it "returns empty array when TIH signal_breakdown is nil/empty hash" do
-      TrustIndexHistory.where(stream: stream).update_all(signal_breakdown: {})
-      result = described_class.new(stream: stream, channel: channel).call
-
-      expect(result[:signals]).to eq([])
+      expect(result[:trust_index]).to be_nil
     end
   end
 end

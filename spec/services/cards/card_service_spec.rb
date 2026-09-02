@@ -13,7 +13,7 @@ RSpec.describe Cards::CardService do
       create(:post_stream_report, stream: stream, ccv_avg: 4000, ccv_peak: 5000,
                                   duration_ms: 7_200_000, generated_at: ended)
       create(:trust_index_history, channel: channel, stream: stream,
-                                   trust_index_score: 90, erv_percent: 91, ccv: 4200, calculated_at: ended)
+                                   authenticity: 91, ccv: 4200, calculated_at: ended)
     end
     rep_rows.times { |j| create(:streamer_reputation, channel: channel, calculated_at: (rep_rows - j).hours.ago) }
     create(:stream, channel: channel, started_at: 20.minutes.ago, ended_at: nil) if live

@@ -14,7 +14,7 @@ RSpec.describe Reputation::BandService do
       stream = create(:stream, channel: channel, started_at: ended - 2.hours, ended_at: ended)
       if tih == :all || (tih == :partial && i.even?)
         create(:trust_index_history, channel: channel, stream: stream,
-                                     trust_index_score: score, calculated_at: ended)
+                                     authenticity: score, calculated_at: ended)
       end
       create(:anomaly, stream: stream, anomaly_type: "viewbot_spike") if i < severe_streams
     end

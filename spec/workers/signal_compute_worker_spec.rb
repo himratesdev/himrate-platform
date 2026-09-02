@@ -63,10 +63,10 @@ RSpec.describe SignalComputeWorker do
     10.times { Stream.create!(channel: channel, started_at: 3.hours.ago, ended_at: 2.hours.ago) }
   end
 
-  it "executes full pipeline and creates TIH + ERV" do
+  it "executes full pipeline and creates a v2 TIH row (no ErvEstimate — v1 artifact retired)" do
     expect {
       worker.perform(stream.id)
-    }.to change(TrustIndexHistory, :count).by(1).and change(ErvEstimate, :count).by(1)
+    }.to change(TrustIndexHistory, :count).by(1).and change(ErvEstimate, :count).by(0)
   end
 
   it "skips when Flipper disabled" do
@@ -90,74 +90,19 @@ RSpec.describe SignalComputeWorker do
     }.to change(TrustIndexHistory, :count).by(1)
   end
 
-  it "logs info with the engine version and duration (engine-agnostic, DEC-7)" do
-    expect(Rails.logger).to receive(:info).with(/SignalComputeWorker: stream.*engine=v1.*duration=/)
+  it "logs info with the engine version and duration (DEC-7)" do
+    expect(Rails.logger).to receive(:info).with(/SignalComputeWorker: stream.*engine=v2.*duration=/)
     worker.perform(stream.id)
   end
 
-  # T1-074 PR2b — TI v2 dual-run wiring, SHADOW phase. Default (flag off) is a pure no-op: v1 only.
-  # Shadow runs v2 for a LOG-only diff — it never persists (no TIH pollution) nor publishes.
-  describe "TI v2 shadow branch (DEC-2/DEC-7)" do
-    it "default (ti_v2_shadow off): pure v1, no v2 row" do
-      expect { worker.perform(stream.id) }.to change(TrustIndexHistory, :count).by(1)
-      expect(TrustIndexHistory.where(engine_version: "v2").count).to eq(0)
-      expect(TrustIndexHistory.where(engine_version: "v1").count).to eq(1)
-    end
-
-    it "shadow (ti_v2_shadow ON): runs v2 + logs the v1↔v2 diff, does NOT persist v2 (no pollution)" do
-      allow(Flipper).to receive(:enabled?).with(:ti_v2_shadow).and_return(true)
-      allow(Rails.logger).to receive(:info)
-      expect { worker.perform(stream.id) }.to change(TrustIndexHistory, :count).by(1) # v1 only
-      expect(TrustIndexHistory.where(engine_version: "v2").count).to eq(0)
-      expect(Rails.logger).to have_received(:info).with(/SCW shadow.*v2_band/)
-      expect(Rails.logger).to have_received(:info).with(/SCW shadow.*v2_rho_conv/) # P0.5 provenance stamp
-    end
-
-    it "a v2 shadow failure never breaks the v1 live path (shadow safety)" do
-      allow(Flipper).to receive(:enabled?).with(:ti_v2_shadow).and_return(true)
-      allow(TrustIndex::ContextBuilder).to receive(:build_v2).and_raise(StandardError, "boom")
-      expect { worker.perform(stream.id) }.to change(TrustIndexHistory, :count).by(1) # v1 still lands
-      expect(TrustIndexHistory.where(engine_version: "v2").count).to eq(0)
-    end
-
-    it "shadow never touches the wire — publish_update ships the v1 legacy payload only, not v2" do
-      allow(Flipper).to receive(:enabled?).with(:ti_v2_shadow).and_return(true)
-      published = []
-      fake_redis = instance_double(Redis)
-      allow(fake_redis).to receive(:set).and_return(true) # throttle acquire + signal-health
-      allow(fake_redis).to receive(:publish) { |_ch, payload| published << payload }
-      allow(worker).to receive(:redis).and_return(fake_redis)
-
-      worker.perform(stream.id)
-
-      expect(published.size).to eq(1)
-      parsed = JSON.parse(published.first)
-      expect(parsed).to include("ti_score", "timestamp")
-      expect(parsed).to include("engine_version" => "v1")
-      expect(parsed.keys).not_to include("erv", "band", "axes", "authenticity") # no v2 headline leak
-    end
-
-    it "MF-4: legacy v1 persist tags engine_version='v1' explicitly (defense-in-depth over the 'v1' default)" do
-      worker.perform(stream.id)
-      expect(TrustIndexHistory.last.engine_version).to eq("v1")
-    end
-  end
-
-  # T1-074 PR3b — the CUTOVER branch. ti_v2_engine ON → v2 is authoritative: v1 not computed,
-  # not persisted, not published; v2 persists (TIH engine_version='v2' + ccv) and ships the v2
-  # headline over the wire. A v2 failure FAILS the stage (Sidekiq retry) — unlike shadow.
-  describe "TI v2 cutover branch (ti_v2_engine ON)" do
-    before do
-      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
-    end
-
-    it "persists ONLY a v2 row (no v1 row, no ErvEstimate) with ccv = engine V" do
+  # V1-RETIRE: v2 is the unconditional engine — persists TIH engine_version='v2' + ccv and
+  # ships the v2 headline over the wire. A v2 failure FAILS the stage (Sidekiq retry).
+  describe "TI v2 engine (unconditional)" do
+    it "persists a v2 row (no ErvEstimate) with ccv = engine V" do
       expect { worker.perform(stream.id) }
         .to change(TrustIndexHistory.where(engine_version: "v2"), :count).by(1)
-        .and change(TrustIndexHistory.where(engine_version: "v1"), :count).by(0)
         .and change(ErvEstimate, :count).by(0)
       row = TrustIndexHistory.where(engine_version: "v2").last
-      expect(row.trust_index_score).to be_nil
       expect(row.band_color).to be_present
     end
 
@@ -199,8 +144,6 @@ RSpec.describe SignalComputeWorker do
   end
 
   describe "P1 windowed-shadow accrual (BUG-A flip-path)" do
-    before { allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true) }
-
     it "windowed_shadow_due? is false when ti_v2_cowindowed_shadow is OFF (byte-identical, no accrual)" do
       expect(worker.send(:windowed_shadow_due?, stream)).to be(false)
     end

@@ -524,14 +524,14 @@ RSpec.describe CleanupWorker, type: :worker do
     context "downstream consumers after cleanup" do
       it "leaves the per-stream final TIH readable for rating-style DISTINCT ON queries (TC-007/008)" do
         ended = create(:stream, channel: channel, started_at: 100.days.ago, ended_at: 95.days.ago)
-        create(:trust_index_history, channel: channel, stream: ended, calculated_at: 96.days.ago, trust_index_score: 40)
-        final = create(:trust_index_history, channel: channel, stream: ended, calculated_at: 95.days.ago, trust_index_score: 88)
+        create(:trust_index_history, channel: channel, stream: ended, calculated_at: 96.days.ago, authenticity: 40)
+        final = create(:trust_index_history, channel: channel, stream: ended, calculated_at: 95.days.ago, authenticity: 88)
 
         described_class.new.perform
 
         latest = TrustIndexHistory.where(stream_id: ended.id).order(calculated_at: :desc).first
         expect(latest.id).to eq(final.id)
-        expect(latest.trust_index_score).to eq(88)
+        expect(latest.authenticity).to eq(88)
       end
     end
   end

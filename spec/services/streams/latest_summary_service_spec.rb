@@ -39,7 +39,7 @@ RSpec.describe Streams::LatestSummaryService do
       expect(result[:data][:duration_text]).to be_present
       expect(result[:data][:peak_viewers]).to eq(5234)  # PR-A1: PSR.ccv_peak is canonical source
       expect(result[:data][:avg_ccv]).to eq(3650)
-      expect(result[:data][:erv_percent_final]).to be_within(0.1).of(85.5)
+      expect(result[:data]).not_to have_key(:erv_percent_final) # V1-RETIRE: retired blueprint field
       expect(result[:data][:erv_count_final]).to eq(4200)
       expect(result[:data][:category]).to eq("Just Chatting")
       expect(result[:data][:partial]).to be(false)
@@ -62,7 +62,7 @@ RSpec.describe Streams::LatestSummaryService do
       result = service.call
       expect(result[:data][:peak_viewers]).to eq(5000)  # CcvSnapshot.max fallback
       expect(result[:data][:avg_ccv]).to eq(3833)        # CcvSnapshot.average rounded
-      expect(result[:data][:erv_percent_final]).to be_nil
+      expect(result[:data]).not_to have_key(:erv_percent_final) # V1-RETIRE: retired blueprint field
       expect(result[:data][:erv_count_final]).to be_nil
       expect(result[:meta][:preliminary]).to be(true)
     end
@@ -97,13 +97,9 @@ RSpec.describe Streams::LatestSummaryService do
       expect { service.call }.not_to raise_error
     end
   end
-  # CR #432 N-2: the v2 verdict block (surface-audit PR-C) — flag-ON coverage.
-  describe "#call under ti_v2_engine" do
-    before do
-      allow(Flipper).to receive(:enabled?).and_return(false)
-      allow(Flipper).to receive(:enabled?).with(:ti_v2_engine).and_return(true)
-    end
-
+  # CR #432 N-2: the v2 verdict block (surface-audit PR-C). V1-RETIRE: unconditional — the
+  # ti_v2_engine flag is gone, the verdict block is always merged.
+  describe "#call v2 verdict block" do
     it "merges the additive v2 verdict from the final v2 TIH (canonical band + label_key)" do
       stream = Stream.create!(channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago)
       create(:trust_index_history, :v2, channel: channel, stream: stream,
@@ -113,7 +109,7 @@ RSpec.describe Streams::LatestSummaryService do
       expect(data[:authenticity]).to eq(91.5)
       expect(data[:band]).to eq(row: 3, color: "green", label_key: "band.green_real", sub: nil)
       expect(data[:engine_version]).to eq("v2")
-      expect(data[:erv_percent_final]).to be_nil # PSR stop-write — kept for v1-consumer compat
+      expect(data).not_to have_key(:erv_percent_final) # V1-RETIRE: retired blueprint field
     end
 
     it "falls back to the grey band shape when the stream has no v2 TIH (pre-cutover stream)" do

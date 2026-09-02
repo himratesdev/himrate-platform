@@ -9,7 +9,7 @@ RSpec.describe "Api::V1::Brand::StreamerSearch", type: :request do
     %w[alpha beta].each_with_index do |login, i|
       ch = create(:channel, login: login)
       create(:stream, channel: ch, game_name: "Dota 2", language: "ru", started_at: 1.hour.ago)
-      3.times { |d| create(:trends_daily_aggregate, channel: ch, date: (d + 1).days.ago.to_date, ccv_avg: (i + 1) * 10_000, erv_avg_percent: 80.0, ti_avg: 85.0, classification_at_end: "trusted", categories: { "Dota 2" => 1 }, streams_count: 1) }
+      3.times { |d| create(:trends_daily_aggregate, channel: ch, date: (d + 1).days.ago.to_date, ccv_avg: (i + 1) * 10_000, erv_avg_percent: 80.0, ti_avg: 85.0, classification_at_end: "trusted", band_row_at_end: 4, categories: { "Dota 2" => 1 }, streams_count: 1) }
     end
   end
 

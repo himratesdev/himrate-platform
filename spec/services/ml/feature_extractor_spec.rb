@@ -92,8 +92,8 @@ RSpec.describe Ml::FeatureExtractor do
       6.times do |i|
         past = create(:stream, channel: channel, ended_at: (i + 1).hours.ago)
         TrustIndexHistory.create!(
-          channel: channel, stream: past,
-          trust_index_score: 75 + i, # 75..80
+          channel: channel, stream: past, engine_version: "v2",
+          authenticity: 75 + i, # 75..80
           calculated_at: (i + 1).hours.ago
         )
       end

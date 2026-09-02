@@ -43,7 +43,7 @@ RSpec.describe TrustIndex::V2::Persistence do
   it "persists a v2 row (engine_version='v2', NO trust_index_score) — validation passes" do
     tih = persist(result)
     expect(tih.engine_version).to eq("v2")
-    expect(tih.trust_index_score).to be_nil
+    expect(TrustIndexHistory.column_names).not_to include("trust_index_score") # V1-RETIRE: column dropped
     expect(tih.erv).to eq(2000) # rounded to integer column
     expect(tih.band_row).to eq(1)
     expect(tih.band_color).to eq("red")

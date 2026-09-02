@@ -41,6 +41,9 @@ class RetireV1EngineRowsAndColumns < ActiveRecord::Migration[8.0]
 
     execute("DROP MATERIALIZED VIEW IF EXISTS latest_tih_per_stream")
 
+    # The column default was 'v1' — a bare INSERT would mint an invisible-to-readers row.
+    change_column_default :trust_index_histories, :engine_version, from: "v1", to: "v2"
+
     remove_column :trust_index_histories, :trust_index_score, if_exists: true
     remove_column :trust_index_histories, :erv_percent, if_exists: true
     remove_column :trust_index_histories, :classification, if_exists: true

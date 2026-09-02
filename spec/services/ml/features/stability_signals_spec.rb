@@ -41,7 +41,8 @@ RSpec.describe Ml::Features::StabilitySignals do
         s = create(:stream, channel: channel, ended_at: (i + 1).hours.ago)
         stream_ids << s.id
         TrustIndexHistory.create!(
-          channel: channel, stream: s, trust_index_score: 70 + i * 2, # 70, 72, ..., 88
+          channel: channel, stream: s, engine_version: "v2",
+          authenticity: 70 + i * 2, # 70, 72, ..., 88
           calculated_at: (i + 1).hours.ago
         )
       end
@@ -85,7 +86,8 @@ RSpec.describe Ml::Features::StabilitySignals do
       5.times do |i|
         s = create(:stream, channel: channel, started_at: (3 + i).hours.ago, ended_at: (1 + i).hours.ago)
         TrustIndexHistory.create!(
-          channel: channel, stream: s, trust_index_score: 75 + i,
+          channel: channel, stream: s, engine_version: "v2",
+          authenticity: 75 + i,
           calculated_at: (1 + i).hours.ago
         )
       end
@@ -129,8 +131,8 @@ RSpec.describe Ml::Features::StabilitySignals do
       35.times do |i|
         s = create(:stream, channel: channel, ended_at: (i + 1).hours.ago)
         TrustIndexHistory.create!(
-          channel: channel, stream: s,
-          trust_index_score: i < 30 ? 80 : 0, # rows 30-34 have score 0 (older) — should be excluded
+          channel: channel, stream: s, engine_version: "v2",
+          authenticity: i < 30 ? 80 : 0, # rows 30-34 have score 0 (older) — should be excluded
           calculated_at: (i + 1).hours.ago
         )
       end
@@ -152,8 +154,8 @@ RSpec.describe Ml::Features::StabilitySignals do
         ts = i < 5 ? (i + 1).hours.ago : (100 + i).days.ago
         s = create(:stream, channel: channel, ended_at: ts)
         TrustIndexHistory.create!(
-          channel: channel, stream: s,
-          trust_index_score: i < 5 ? 80 : 20, # newer=80, older outside-window=20
+          channel: channel, stream: s, engine_version: "v2",
+          authenticity: i < 5 ? 80 : 20, # newer=80, older outside-window=20
           calculated_at: ts
         )
       end

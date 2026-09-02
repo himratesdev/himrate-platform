@@ -9,7 +9,7 @@ RSpec.describe "Channel Card API (T1-061)", type: :request do
   before do
     stream = create(:stream, channel: channel, started_at: 3.hours.ago, ended_at: 1.hour.ago)
     create(:trust_index_history, channel: channel, stream: stream,
-                                 trust_index_score: 88, erv_percent: 90, ccv: 4200, calculated_at: 1.minute.ago)
+                                 authenticity: 90, ccv: 4200, calculated_at: 1.minute.ago)
   end
 
   it "is guest-accessible (no auth → 200, not 401) with the free layers" do
