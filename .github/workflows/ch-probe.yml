@@ -16,26 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Connect Tailscale (home server is tailnet-only)
-        uses: tailscale/github-action@v3
+      - uses: actions/checkout@v7
+      - name: Tailnet SSH (home server)
+        uses: ./.github/actions/tailnet-ssh
         with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
-          ping: 100.78.102.60
-      - name: Set up SSH
-        run: |
-          mkdir -p ~/.ssh
-          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          cat >> ~/.ssh/config <<SSH_CONFIG
-          Host hostkey
-            HostName 100.78.102.60
-            User himych
-            StrictHostKeyChecking accept-new
-            IdentityFile ~/.ssh/id_ed25519
-            ConnectTimeout 30
-          SSH_CONFIG
-          chmod 600 ~/.ssh/config
-
+          ts_authkey: ${{ secrets.TS_AUTHKEY }}
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Probe ClickHouse
         run: |
           LOGIN="${{ inputs.login }}"

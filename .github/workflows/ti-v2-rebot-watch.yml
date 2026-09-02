@@ -8,7 +8,7 @@ name: ti-v2-rebot-watch
 on:
   workflow_dispatch:
     inputs:
-      target: { required: true, type: choice, options: [hostkey], default: hostkey }
+      target: { required: true, type: choice, options: [home], default: home }
       login: { required: true, type: string }
 
 jobs:
@@ -16,15 +16,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
-      - name: Connect Tailscale (home server is tailnet-only)
-        uses: tailscale/github-action@v3
+      - uses: actions/checkout@v7
+      - name: Tailnet SSH (home server)
+        uses: ./.github/actions/tailnet-ssh
         with:
-          authkey: ${{ secrets.TS_AUTHKEY }}
-          ping: 100.78.102.60
-      - name: SSH
-        run: |
-          mkdir -p ~/.ssh; echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
-          printf 'Host hostkey\n  HostName 100.78.102.60\n  User himych\n  StrictHostKeyChecking accept-new\n  IdentityFile ~/.ssh/id_ed25519\n  ConnectTimeout 30\n' >> ~/.ssh/config; chmod 600 ~/.ssh/config
+          ts_authkey: ${{ secrets.TS_AUTHKEY }}
+          ssh_private_key: ${{ secrets.SSH_PRIVATE_KEY }}
       - name: Build
         run: |
           cat > /tmp/rw.rb <<'RB'

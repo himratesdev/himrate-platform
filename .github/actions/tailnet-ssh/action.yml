@@ -1,0 +1,51 @@
+# P2 (2026-09-02): single source of truth for reaching the home server from CI.
+# Replaces the per-workflow copy-pasted pair (tailscale step + ssh-config heredoc) that PR #571
+# introduced in 14 files while 58 more still pointed at the dead HOSTKEY 82.21.7.48/root.
+# Writes BOTH aliases (`hostkey` — legacy name the inline scripts use via `ssh ${TARGET}` — and
+# `home`, the current dispatch-input value) so either input value reaches the same box.
+name: 'Tailnet SSH'
+description: 'Join the tailnet and configure ssh aliases (hostkey/home) for the home server'
+
+inputs:
+  ts_authkey:
+    description: 'Tailscale auth key (secrets.TS_AUTHKEY)'
+    required: true
+  ssh_private_key:
+    description: 'SSH private key (secrets.SSH_PRIVATE_KEY)'
+    required: true
+  host:
+    description: 'Tailnet IP of the target box'
+    required: false
+    default: '100.78.102.60'
+  user:
+    description: 'SSH user (root is closed on the home server)'
+    required: false
+    default: 'himych'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Connect Tailscale (home server is tailnet-only)
+      uses: tailscale/github-action@v3
+      with:
+        authkey: ${{ inputs.ts_authkey }}
+        ping: ${{ inputs.host }}
+    - name: Configure SSH aliases
+      shell: bash
+      env:
+        SSH_KEY: ${{ inputs.ssh_private_key }}
+      run: |
+        mkdir -p ~/.ssh
+        printf '%s' "$SSH_KEY" > ~/.ssh/id_ed25519
+        chmod 600 ~/.ssh/id_ed25519
+        cat >> ~/.ssh/config <<SSH_CONFIG
+        Host hostkey home
+          HostName ${{ inputs.host }}
+          User ${{ inputs.user }}
+          StrictHostKeyChecking accept-new
+          IdentityFile ~/.ssh/id_ed25519
+          ConnectTimeout 30
+          ServerAliveInterval 15
+          ServerAliveCountMax 10
+        SSH_CONFIG
+        chmod 600 ~/.ssh/config
