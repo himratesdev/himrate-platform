@@ -66,10 +66,14 @@ RSpec.describe "promo rake tasks" do
     it "masks the local part under MASK=1 (safe to paste)" do
       allow(ENV).to receive(:[]).with("MASK").and_return("1")
 
+      # One invoke, both directions asserted: rake tasks are single-shot per `reenable`, so a
+      # second `invoke` in the same example is a no-op and `not_to output(...)` would pass on any
+      # code (CR iter-2 nit).
       expect { Rake::Task["promo:report"].invoke }.to output(
-        a_string_including("st***@example.com").and(a_string_including("emails masked"))
+        a_string_including("st***@example.com")
+          .and(a_string_including("emails masked"))
+          .and(satisfy { |out| !out.include?("streamer@example.com") })
       ).to_stdout
-      expect { Rake::Task["promo:report"].invoke }.not_to output(/streamer@example\.com/).to_stdout
     end
   end
 end
