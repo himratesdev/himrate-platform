@@ -46,3 +46,6 @@ db/structure.sql
 .DS_Store
 **/.DS_Store
 .autopilot-halt
+
+# self-hosted CI bundles gems into the checkout — never commit them (vendor incident 2026-09-03)
+/vendor/bundle

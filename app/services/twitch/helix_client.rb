@@ -84,6 +84,18 @@ module Twitch
       get("/clips", { id: Array(ids) })&.dig("data")
     end
 
+    # EPIC FARM T-F2: category-wide clip pool with cursor pagination (game_id, not
+    # broadcaster). Returns data + pagination cursor so the poller can walk pages;
+    # callers must still drop rows whose own game_id differs (defense-in-depth).
+    def get_clips_by_game(game_id:, first: 100, after: nil, started_at: nil, ended_at: nil)
+      params = { game_id: game_id, first: first }
+      params[:after] = after if after
+      params[:started_at] = started_at.utc.iso8601 if started_at
+      params[:ended_at] = ended_at.utc.iso8601 if ended_at
+      resp = get("/clips", params)
+      { "data" => resp&.dig("data") || [], "cursor" => resp&.dig("pagination", "cursor") }
+    end
+
     # Screen 13 «Рост» (DSV growth-sources-probe run 29781151115): category meta by exact name,
     # and the live streams of one category (viewer_count array → streamer count + CCV distribution).
     def get_game(name:)

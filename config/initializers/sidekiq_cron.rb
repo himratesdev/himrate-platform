@@ -232,6 +232,12 @@ Sidekiq.configure_server do |config|
         "class" => "Social::FootprintIndexWorker",
         "queue" => "long_running",
         "description" => "SA-2: refresh channel_social_links from Twitch socialMedias (≤100/run, 7-day cadence, gated :social_footprint_index)"
+      },
+      "farm_clips_poller" => {
+        "cron" => "20 */3 * * *", # Every 3 hours (velocity snapshots cadence from FEATURE-PLAN C2)
+        "class" => "Farm::ClipsPollerWorker",
+        "queue" => "monitoring",
+        "description" => "EPIC FARM T-F2: category clip pool poll + view snapshots (gated :farm_clips_poller)"
       }
     }
 
