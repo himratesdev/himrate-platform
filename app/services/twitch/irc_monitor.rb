@@ -26,7 +26,21 @@ module Twitch
     # — drain rate now ~80 JOINs/min vs ~40 previously. Twitch tolerates ~50 JOIN/30s on
     # anon connections.
     JOIN_THROTTLE_LIMIT = ENV.fetch("IRC_JOIN_THROTTLE_LIMIT", "40").to_i
-    JOIN_THROTTLE_WINDOW = 30    # seconds
+    # Window is ENV-tunable too (CR fix-iter-1 S1): the budget is spent as ONE burst per window, so
+    # "60/30s" is a 60-JOIN spike every 30s — 3× the documented 20/10s peak. The capture role sets
+    # 20/10s to reproduce exactly the shape DSV P5 proved acked; legacy `irc` keeps 40/30s.
+    JOIN_THROTTLE_WINDOW = ENV.fetch("IRC_JOIN_THROTTLE_WINDOW", "30").to_i # seconds
+    # BUG T-F1 live-verify 2026-09-05 (Notion BUG 3d283837…): Twitch silently IGNORES JOINs once a
+    # connection sustains a high JOIN rate (200/30s: ~60% of a 600-channel capture shard never
+    # joined — no NOTICE, no error, ROOMSTATE never arrived) and nothing here noticed, because
+    # @channels is DESIRED state, not ACKNOWLEDGED state. Twitch acknowledges a JOIN with the
+    # channel's ROOMSTATE (twitch.tv/commands cap), so that is the ack we track: a JOIN without
+    # ROOMSTATE within JOIN_ACK_TIMEOUT is re-sent (sharing the throttle budget) up to
+    # JOIN_MAX_ATTEMPTS; after that the channel is parked (suspended/renamed channels never answer)
+    # and re-armed after JOIN_GAVE_UP_COOLDOWN so a transient drop still heals on its own.
+    JOIN_ACK_TIMEOUT = ENV.fetch("IRC_JOIN_ACK_TIMEOUT", "60").to_i       # seconds
+    JOIN_MAX_ATTEMPTS = ENV.fetch("IRC_JOIN_MAX_ATTEMPTS", "5").to_i
+    JOIN_GAVE_UP_COOLDOWN = ENV.fetch("IRC_JOIN_GAVE_UP_COOLDOWN", "900").to_i # seconds
     REDIS_QUEUE_KEY = "irc:chat_messages"
     REDIS_COMMANDS_CHANNEL = "irc:commands"
     REDIS_HEARTBEAT_KEY = "irc:heartbeat"
@@ -64,6 +78,9 @@ module Twitch
       @label = label
       @channels = Set.new
       @pending_joins = []
+      @joined = Set.new        # logins whose JOIN Twitch acknowledged (ROOMSTATE) on THIS connection
+      @ack_pending = {}        # login => { sent_at:, attempts: } — JOIN sent, ROOMSTATE not yet seen
+      @join_gave_up = {}       # login => gave_up_at — JOIN_MAX_ATTEMPTS exhausted, re-armed after cooldown
       @join_mutex = Mutex.new
       @mutex = Monitor.new
       @socket = nil
@@ -134,6 +151,9 @@ module Twitch
       login = channel_login.to_s.downcase.delete_prefix("#")
       was_joined = @join_mutex.synchronize do
         @pending_joins.delete(login)
+        @joined.delete(login)
+        @ack_pending.delete(login)
+        @join_gave_up.delete(login)
         @channels.delete?(login)
       end
       return :not_joined unless was_joined
@@ -152,6 +172,21 @@ module Twitch
     def channels_snapshot
       @join_mutex.synchronize { @channels.dup }
     end
+
+    # Acknowledged-join accounting (heartbeat + pool observability). joined ⊆ channels; a channel
+    # is in exactly one of: joined / ack_pending (JOIN in flight) / pending_joins (not yet sent) /
+    # join_gave_up (parked) — or in none of them if it never got a JOIN yet on this connection.
+    # One consistent snapshot under one lock (CR fix-iter-1 N3): joined + unacked never exceed
+    # channels within a single reading, which is what a heartbeat-based gate compares.
+    def join_stats
+      @join_mutex.synchronize do
+        { channels: @channels.size, joined: @joined.size, unacked: @ack_pending.size, gave_up: @join_gave_up.size }
+      end
+    end
+
+    def joined_count = join_stats[:joined]
+    def unacked_count = join_stats[:unacked]
+    def gave_up_count = join_stats[:gave_up]
 
     private
 
@@ -213,6 +248,10 @@ module Twitch
     # JOINs gradually from the listen loop — never a blocking synchronous rejoin.
     def rejoin_channels
       count = @join_mutex.synchronize do
+        # Fresh connection: nothing is acknowledged yet, every desired channel must be re-JOINed.
+        @joined.clear
+        @ack_pending.clear
+        @join_gave_up.clear
         @channels.each { |login| @pending_joins << login unless @pending_joins.include?(login) }
         @channels.size
       end
@@ -239,6 +278,7 @@ module Twitch
 
         # Periodic heartbeat for Kamal health check + optional callback
         if Time.current - @last_heartbeat_at > 30
+          retry_unacked_joins
           update_heartbeat
           flush_memory_buffer
           @on_periodic_check&.call
@@ -260,9 +300,85 @@ module Twitch
       when "RECONNECT"
         Rails.logger.info("#{label}: received RECONNECT, reconnecting immediately")
         close_connection
-      when "PRIVMSG", "USERNOTICE", "ROOMSTATE", "CLEARCHAT", "CLEARMSG"
+      when "ROOMSTATE"
+        # Twitch's JOIN acknowledgement — see JOIN_ACK_TIMEOUT. Still archived like any other event.
+        mark_joined(parsed.channel_login)
+        push_to_redis(parsed)
+      when "PRIVMSG", "USERNOTICE", "CLEARCHAT", "CLEARMSG"
         push_to_redis(parsed)
       end
+    end
+
+    # === JOIN acknowledgement ===
+
+    def mark_joined(login)
+      return if login.blank?
+
+      @join_mutex.synchronize do
+        @joined.add(login) if @channels.include?(login)
+        @ack_pending.delete(login)
+        @join_gave_up.delete(login)
+      end
+    end
+
+    def record_join_sent(login)
+      @join_mutex.synchronize do
+        # CR fix-iter-1 M1: a part can race the JOIN send (the mutex is released around send_raw).
+        # Never track a channel that is no longer desired — `unacked` would carry a phantom forever.
+        next unless @channels.include?(login)
+
+        attempts = @ack_pending[login]&.fetch(:attempts, 0).to_i
+        @ack_pending[login] = { sent_at: Time.current, attempts: attempts + 1 }
+      end
+    end
+
+    # Every heartbeat tick: re-queue JOINs Twitch never acknowledged (no ROOMSTATE within
+    # JOIN_ACK_TIMEOUT); park a channel after JOIN_MAX_ATTEMPTS and re-arm it after the cooldown.
+    # Retries go through @pending_joins, i.e. they share the normal throttle budget. Entries for
+    # channels no longer desired (lost part × JOIN race) are dropped here so state converges in one
+    # tick even if the race above is lost (M1).
+    def retry_unacked_joins
+      now = Time.current
+      retry_logins = []
+      parked = []
+      stale = []
+      parked_total = 0
+      @join_mutex.synchronize do
+        @ack_pending.each do |login, meta|
+          if !@channels.include?(login)
+            stale << login
+          elsif now - meta[:sent_at] >= JOIN_ACK_TIMEOUT
+            meta[:attempts] >= JOIN_MAX_ATTEMPTS ? parked << login : retry_logins << login
+          end
+        end
+        @join_gave_up.each do |login, gave_up_at|
+          if !@channels.include?(login)
+            stale << login
+          elsif now - gave_up_at >= JOIN_GAVE_UP_COOLDOWN
+            retry_logins << login
+          end
+        end
+        stale.each do |login|
+          @ack_pending.delete(login)
+          @join_gave_up.delete(login)
+        end
+        parked.each do |login|
+          @ack_pending.delete(login)
+          @join_gave_up[login] = now
+        end
+        queued = @pending_joins.to_set # one O(n) build instead of O(n) per retry (N1)
+        retry_logins.each do |login|
+          @join_gave_up.delete(login)
+          @pending_joins << login unless queued.include?(login)
+        end
+        parked_total = @join_gave_up.size # read under the same lock as the rest (N2)
+      end
+      return if retry_logins.empty? && parked.empty?
+
+      Rails.logger.warn(
+        "#{label}: JOIN ack sweep — re-queued #{retry_logins.size} unacknowledged after #{JOIN_ACK_TIMEOUT}s, " \
+        "parked #{parked.size} after #{JOIN_MAX_ATTEMPTS} attempts (parked total #{parked_total})"
+      )
     end
 
     # === Redis Queue ===
@@ -322,6 +438,7 @@ module Twitch
 
         send_raw("JOIN ##{login}")
         @join_timestamps << Time.current
+        record_join_sent(login)
         Rails.logger.info("#{label}: JOIN ##{login} (#{@channels.size}/#{@max_channels}, #{@pending_joins.size} pending)")
       end
     end
@@ -505,10 +622,14 @@ module Twitch
     # === Heartbeat ===
 
     def update_heartbeat
+      stats = join_stats
       redis.setex(@heartbeat_key, 60, {
         connected: connected?,
-        channels: @channels.size,
+        channels: stats[:channels],
         pending_joins: @pending_joins.size,
+        joined: stats[:joined],
+        unacked: stats[:unacked],
+        join_gave_up: stats[:gave_up],
         last_message_at: @last_message_at.iso8601,
         uptime_seconds: (Time.current - @started_at).to_i
       }.to_json)
