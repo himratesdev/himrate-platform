@@ -157,14 +157,23 @@
   }
   function wireNav(){
     var CUR=location.pathname;
+    // SEO/UX-audit 2026-09-05: the export's footer rows were bare divs — Privacy/Terms exist
+    // but were unreachable from the site, and every «contact» surface was a dead click.
+    // mailto = the real channel (Cloudflare Email Routing → support@ forwards).
+    var MAILTO='mailto:support@himrate.com';
     var NAV={
       'СТРИМЕРАМ':'/streamers','БРЕНДАМ':'/brands','ЗРИТЕЛЯМ':'/viewers',
       'МЕТОДОЛОГИЯ':'/methodology','ЦЕНЫ':'/methodology','МЕТОДОЛОГИЯ И ЦЕНЫ':'/methodology',
       'Стримерам':'/streamers','Брендам':'/brands','Зрителям':'/viewers',
-      'Цены':'/methodology','Методология':'/methodology','Главная':'/'
+      'Цены':'/methodology','Методология':'/methodology','Главная':'/',
+      'Privacy':'/privacy','Terms':'/terms','Cookie':'/privacy','Disclaimer':'/terms',
+      'Связаться с продажами':MAILTO,'Документы':'/methodology',
+      'В кабинет':(location.hostname==='himrate.com')?'https://app.himrate.com/home':'/app/home',
+      'В кабинет →':(location.hostname==='himrate.com')?'https://app.himrate.com/home':'/app/home'
     };
     window.__hrGo=function(href){
       if(!href) return;
+      if(href.indexOf('mailto:')===0){ location.href=href; return; }
       if(href.toLowerCase()===CUR){ window.scrollTo({top:0,behavior:'smooth'}); return; }
       document.body.classList.add('hr-leaving');
       setTimeout(function(){ location.href=href; }, 240);
@@ -186,7 +195,7 @@
       setTimeout(function(){ t.style.opacity='0'; setTimeout(function(){ t.remove(); },250); },2200);
     }
     var ROUND=/rounded-\[(6|8|10|12|999)px\]/;
-    var CTA=/^(подключить|установить|начать|связаться|все тарифы|оформить|выбрать|как это работает|как мы измеряем|узнать|смотреть|посмотреть|открыть|запросить|войти|я бренд|я зритель|я стример|выбрать план|перейти)/i;
+    var CTA=/^(подключить|установить|начать|связаться|все тарифы|оформить|выбрать|как это работает|как мы измеряем|узнать|смотреть|посмотреть|открыть|запросить|войти|я бренд|я зритель|я стример|выбрать план|перейти|отправить|обсудить|в кабинет)/i;
     $all('div').forEach(function(el){
       var c=cls(el); var purple=/bg-\[#7C3AED\]/.test(c); var txt=(el.textContent||'').trim();
       var verb=ROUND.test(c)&&CTA.test(txt)&&txt.length<=64;
@@ -206,8 +215,12 @@
         else if(s.indexOf('я бренд')>-1) dest='/brands';
         else if(s.indexOf('я зритель')>-1) dest='/viewers';
         else if(s.indexOf('я стример')>-1) dest='/streamers';
-        else if(s.indexOf('связаться')>-1) dest='/brands';
-        else dest='/methodology'; // pricing / methodology / how-it-works + fallback
+        // Audit 2026-09-05: every contact/demo/purchase intent goes to the REAL channel
+        // (support@ via CF Email Routing) — billing/checkout does not exist yet, and the old
+        // /methodology fallback read as a broken click on the pricing page itself.
+        else if(s.indexOf('связаться')>-1||s.indexOf('запросить')>-1||s.indexOf('отправить')>-1||s.indexOf('обсудить')>-1) dest=MAILTO;
+        else if(s.indexOf('выбрать')>-1||s.indexOf('оформить')>-1||s.indexOf('начать')>-1) dest=MAILTO;
+        else dest='/methodology'; // methodology / how-it-works fallback
         window.__hrGo(dest);
       });
     });
