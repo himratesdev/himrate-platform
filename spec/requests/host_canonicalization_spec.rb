@@ -186,6 +186,16 @@ RSpec.describe "Host canonicalization", type: :request do
     end
   end
 
+  describe "bare /app entry" do
+    it "301s the naked /app to the canonical LK home from any host" do
+      host! "himrate.com"
+      get "/app"
+
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://app.himrate.com/home")
+    end
+  end
+
   describe "app-host deindexing signals (SEO-hygiene)" do
     it "app robots.txt ALLOWS crawling (Google must fetch pages to see their noindex)" do
       host! "app.himrate.com"

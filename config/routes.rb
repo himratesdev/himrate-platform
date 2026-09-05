@@ -282,6 +282,9 @@ Rails.application.routes.draw do
   get "app/settings", to: "pages#settings"
   # W5: audience-overlap graph page.
   get "app/graph", to: "pages#graph"
+  # Bare /app (users type it as «кабинет») — a routing-level 404 before canonicalize_host
+  # could touch it. One hop to the canonical LK home.
+  get "app", to: redirect("https://app.himrate.com/home", status: 301)
   # Viewer personal activity (screen 03, PVA) — watch time / top channels / insights / feed.
   get "app/activity", to: "pages#my_activity"
   # Viewer discover «Куда пойти» (screen 04) — live-now ranked by real audience.
