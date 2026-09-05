@@ -44,10 +44,24 @@ module Twitch
 
     class Error < StandardError; end
 
-    attr_reader :channels, :pending_joins
+    attr_reader :channels, :pending_joins, :max_channels, :label
     attr_writer :on_periodic_check
 
-    def initialize
+    # EPIC FARM T-F1: the monitor is parametrised so the same TLS/JOIN/reconnect machinery can run
+    # as one shard of the farm's capture pool (Farm::CaptureIrcPool): its own Redis queue, heartbeat
+    # key and capacity, `commands_channel: nil` to skip the per-connection pub/sub listener (the pool
+    # routes join/part to shards itself) and `handle_signals: false` so eight shards don't each
+    # overwrite the process-wide SIGTERM trap (the pool owns shutdown). Defaults = the legacy single
+    # bot-detection monitor (bin/irc_monitor) — that path is byte-for-byte unchanged in behaviour.
+    def initialize(queue_key: REDIS_QUEUE_KEY, commands_channel: REDIS_COMMANDS_CHANNEL,
+                   heartbeat_key: REDIS_HEARTBEAT_KEY, max_channels: MAX_CHANNELS,
+                   handle_signals: true, label: "IrcMonitor")
+      @queue_key = queue_key
+      @commands_channel = commands_channel
+      @heartbeat_key = heartbeat_key
+      @max_channels = max_channels
+      @handle_signals = handle_signals
+      @label = label
       @channels = Set.new
       @pending_joins = []
       @join_mutex = Mutex.new
@@ -69,13 +83,13 @@ module Twitch
     # Start the IRC monitor loop. Blocks until stop is called.
     def start
       @running = true
-      setup_signal_handlers
-      start_command_listener
+      setup_signal_handlers if @handle_signals
+      start_command_listener if @commands_channel
 
-      Rails.logger.info("IrcMonitor: starting")
+      Rails.logger.info("#{label}: starting")
       connect_and_listen
     rescue StandardError => e
-      Rails.logger.error("IrcMonitor: fatal error (#{e.class}: #{e.message})")
+      Rails.logger.error("#{label}: fatal error (#{e.class}: #{e.message})")
       raise
     ensure
       cleanup
@@ -83,7 +97,7 @@ module Twitch
 
     # Graceful shutdown.
     def stop
-      Rails.logger.info("IrcMonitor: stopping gracefully")
+      Rails.logger.info("#{label}: stopping gracefully")
       @running = false
       part_all_channels
       close_connection
@@ -97,7 +111,7 @@ module Twitch
       result, current_size = @join_mutex.synchronize do
         if @channels.include?(login)
           [ :already_joined, @channels.size ]
-        elsif @channels.size >= MAX_CHANNELS
+        elsif @channels.size >= @max_channels
           [ :capacity_full, @channels.size ]
         else
           @channels.add(login)
@@ -108,9 +122,9 @@ module Twitch
       # BUG-251.29: verbose log so capacity issues surface in logs instead of silent failures.
       case result
       when :capacity_full
-        Rails.logger.warn("IrcMonitor: subscribe(#{login}) -> capacity_full (#{current_size}/#{MAX_CHANNELS})")
+        Rails.logger.warn("#{label}: subscribe(#{login}) -> capacity_full (#{current_size}/#{@max_channels})")
       when :queued
-        Rails.logger.info("IrcMonitor: subscribe(#{login}) -> queued (#{current_size}/#{MAX_CHANNELS})")
+        Rails.logger.info("#{label}: subscribe(#{login}) -> queued (#{current_size}/#{@max_channels})")
       end
       result
     end
@@ -125,12 +139,18 @@ module Twitch
       return :not_joined unless was_joined
 
       send_raw("PART ##{login}")
-      Rails.logger.info("IrcMonitor: PART ##{login} (#{@channels.size}/#{MAX_CHANNELS})")
+      Rails.logger.info("#{label}: PART ##{login} (#{@channels.size}/#{@max_channels})")
       :ok
     end
 
     def connected?
       !@ssl_socket.nil? && !@ssl_socket.closed?
+    end
+
+    # Consistent copy of the desired-channel set for readers on other threads (the capture pool's
+    # reconcile runs while the command thread may be mutating @channels — CR iter-1 N4).
+    def channels_snapshot
+      @join_mutex.synchronize { @channels.dup }
     end
 
     private
@@ -146,7 +166,7 @@ module Twitch
           listen_loop
         rescue IOError, Errno::ECONNRESET, Errno::EPIPE, Errno::ETIMEDOUT,
                OpenSSL::SSL::SSLError => e
-          Rails.logger.warn("IrcMonitor: connection lost (#{e.class}: #{e.message})")
+          Rails.logger.warn("#{label}: connection lost (#{e.class}: #{e.message})")
           close_connection
           reconnect_with_backoff if @running
         end
@@ -169,7 +189,7 @@ module Twitch
 
       @reconnect_attempts = 0
       @last_message_at = Time.current
-      Rails.logger.info("IrcMonitor: TLS connected to #{IRC_HOST}:#{IRC_PORT}")
+      Rails.logger.info("#{label}: TLS connected to #{IRC_HOST}:#{IRC_PORT}")
     end
 
     def authenticate
@@ -186,7 +206,7 @@ module Twitch
         break if line&.include?("376") || line&.include?("Welcome")
       end
 
-      Rails.logger.info("IrcMonitor: authenticated as justinfan")
+      Rails.logger.info("#{label}: authenticated as justinfan")
     end
 
     # On (re)connect, re-queue the desired channel set so process_pending_joins re-sends
@@ -196,7 +216,7 @@ module Twitch
         @channels.each { |login| @pending_joins << login unless @pending_joins.include?(login) }
         @channels.size
       end
-      Rails.logger.info("IrcMonitor: re-queued #{count} channels for JOIN") if count.positive?
+      Rails.logger.info("#{label}: re-queued #{count} channels for JOIN") if count.positive?
     end
 
     # === Main Loop ===
@@ -223,8 +243,8 @@ module Twitch
           flush_memory_buffer
           @on_periodic_check&.call
           # BUG-251.29: if command listener thread crashed silently, restart it so we
-          # don't go deaf to JOIN/PART commands.
-          ensure_command_listener_alive
+          # don't go deaf to JOIN/PART commands. (Pool shards have no listener of their own.)
+          ensure_command_listener_alive if @commands_channel
           @last_heartbeat_at = Time.current
         end
       end
@@ -238,7 +258,7 @@ module Twitch
       when "PING"
         send_raw("PONG :#{parsed.message_text}")
       when "RECONNECT"
-        Rails.logger.info("IrcMonitor: received RECONNECT, reconnecting immediately")
+        Rails.logger.info("#{label}: received RECONNECT, reconnecting immediately")
         close_connection
       when "PRIVMSG", "USERNOTICE", "ROOMSTATE", "CLEARCHAT", "CLEARMSG"
         push_to_redis(parsed)
@@ -254,11 +274,11 @@ module Twitch
       return unless record
 
       payload = JSON.generate(record)
-      redis.lpush(REDIS_QUEUE_KEY, payload)
+      redis.lpush(@queue_key, payload)
     rescue Redis::BaseError => e
       @memory_buffer.shift if @memory_buffer.size >= MEMORY_BUFFER_MAX
       @memory_buffer << payload
-      Rails.logger.warn("IrcMonitor: Redis push failed, buffered in memory (#{@memory_buffer.size})")
+      Rails.logger.warn("#{label}: Redis push failed, buffered in memory (#{@memory_buffer.size})")
     end
 
     def flush_memory_buffer
@@ -266,15 +286,15 @@ module Twitch
 
       flushed = 0
       while (payload = @memory_buffer.shift)
-        redis.lpush(REDIS_QUEUE_KEY, payload)
+        redis.lpush(@queue_key, payload)
         flushed += 1
       end
-      Rails.logger.info("IrcMonitor: flushed #{flushed} messages from memory buffer to Redis")
+      Rails.logger.info("#{label}: flushed #{flushed} messages from memory buffer to Redis")
     rescue Redis::BaseError => e
       # Phase 2 G rescue audit M4: previously silent — memory buffer
       # backpressure invisible. Logger.warn (NOT capture_exception — это steady
       # state under Redis outage, не event) so ops can grep for it during incident.
-      Rails.logger.warn("IrcMonitor: Redis still unavailable during flush — #{@memory_buffer.size} messages held in memory (#{e.message})")
+      Rails.logger.warn("#{label}: Redis still unavailable during flush — #{@memory_buffer.size} messages held in memory (#{e.message})")
     end
 
     # === Reconnect ===
@@ -284,7 +304,7 @@ module Twitch
       jitter = 1.0 + rand(-0.2..0.2)
       delay = [ BACKOFF_BASE * (2**(@reconnect_attempts - 1)) * jitter, BACKOFF_MAX ].min
 
-      Rails.logger.info("IrcMonitor: reconnecting in #{delay.round(1)}s (attempt #{@reconnect_attempts})")
+      Rails.logger.info("#{label}: reconnecting in #{delay.round(1)}s (attempt #{@reconnect_attempts})")
       sleep(delay)
     end
 
@@ -302,7 +322,7 @@ module Twitch
 
         send_raw("JOIN ##{login}")
         @join_timestamps << Time.current
-        Rails.logger.info("IrcMonitor: JOIN ##{login} (#{@channels.size}/#{MAX_CHANNELS}, #{@pending_joins.size} pending)")
+        Rails.logger.info("#{label}: JOIN ##{login} (#{@channels.size}/#{@max_channels}, #{@pending_joins.size} pending)")
       end
     end
 
@@ -327,7 +347,7 @@ module Twitch
       return unless @awaiting_pong && @ping_sent_at
 
       if Time.current - @ping_sent_at > PING_TIMEOUT
-        Rails.logger.warn("IrcMonitor: PONG timeout, forcing reconnect")
+        Rails.logger.warn("#{label}: PONG timeout, forcing reconnect")
         @awaiting_pong = false
         close_connection
       end
@@ -348,7 +368,7 @@ module Twitch
 
     def cleanup
       close_connection
-      Rails.logger.info("IrcMonitor: stopped")
+      Rails.logger.info("#{label}: stopped")
     end
 
     # === I/O ===
@@ -360,7 +380,7 @@ module Twitch
         @ssl_socket.write("#{message}\r\n")
       end
     rescue IOError, Errno::EPIPE => e
-      Rails.logger.warn("IrcMonitor: send failed (#{e.message})")
+      Rails.logger.warn("#{label}: send failed (#{e.message})")
     end
 
     def read_line(timeout: 1)
@@ -396,7 +416,7 @@ module Twitch
       # upstream `capture_exception`.
       @irc_read_error_counter ||= 0
       @irc_read_error_counter += 1
-      Rails.logger.warn("[IrcMonitor] read_line transient error (#{e.class}): #{e.message} (cumulative=#{@irc_read_error_counter})")
+      Rails.logger.warn("[#{label}] read_line transient error (#{e.class}): #{e.message} (cumulative=#{@irc_read_error_counter})")
       if defined?(Sentry) && (@irc_read_error_counter % BREADCRUMB_THROTTLE_N).zero?
         Sentry.with_scope do |scope|
           scope.set_tags(irc_read_error: e.class.name.to_s)
@@ -423,24 +443,24 @@ module Twitch
     # listen_loop periodically calls #ensure_command_listener_alive to restart if dead.
     def start_command_listener
       @command_listener_thread = Thread.new do
-        Rails.logger.info("IrcMonitor: command listener thread started (tid=#{Thread.current.object_id})")
+        Rails.logger.info("#{label}: command listener thread started (tid=#{Thread.current.object_id})")
         command_redis = Redis.new(url: redis_url)
-        command_redis.subscribe(REDIS_COMMANDS_CHANNEL) do |on|
+        command_redis.subscribe(@commands_channel) do |on|
           on.subscribe do |_, _|
-            Rails.logger.info("IrcMonitor: subscribed to Redis channel #{REDIS_COMMANDS_CHANNEL}")
+            Rails.logger.info("#{label}: subscribed to Redis channel #{@commands_channel}")
           end
           on.message do |_channel, message|
             handle_command(message)
           end
         end
       rescue Redis::BaseError => e
-        Rails.logger.error("IrcMonitor: command listener Redis error (#{e.message}) — restarting")
+        Rails.logger.error("#{label}: command listener Redis error (#{e.message}) — restarting")
         sleep(5)
         retry if @running
       rescue StandardError => e
         # BUG-251.29: previously uncaught — silent thread death left us unable to receive JOIN
         # commands. Now logged and re-raised so ensure_command_listener_alive can restart.
-        Rails.logger.error("IrcMonitor: command listener fatal #{e.class}: #{e.message}")
+        Rails.logger.error("#{label}: command listener fatal #{e.class}: #{e.message}")
         Rails.logger.error(e.backtrace.first(10).join("\n"))
         raise
       end
@@ -449,7 +469,7 @@ module Twitch
     def ensure_command_listener_alive
       return if @command_listener_thread&.alive?
 
-      Rails.logger.error("IrcMonitor: command listener thread is dead — restarting")
+      Rails.logger.error("#{label}: command listener thread is dead — restarting")
       start_command_listener
     end
 
@@ -457,19 +477,19 @@ module Twitch
       data = JSON.parse(message)
       action = data["action"]
       login = data["channel_login"]
-      Rails.logger.info("IrcMonitor: handle_command action=#{action} login=#{login}")
+      Rails.logger.info("#{label}: handle_command action=#{action} login=#{login}")
       case action
       when "join"
         result = subscribe(login)
-        Rails.logger.info("IrcMonitor: handle_command join(#{login}) -> #{result}")
+        Rails.logger.info("#{label}: handle_command join(#{login}) -> #{result}")
       when "part"
         result = unsubscribe(login)
-        Rails.logger.info("IrcMonitor: handle_command part(#{login}) -> #{result}")
+        Rails.logger.info("#{label}: handle_command part(#{login}) -> #{result}")
       else
-        Rails.logger.warn("IrcMonitor: handle_command unknown action=#{action}")
+        Rails.logger.warn("#{label}: handle_command unknown action=#{action}")
       end
     rescue JSON::ParserError => e
-      Rails.logger.warn("IrcMonitor: invalid command (#{e.message})")
+      Rails.logger.warn("#{label}: invalid command (#{e.message})")
     end
 
     # === Redis ===
@@ -485,7 +505,7 @@ module Twitch
     # === Heartbeat ===
 
     def update_heartbeat
-      redis.setex(REDIS_HEARTBEAT_KEY, 60, {
+      redis.setex(@heartbeat_key, 60, {
         connected: connected?,
         channels: @channels.size,
         pending_joins: @pending_joins.size,
@@ -497,7 +517,7 @@ module Twitch
       # health checks see stale `connected: true` indefinitely. Logger.debug (not
       # warn — heartbeat runs every cycle, would spam under Redis outage; the
       # message-flush rescue above already surfaces the broader Redis state).
-      Rails.logger.debug("IrcMonitor: heartbeat write failed (#{e.message})")
+      Rails.logger.debug("#{label}: heartbeat write failed (#{e.message})")
     end
   end
 end

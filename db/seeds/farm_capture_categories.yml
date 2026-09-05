@@ -1,0 +1,21 @@
+# EPIC FARM T-F1 — capture-set categories (INGEST-EXPANSION-DESIGN-2026-09-05.md §8, PO delegated
+# the decisions to the operator 2026-09-05).
+#
+# game_id is STRICT (never name matching — "PUBG MOBILE" leaks under ILIKE). Verified live via
+# Helix GET /games 2026-09-02/05. `languages` = Helix `language` allowlist; omit for all languages.
+#
+# Why Just Chatting is ru+en only: the farm publishes EN + RU channels; JC is 70% of the whole
+# capture volume and its es/pt/ja/zh chat serves no farm output. PUBG / CS2 / Dota 2 stay
+# language-free — their small channels are the wild-card slots and cost ~nothing.
+#
+# Idempotent seeder (Farm::CaptureCategorySeeder): upserts by game_id, re-run any time.
+---
+- game_id: "493057"
+  game_name: "PUBG: BATTLEGROUNDS"
+- game_id: "32399"
+  game_name: "Counter-Strike"
+- game_id: "29595"
+  game_name: "Dota 2"
+- game_id: "509658"
+  game_name: "Just Chatting"
+  languages: [ru, en]

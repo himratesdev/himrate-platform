@@ -69,7 +69,7 @@ def run_active(_redis, _running_ref)
 
   monitor = Twitch::IrcMonitor.new
 
-  active_channels = Channel.monitored
+  active_channels = Channel.monitored.active
     .joins(:streams)
     .where(streams: { ended_at: nil })
     .distinct

@@ -106,6 +106,20 @@ module Twitch
       get("/streams", { game_id: game_id, first: first })&.dig("data") || []
     end
 
+    # EPIC FARM T-F1: one page of a category's live streams with cursor pagination (+ optional
+    # Helix `language` allowlist, ≤100 codes). Returns nil when Helix failed (transport / 5xx /
+    # rate-limit exhausted) so the caller can treat the whole category as "no information this
+    # cycle" (partial-batch semantics, BUG-251.19) instead of parting every channel on a blip.
+    def get_streams_page(game_id:, languages: nil, first: 100, after: nil)
+      params = { game_id: game_id, first: first }
+      params[:language] = Array(languages) if languages.present?
+      params[:after] = after if after
+      resp = get("/streams", params)
+      return nil if resp.nil?
+
+      { "data" => resp["data"] || [], "cursor" => resp.dig("pagination", "cursor") }
+    end
+
     private
 
     # === HTTP ===
