@@ -207,6 +207,19 @@
     });
   }
   // Registration Gate → sign-in (both CTAs open LK/paid surfaces that require an account).
+  // W5 deep link: the graph page's ego mode for THIS channel (registered surface — gates to
+  // login like the other LK links). Injected as a real anchor under the reputation layer.
+  (function () {
+    var l3 = el("L3 Reputation");
+    if (!l3) return;
+    var a = document.createElement("a");
+    a.setAttribute("data-pencil-name", "Graph Link");
+    a.href = "https://app.himrate.com/graph?focus=" + encodeURIComponent(login);
+    a.textContent = "Паутинка пересечений аудитории этого канала →";
+    a.style.cssText = "display:block;margin:14px 0 0;color:#A78BFA;font:500 13.5px Inter,system-ui,sans-serif;text-decoration:none;";
+    l3.appendChild(a);
+  })();
+
   nav("Gate CTA1", "/login"); // «Открыть в кабинете»
   nav("Gate CTA2", "/login"); // «Разовый отчёт за период»
   // Escape hatches back to marketing (the card is a shared / SEO landing surface).

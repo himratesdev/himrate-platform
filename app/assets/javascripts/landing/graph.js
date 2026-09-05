@@ -211,7 +211,11 @@
     .then(function (r) { return r.ok ? r.json() : {}; })
     .then(function (s) {
       if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      resize(); load(null);
+      resize();
+      // Deep link: /graph?focus=<login> (ego mode from channel cards / brand surfaces).
+      var qf = new URLSearchParams(window.location.search).get("focus");
+      if (qf && focusInput) focusInput.value = qf;
+      load(qf ? qf.toLowerCase() : null);
     })
     .catch(function () { window.location.href = "/login"; });
 })();
