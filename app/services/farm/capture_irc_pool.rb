@@ -108,18 +108,20 @@ module Farm
     end
 
     def heartbeat_payload
+      # One join_stats snapshot per shard (single lock each — CR fix-iter-1 N3). Acknowledged
+      # (ROOMSTATE) vs in-flight vs parked JOINs is the live-verify signal that the desired set is
+      # REALLY joined (BUG T-F1 2026-09-05: silent JOIN drops were invisible here).
+      stats = @shards.map(&:join_stats)
       {
         connections: @shards.size,
-        channels: @shards.sum { |s| s.channels.size },
+        channels: stats.sum { |st| st[:channels] },
         pending_joins: @shards.sum { |s| s.pending_joins.size },
-        # Acknowledged (ROOMSTATE) vs in-flight vs parked JOINs — the live-verify signal that the
-        # desired set is REALLY joined (BUG T-F1 2026-09-05: silent JOIN drops were invisible here).
-        joined: @shards.sum(&:joined_count),
-        unacked: @shards.sum(&:unacked_count),
-        join_gave_up: @shards.sum(&:gave_up_count),
-        shards: @shards.map do |s|
-          { channels: s.channels.size, pending: s.pending_joins.size, joined: s.joined_count,
-            unacked: s.unacked_count, gave_up: s.gave_up_count, connected: s.connected? }
+        joined: stats.sum { |st| st[:joined] },
+        unacked: stats.sum { |st| st[:unacked] },
+        join_gave_up: stats.sum { |st| st[:gave_up] },
+        shards: @shards.each_with_index.map do |s, i|
+          { channels: stats[i][:channels], pending: s.pending_joins.size, joined: stats[i][:joined],
+            unacked: stats[i][:unacked], gave_up: stats[i][:gave_up], connected: s.connected? }
         end,
         uptime_seconds: (Time.current - @started_at).to_i,
         at: Time.current.iso8601

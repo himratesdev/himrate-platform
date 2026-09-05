@@ -22,7 +22,7 @@ RSpec.describe Farm::CaptureIrcPool, "heartbeat join accounting" do
     pool.join("acked")
     pool.join("inflight")
     pool.shards.each { |s| s.send(:process_pending_joins) }
-    pool.shard_for("acked").send(:process_line, ":tmi.twitch.tv ROOMSTATE #acked")
+    pool.shard_for("acked").send(:process_line, "@emote-only=0;followers-only=-1;r9k=0;room-id=1;slow=0;subs-only=0 :tmi.twitch.tv ROOMSTATE #acked\r\n")
 
     payload = pool.heartbeat_payload
 

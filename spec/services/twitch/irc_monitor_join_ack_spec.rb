@@ -98,6 +98,44 @@ RSpec.describe Twitch::IrcMonitor, "JOIN acknowledgement" do
     expect(monitor.joined_count).to eq(0)
   end
 
+  # CR fix-iter-1 M1: part can race the JOIN send (mutex released around send_raw) — the phantom
+  # must neither be recorded nor survive a sweep.
+  it "does not track a JOIN sent for a channel parted in the send window, and sweeps a lost race" do
+    monitor.subscribe("gone")
+    monitor.instance_variable_get(:@join_mutex).synchronize { monitor.instance_variable_get(:@pending_joins).shift }
+    expect(monitor.unsubscribe("gone")).to eq(:ok)
+
+    monitor.send(:record_join_sent, "gone")
+    expect(monitor.unacked_count).to eq(0)
+
+    # A stale entry that somehow exists (e.g. older code path) converges in one sweep, no timeout needed.
+    monitor.instance_variable_get(:@ack_pending)["gone"] = { sent_at: Time.current, attempts: 1 }
+    monitor.instance_variable_get(:@join_gave_up)["gone2"] = Time.current
+    monitor.send(:retry_unacked_joins)
+    expect(monitor.unacked_count).to eq(0)
+    expect(monitor.gave_up_count).to eq(0)
+    expect(monitor.pending_joins).to be_empty
+  end
+
+  # CR fix-iter-1 N4: the sweep is wired into the heartbeat tick of the listen loop.
+  it "runs the ack sweep on the heartbeat tick of the listen loop" do
+    allow(monitor).to receive(:read_line).and_return(nil)
+    allow(monitor).to receive(:flush_memory_buffer)
+    monitor.instance_variable_set(:@running, true)
+    monitor.instance_variable_set(:@last_heartbeat_at, Time.at(0))
+    expect(monitor).to receive(:retry_unacked_joins).ordered
+    expect(monitor).to receive(:update_heartbeat).ordered { monitor.instance_variable_set(:@running, false) }
+
+    monitor.send(:listen_loop)
+  end
+
+  it "reports one consistent snapshot via join_stats" do
+    monitor.subscribe("a")
+    monitor.send(:process_pending_joins)
+    stats = monitor.join_stats
+    expect(stats).to eq(channels: 1, joined: 0, unacked: 1, gave_up: 0)
+  end
+
   it "exposes joined / unacked / join_gave_up in the heartbeat" do
     redis = instance_double(Redis)
     allow(monitor).to receive(:redis).and_return(redis)
