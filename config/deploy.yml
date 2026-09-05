@@ -182,12 +182,14 @@ servers:
   # EPIC FARM T-F1: the farm's category-join IRC pool — a SEPARATE stateful process from `irc`
   # (bot-detection set): N anonymous connections holding every live channel of the enabled
   # capture categories, pushing chat to farm:capture:chat_messages → CH capture_chat_messages.
-  # Sizing from DSV 2026-09-05 (one anon connection held 2400 channels; 5 per IP had 0 refusals;
-  # 200 JOINs in 3s were all acked — Twitch applies no JOIN throttle to anonymous connections):
+  # Sizing from DSV 2026-09-05 (one anon connection held 2400 channels; 5 per IP had 0 refusals):
   # 8 × 1500 = 12k slots for the ~8k-channel peak set (PUBG+CS2+Dota+JC(ru,en)); crc32 sharding
   # is uneven by ~±80/shard, so per-shard headroom matters more than the sum (CR iter-1 S2).
-  # JOIN throttle 200/30s per shard (vs legacy 40) — a cold-started shard of ~1000 channels fills
-  # in ~2.5 min instead of ~12 (CR iter-1 N7).
+  # JOIN throttle 60/30s per shard = the documented 20/10s, the rate DSV P5 proved acked for 2400
+  # channels. 200/30s (first deploy) looked fine in a 200-JOIN burst probe but Twitch SILENTLY drops
+  # JOINs once a connection sustains it (~60% of JC shards never joined — BUG 2026-09-05); the ack
+  # sweep in IrcMonitor now re-sends unacknowledged JOINs, so the rate is about efficiency, not
+  # correctness. Cold fill of a ~600-channel shard ≈ 5 min, all shards in parallel.
   # Gated by :farm_capture (STAGING_ALL_FLAGS) — the process idles in STANDBY when OFF.
   irc_capture:
     hosts:
@@ -198,7 +200,7 @@ servers:
       clear:
         IRC_CAPTURE_CONNECTIONS: 8
         IRC_CAPTURE_MAX_PER_CONN: 1500
-        IRC_JOIN_THROTTLE_LIMIT: 200
+        IRC_JOIN_THROTTLE_LIMIT: 60
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s

@@ -112,7 +112,15 @@ module Farm
         connections: @shards.size,
         channels: @shards.sum { |s| s.channels.size },
         pending_joins: @shards.sum { |s| s.pending_joins.size },
-        shards: @shards.map { |s| { channels: s.channels.size, pending: s.pending_joins.size, connected: s.connected? } },
+        # Acknowledged (ROOMSTATE) vs in-flight vs parked JOINs — the live-verify signal that the
+        # desired set is REALLY joined (BUG T-F1 2026-09-05: silent JOIN drops were invisible here).
+        joined: @shards.sum(&:joined_count),
+        unacked: @shards.sum(&:unacked_count),
+        join_gave_up: @shards.sum(&:gave_up_count),
+        shards: @shards.map do |s|
+          { channels: s.channels.size, pending: s.pending_joins.size, joined: s.joined_count,
+            unacked: s.unacked_count, gave_up: s.gave_up_count, connected: s.connected? }
+        end,
         uptime_seconds: (Time.current - @started_at).to_i,
         at: Time.current.iso8601
       }
