@@ -47,14 +47,19 @@ RSpec.describe Grow::OpportunitiesRefreshWorker do
     expect(Rails.cache.read(described_class::CACHE_KEY)["games"].first["name"]).to eq("old")
   end
 
-  it "skips categories with zero live demand and clears the pending marker" do
+  # BUG-GROW-PENDING (2026-09-05): an empty crop is the NORMAL daily outcome for fresh Steam
+  # releases — it must persist an honest empty result, not leave the cache cold (which
+  # pending-looped the page forever on prod).
+  it "persists an honest EMPTY result when no candidate has live demand + clears pending" do
     Rails.cache.write(described_class::PENDING_KEY, true)
     allow_any_instance_of(Grow::SteamNewReleases).to receive(:call).and_return([ { steam_id: 9, name: "DeadGame" } ])
     allow(helix).to receive(:get_game).and_return({ "id" => "999", "name" => "DeadGame" })
     allow(helix).to receive(:get_streams_by_game).and_return([])
 
     described_class.new.perform
-    expect(Rails.cache.read(described_class::CACHE_KEY)).to be_nil
+    cached = Rails.cache.read(described_class::CACHE_KEY)
+    expect(cached["games"]).to eq([])
+    expect(cached["generated_at"]).to be_present
     expect(Rails.cache.exist?(described_class::PENDING_KEY)).to be(false)
   end
 end
