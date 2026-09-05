@@ -132,13 +132,13 @@ RSpec.describe "Host canonicalization", type: :request do
   end
 
   describe "host-aware robots.txt / sitemap (SEO)" do
-    it "app host robots.txt disallows everything and never redirects" do
+    it "app host robots.txt ALLOWS crawling (deindexing via noindex — see the SEO-hygiene block) and never redirects" do
       host! "app.himrate.com"
       get "/robots.txt"
 
       expect(response).to have_http_status(:ok)
-      expect(response.body).to include("Disallow: /")
-      expect(response.body).not_to include("Allow: /")
+      expect(response.body).to include("Allow: /")
+      expect(response.body).not_to include("Disallow: /")
     end
 
     it "apex robots.txt keeps the marketing policy" do
