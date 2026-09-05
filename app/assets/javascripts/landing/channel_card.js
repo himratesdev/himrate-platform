@@ -10,16 +10,6 @@
   var login = parts.length ? decodeURIComponent(parts[parts.length - 1]) : null;
   if (!login) return;
 
-  // Honest-data guard (PO caught «Прирост онлайна +1 200 за 35 с» as a leftover sample,
-  // 2026-07-20): the deep sections below layer 1 (L2 Drill = 7 checks + CCV/ERV charts + bot-raid,
-  // L3 Reputation = trend samples) are STILL static design samples — no wiring yet. Hide them until
-  // each is wired to real data (follow-ups); only the real layer-1 block + the registration Gate CTA
-  // stay visible. Runs immediately (script loads at end of body).
-  ["L2 Drill", "L3 Reputation"].forEach(function (name) {
-    var n = document.querySelector('[data-pencil-name="' + name + '"]');
-    if (n) n.style.display = "none";
-  });
-
   var BAND_RU = {
     impeccable: "Безупречная",
     stable: "Стабильная",
@@ -106,6 +96,84 @@
         anomNode.style.color = LABEL_COLOR[bandColor];
       }
     }
+
+    // Real freshness stamp (the export's «обновлено 8 сек назад» mock is scrubbed server-side).
+    if (hl.calculated_at) {
+      var age = Math.max(0, Math.round((Date.now() - new Date(hl.calculated_at).getTime()) / 60000));
+      setText("Updated", age < 1 ? "обновлено только что" : "обновлено " + age + " мин назад");
+    }
+
+    renderChecks(hl);
+    renderReputation(layers.reputation && layers.reputation.data);
+  }
+
+  // W2: real L2 — check rows driven by the REAL public /trust-headline signals (band verdict +
+  // reason_codes). No invented numbers: rows without a real code are hidden.
+  var REASON_RU = {
+    CHATTER_QUALITY_HIGH: ["Качество чата", "аудитория с историей — признак живых зрителей", "ok"],
+    CHATTER_QUALITY_LOW: ["Качество чата", "мало аккаунтов с историей — сигнал внимания", "warn"],
+    SELF_HISTORY_STABLE_CLEAN: ["История канала", "текущий эфир совпадает с собственной нормой", "ok"],
+    SELF_HISTORY_INFLATION_EVENT: ["История канала", "разовый всплеск против собственной нормы", "warn"],
+    SELF_HISTORY_SUSTAINED_INFLATION: ["История канала", "устойчивое превышение собственной нормы", "warn"],
+    HARD_NAMED_FRACTION: ["Известные боты", "в чате замечены аккаунты из бот-реестров", "warn"],
+    WIDE_INTERVAL_THIN_SAMPLE: ["Достаточность выборки", "оценка с широким интервалом — данных пока мало", "dim"],
+    PROVISIONAL_BASIC: ["Глубина истории", "предварительная оценка — меньше 10 стримов", "dim"],
+    ONLINE_EXCEEDS_ACTIVITY: ["Онлайн vs активность", "онлайн выше наблюдаемой активности чата", "warn"]
+  };
+  var STATE_COLOR = { ok: "#25D9A4", warn: "#F6A823", dim: "#9A9AA9" };
+
+  function renderChecks(hl) {
+    var band = hl.band || {};
+    var rows = [];
+    var bandState = band.color === "green" ? "ok" : band.color === "grey" ? "dim" : "warn";
+    rows.push(["Вердикт эфира", hl.erv_label || "—", bandState]);
+    (hl.reason_codes || []).forEach(function (code) {
+      var m = REASON_RU[code];
+      if (m) rows.push(m);
+    });
+    for (var i = 1; i <= 7; i++) {
+      var row = el("Chk " + i);
+      if (!row) continue;
+      if (i <= rows.length) {
+        setText("Chk Nm " + i, rows[i - 1][0]);
+        setText("Chk Vl " + i, rows[i - 1][1]);
+        var ic = el("Chk Ic " + i);
+        if (ic) ic.style.background = STATE_COLOR[rows[i - 1][2]] + "22";
+        var icPath = document.querySelector('[data-pencil-name="Chk Ic I ' + i + '"] path');
+        if (icPath) icPath.setAttribute("fill", STATE_COLOR[rows[i - 1][2]]);
+        var pill = el("Chk Pl " + i);
+        if (pill) pill.style.display = "none"; // pills carried mock statuses — the value line says it
+      } else {
+        row.style.display = "none";
+      }
+    }
+    setText("Checks Pass", rows.length + " реальных сигналов");
+  }
+
+  // W2: real L3 — the drawn 4-level reputation scale highlights the channel's ACTUAL band from
+  // the public reputation layer; mock trend bars are hidden (no fabricated history).
+  var BAND_LEVEL = { impeccable: 1, stable: 2, variable: 3, unstable: 4 };
+
+  function renderReputation(repData) {
+    var current = (repData && repData.current) || {};
+    var lvl = BAND_LEVEL[current.band];
+    var curMark = el("Lv Cur 2");
+    if (curMark) curMark.style.display = "none"; // static mock marker off Стабильная
+    for (var i = 1; i <= 4; i++) {
+      var row = el("Lv " + i);
+      if (!row) continue;
+      if (lvl) {
+        row.style.opacity = i === lvl ? "1" : "0.45";
+        if (i === lvl && curMark) {
+          curMark.style.display = "";
+          row.appendChild(curMark);
+        }
+      }
+    }
+    var count = current.stream_count;
+    setText("Trend Avg", lvl ? ("окно: " + (count != null ? count : "—") + " стримов") : "недостаточно истории");
+    var chart = el("Trend Chart");
+    if (chart) chart.style.display = "none"; // sample bars — no fabricated series
   }
 
   function renderError() {
