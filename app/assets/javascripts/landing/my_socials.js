@@ -29,11 +29,18 @@
   }
 
   // The Stat blocks are `Stat · <Label> <Platform>` wrappers each holding a `Stat V` value node.
+  // `label` may be a single string or an array of variants (the export labels the same slot
+  // «Охват / мес» on Telegram but «Просмотры / мес» on YouTube/TikTok) — first match wins.
   function setStat(platformName, label, value) {
-    var wrap = q("Stat · " + label + " " + platformName);
-    if (!wrap) return;
-    var v = q("Stat V", wrap);
-    if (v && value != null) v.textContent = value;
+    var labels = Array.isArray(label) ? label : [label];
+    for (var i = 0; i < labels.length; i++) {
+      var wrap = q("Stat · " + labels[i] + " " + platformName);
+      if (wrap) {
+        var v = q("Stat V", wrap);
+        if (v && value != null) v.textContent = value;
+        return;
+      }
+    }
   }
 
   function hideFraud() {
@@ -82,7 +89,7 @@
     if (data && data.available) {
       setT("Foll N · " + name, fmt(data.subscribers));
       // avg views ≈ reach per post (the descriptive reach number the preview affords)
-      setStat(name, "Охват / мес", fmt((data.metrics || {}).avg_views));
+      setStat(name, ["Охват / мес", "Просмотры / мес"], fmt((data.metrics || {}).avg_views));
       var er = (data.metrics || {}).er_percent;
       setStat(name, "ER", er != null ? er + "%" : "—");
       // Growth: only when a prior snapshot exists (accumulates over time) — otherwise hide the delta.
@@ -98,7 +105,7 @@
       setT("Foll N · " + name, "—");
       setT("Delta T · " + name, "Аналитика скоро");
       hide(q("Delta · " + name));
-      setStat(name, "Охват / мес", "—");
+      setStat(name, ["Охват / мес", "Просмотры / мес"], "—");
       setStat(name, "ER", "—");
     } else {
       hide(card); // not linked on Twitch at all
@@ -132,7 +139,46 @@
     markSoon("Card · География", "География");
   }
 
+  // Honest pending state: while the worker warms up (first crawl takes minutes) the Pencil export's
+  // mock numbers (Trust Score 87 / 412 800 / 1 240 000 / ER 4.1% …) must NOT be visible. Blank every
+  // numeric anchor to «—» and show a note (grow.js renderPendingNote pattern). CSP-safe: textContent only.
+  function renderPendingNote() {
+    if (q("PendingNote")) return; // idempotent
+    var hero = q("Real Headline");
+    var root = (hero && hero.parentNode) || document.body;
+    var d = document.createElement("div");
+    d.setAttribute("data-pencil-name", "PendingNote");
+    d.style.cssText = "padding:20px 8px;color:#9A9AA9;font-family:Inter,system-ui,sans-serif;font-size:14px;";
+    d.textContent = "Собираем данные по площадкам — обычно 2–4 минуты. Страница обновится сама.";
+    root.insertBefore(d, root.firstChild);
+  }
+
+  function renderPending() {
+    setT("Score", "—");
+    setT("Real N", "—");
+    setT("Shown N", "/ — показано");
+    PLATFORMS.forEach(function (p) {
+      var name = NAMES[p];
+      setT("Bar Val · " + name, "—");
+      var fill = q("Bar Fill · " + name);
+      if (fill) fill.style.width = "0";
+      setT("Foll N · " + name, "—");
+      setT("Delta T · " + name, "");
+    });
+    // every nested Stat V inside any `Stat · * <Platform>` wrapper (labels vary per platform)
+    Array.prototype.slice.call(document.querySelectorAll('[data-pencil-name^="Stat · "]')).forEach(function (wrap) {
+      var v = q("Stat V", wrap);
+      if (v) v.textContent = "—";
+    });
+    setT("Rel Label", "");
+    setT("Rel Trend", "");
+    renderPendingNote();
+  }
+
   function render(profile) {
+    var note = q("PendingNote");
+    if (note) note.remove();
+
     var platforms = (profile && profile.platforms) || {};
     var linked = {};
     ((profile && profile.socials) || []).forEach(function (s) { linked[s.platform] = true; });
@@ -145,12 +191,17 @@
   }
 
   var pollTimer;
+  var pendingShown = false;
   function load(login) {
     apiGet("/api/v1/social/streamers/" + encodeURIComponent(login))
       .then(function (resp) {
         var d = (resp && resp.data) || {};
         clearTimeout(pollTimer);
-        if (d.status === "pending") { pollTimer = setTimeout(function () { load(login); }, 6000); return; }
+        if (d.status === "pending") {
+          if (!pendingShown) { pendingShown = true; hideFraud(); renderPending(); }
+          pollTimer = setTimeout(function () { load(login); }, 6000);
+          return;
+        }
         render(d);
       })
       .catch(function () { render({}); });

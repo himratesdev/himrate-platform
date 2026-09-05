@@ -148,7 +148,39 @@
     setT("Plat Count", socials.length + " " + plural(socials.length, "площадка", "площадки", "площадок"));
   }
 
+  // Honest pending state: while the worker warms up (first crawl takes minutes) the Pencil export's
+  // mock numbers must NOT be visible. Blank every numeric anchor to «—» and show a note (grow.js
+  // renderPendingNote pattern). CSP-safe: textContent only, no innerHTML.
+  function renderPendingNote() {
+    if (q("PendingNote")) return; // idempotent
+    var hero = q("Handle");
+    var root = (hero && hero.parentNode) || document.body;
+    var d = document.createElement("div");
+    d.setAttribute("data-pencil-name", "PendingNote");
+    d.style.cssText = "padding:20px 8px;color:#9A9AA9;font-family:Inter,system-ui,sans-serif;font-size:14px;";
+    d.textContent = "Собираем данные по площадкам — обычно 2–4 минуты. Страница обновится сама.";
+    root.insertBefore(d, root.firstChild);
+  }
+
+  function renderPending() {
+    // KPIV/KPIS of every slot + SV of every metric — prefix-scan (slot labels vary per export)
+    ["KPIV ", "KPIS ", "SV "].forEach(function (prefix) {
+      Array.prototype.slice.call(document.querySelectorAll('[data-pencil-name^="' + cssEsc(prefix) + '"]')).forEach(function (n) {
+        n.textContent = "—";
+      });
+    });
+    PLATFORMS.forEach(function (p) {
+      setT("AcctV " + AB[p], "—");
+      setT("AcctERt " + AB[p], "—");
+    });
+    setT("Handle", "—");
+    renderPendingNote();
+  }
+
   function render(profile) {
+    var note = q("PendingNote");
+    if (note) note.remove();
+
     var platforms = (profile && profile.platforms) || {};
     var footprint = {};
     ((profile && profile.socials) || []).forEach(function (s) { if (s && s.platform) footprint[s.platform] = s; });
@@ -161,12 +193,17 @@
   }
 
   var pollTimer;
+  var pendingShown = false;
   function load(login) {
     apiGet("/api/v1/social/streamers/" + encodeURIComponent(login))
       .then(function (resp) {
         var d = (resp && resp.data) || {};
         clearTimeout(pollTimer);
-        if (d.status === "pending") { pollTimer = setTimeout(function () { load(login); }, 6000); return; }
+        if (d.status === "pending") {
+          if (!pendingShown) { pendingShown = true; stripFraud(); renderPending(); }
+          pollTimer = setTimeout(function () { load(login); }, 6000);
+          return;
+        }
         render(d);
       })
       .catch(function () { render({}); });
