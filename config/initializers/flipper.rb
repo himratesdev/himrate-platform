@@ -153,6 +153,7 @@ module FlipperDefaults
     saas_lk_live
     billing_auto_subscription_creation
     farm_clips_poller
+    farm_capture
   ].freeze
   # ^ 2026-08-28 HOSTKEY-loss incident: these ten lived in HOOK_FLAGS and were manually
   # Flipper.enable'd on the old staging box — Redis-only state that died with the server.
@@ -167,7 +168,9 @@ module FlipperDefaults
   # BUG-251.31-G3-PR-A2 · cross_channel_edges/temporal_cross_channel T1-057 · saas_lk_live
   # LK-BACKEND · billing_auto_subscription_creation BUG-012 (staging/dev-only by design —
   # production must keep it OFF, which the env-guarded boot loop guarantees). · farm_clips_poller EPIC FARM
-  # T-F2 (category clip-pool poller: staging ingest auto-on, prod flip PO-gated).
+  # T-F2 (category clip-pool poller: staging ingest auto-on, prod flip PO-gated). · farm_capture EPIC FARM
+  # T-F1 (category-join IRC capture: gates Farm::CaptureSetSyncWorker + bin/irc_capture pool; tactical
+  # pause via the pause-override key, prod flip PO-gated).
 
   # Hooks for upcoming features / transitional kill-switches: flag зарегистрирован,
   # но НЕ auto-enabled. Production state управляется отдельно (миграция / admin UI /

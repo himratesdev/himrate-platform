@@ -183,6 +183,44 @@ RSpec.describe Twitch::HelixClient do
     end
   end
 
+  # EPIC FARM T-F1: category paging for the capture set.
+  describe "#get_streams_page" do
+    it "returns data + cursor and passes the language allowlist as repeated params" do
+      stub_request(:get, "https://api.twitch.tv/helix/streams?game_id=509658&first=100&language=ru&language=en")
+        .to_return(
+          status: 200,
+          body: { data: [ { user_login: "a", game_id: "509658", viewer_count: 12 } ], pagination: { cursor: "cur1" } }.to_json,
+          headers: { "Content-Type" => "application/json", "Ratelimit-Remaining" => "799" }
+        )
+
+      page = client.get_streams_page(game_id: "509658", languages: %w[ru en])
+
+      expect(page["data"].map { |s| s["user_login"] }).to eq([ "a" ])
+      expect(page["cursor"]).to eq("cur1")
+    end
+
+    it "omits the language param when no allowlist and follows the cursor" do
+      stub_request(:get, "https://api.twitch.tv/helix/streams?game_id=493057&first=100&after=cur1")
+        .to_return(
+          status: 200,
+          body: { data: [], pagination: {} }.to_json,
+          headers: { "Content-Type" => "application/json", "Ratelimit-Remaining" => "799" }
+        )
+
+      page = client.get_streams_page(game_id: "493057", after: "cur1")
+
+      expect(page).to eq({ "data" => [], "cursor" => nil })
+    end
+
+    it "returns nil (not an empty page) when Helix fails, so the caller can skip the category" do
+      stub_request(:get, "https://api.twitch.tv/helix/streams?game_id=493057&first=100")
+        .to_return(status: 503, body: "", headers: { "Content-Type" => "application/json" })
+      allow(client).to receive(:sleep) # retry backoff
+
+      expect(client.get_streams_page(game_id: "493057")).to be_nil
+    end
+  end
+
   describe "rate limit tracking" do
     it "logs warning when remaining < 50" do
       stub_request(:get, "https://api.twitch.tv/helix/users?login=test")

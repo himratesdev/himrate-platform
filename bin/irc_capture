@@ -1,0 +1,96 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# EPIC FARM T-F1: entrypoint for the farm's category-join IRC pool (Kamal role `irc_capture`).
+# Same two-mode contract as bin/irc_monitor:
+#   STANDBY — Flipper[:farm_capture] disabled. Writes heartbeat, sleeps, polls Flipper.
+#   ACTIVE  — Flipper[:farm_capture] enabled. Farm::CaptureIrcPool joins the whole capture set
+#             (Farm::CaptureSet, maintained by Farm::CaptureSetSyncWorker) over N anonymous
+#             connections and pushes chat to `farm:capture:chat_messages`.
+# The process never exits on its own (except SIGTERM/SIGINT). Heartbeat works in both modes.
+
+require_relative "../config/environment"
+
+HEARTBEAT_KEY = Farm::CaptureSet::POOL_HEARTBEAT_KEY
+HEARTBEAT_TTL = 120
+STANDBY_INTERVAL = 60         # seconds between Flipper checks in standby
+ACTIVE_FLIPPER_INTERVAL = 300 # seconds between Flipper checks in active
+
+Rails.logger.info("bin/irc_capture: starting (PID: #{Process.pid})")
+
+running = true
+trap("SIGTERM") { running = false }
+trap("SIGINT") { running = false }
+
+def flipper_enabled?
+  Flipper.enabled?(:farm_capture)
+rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid, PG::Error => e
+  Rails.logger.warn("bin/irc_capture: Flipper check failed (#{e.class}), treating as disabled")
+  ActiveRecord::Base.connection_pool.disconnect! rescue nil
+  false
+end
+
+def write_heartbeat(redis, mode:)
+  redis.setex(HEARTBEAT_KEY, HEARTBEAT_TTL, { mode: mode, pid: Process.pid, at: Time.current.iso8601 }.to_json)
+rescue Redis::BaseError => e
+  Rails.logger.warn("bin/irc_capture: heartbeat write failed (#{e.message})")
+end
+
+def connect_redis
+  Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1")).tap(&:ping)
+rescue Redis::CannotConnectError => e
+  Rails.logger.error("bin/irc_capture: Redis unavailable (#{e.message}), retrying in 30s")
+  sleep(30)
+  retry
+end
+
+def run_standby(redis, running_ref)
+  write_heartbeat(redis, mode: "standby")
+  Rails.logger.info("bin/irc_capture: STANDBY — Flipper disabled, next check in #{STANDBY_INTERVAL}s")
+
+  elapsed = 0
+  while running_ref.call && elapsed < STANDBY_INTERVAL
+    sleep(1)
+    elapsed += 1
+  end
+end
+
+def run_active(_redis, running_ref)
+  Rails.logger.info("bin/irc_capture: ACTIVE — starting capture pool (#{Farm::CaptureIrcPool::DEFAULT_CONNECTIONS} connections)")
+
+  pool = Farm::CaptureIrcPool.new
+
+  # Flipper re-check from the pool's supervise loop (every 30s) — no separate thread needed.
+  last_flipper_check = Time.current
+  pool.on_periodic_check = lambda do
+    pool.stop unless running_ref.call
+    if Time.current - last_flipper_check > ACTIVE_FLIPPER_INTERVAL
+      last_flipper_check = Time.current
+      unless flipper_enabled?
+        Rails.logger.info("bin/irc_capture: Flipper disabled during active, stopping pool")
+        pool.stop
+      end
+    end
+  end
+
+  pool.start
+rescue StandardError => e
+  Rails.logger.error("bin/irc_capture: active mode error (#{e.class}: #{e.message})")
+ensure
+  pool&.stop rescue nil
+end
+
+# === MAIN LOOP ===
+
+redis = connect_redis
+
+while running
+  if flipper_enabled?
+    run_active(redis, -> { running })
+  else
+    run_standby(redis, -> { running })
+  end
+end
+
+Rails.logger.info("bin/irc_capture: shutting down (PID: #{Process.pid})")
+redis.del(HEARTBEAT_KEY) rescue nil

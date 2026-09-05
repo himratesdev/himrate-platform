@@ -44,10 +44,24 @@ module Twitch
 
     class Error < StandardError; end
 
-    attr_reader :channels, :pending_joins
+    attr_reader :channels, :pending_joins, :max_channels, :label
     attr_writer :on_periodic_check
 
-    def initialize
+    # EPIC FARM T-F1: the monitor is parametrised so the same TLS/JOIN/reconnect machinery can run
+    # as one shard of the farm's capture pool (Farm::CaptureIrcPool): its own Redis queue, heartbeat
+    # key and capacity, `commands_channel: nil` to skip the per-connection pub/sub listener (the pool
+    # routes join/part to shards itself) and `handle_signals: false` so eight shards don't each
+    # overwrite the process-wide SIGTERM trap (the pool owns shutdown). Defaults = the legacy single
+    # bot-detection monitor (bin/irc_monitor) — that path is byte-for-byte unchanged in behaviour.
+    def initialize(queue_key: REDIS_QUEUE_KEY, commands_channel: REDIS_COMMANDS_CHANNEL,
+                   heartbeat_key: REDIS_HEARTBEAT_KEY, max_channels: MAX_CHANNELS,
+                   handle_signals: true, label: "IrcMonitor")
+      @queue_key = queue_key
+      @commands_channel = commands_channel
+      @heartbeat_key = heartbeat_key
+      @max_channels = max_channels
+      @handle_signals = handle_signals
+      @label = label
       @channels = Set.new
       @pending_joins = []
       @join_mutex = Mutex.new
@@ -69,13 +83,13 @@ module Twitch
     # Start the IRC monitor loop. Blocks until stop is called.
     def start
       @running = true
-      setup_signal_handlers
-      start_command_listener
+      setup_signal_handlers if @handle_signals
+      start_command_listener if @commands_channel
 
-      Rails.logger.info("IrcMonitor: starting")
+      Rails.logger.info("#{label}: starting")
       connect_and_listen
     rescue StandardError => e
-      Rails.logger.error("IrcMonitor: fatal error (#{e.class}: #{e.message})")
+      Rails.logger.error("#{label}: fatal error (#{e.class}: #{e.message})")
       raise
     ensure
       cleanup
@@ -83,7 +97,7 @@ module Twitch
 
     # Graceful shutdown.
     def stop
-      Rails.logger.info("IrcMonitor: stopping gracefully")
+      Rails.logger.info("#{label}: stopping gracefully")
       @running = false
       part_all_channels
       close_connection
@@ -97,7 +111,7 @@ module Twitch
       result, current_size = @join_mutex.synchronize do
         if @channels.include?(login)
           [ :already_joined, @channels.size ]
-        elsif @channels.size >= MAX_CHANNELS
+        elsif @channels.size >= @max_channels
           [ :capacity_full, @channels.size ]
         else
           @channels.add(login)
@@ -108,9 +122,9 @@ module Twitch
       # BUG-251.29: verbose log so capacity issues surface in logs instead of silent failures.
       case result
       when :capacity_full
-        Rails.logger.warn("IrcMonitor: subscribe(#{login}) -> capacity_full (#{current_size}/#{MAX_CHANNELS})")
+        Rails.logger.warn("#{label}: subscribe(#{login}) -> capacity_full (#{current_size}/#{@max_channels})")
       when :queued
-        Rails.logger.info("IrcMonitor: subscribe(#{login}) -> queued (#{current_size}/#{MAX_CHANNELS})")
+        Rails.logger.info("#{label}: subscribe(#{login}) -> queued (#{current_size}/#{@max_channels})")
       end
       result
     end
@@ -125,7 +139,7 @@ module Twitch
       return :not_joined unless was_joined
 
       send_raw("PART ##{login}")
-      Rails.logger.info("IrcMonitor: PART ##{login} (#{@channels.size}/#{MAX_CHANNELS})")
+      Rails.logger.info("#{label}: PART ##{login} (#{@channels.size}/#{@max_channels})")
       :ok
     end
 
@@ -223,8 +237,8 @@ module Twitch
           flush_memory_buffer
           @on_periodic_check&.call
           # BUG-251.29: if command listener thread crashed silently, restart it so we
-          # don't go deaf to JOIN/PART commands.
-          ensure_command_listener_alive
+          # don't go deaf to JOIN/PART commands. (Pool shards have no listener of their own.)
+          ensure_command_listener_alive if @commands_channel
           @last_heartbeat_at = Time.current
         end
       end
@@ -254,7 +268,7 @@ module Twitch
       return unless record
 
       payload = JSON.generate(record)
-      redis.lpush(REDIS_QUEUE_KEY, payload)
+      redis.lpush(@queue_key, payload)
     rescue Redis::BaseError => e
       @memory_buffer.shift if @memory_buffer.size >= MEMORY_BUFFER_MAX
       @memory_buffer << payload
@@ -266,7 +280,7 @@ module Twitch
 
       flushed = 0
       while (payload = @memory_buffer.shift)
-        redis.lpush(REDIS_QUEUE_KEY, payload)
+        redis.lpush(@queue_key, payload)
         flushed += 1
       end
       Rails.logger.info("IrcMonitor: flushed #{flushed} messages from memory buffer to Redis")
@@ -302,7 +316,7 @@ module Twitch
 
         send_raw("JOIN ##{login}")
         @join_timestamps << Time.current
-        Rails.logger.info("IrcMonitor: JOIN ##{login} (#{@channels.size}/#{MAX_CHANNELS}, #{@pending_joins.size} pending)")
+        Rails.logger.info("#{label}: JOIN ##{login} (#{@channels.size}/#{@max_channels}, #{@pending_joins.size} pending)")
       end
     end
 
@@ -425,9 +439,9 @@ module Twitch
       @command_listener_thread = Thread.new do
         Rails.logger.info("IrcMonitor: command listener thread started (tid=#{Thread.current.object_id})")
         command_redis = Redis.new(url: redis_url)
-        command_redis.subscribe(REDIS_COMMANDS_CHANNEL) do |on|
+        command_redis.subscribe(@commands_channel) do |on|
           on.subscribe do |_, _|
-            Rails.logger.info("IrcMonitor: subscribed to Redis channel #{REDIS_COMMANDS_CHANNEL}")
+            Rails.logger.info("#{label}: subscribed to Redis channel #{@commands_channel}")
           end
           on.message do |_channel, message|
             handle_command(message)
@@ -485,7 +499,7 @@ module Twitch
     # === Heartbeat ===
 
     def update_heartbeat
-      redis.setex(REDIS_HEARTBEAT_KEY, 60, {
+      redis.setex(@heartbeat_key, 60, {
         connected: connected?,
         channels: @channels.size,
         pending_joins: @pending_joins.size,

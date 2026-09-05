@@ -238,6 +238,21 @@ Sidekiq.configure_server do |config|
         "class" => "Farm::ClipsPollerWorker",
         "queue" => "monitoring",
         "description" => "EPIC FARM T-F2: category clip pool poll + view snapshots (gated :farm_clips_poller)"
+      },
+      # EPIC FARM T-F1: category-join capture set. Sync reconciles Farm::CaptureSet against Helix
+      # (~40 requests/cycle → ~20/min of the 800/min budget); drain moves the pool's Redis list into
+      # CH capture_chat_messages (≤50s loop, same contract as chat_message_drain).
+      "farm_capture_set_sync" => {
+        "cron" => "*/2 * * * *", # Every 2 minutes (join-lag ≤2 min, part after 3 misses ≈ 6 min)
+        "class" => "Farm::CaptureSetSyncWorker",
+        "queue" => "monitoring",
+        "description" => "EPIC FARM T-F1: reconcile capture set (all live channels of enabled categories) → join/part commands (gated :farm_capture)"
+      },
+      "farm_capture_chat_drain" => {
+        "cron" => "* * * * *", # Every minute
+        "class" => "Farm::CaptureChatDrainWorker",
+        "queue" => "chat",
+        "description" => "EPIC FARM T-F1: drain farm:capture:chat_messages → ClickHouse capture_chat_messages (loop ≤50s)"
       }
     }
 
