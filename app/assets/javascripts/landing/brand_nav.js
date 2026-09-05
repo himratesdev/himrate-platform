@@ -18,6 +18,7 @@
     "Nav · Главная": "/home",
     "Nav · Моя активность": "/activity",
     "Nav · Куда пойти": "/discover",
+    "Nav · Паутинка": "/graph",
     "Nav · Watchlists": "/watchlists",
     "Nav · Лучшие моменты": "/moments",
     "Nav · Поиск стримеров": "/search",
@@ -40,6 +41,21 @@
     if (route === "/compare") return path === "/compare" || path === "/overlap";
     return path === route;
   }
+
+  // W5: «Паутинка» — новой страницы нет в Pencil-экспортах сайдбара; клонируем существующий
+  // пункт «Куда пойти» и перетитловываем (тот же язык дизайна, ноль ручной разметки).
+  (function () {
+    var donor = q("Nav · Куда пойти");
+    if (!donor || q("Nav · Паутинка")) return;
+    var item = donor.cloneNode(true);
+    item.setAttribute("data-pencil-name", "Nav · Паутинка");
+    var label = item.querySelector('[data-pencil-name^="Nav Label"]');
+    if (label) { label.setAttribute("data-pencil-name", "Nav Label · Паутинка"); label.textContent = "Паутинка"; }
+    var icon = item.querySelector('[data-pencil-name^="Nav Icon"]');
+    if (icon) icon.setAttribute("data-pencil-name", "Nav Icon · Паутинка");
+    item.style.backgroundColor = "";
+    donor.parentNode.insertBefore(item, donor.nextSibling);
+  })();
 
   Object.keys(NAV).forEach(function (anchor) {
     var el = q(anchor);

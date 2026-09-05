@@ -142,6 +142,13 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # W5 «Паутинка» — the audience-overlap graph (chat-presence basis). Real data wired
+  # client-side by landing/graph.js against GET /api/v1/graph/audience (registered-gated).
+  def graph
+    @page = "graph"
+    @brand_dashboard = true
+  end
+
   # Streamer own-channel dashboard (screen 10) — faithful export host. Detects the signed-in
   # streamer's channel via /api/v1/user/me (twitch_login) client-side; real card/trends/reputation
   # wired by landing/my_channel.js from the public channel analytics API.
@@ -254,7 +261,7 @@ class PagesController < ApplicationController
   # Short (prefixless) LK paths on the app host. SIMPLE heads are product as bare segments;
   # NESTED heads are product only WITH a second segment — a bare /streamers on the app host is
   # the marketing page and must bounce to the apex (the app-host route is /streamers/:login).
-  PRODUCT_SHORT_HEADS_SIMPLE = %w[home search compare overlap watchlists settings activity
+  PRODUCT_SHORT_HEADS_SIMPLE = %w[home search compare overlap watchlists settings activity graph
                                   discover channel moments grow social creators].to_set.freeze
   PRODUCT_SHORT_HEADS_NESTED = %w[streamers blogger].to_set.freeze
 

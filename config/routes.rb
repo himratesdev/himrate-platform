@@ -66,6 +66,8 @@ Rails.application.routes.draw do
       post "promo/redeem", to: "promo#redeem"
       # W1: public B2B lead capture (/brands contact form).
       post "brand/leads", to: "brand/leads#create"
+      # W5: audience-overlap graph («паутинка»).
+      get "graph/audience", to: "graph#audience"
 
       # TASK-031: User profile
       get "user/me", to: "users#me"
@@ -209,6 +211,7 @@ Rails.application.routes.draw do
   constraints host: "app.himrate.com" do
     root "pages#viewer_home", as: :app_root
     get "home",       to: "pages#viewer_home"
+    get "graph", to: "pages#graph"
     get "search",     to: "pages#brand_search"
     get "compare",    to: "pages#brand_compare"
     get "overlap",    to: "pages#brand_overlap"
@@ -277,6 +280,8 @@ Rails.application.routes.draw do
   get "app/watchlists", to: "pages#watchlists"
   # Viewer settings (screen 06) — privacy toggles + connected accounts.
   get "app/settings", to: "pages#settings"
+  # W5: audience-overlap graph page.
+  get "app/graph", to: "pages#graph"
   # Viewer personal activity (screen 03, PVA) — watch time / top channels / insights / feed.
   get "app/activity", to: "pages#my_activity"
   # Viewer discover «Куда пойти» (screen 04) — live-now ranked by real audience.

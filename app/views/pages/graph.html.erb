@@ -1,0 +1,35 @@
+<%# W5 «Паутинка» — интерактивный граф пересечения аудиторий (chat-presence basis, T1-057).
+    Нет Pencil-экспорта: страница собрана вручную в языке дизайна ЛК (тёмная палитра, Inter/Geist).
+    Реальные данные + интерактив — landing/graph.js (canvas force-layout, без внешних библиотек). %>
+<div data-pencil-name="Screen · Паутинка" class="box-border w-full min-h-screen flex flex-col bg-[#0B0B12]">
+  <div class="box-border w-full h-fit flex flex-row gap-[12px] p-[20px_24px] justify-between items-center [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#25252F]">
+    <div class="box-border w-fit h-fit flex flex-col gap-[4px]">
+      <div class="text-[18px]/[normal] text-[#F4F4F7] font-[Inter,system-ui,sans-serif] font-bold">Паутинка аудиторий</div>
+      <div id="hr-graph-sub" class="text-[12.5px]/[normal] text-[#9A9AA9] font-[Inter,system-ui,sans-serif]">
+        Общие чаттеры между каналами · основа: активность в чатах
+      </div>
+    </div>
+    <div class="box-border w-fit h-fit flex flex-row gap-[10px] items-center">
+      <input id="hr-graph-focus" type="text" placeholder="Фокус: логин канала…"
+             class="box-border w-[220px] p-[10px_14px] bg-[#141419] text-[#F4F4F7] text-[13px] font-[Inter,system-ui,sans-serif] [border:1px_solid_#25252F] rounded-[10px] outline-none placeholder:text-[#5E5E6B]" />
+      <button id="hr-graph-reset" type="button"
+              class="box-border p-[10px_16px] bg-[#141419] text-[#A7A3B0] text-[12.5px] font-[Inter,system-ui,sans-serif] [border:1px_solid_#25252F] rounded-[10px] cursor-pointer">Весь граф</button>
+    </div>
+  </div>
+  <div class="box-border w-full [flex:1_1_0] relative overflow-hidden" style="min-height:70vh">
+    <canvas id="hr-graph-canvas" class="box-border w-full h-full block"></canvas>
+    <div id="hr-graph-note" class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[14px] text-[#9A9AA9] font-[Inter,system-ui,sans-serif]">
+      Строим граф по свежим данным…
+    </div>
+    <div id="hr-graph-tip" hidden
+         class="absolute z-10 p-[10px_14px] bg-[#141419] [border:1px_solid_#25252F] rounded-[10px] text-[12.5px] text-[#F4F4F7] font-[Inter,system-ui,sans-serif] pointer-events-none"></div>
+    <div class="absolute left-[16px] bottom-[14px] flex flex-row gap-[14px] text-[11.5px] text-[#8E8A9A] font-[Inter,system-ui,sans-serif]">
+      <span><span style="color:#25D9A4">●</span> реальная</span>
+      <span><span style="color:#F6A823">●</span> amber</span>
+      <span><span style="color:#F5C451">●</span> аномалия</span>
+      <span><span style="color:#F0616D">●</span> значительная</span>
+      <span><span style="color:#9A9AA9">●</span> мало данных</span>
+      <span>размер узла = аудитория чата · толщина ребра = доля общих</span>
+    </div>
+  </div>
+</div>
