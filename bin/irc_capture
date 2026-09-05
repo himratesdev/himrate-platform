@@ -18,9 +18,17 @@ ACTIVE_FLIPPER_INTERVAL = 300 # seconds between Flipper checks in active
 
 Rails.logger.info("bin/irc_capture: starting (PID: #{Process.pid})")
 
+# Signals are owned HERE, not by the pool (CR iter-1 M2): the trap flips the main-loop flag AND
+# stops the running pool, so ACTIVE mode exits on SIGTERM instead of respawning the pool until
+# docker's SIGKILL. CURRENT_POOL is the handle the trap uses (methods can't see script locals).
+CURRENT_POOL = [ nil ]
 running = true
-trap("SIGTERM") { running = false }
-trap("SIGINT") { running = false }
+shutdown = lambda do
+  running = false
+  CURRENT_POOL[0]&.stop
+end
+trap("SIGTERM") { shutdown.call }
+trap("SIGINT") { shutdown.call }
 
 def flipper_enabled?
   Flipper.enabled?(:farm_capture)
@@ -59,11 +67,12 @@ def run_active(_redis, running_ref)
   Rails.logger.info("bin/irc_capture: ACTIVE — starting capture pool (#{Farm::CaptureIrcPool::DEFAULT_CONNECTIONS} connections)")
 
   pool = Farm::CaptureIrcPool.new
+  CURRENT_POOL[0] = pool
 
   # Flipper re-check from the pool's supervise loop (every 30s) — no separate thread needed.
   last_flipper_check = Time.current
   pool.on_periodic_check = lambda do
-    pool.stop unless running_ref.call
+    pool.stop unless running_ref.call # belt-and-braces if the trap fired between checks
     if Time.current - last_flipper_check > ACTIVE_FLIPPER_INTERVAL
       last_flipper_check = Time.current
       unless flipper_enabled?
@@ -78,6 +87,7 @@ rescue StandardError => e
   Rails.logger.error("bin/irc_capture: active mode error (#{e.class}: #{e.message})")
 ensure
   pool&.stop rescue nil
+  CURRENT_POOL[0] = nil
 end
 
 # === MAIN LOOP ===

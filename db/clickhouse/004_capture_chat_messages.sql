@@ -36,7 +36,14 @@ CREATE TABLE IF NOT EXISTS capture_chat_messages
     raw_tags           String CODEC(ZSTD(3)),
 
     timestamp          DateTime64(3),
-    inserted_at        DateTime DEFAULT now()
+    inserted_at        DateTime DEFAULT now(),
+
+    -- game_id is not in the primary key (per-channel windows are the hot read; T-F3). A category-wide
+    -- slice would otherwise full-scan the partition, so a `set` skipping index carries it: within a
+    -- granule game_id is (near-)constant because rows are ordered by channel and a channel sits in
+    -- one category at a time — a set of ≤8 distinct values per 4 granules skips ~all foreign
+    -- categories (CR iter-1 N6). Cheap: LowCardinality column, a few bytes per index granule.
+    INDEX idx_game_id game_id TYPE set(8) GRANULARITY 4
 )
 ENGINE = MergeTree
 ORDER BY (channel_login, timestamp) -- per-channel windowed scans (peak detection around a clip)

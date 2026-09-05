@@ -13,14 +13,20 @@ module Farm
   #
   # DSV 2026-09-05 (INGEST-EXPANSION-DESIGN §6): one anon connection held 2400 channels with no cap
   # or JOIN throttle applied by Twitch; 5 parallel connections from one IP had 0 refusals. Sizing:
-  # 8 shards × 1000 = 8k channels (the PUBG+CS2+Dota+JC(ru,en) set at peak) with 2.4× headroom.
+  # 8 shards × 1500 = 12k slots for a ~8k-channel peak set (PUBG+CS2+Dota+JC(ru,en)) — crc32 sharding
+  # is uneven by ~±80 channels per shard, so per-shard capacity carries 1.6× headroom over the mean
+  # and 1.6× under the measured single-connection ceiling (CR iter-1 S2).
   #
   # Self-healing: on boot and every RECONCILE_INTERVAL the pool re-reads the whole desired set from
   # Redis and joins/parts the difference, so a missed pub/sub command can never leave a channel
   # joined-but-forgotten (BUG-251.29 leak pattern). A shard whose thread died is restarted.
+  #
+  # Signals belong to the entrypoint (bin/irc_capture), NOT to the pool: a trap installed here would
+  # overwrite the entrypoint's and leave its main loop believing it should restart the pool after
+  # SIGTERM (CR iter-1 M2). The entrypoint calls #stop from its own trap.
   class CaptureIrcPool
     DEFAULT_CONNECTIONS = ENV.fetch("IRC_CAPTURE_CONNECTIONS", "8").to_i
-    DEFAULT_MAX_PER_CONN = ENV.fetch("IRC_CAPTURE_MAX_PER_CONN", "1000").to_i
+    DEFAULT_MAX_PER_CONN = ENV.fetch("IRC_CAPTURE_MAX_PER_CONN", "1500").to_i
     RECONCILE_INTERVAL = 600 # seconds
     HEARTBEAT_INTERVAL = 30  # seconds
 
@@ -70,8 +76,6 @@ module Farm
     # and runs the heartbeat / reconcile / liveness loop.
     def start
       @running = true
-      trap("SIGTERM") { @running = false }
-      trap("SIGINT") { @running = false }
 
       reconcile!
       @threads = @shards.map { |shard| spawn_shard(shard) }
@@ -95,8 +99,9 @@ module Farm
       parted = 0
       @shards.each_with_index do |shard, i|
         wanted = desired.select { |login| shard_index(login) == i }.to_set
-        (shard.channels.to_set - wanted).each { |login| shard.unsubscribe(login); parted += 1 }
-        (wanted - shard.channels.to_set).each { |login| shard.subscribe(login); joined += 1 }
+        current = shard.channels_snapshot # mutex-consistent copy; the command thread may be mutating (N4)
+        (current - wanted).each { |login| shard.unsubscribe(login); parted += 1 }
+        (wanted - current).each { |login| shard.subscribe(login); joined += 1 }
       end
       Rails.logger.info("IrcCapture: reconcile joined=#{joined} parted=#{parted} desired=#{desired.size}") if joined.positive? || parted.positive?
       [ joined, parted ]

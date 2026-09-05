@@ -37,6 +37,7 @@ RSpec.describe Farm::CaptureSetSyncWorker do
 
     expect(capture_set).to have_received(:sync).with(
       live: { "alpha" => "493057", "bravo" => "493057", "charlie" => "509658" },
+      configured_game_ids: Set["493057", "509658"], # the disabled 999 is NOT configured → its channels get parted
       complete_game_ids: Set["493057", "509658"],
       excluded: Set.new
     )
@@ -52,7 +53,22 @@ RSpec.describe Farm::CaptureSetSyncWorker do
     described_class.new.perform
 
     expect(capture_set).to have_received(:sync).with(
-      live: { "cs_guy" => "32399" }, complete_game_ids: Set["32399"], excluded: Set.new
+      live: { "cs_guy" => "32399" }, configured_game_ids: Set["493057", "32399"],
+      complete_game_ids: Set["32399"], excluded: Set.new
+    )
+  end
+
+  it "marks a category incomplete when MAX_PAGES runs out with a cursor still present (S1 — never truncate-as-complete)" do
+    FarmCaptureCategory.create!(game_id: "509658", game_name: "JC")
+    allow(helix).to receive(:get_streams_page)
+      .and_return({ "data" => [ stream("endless", game_id: "509658") ], "cursor" => "more" })
+    expect(Rails.logger).to receive(:warn).with(/MAX_PAGES=#{described_class::MAX_PAGES} exhausted/)
+
+    described_class.new.perform
+
+    expect(helix).to have_received(:get_streams_page).exactly(described_class::MAX_PAGES).times
+    expect(capture_set).to have_received(:sync).with(
+      live: {}, configured_game_ids: Set["509658"], complete_game_ids: Set.new, excluded: Set.new
     )
   end
 
@@ -66,32 +82,37 @@ RSpec.describe Farm::CaptureSetSyncWorker do
     expect(capture_set).to have_received(:sync).with(hash_including(live: { "big" => "493057" }))
   end
 
-  it "excludes channels the bot-detection IRC already holds (monitored + open Stream)" do
+  it "excludes channels the bot-detection IRC already holds (monitored + active + open Stream)" do
     FarmCaptureCategory.create!(game_id: "493057", game_name: "PUBG")
     held = Channel.create!(twitch_id: "1", login: "held_ru", is_monitored: true)
     Stream.create!(channel: held, started_at: 1.hour.ago)
     Channel.create!(twitch_id: "2", login: "offline_ru", is_monitored: true) # no open stream → not held
+    gone = Channel.create!(twitch_id: "3", login: "deleted_ru", is_monitored: true, deleted_at: 1.day.ago)
+    Stream.create!(channel: gone, started_at: 1.hour.ago) # soft-deleted → bin/irc_monitor skips it too (N2)
     allow(helix).to receive(:get_streams_page)
-      .and_return({ "data" => [ stream("held_ru"), stream("offline_ru") ], "cursor" => nil })
+      .and_return({ "data" => [ stream("held_ru"), stream("offline_ru"), stream("deleted_ru") ], "cursor" => nil })
+
+    described_class.new.perform
+
+    expect(capture_set).to have_received(:sync).with(hash_including(excluded: Set["held_ru"]))
+  end
+
+  it "still syncs with an empty live set when every category is disabled, so all channels are released (M1)" do
+    FarmCaptureCategory.create!(game_id: "493057", game_name: "PUBG", enabled: false)
 
     described_class.new.perform
 
     expect(capture_set).to have_received(:sync).with(
-      live: { "held_ru" => "493057", "offline_ru" => "493057" },
-      complete_game_ids: Set["493057"],
-      excluded: Set["held_ru"]
+      live: {}, configured_game_ids: Set.new, complete_game_ids: Set.new, excluded: Set.new
     )
   end
 
-  it "is a no-op when the farm_capture flag is disabled or no category is enabled" do
+  it "is a no-op when the farm_capture flag is disabled" do
     Flipper.disable(:farm_capture)
     FarmCaptureCategory.create!(game_id: "493057", game_name: "PUBG")
-    described_class.new.perform
-    expect(capture_set).not_to have_received(:sync)
 
-    Flipper.enable(:farm_capture)
-    FarmCaptureCategory.update_all(enabled: false)
     described_class.new.perform
+
     expect(capture_set).not_to have_received(:sync)
   end
 end

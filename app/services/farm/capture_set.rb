@@ -9,10 +9,13 @@ module Farm
   # re-reads the whole hash on boot / periodic reconcile, so a missed pub/sub message can never
   # leave a channel joined-but-forgotten (the BUG-251.29 leak pattern).
   #
-  # Debounce: a channel leaves the set only after OFFLINE_MISS_THRESHOLD consecutive sweeps in
-  # which its category was FULLY paged and it was absent — the same 3-miss rule as
-  # MonitoredLiveDetectorWorker. Categories whose Helix paging failed mid-way are "no information
-  # this cycle": their channels neither gain misses nor get parted (BUG-251.19 semantics).
+  # Leaving the set (CR iter-1 M1/N1 — every exit path must PART, nothing may linger):
+  #   1. login is now held by the bot-detection IRC (`excluded`)        → part immediately
+  #   2. its category is no longer configured/enabled (`configured_game_ids`) → part immediately
+  #   3. its category paged incompletely this cycle (`complete_game_ids`)   → no information, keep
+  #   4. absent from a fully-paged category                              → miss; part after 3 misses
+  # (3-miss debounce = the MonitoredLiveDetectorWorker rule; "incomplete = no information" is the
+  # BUG-251.19 partial-batch semantics.)
   class CaptureSet
     SET_KEY = "farm:capture:set"
     COMMANDS_CHANNEL = "farm:capture:commands"
@@ -46,51 +49,77 @@ module Farm
     end
 
     # live: {login => game_id} observed this cycle across all categories that paged COMPLETELY.
-    # complete_game_ids: categories whose paging finished (a failed page → category incomplete).
+    # configured_game_ids: every enabled category this cycle (a category outside it has been
+    #   disabled/removed → its channels leave the set at once).
+    # complete_game_ids: enabled categories whose paging finished (subset of configured).
     # excluded: logins already held by the bot-detection IRC (monitored + live) — never duplicated here.
-    def sync(live:, complete_game_ids:, excluded: Set.new)
+    #
+    # All Redis writes go out in one pipeline (CR iter-1 N3): ~6k HSETs per cycle would otherwise be
+    # ~6k round-trips every 2 minutes.
+    def sync(live:, configured_game_ids:, complete_game_ids:, excluded: Set.new)
       now = Time.current.iso8601
       current = entries
       stats = Stats.new(joined: 0, parted: 0, kept: 0, skipped_incomplete: 0)
+      writes = [] # [:hset, login, json] | [:part, login]
 
       live.each do |login, game_id|
         next if excluded.include?(login)
 
         if (entry = current[login])
-          redis.hset(SET_KEY, login, entry.merge("game_id" => game_id, "last_seen_at" => now, "misses" => 0).to_json)
+          writes << [ :hset, login, entry.merge("game_id" => game_id, "last_seen_at" => now, "misses" => 0).to_json ]
           stats.kept += 1
         else
-          redis.hset(SET_KEY, login, { "game_id" => game_id, "first_seen_at" => now, "last_seen_at" => now, "misses" => 0 }.to_json)
-          publish("join", login)
+          writes << [ :hset, login, { "game_id" => game_id, "first_seen_at" => now, "last_seen_at" => now, "misses" => 0 }.to_json ]
+          writes << [ :join, login ]
           stats.joined += 1
         end
       end
 
       current.each do |login, entry|
-        next if live.key?(login) && !excluded.include?(login)
-        unless complete_game_ids.include?(entry["game_id"].to_s)
-          stats.skipped_incomplete += 1
-          next
-        end
+        next if live.key?(login) && !excluded.include?(login) # kept above
 
-        misses = entry["misses"].to_i + 1
-        if misses >= OFFLINE_MISS_THRESHOLD || excluded.include?(login)
-          redis.hdel(SET_KEY, login)
-          publish("part", login)
+        game_id = entry["game_id"].to_s
+        if excluded.include?(login) || !configured_game_ids.include?(game_id)
+          writes << [ :part, login ]
           stats.parted += 1
+        elsif !complete_game_ids.include?(game_id)
+          stats.skipped_incomplete += 1
         else
-          redis.hset(SET_KEY, login, entry.merge("misses" => misses).to_json)
+          misses = entry["misses"].to_i + 1
+          if misses >= OFFLINE_MISS_THRESHOLD
+            writes << [ :part, login ]
+            stats.parted += 1
+          else
+            writes << [ :hset, login, entry.merge("misses" => misses).to_json ]
+          end
         end
       end
 
+      flush(writes)
       stats
     end
 
-    def publish(action, login)
-      redis.publish(COMMANDS_CHANNEL, { action: action, channel_login: login }.to_json)
+    def publish(action, login, conn = redis)
+      conn.publish(COMMANDS_CHANNEL, { action: action, channel_login: login }.to_json)
     end
 
     private
+
+    def flush(writes)
+      return if writes.empty?
+
+      redis.pipelined do |pipe|
+        writes.each do |op, login, json|
+          case op
+          when :hset then pipe.hset(SET_KEY, login, json)
+          when :join then publish("join", login, pipe)
+          when :part
+            pipe.hdel(SET_KEY, login)
+            publish("part", login, pipe)
+          end
+        end
+      end
+    end
 
     def redis
       @redis ||= Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1"))
