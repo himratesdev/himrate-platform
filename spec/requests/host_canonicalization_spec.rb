@@ -212,7 +212,6 @@ RSpec.describe "Host canonicalization", type: :request do
   end
 
   describe "non-production hosts are left untouched" do
-
     it "does NOT redirect dev / localhost (default request host)" do
       get "/login" # default host is www.example.com — not a himrate.com host
 
