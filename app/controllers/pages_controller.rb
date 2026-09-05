@@ -15,6 +15,9 @@ class PagesController < ApplicationController
   # canonical URL. Scoped to PagesController → API / auth / og / up traffic (other controllers)
   # is never touched. Skips the staging test host and dev/localhost.
   before_action :canonicalize_host
+  # Header-level noindex for the product host (meta noindex = suspenders; this = belt —
+  # survives any layout/meta drift and covers non-HTML responses).
+  after_action :noindex_app_host
 
   PAGES = %w[index streamers brands viewers methodology login].freeze
 
@@ -195,8 +198,10 @@ class PagesController < ApplicationController
   end
 
   # Host-aware robots.txt (moved out of public/ — a static file can't vary by host).
-  # App host: LK is an authenticated product surface → Disallow all (belt) on top of the
-  # per-page noindex meta (suspenders). Every other host serves the marketing policy.
+  # App host (SEO-hygiene 2026-09-05): ALLOW crawling — Google must be able to FETCH the
+  # pages to see their noindex (meta + X-Robots-Tag); a robots Disallow blocked that and
+  # left "inaccessible page" stubs piling up in Search Console. Deindexing canon: crawl
+  # allowed + noindex served. Every other host serves the marketing policy.
   APEX_ROBOTS = <<~ROBOTS.freeze
     # See https://www.robotstxt.org/robotstxt.html for documentation on how to use the robots.txt file
     User-agent: *
@@ -213,7 +218,7 @@ class PagesController < ApplicationController
 
     Sitemap: https://himrate.com/sitemap.xml
   ROBOTS
-  APP_ROBOTS = "User-agent: *\nDisallow: /\n"
+  APP_ROBOTS = "User-agent: *\nAllow: /\n"
 
   def robots
     body = request.host == APP_HOST ? APP_ROBOTS : APEX_ROBOTS
@@ -256,7 +261,10 @@ class PagesController < ApplicationController
   def canonicalize_host
     host = request.host
     return unless host == APEX_HOST || host.end_with?(".himrate.com")
-    return if host == "staging.himrate.com"
+    # SEO-hygiene 2026-09-05: the staging hostname serves the SAME app/DB as production —
+    # a browsable duplicate site Google was indexing («торчащие урлы»). Page requests now
+    # 301 to the canonical host like any other alias; /api/* (extension staging builds)
+    # is untouched — canonicalization is PagesController-scoped.
 
     path = request.path
     return if path == "/robots.txt" # host-aware by design — must never redirect
@@ -283,6 +291,10 @@ class PagesController < ApplicationController
     return true if PRODUCT_SHORT_HEADS_SIMPLE.include?(head)
 
     PRODUCT_SHORT_HEADS_NESTED.include?(head) && rest.present?
+  end
+
+  def noindex_app_host
+    response.set_header("X-Robots-Tag", "noindex, follow") if request.host == APP_HOST
   end
 
   # The product surfaces — login + the /app/* dashboards (@brand_dashboard) — render on the `app`

@@ -5,7 +5,8 @@ require "rails_helper"
 # Host canonicalization (301) — host-mapping 2026-09. Marketing surfaces live on the apex
 # (himrate.com, SEO-indexed); the product / LK lives on app.himrate.com under SHORT paths
 # (app.himrate.com/home — the /app prefix is a legacy alias that 301s to the canon in one hop
-# from anywhere). staging.himrate.com serves both surfaces unredirected on the /app/* scheme.
+# from anywhere). staging.himrate.com (same app/DB — a pure hostname alias) canonicalizes like
+# any alias since the SEO-hygiene pass (Google was indexing the duplicate); /api/* untouched.
 # Scoped to PagesController — API / auth / og / up are untouched.
 RSpec.describe "Host canonicalization", type: :request do
   describe "marketing surfaces belong on the apex" do
@@ -159,27 +160,58 @@ RSpec.describe "Host canonicalization", type: :request do
     end
   end
 
-  describe "non-production hosts are left untouched" do
-    it "does NOT redirect the staging test host (serves product on /app/* scheme)" do
+  describe "staging hostname canonicalizes (SEO-hygiene: it is the same app, a duplicate for Google)" do
+    it "301s staging product pages to the app host short path" do
       host! "staging.himrate.com"
       get "/app/home"
 
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://app.himrate.com/home")
     end
 
-    it "does NOT redirect the staging login" do
+    it "301s the staging login to the app host" do
       host! "staging.himrate.com"
       get "/login"
 
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://app.himrate.com/login")
     end
 
-    it "does NOT redirect the staging test host (serves marketing on staging)" do
+    it "301s staging marketing pages to the apex" do
       host! "staging.himrate.com"
       get "/streamers"
 
-      expect(response).to have_http_status(:ok)
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://himrate.com/streamers")
     end
+  end
+
+  describe "app-host deindexing signals (SEO-hygiene)" do
+    it "app robots.txt ALLOWS crawling (Google must fetch pages to see their noindex)" do
+      host! "app.himrate.com"
+      get "/robots.txt"
+
+      expect(response.body).to include("Allow: /")
+      expect(response.body).not_to include("Disallow: /")
+    end
+
+    it "app-host pages carry the X-Robots-Tag noindex header" do
+      host! "app.himrate.com"
+      get "/home"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.headers["X-Robots-Tag"]).to eq("noindex, follow")
+    end
+
+    it "apex pages carry NO X-Robots-Tag (marketing stays indexable)" do
+      host! "himrate.com"
+      get "/streamers"
+
+      expect(response.headers["X-Robots-Tag"]).to be_nil
+    end
+  end
+
+  describe "non-production hosts are left untouched" do
 
     it "does NOT redirect dev / localhost (default request host)" do
       get "/login" # default host is www.example.com — not a himrate.com host
