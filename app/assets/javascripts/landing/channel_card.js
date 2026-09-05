@@ -69,6 +69,7 @@
     // Wording is legal-safe: neutral "скрытая разница" — never "боты/накрутка" (v3 doctrine).
     var ervPct = hl.authenticity;
     var real = hl.erv;
+    var live = !!hl.is_live && hl.ccv != null;
     var shown = hl.ccv != null ? hl.ccv : (real != null && ervPct ? Math.round(real / (ervPct / 100)) : null);
     // Clamp at 0: v2 live shown (current CCV snapshot) can dip below the last-computed real
     // (row up to ~30s stale) — a negative "difference" is a display artifact, not data (CR SF-1).
@@ -95,10 +96,9 @@
     );
     setText("Leg T real", "Реальные " + fmt(real) + " · " + (realPct != null ? realPct + "%" : "—"));
 
-    // Reliability band (reputation) + anomaly label (v2: band label via i18n'd erv_label from API;
-    // v1: legacy erv_label). Both already RU + coloured.
+    // Reliability band (reputation) + anomaly label (band label via i18n'd erv_label from API).
     if (rep.band) setText("L1 Rep T", "Надёжность: " + (BAND_RU[rep.band] || rep.band));
-    var anomLabel = isV2 ? (hl.erv_label || null) : hl.erv_label;
+    var anomLabel = hl.erv_label || null;
     if (anomLabel) {
       setText("L1 Anom T", anomLabel);
       var anomNode = el("L1 Anom T");
