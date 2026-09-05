@@ -21,17 +21,26 @@ module Grow
     TOP_N = 12
     IDEAL_STREAMERS = 10.0 # the PO's «7-12» band centre
 
+    # An honest empty result gets a SHORT ttl — «сейчас возможностей нет» retries within the
+    # hour; only Steam being down keeps whatever stale cache exists (never blank a good page).
+    EMPTY_TTL = 1.hour
+
     def perform
       candidates = SteamNewReleases.new.call
       return if candidates.empty? # Steam down → keep the stale cache, never blank the page
 
       helix = Twitch::HelixClient.new
       rows = candidates.filter_map { |candidate| measure(helix, candidate) }
-      return if rows.empty?
 
+      # BUG-GROW-PENDING (2026-09-05): fresh Steam releases mostly have NO Twitch category /
+      # live streams yet — an empty crop is the NORMAL daily outcome, not a failure. Bailing
+      # here left the cache forever cold → the endpoint pending-looped and the page never
+      # settled. Persist the honest empty result; grow.js renders its «новинки ещё не
+      # обжиты» note for games: [].
       ranked = rows.sort_by { |r| -r[:growth_score] }.first(TOP_N)
-      Rails.cache.write(CACHE_KEY, { "generated_at" => Time.current.iso8601, "games" => ranked.as_json },
-                        expires_in: CACHE_TTL)
+      Rails.cache.write(CACHE_KEY,
+                        { "generated_at" => Time.current.iso8601, "games" => ranked.as_json },
+                        expires_in: rows.empty? ? EMPTY_TTL : CACHE_TTL)
     ensure
       Rails.cache.delete(PENDING_KEY)
     end
