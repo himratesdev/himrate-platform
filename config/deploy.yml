@@ -266,6 +266,10 @@ env:
     # also gates access, so until PO sets both this secret AND flips the flag the
     # surface is fully dormant.
     - PO_DEBUG_PASSWORD
+    # W1 (2026-09-05): lead + divergence alerts to the PO's Telegram. Empty values = worker
+    # no-ops with a warn; the bot creds are the same pair the server watchdog uses.
+    - TELEGRAM_BOT_TOKEN
+    - TELEGRAM_ALERT_CHAT_ID
   clear:
     RAILS_LOG_TO_STDOUT: true
     RAILS_SERVE_STATIC_FILES: true

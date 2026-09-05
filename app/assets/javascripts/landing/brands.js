@@ -136,6 +136,42 @@ window.HR = {
       if(cab){ cab.style.flex='1 1 auto'; }
     })();
   }
-  if(document.readyState==='complete'||document.readyState==='interactive') setTimeout(start, 700);
-  else window.addEventListener('DOMContentLoaded', function(){ setTimeout(start, 700); });
+  /* W1: real B2B lead form (Б8) — POST /api/v1/brand/leads. Success swaps the form for a
+     thank-you note; 422 highlights fields; 429 points at the real mail channel. */
+  function wireLeadForm(){
+    var form = document.getElementById('hr-lead-form');
+    if(!form) return;
+    var btn = document.getElementById('hr-lead-send');
+    var msg = document.getElementById('hr-lead-msg');
+    function show(text, ok){ if(!msg) return; msg.textContent = text; msg.style.color = ok ? '#25D9A4' : '#FF6B81'; msg.hidden = false; }
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var data = { name: (form.elements.name.value||'').trim(), email: (form.elements.email.value||'').trim(),
+                   company: (form.elements.company.value||'').trim(), budget: (form.elements.budget.value||'').trim(),
+                   message: (form.elements.message.value||'').trim(), website: form.elements.website.value||'' };
+      if(!data.name || !data.email || data.email.indexOf('@')<0){ show('Заполните имя и корректный email', false); return; }
+      if(btn){ btn.disabled = true; }
+      fetch('/api/v1/brand/leads', { method:'POST', headers:{ 'Content-Type':'application/json', Accept:'application/json' },
+                                     credentials:'same-origin', body: JSON.stringify(data) })
+        .then(function(r){ return r.json().then(function(j){ return { s:r.status, j:j }; }).catch(function(){ return { s:r.status, j:{} }; }); })
+        .then(function(res){
+          if(res.s === 201){
+            Array.prototype.slice.call(form.children).forEach(function(ch){ if(ch !== msg) ch.style.display = 'none'; });
+            show('Заявка получена — ответим на ' + data.email + ' в течение рабочего дня.', true);
+            msg.style.fontSize = '15px';
+          } else if(res.s === 429){
+            show('Слишком много заявок подряд — напишите нам напрямую: support@himrate.com', false);
+            if(btn) btn.disabled = false;
+          } else {
+            var det = res.j && res.j.error && res.j.error.details;
+            show((det && det[0]) || 'Не удалось отправить — проверьте поля или напишите support@himrate.com', false);
+            if(btn) btn.disabled = false;
+          }
+        })
+        .catch(function(){ show('Сеть недоступна — попробуйте ещё раз', false); if(btn) btn.disabled = false; });
+    });
+  }
+
+  if(document.readyState==='complete'||document.readyState==='interactive'){ setTimeout(start, 700); wireLeadForm(); }
+  else window.addEventListener('DOMContentLoaded', function(){ setTimeout(start, 700); wireLeadForm(); });
 })();

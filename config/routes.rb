@@ -64,6 +64,8 @@ Rails.application.routes.draw do
       post "lk/notify", to: "lk#notify"
       # TASK-H8 Day-0: promo code redemption (Soft Launch invite grants).
       post "promo/redeem", to: "promo#redeem"
+      # W1: public B2B lead capture (/brands contact form).
+      post "brand/leads", to: "brand/leads#create"
 
       # TASK-031: User profile
       get "user/me", to: "users#me"
