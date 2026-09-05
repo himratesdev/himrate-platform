@@ -13,7 +13,7 @@
   // page scripts load BEFORE brand_nav.js, so window.hrAppPath may not exist yet.
   var hrApp = window.hrAppPath || function (p) { var pre = (location.pathname === "/app" || location.pathname.indexOf("/app/") === 0) ? "/app" : ""; return pre + p; };
 
-  var LABEL_COLOR = { green: "#25D9A4", yellow: "#F5C451", red: "#F0616D" };
+  var LABEL_COLOR = { green: "#25D9A4", yellow: "#F5C451", red: "#F0616D", grey: "#9A9AA9", amber: "#F6A823" };
 
   function q(root, name) { return (root || document).querySelector('[data-pencil-name="' + name + '"]'); }
   function qa(root, sel) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
