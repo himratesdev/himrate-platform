@@ -149,6 +149,14 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Streamer connect onboarding (screen 11) — faithful export host. Card A = real channel
+  # observation (track), Card B = Broadcaster OAuth link + granted scopes, Data Status = real
+  # collection stats. Wired client-side by landing/connect.js against GET /api/v1/me/connect/status.
+  def connect
+    @page = "connect"
+    @brand_dashboard = true
+  end
+
   # Streamer own-channel dashboard (screen 10) — faithful export host. Detects the signed-in
   # streamer's channel via /api/v1/user/me (twitch_login) client-side; real card/trends/reputation
   # wired by landing/my_channel.js from the public channel analytics API.
@@ -261,7 +269,7 @@ class PagesController < ApplicationController
   # Short (prefixless) LK paths on the app host. SIMPLE heads are product as bare segments;
   # NESTED heads are product only WITH a second segment — a bare /streamers on the app host is
   # the marketing page and must bounce to the apex (the app-host route is /streamers/:login).
-  PRODUCT_SHORT_HEADS_SIMPLE = %w[home search compare overlap watchlists settings activity graph
+  PRODUCT_SHORT_HEADS_SIMPLE = %w[home search compare overlap watchlists settings activity graph connect
                                   discover channel moments grow social creators].to_set.freeze
   PRODUCT_SHORT_HEADS_NESTED = %w[streamers blogger].to_set.freeze
 

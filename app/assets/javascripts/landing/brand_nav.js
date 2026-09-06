@@ -28,6 +28,7 @@
     "Nav · Мой канал": "/channel",
     "Nav · Рост": "/grow",
     "Nav · Мои соцсети": "/social",
+    "Nav · Подключение": "/connect",
   };
   var ACTIVE_BG = "#19152E";
 
@@ -70,7 +71,7 @@
   // don't read as active clickable rows with a silent dead click (SITE-AUDIT-2). "Поиск блогеров"
   // is deliberately NOT here — it has a live route (/app/creators) and is now wired above.
   var DEFERRED = ["Nav · Алерты", "Nav · Биржа", "Nav · Измерение", "Nav · Кампании",
-    "Nav · Команда", "Nav · Подключение", "Nav · Подписка", "Nav · Шаблоны"];
+    "Nav · Команда", "Nav · Подписка", "Nav · Шаблоны"];
   DEFERRED.forEach(function (name) {
     var el = q(name);
     if (!el) return;

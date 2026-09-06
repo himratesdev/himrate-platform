@@ -25,10 +25,10 @@ module Me
     private
 
     def observation(channel)
-      return { tracked: false, is_monitored: false, since: nil } unless channel
+      return { channel_id: nil, tracked: false, is_monitored: false, since: nil } unless channel
 
       tracked = TrackedChannel.find_by(user: @user, channel: channel, tracking_enabled: true)
-      { tracked: tracked.present?, is_monitored: channel.is_monitored,
+      { channel_id: channel.id, tracked: tracked.present?, is_monitored: channel.is_monitored,
         since: tracked&.added_at&.iso8601 }
     end
 
