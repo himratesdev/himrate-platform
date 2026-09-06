@@ -129,4 +129,43 @@ RSpec.describe "Dashboard web login", type: :request do
       expect(response.parsed_body["authenticated"]).to be(false)
     end
   end
+
+  describe "sliding web session (hr_refresh rotation)" do
+    def web_login(user)
+      allow(Auth::TwitchOauth).to receive(:new).and_return(instance_double(Auth::TwitchOauth, callback: user))
+      Rails.cache.write("pkce:sl1", { code_verifier: "v", redirect_uri: "https://cb", web: true, web_redirect: "/app/home" },
+                        expires_in: 10.minutes)
+      get "/api/v1/auth/twitch/callback", params: { code: "c", state: "sl1" }
+    end
+
+    it "re-authenticates off hr_refresh when the access cookie is gone and rotates both cookies" do
+      user = create(:user, email: "slide@himrate.test")
+      web_login(user)
+      cookies.delete("hr_session") # browser dropped the 1h access cookie
+
+      get "/api/v1/lk/status"
+
+      expect(response.parsed_body["authenticated"]).to be(true)
+      expect(response.parsed_body["email"]).to eq("slide@himrate.test")
+      set_cookie = Array(response.headers["Set-Cookie"]).join("\n")
+      expect(set_cookie).to include("hr_session=")
+      expect(set_cookie).to include("hr_refresh=")
+    end
+
+    it "authenticates a protected endpoint via refresh rotation alone" do
+      user = create(:user, email: "slide2@himrate.test")
+      web_login(user)
+      cookies.delete("hr_session")
+
+      get "/api/v1/me/connect/status"
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "stays guest on a garbage refresh cookie (no rotation, no crash)" do
+      cookies["hr_refresh"] = "garbage"
+      get "/api/v1/lk/status"
+      expect(response.parsed_body["authenticated"]).to be(false)
+      expect(Array(response.headers["Set-Cookie"]).join).not_to include("hr_session=")
+    end
+  end
 end

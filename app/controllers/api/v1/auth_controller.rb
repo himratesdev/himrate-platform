@@ -310,26 +310,8 @@ module Api
         nil
       end
 
-      # httpOnly + SameSite=Lax cookies for the dashboard web session. Secure in production (staging
-      # runs the production env over HTTPS); relaxed in dev/test so specs/local can read them.
-      def set_web_session_cookies(access_token, refresh_token)
-        secure = Rails.env.production?
-        domain = session_cookie_domain
-        cookies.encrypted[:hr_session] = {
-          value: access_token, httponly: true, secure: secure, same_site: :lax, expires: 1.hour, domain: domain
-        }
-        cookies.encrypted[:hr_refresh] = {
-          value: refresh_token, httponly: true, secure: secure, same_site: :lax, expires: 7.days, domain: domain
-        }
-      end
-
-      # Share the session across the himrate.com subdomains (apex ↔ app.himrate.com ↔ staging) so a web
-      # login on any of them authenticates all of them. Returns nil (host-only cookie) off himrate.com
-      # (localhost/dev) — a ".himrate.com" domain cookie would be rejected there. Must match the domain
-      # used to CLEAR the cookie on logout (Web::AuthController#logout).
-      def session_cookie_domain
-        request.host.to_s.end_with?("himrate.com") ? ".himrate.com" : nil
-      end
+      # set_web_session_cookies / session_cookie_domain live in Api::BaseController — shared with
+      # the transparent hr_refresh rotation that any cookie-authed API call may perform.
 
       # Open-redirect guard: relative same-origin paths, plus EXACTLY our own app-host origin
       # (host-mapping 2026-09 — production web_redirect is the absolute LK canon so login lands

@@ -73,7 +73,62 @@ module Api
     # Bearer header first (extension / API clients — unchanged), then the httpOnly dashboard
     # session cookie (web login). Same JWT either way, so downstream decode/aud logic is identical.
     def bearer_or_cookie_token
-      request.headers["Authorization"]&.split(" ")&.last.presence || cookies.encrypted[:hr_session].presence
+      request.headers["Authorization"]&.split(" ")&.last.presence || web_session_token
+    end
+
+    # Web sessions: the access cookie lives 1h, the refresh cookie 7d. Without rotation the ЛК
+    # hard-logged the user out after an hour (hr_refresh was written but never read) — every page
+    # became "guest" and the account control showed the login screen. When hr_session is absent or
+    # no longer decodes, transparently mint a fresh pair off hr_refresh (mirrors POST /auth/refresh:
+    # stateless, surface preserved, refresh rotated) so the session slides up to 7 idle days.
+    def web_session_token
+      token = cookies.encrypted[:hr_session].presence
+      if token
+        begin
+          Auth::JwtService.decode(token)
+          return token
+        rescue Auth::AuthError
+          nil # expired/invalid access cookie — fall through to refresh rotation
+        end
+      end
+      refresh_web_session
+    end
+
+    def refresh_web_session
+      refresh = cookies.encrypted[:hr_refresh].presence
+      return nil unless refresh
+
+      payload = Auth::JwtService.decode(refresh)
+      return nil unless payload[:type] == "refresh"
+
+      surface = payload[:aud].presence || Auth::JwtService::DEFAULT_SURFACE
+      access = Auth::JwtService.encode_access(payload[:sub], surface: surface)
+      set_web_session_cookies(access, Auth::JwtService.encode_refresh(payload[:sub], surface: surface))
+      access
+    rescue Auth::AuthError
+      nil
+    end
+
+    # httpOnly + SameSite=Lax cookies for the dashboard web session. Secure in production (staging
+    # runs the production env over HTTPS); relaxed in dev/test so specs/local can read them.
+    # Lives here (not AuthController) because refresh_web_session rotates the pair on any API call.
+    def set_web_session_cookies(access_token, refresh_token)
+      secure = Rails.env.production?
+      domain = session_cookie_domain
+      cookies.encrypted[:hr_session] = {
+        value: access_token, httponly: true, secure: secure, same_site: :lax, expires: 1.hour, domain: domain
+      }
+      cookies.encrypted[:hr_refresh] = {
+        value: refresh_token, httponly: true, secure: secure, same_site: :lax, expires: 7.days, domain: domain
+      }
+    end
+
+    # Share the session across the himrate.com subdomains (apex ↔ app.himrate.com ↔ staging) so a web
+    # login on any of them authenticates all of them. Returns nil (host-only cookie) off himrate.com
+    # (localhost/dev) — a ".himrate.com" domain cookie would be rejected there. Must match the domain
+    # used to CLEAR the cookie on logout (Web::AuthController#logout).
+    def session_cookie_domain
+      request.host.to_s.end_with?("himrate.com") ? ".himrate.com" : nil
     end
 
     # T1-060 FR-5: surface the request arrived on (default extension for missing/legacy aud).
