@@ -146,6 +146,8 @@ Rails.application.routes.draw do
 
       # TASK-113 BE-2/BE-3/BE-4/BE-5: Personal Viewer Analytics (self-analytics, JWT + ownership, all-free)
       namespace :me do
+        # ONBOARD-D0 (screen 11): own-channel data-source status.
+        get "connect/status", to: "connect#status"
         get "analytics/overview", to: "analytics#overview"
         get "analytics/communities", to: "analytics#communities"
         get "analytics/engagement_log", to: "analytics#engagement_log"

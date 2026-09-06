@@ -25,7 +25,10 @@ class ChannelPolicy < ApplicationPolicy
   def track?
     return false unless registered?
 
-    premium? || effective_business? || owns_channel?(record)
+    # ONBOARD-D0: ownership by twitch-identity MATCH (streamer_on_channel?), not the is_streamer
+    # flag — a broadcaster_type="" owner (non-affiliate) must still be able to observe their own
+    # channel; the flag only gates streamer-ROLE surfaces (badge? keeps owns_channel?).
+    premium? || effective_business? || streamer_on_channel?(record)
   end
 
   # TASK-031 FR-005: Untrack — any registered user can untrack their own tracked channel.
