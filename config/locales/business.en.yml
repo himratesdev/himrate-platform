@@ -1,0 +1,13 @@
+# ONBOARD-D0 (screen 72): business application — API errors + INN format messages.
+en:
+  business:
+    errors:
+      locked: "The application is already under review or approved — it can no longer be edited"
+  activerecord:
+    errors:
+      models:
+        business_profile:
+          attributes:
+            inn:
+              inn_ooo: "must be 10 digits (organization INN)"
+              inn_ip: "must be 12 digits (sole-proprietor / self-employed INN)"

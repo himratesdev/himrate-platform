@@ -28,6 +28,7 @@ class User < ApplicationRecord
   has_many :pva_supporter_statuses
   has_many :pva_weekly_reflections
   has_many :pva_patterns
+  has_one :business_profile, dependent: :destroy
   has_one :pva_cohort
   has_one :user_privacy_setting
 

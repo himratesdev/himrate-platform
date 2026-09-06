@@ -145,6 +145,11 @@ Rails.application.routes.draw do
       post "chat/messages", to: "chat_ingest#create"
 
       # TASK-113 BE-2/BE-3/BE-4/BE-5: Personal Viewer Analytics (self-analytics, JWT + ownership, all-free)
+      # ONBOARD-D0 (screen 72): singular business-account application (one per user).
+      get "business_profile", to: "business_profiles#show"
+      put "business_profile", to: "business_profiles#update"
+      post "business_profile/submit", to: "business_profiles#submit"
+
       namespace :me do
         # ONBOARD-D0 (screen 11): own-channel data-source status.
         get "connect/status", to: "connect#status"

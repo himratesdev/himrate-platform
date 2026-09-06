@@ -1,0 +1,13 @@
+# ONBOARD-D0 (screen 72): бизнес-заявка — ошибки API + сообщения формата ИНН.
+ru:
+  business:
+    errors:
+      locked: "Заявка уже на проверке или одобрена — изменить её нельзя"
+  activerecord:
+    errors:
+      models:
+        business_profile:
+          attributes:
+            inn:
+              inn_ooo: "должен содержать 10 цифр (ИНН организации)"
+              inn_ip: "должен содержать 12 цифр (ИНН ИП / самозанятого)"
