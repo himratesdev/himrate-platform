@@ -246,7 +246,8 @@
   function renderPaywall() {
     fullScreenMsg('<div style="font-size:18px;font-weight:700;margin-bottom:8px;">Карточка стримера — для бренд-аккаунтов</div>' +
       '<div style="font-size:14px;color:#9A9AA9;max-width:460px;margin:0 auto 20px;">Проверка стримера за 30 дней доступна на бизнес-тарифе.</div>' +
-      '<a href="/brands" style="display:inline-block;background:#7B5CFA;color:#fff;text-decoration:none;padding:11px 20px;border-radius:12px;font-weight:600;font-size:14px;">Узнать о бренд-тарифах</a>');
+      '<a href="/brands" style="display:inline-block;background:#7B5CFA;color:#fff;text-decoration:none;padding:11px 20px;border-radius:12px;font-weight:600;font-size:14px;">Узнать о бренд-тарифах</a>' +
+      '<div style="margin-top:12px;"><a href="' + ((window.location.pathname.indexOf("/app/") === 0 || window.location.pathname === "/app") ? "/app" : "") + '/business/new" style="font-size:13px;color:#9A9AA9;text-decoration:underline;">Создать бизнес-учётку →</a></div>');
   }
 
   function load() {

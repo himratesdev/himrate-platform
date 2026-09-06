@@ -232,6 +232,7 @@ Rails.application.routes.draw do
     get "grow",       to: "pages#grow"
     get "social",     to: "pages#my_socials"
     get "connect",    to: "pages#connect"
+    get "business/new", to: "pages#business_new"
     get "blogger/:login", to: "pages#blogger_profile", constraints: { login: /[A-Za-z0-9_]+/ }
     get "creators",   to: "pages#brand_creators"
     # On the app host the sitemap belongs to the apex (avoid duplicate-content signal).
@@ -305,6 +306,8 @@ Rails.application.routes.draw do
   get "app/grow", to: "pages#grow"
   # Streamer connect onboarding (screen 11) — observation + OAuth + collection status.
   get "app/connect", to: "pages#connect"
+  # Business-account application (screen 72) — standalone onboarding form.
+  get "app/business/new", to: "pages#business_new"
   # Streamer cross-platform socials (screen 50 «Мои соцсети») — descriptive analytics of the streamer's
   # linked platforms (Twitch socialMedias seed → Telegram/YouTube public metrics). NO fraud verdict.
   get "app/social", to: "pages#my_socials"

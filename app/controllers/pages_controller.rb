@@ -149,6 +149,13 @@ class PagesController < ApplicationController
     @brand_dashboard = true
   end
 
+  # Business-account application (screen 72) — faithful export host, standalone (no dashboard
+  # chrome). Real draft/submit wired client-side by landing/business_new.js against the singular
+  # /api/v1/business_profile resource; approve/reject stay a PO runner action (TASK-150.8).
+  def business_new
+    @page = "business_new"
+  end
+
   # Streamer connect onboarding (screen 11) — faithful export host. Card A = real channel
   # observation (track), Card B = Broadcaster OAuth link + granted scopes, Data Status = real
   # collection stats. Wired client-side by landing/connect.js against GET /api/v1/me/connect/status.
@@ -271,7 +278,7 @@ class PagesController < ApplicationController
   # the marketing page and must bounce to the apex (the app-host route is /streamers/:login).
   PRODUCT_SHORT_HEADS_SIMPLE = %w[home search compare overlap watchlists settings activity graph connect
                                   discover channel moments grow social creators].to_set.freeze
-  PRODUCT_SHORT_HEADS_NESTED = %w[streamers blogger].to_set.freeze
+  PRODUCT_SHORT_HEADS_NESTED = %w[streamers blogger business].to_set.freeze
 
   def canonicalize_host
     host = request.host
