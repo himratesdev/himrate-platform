@@ -16,7 +16,11 @@
   var HEADERS = { Accept: "application/json", "Accept-Language": "ru" };
   function apiGet(p) {
     return fetch(p, { headers: HEADERS, credentials: "same-origin" })
-      .then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
+      .then(function (r) {
+        if (!r.ok) return Promise.reject(r.status);
+        // guard: a 200 with a non-JSON body (proxy error page) must reject, not throw through the chain
+        return r.json().catch(function () { return Promise.reject("bad_json"); });
+      });
   }
 
   function card(title) {
@@ -150,16 +154,36 @@
     });
   }
 
-  apiGet("/api/v1/lk/status").then(function (s) {
-    if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-    return apiGet("/api/v1/me/connect/status").then(function (resp) {
-      var data = (resp && resp.data) || {};
+  // ---- data-load failure — honest error state instead of the design's sample statuses ----
+  function renderLoadError() {
+    ["Connection Cards", "Data Status", "Autoposting", "Free Note", "Channel Pill"]
+      .forEach(function (n) { hide(q(document, n)); });
+    var content = q(document, "Content") || document.body;
+    var box = document.createElement("div");
+    box.setAttribute("data-pencil-name", "LoadError");
+    box.style.cssText = "width:100%;padding:64px 24px;text-align:center;color:#C7C7D1;font-family:Inter,system-ui,sans-serif;font-size:14px;";
+    box.textContent = "Не удалось загрузить состояние подключения — обновите страницу.";
+    content.appendChild(box);
+  }
+
+  // Auth gate: ONLY the lk/status probe (and its own network failure — incl. a 502/HTML body the
+  // JSON guard rejects) decides the /login redirect. A failed connect-status load renders the honest
+  // error state instead of bouncing an authenticated user to /login.
+  apiGet("/api/v1/lk/status").then(
+    function (s) {
+      if (!s || !s.authenticated) { window.location.href = "/login"; return; }
       deferAutoposting();
-      if (!data.oauth || !data.oauth.linked) { renderConnectState(); return; }
-      setT(document, "Channel T", "twitch.tv/" + (data.oauth.login || ""));
-      renderObservation(card("Наблюдение канала"), data);
-      renderOauth(card("Broadcaster OAuth"), data.oauth);
-      renderStats(data.stats);
-    });
-  }).catch(function () { window.location.href = "/login"; });
+      apiGet("/api/v1/me/connect/status")
+        .then(function (resp) {
+          var data = (resp && resp.data) || {};
+          if (!data.oauth || !data.oauth.linked) { renderConnectState(); return; }
+          setT(document, "Channel T", "twitch.tv/" + (data.oauth.login || ""));
+          renderObservation(card("Наблюдение канала"), data);
+          renderOauth(card("Broadcaster OAuth"), data.oauth);
+          renderStats(data.stats);
+        })
+        .catch(renderLoadError);
+    },
+    function () { window.location.href = "/login"; }
+  );
 })();

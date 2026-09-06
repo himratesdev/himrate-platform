@@ -23,7 +23,9 @@
       opts.body = JSON.stringify(params);
     }
     return fetch(path, opts).then(function (r) {
-      return r.json().then(function (b) { return { ok: r.ok, status: r.status, body: b }; });
+      // guard: a non-JSON body (proxy 502 error page) must not blow up the chain — treat as empty
+      return r.json().catch(function () { return {}; })
+        .then(function (b) { return { ok: r.ok, status: r.status, body: b }; });
     });
   }
 
@@ -202,12 +204,24 @@
     }
   }
 
-  api("GET", "/api/v1/lk/status").then(function (r) {
-    if (!r.ok || !r.body || !r.body.authenticated) { window.location.href = "/login"; return; }
-    deferBenefits();
-    wire();
-    return api("GET", "/api/v1/business_profile").then(function (p) {
-      prefill((p.ok && p.body.data) || {});
-    });
-  }).catch(function () { window.location.href = "/login"; });
+  // Auth gate: ONLY the lk/status probe (and its own network failure) decides the /login redirect.
+  // Profile-load / wiring errors show an honest note on the form instead of bouncing to /login.
+  api("GET", "/api/v1/lk/status").then(
+    function (r) {
+      if (!r.ok || !r.body || !r.body.authenticated) { window.location.href = "/login"; return; }
+      try {
+        deferBenefits();
+        wire();
+      } catch (e) {
+        renderStatusNote("Что-то пошло не так — обновите страницу.", "#FB4E55");
+        return;
+      }
+      api("GET", "/api/v1/business_profile").then(function (p) {
+        prefill((p.ok && p.body.data) || {});
+      }).catch(function () {
+        renderStatusNote("Не удалось загрузить данные заявки — обновите страницу.", "#FB4E55");
+      });
+    },
+    function () { window.location.href = "/login"; }
+  );
 })();

@@ -3,8 +3,9 @@
 // /api/v1/lk/status (httpOnly cookie) → /login when unauthenticated. Data + writes over
 // /api/v1/watchlists(/:id/channels) (same-origin cookie; API mode = no CSRF token, SameSite=Lax
 // cookie blocks cross-site POST). Each channel headline = TI/ERV (same as the public card). No mocks.
-// Deferred (no design affordance / not in the headline contract): notification toggle, trend arrow,
-// sort menu, tag/note editing, Premium filters, rename/delete-list. CSP-safe, no eval.
+// Mutations: create/rename/delete list, add/remove/move channel, tag+note editing (prompt/confirm UI —
+// CSP-safe). Deferred (no design affordance / not in the headline contract): notification toggle,
+// trend arrow, sort menu, Premium filters. CSP-safe, no eval.
 (function () {
   "use strict";
 
@@ -71,9 +72,18 @@
   }
 
   // ---- lists panel ----
+  // Sample clean-up lives in its own helpers so the error branch strips the design mock too.
+  function clearListItems() {
+    Array.prototype.slice.call(T.listsPanel.querySelectorAll('[data-pencil-name^="WL · "]')).forEach(function (n) { n.remove(); });
+  }
+  function clearChannelRows() {
+    Array.prototype.slice.call(T.table.querySelectorAll('[data-pencil-name^="WL Row · "]')).forEach(function (n) { n.remove(); });
+    var oldEmpty = q(document, "WL Empty State"); if (oldEmpty) oldEmpty.remove();
+  }
+
   function renderLists() {
     // remove sample list items; keep the head + the "Создать список" add row
-    Array.prototype.slice.call(T.listsPanel.querySelectorAll('[data-pencil-name^="WL · "]')).forEach(function (n) { n.remove(); });
+    clearListItems();
     var addRow = q(T.listsPanel, "Lists Add");
     var listsDiv = q(T.listsPanel, "Lists Div");
     var anchorBefore = listsDiv || addRow; // insert items before the divider/add-row
@@ -120,9 +130,9 @@
     setP(document, "TB Meta T", (meta.total != null ? meta.total : channels.length) + " " + plural(meta.total || channels.length, "канал", "канала", "каналов"));
 
     // clear existing rows + any empty-state
-    Array.prototype.slice.call(T.table.querySelectorAll('[data-pencil-name^="WL Row · "]')).forEach(function (n) { n.remove(); });
-    var oldEmpty = q(document, "WL Empty State"); if (oldEmpty) oldEmpty.remove();
+    clearChannelRows();
     wireAddChannel();
+    wireListControls();
 
     if (!channels.length) { T.table.style.display = "none"; renderEmpty(wl); return; }
 
@@ -157,30 +167,34 @@
     // notification toggle — deferred (no write endpoint wired); leave visual, not interactive.
     var bell = qp(row, "WC Bell"); if (bell) bell.style.pointerEvents = "none";
 
-    // inject a remove control (the design has none) so the list is manageable.
-    injectRemove(row, c);
+    // inject the row controls (the design has none): edit note/tag, move, remove.
+    injectRowAction(row, "✎", "Заметка и тег", function () { editChannelMeta(c); });
+    injectRowAction(row, "⇄", "Переместить в другой список", function () { moveChannel(c); });
+    injectRowAction(row, "✕", "Убрать из списка", function () { removeChannel(c); }, true);
 
     // row click → public channel card
     row.style.cursor = "pointer";
     row.addEventListener("click", function (e) {
-      if (e.target.closest("[data-hr-remove]") || e.target.closest('[data-pencil-name^="WC Bell"]')) return;
+      if (e.target.closest("[data-hr-act]") || e.target.closest('[data-pencil-name^="WC Bell"]')) return;
       window.location.href = "/c/" + encodeURIComponent(c.login);
     });
     return row;
   }
 
-  function injectRemove(row, c) {
+  function injectRowAction(row, glyph, title, onClick, danger) {
     var x = document.createElement("div");
-    x.setAttribute("data-hr-remove", c.login);
-    x.textContent = "✕";
-    x.title = "Убрать из списка";
-    x.style.cssText = "margin-left:8px;width:22px;height:22px;flex:none;display:flex;align-items:center;justify-content:center;" +
+    x.setAttribute("data-hr-act", glyph);
+    x.textContent = glyph;
+    x.title = title;
+    x.style.cssText = "margin-left:6px;width:22px;height:22px;flex:none;display:flex;align-items:center;justify-content:center;" +
       "border-radius:999px;color:#5E5E6B;cursor:pointer;font-size:12px;font-family:Inter,system-ui,sans-serif;";
-    x.addEventListener("mouseenter", function () { x.style.color = "#FB4E55"; x.style.background = "#2C1316"; });
+    var hoverColor = danger ? "#FB4E55" : "#7B5CFA";
+    var hoverBg = danger ? "#2C1316" : "#19152E";
+    x.addEventListener("mouseenter", function () { x.style.color = hoverColor; x.style.background = hoverBg; });
     x.addEventListener("mouseleave", function () { x.style.color = "#5E5E6B"; x.style.background = "transparent"; });
     x.addEventListener("click", function (e) {
       e.stopPropagation();
-      removeChannel(c);
+      onClick();
     });
     row.appendChild(x);
   }
@@ -213,7 +227,7 @@
       if (!state.activeId) return;
       var login = window.prompt("Логин канала на Twitch:");
       if (!login || !login.trim()) return;
-      apiSend("POST", "/" + state.activeId + "/channels", { login: login.trim().toLowerCase() })
+      apiSend("POST", "/" + state.activeId + "/channels", { channel_login: login.trim().toLowerCase() })
         .then(function () { return refreshActive(); })
         .catch(function (e) { alert(errMsg(e, "Не удалось добавить канал")); });
     });
@@ -225,6 +239,82 @@
     apiSend("DELETE", "/" + state.activeId + "/channels/" + cid)
       .then(function () { return refreshActive(); })
       .catch(function (e) { alert(errMsg(e, "Не удалось убрать канал")); });
+  }
+
+  // PATCH /watchlists/:list_id/channels/:id/meta {notes, tags: []} — edit the row's note + tag.
+  function editChannelMeta(c) {
+    var cid = c.channel_id || c.id;
+    if (!state.activeId || !cid) return;
+    var notes = window.prompt("Заметка к каналу (пусто — убрать):", c.notes || "");
+    if (notes == null) return; // cancelled
+    var tag = window.prompt("Тег (пусто — без тега):", (c.tags && c.tags[0]) || "");
+    if (tag == null) return; // cancelled
+    apiSend("PATCH", "/" + state.activeId + "/channels/" + cid + "/meta",
+      { notes: notes.trim(), tags: tag.trim() ? [tag.trim()] : [] })
+      .then(function () { return refreshActive(); })
+      .catch(function (e) { alert(errMsg(e, "Не удалось сохранить заметку")); });
+  }
+
+  // PATCH /watchlists/:list_id/channels/:id/move {target_watchlist_id} — move to another list.
+  function moveChannel(c) {
+    var cid = c.channel_id || c.id;
+    if (!state.activeId || !cid) return;
+    var others = state.lists.filter(function (l) { return l.id !== state.activeId; });
+    if (!others.length) { alert("Нет другого списка — сначала создайте его."); return; }
+    var listing = others.map(function (l, i) { return (i + 1) + ". " + l.name; }).join("\n");
+    var raw = window.prompt("Переместить в список — введите номер:\n" + listing);
+    if (raw == null) return;
+    var target = others[parseInt(raw, 10) - 1];
+    if (!target) { alert("Нет списка с таким номером."); return; }
+    apiSend("PATCH", "/" + state.activeId + "/channels/" + cid + "/move", { target_watchlist_id: target.id })
+      .then(function () { return refreshActive(); })
+      .catch(function (e) { alert(errMsg(e, "Не удалось переместить канал")); });
+  }
+
+  // Toolbar controls for the ACTIVE list (rename / delete) — the design has no affordance, so two
+  // small controls are injected before the sort control, styled like the row actions.
+  function wireListControls() {
+    var host = q(document, "TB Right") || q(document, "WL Toolbar");
+    if (!host || host.__hrListCtl) return;
+    host.__hrListCtl = true;
+    var anchor = q(host, "Sort Ctl");
+    [
+      { glyph: "✎", title: "Переименовать список", fn: renameList, danger: false },
+      { glyph: "🗑", title: "Удалить список", fn: deleteList, danger: true },
+    ].forEach(function (a) {
+      var x = document.createElement("div");
+      x.setAttribute("data-hr-act", a.glyph);
+      x.textContent = a.glyph;
+      x.title = a.title;
+      x.style.cssText = "width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;" +
+        "border-radius:8px;border:1px solid #25252F;color:#9A9AA9;cursor:pointer;font-size:13px;font-family:Inter,system-ui,sans-serif;";
+      var hoverColor = a.danger ? "#FB4E55" : "#7B5CFA";
+      x.addEventListener("mouseenter", function () { x.style.color = hoverColor; x.style.borderColor = hoverColor; });
+      x.addEventListener("mouseleave", function () { x.style.color = "#9A9AA9"; x.style.borderColor = "#25252F"; });
+      x.addEventListener("click", a.fn);
+      if (anchor) host.insertBefore(x, anchor); else host.appendChild(x);
+    });
+  }
+
+  // PATCH /watchlists/:id {watchlist: {name}} — rename the active list.
+  function renameList() {
+    var wl = state.lists.filter(function (l) { return l.id === state.activeId; })[0];
+    if (!wl) return;
+    var name = window.prompt("Новое название списка:", wl.name);
+    if (!name || !name.trim() || name.trim() === wl.name) return;
+    apiSend("PATCH", "/" + wl.id, { watchlist: { name: name.trim() } })
+      .then(function () { return reloadLists(); })
+      .catch(function (e) { alert(errMsg(e, "Не удалось переименовать список")); });
+  }
+
+  // DELETE /watchlists/:id — delete the active list (backend auto-recreates a default if it was last).
+  function deleteList() {
+    var wl = state.lists.filter(function (l) { return l.id === state.activeId; })[0];
+    if (!wl) return;
+    if (!window.confirm("Удалить список «" + wl.name + "»? Каналы будут убраны из него.")) return;
+    apiSend("DELETE", "/" + wl.id)
+      .then(function () { return reloadLists(); })
+      .catch(function (e) { alert(errMsg(e, "Не удалось удалить список")); });
   }
 
   function reloadLists() {
@@ -246,6 +336,23 @@
     return many;
   }
 
+  // Honest error state: strip the design's sample lists/rows and say the load failed — the mock
+  // («8 каналов · 4 в эфире», sample lists) must not survive a failed API call.
+  function renderLoadError() {
+    if (!T.listsPanel || !T.table) return;
+    clearListItems();
+    clearChannelRows();
+    setP(T.listsPanel, "Lists Head N", "—");
+    setP(document, "TB Title", "Списки");
+    setP(document, "TB Meta T", "—");
+    T.table.style.display = "none";
+    var note = document.createElement("div");
+    note.setAttribute("data-pencil-name", "WL Empty State");
+    note.style.cssText = "padding:28px 8px;color:#5E5E6B;font-family:Inter,system-ui,sans-serif;font-size:14px;";
+    note.textContent = "Не удалось загрузить списки — попробуйте позже.";
+    T.table.parentNode.insertBefore(note, T.table.nextSibling);
+  }
+
   // ---- boot ----
   function boot() {
     if (!capture()) return;
@@ -254,14 +361,18 @@
       state.activeId = state.lists[0] && state.lists[0].id;
       renderLists();
       if (state.activeId) loadChannels(state.activeId); else renderChannels([], {});
-    }).catch(function () {});
+    }).catch(renderLoadError);
   }
 
+  // Auth gate: ONLY the lk/status probe (and its own network failure) decides the /login redirect.
+  // Data/boot errors render the honest error state instead of bouncing the user to /login.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
-    .then(function (s) {
-      if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      boot();
-    })
-    .catch(function () { window.location.href = "/login"; });
+    .then(
+      function (s) {
+        if (!s || !s.authenticated) { window.location.href = "/login"; return; }
+        try { boot(); } catch (e) { renderLoadError(); }
+      },
+      function () { window.location.href = "/login"; }
+    );
 })();

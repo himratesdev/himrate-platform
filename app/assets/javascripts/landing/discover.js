@@ -134,7 +134,7 @@
           method: "POST",
           headers: { Accept: "application/json", "Content-Type": "application/json" },
           credentials: "same-origin",
-          body: JSON.stringify({ login: c.login }),
+          body: JSON.stringify({ channel_login: c.login }),
         });
       })
       .then(function (r) {
@@ -164,14 +164,16 @@
       });
     }
     if (recs) dim(recs, "Скоро — персональные рекомендации");
+    // deferred tab must not keep the design's fake counter «24»
+    setP(document, "Tab Count T · Рекомендации", "—");
     if (wl) {
       wl.style.cursor = "pointer";
       wl.addEventListener("click", function () { window.location.href = hrApp("/watchlists"); });
     }
-    // real tab counts
+    // real tab counts; on failure show «—», never the design's sample number
     apiGet("/api/v1/watchlists").then(function (resp) {
       setP(document, "Tab Count T · Watchlists", String(((resp && resp.data) || []).length));
-    }).catch(function () {});
+    }).catch(function () { setP(document, "Tab Count T · Watchlists", "—"); });
   }
 
   function hideNoSourceSections() {
@@ -179,6 +181,22 @@
     hide(qp(document, "PV Sec · АКТИВНОСТЬ ЧАТА"));
     hide(qp(document, "PV Sec · НАСТРОЕНИЕ ЧАТА"));
     dim(q(document, "Sort Btn"), "Скоро"); // ranking is fixed to real audience for now
+  }
+
+  // Honest error state: the design's sample cards / preview / counters must not survive a failed
+  // load — strip them and show the error text where the grid was.
+  function renderLoadError() {
+    setT(document, "H2 Sub", "Не удалось загрузить эфиры — попробуйте позже.");
+    setP(document, "Tab Count T · Подписки", "—");
+    hide(q(document, "Preview Panel"));
+    if (!T.grid) return;
+    qa(T.grid, '[data-pencil-name^="Grid Row"]').forEach(function (n) { n.remove(); });
+    qa(T.grid, '[data-pencil-name="EmptyNote"]').forEach(function (n) { n.remove(); });
+    var d = document.createElement("div");
+    d.setAttribute("data-pencil-name", "EmptyNote");
+    d.style.cssText = "padding:36px 8px;color:#5E5E6B;font-family:Inter,system-ui,sans-serif;font-size:14px;";
+    d.textContent = "Не удалось загрузить эфиры — попробуйте позже.";
+    T.grid.appendChild(d);
   }
 
   // ---- boot ----
@@ -194,9 +212,7 @@
         setP(document, "Tab Count T · Подписки", String(all.filter(function (c) { return c.is_watched_by_user; }).length));
         renderGrid();
       })
-      .catch(function () {
-        setT(document, "H2 Sub", "Не удалось загрузить эфиры — попробуйте позже.");
-      });
+      .catch(renderLoadError);
   }
 
   function plural(n, one, few, many) {
@@ -207,11 +223,15 @@
     return many;
   }
 
+  // Auth gate: ONLY the lk/status probe (and its own network failure) decides the /login redirect.
+  // Data/boot errors render honest empty/error states instead of bouncing the user to /login.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
-    .then(function (s) {
-      if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      boot();
-    })
-    .catch(function () { window.location.href = "/login"; });
+    .then(
+      function (s) {
+        if (!s || !s.authenticated) { window.location.href = "/login"; return; }
+        try { boot(); } catch (e) { renderLoadError(); }
+      },
+      function () { window.location.href = "/login"; }
+    );
 })();

@@ -62,7 +62,13 @@
     if (cta) {
       cta.style.cursor = "pointer";
       cta.addEventListener("click", function () {
-        window.open("https://www.twitch.tv/directory/category/" + encodeURIComponent(g.name.toLowerCase().replace(/[^a-z0-9]+/g, "-")), "_blank", "noopener");
+        // Cyrillic/non-latin names collapse to "-" under the a-z slugifier → dead category 404.
+        // Guard: no usable slug → Twitch search by the real name instead.
+        var slug = g.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
+        var url = slug
+          ? "https://www.twitch.tv/directory/category/" + encodeURIComponent(slug)
+          : "https://www.twitch.tv/search?term=" + encodeURIComponent(g.name);
+        window.open(url, "_blank", "noopener");
       });
     }
     card.title = "top-1 канал забирает " + (g.top1_share_pct != null ? g.top1_share_pct + "%" : "—") + " зрителей категории";
@@ -135,11 +141,15 @@
     load();
   }
 
+  // Auth gate: ONLY the lk/status probe (and its own network failure) decides the /login redirect.
+  // Data/boot errors render honest empty states instead of bouncing the user to /login.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
-    .then(function (s) {
-      if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      boot();
-    })
-    .catch(function () { window.location.href = "/login"; });
+    .then(
+      function (s) {
+        if (!s || !s.authenticated) { window.location.href = "/login"; return; }
+        try { boot(); } catch (e) { if (T.rowParent) renderGames([]); }
+      },
+      function () { window.location.href = "/login"; }
+    );
 })();

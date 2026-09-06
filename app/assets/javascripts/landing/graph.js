@@ -187,9 +187,12 @@
     var n = nodeAt(toWorld(ev));
     if (n && !dragging) { if (focusInput) focusInput.value = n.login; load(n.login); }
   });
+  // Host-aware card link: production keeps the canonical apex URL, staging/localhost open the
+  // relative /c/ card on the same host (a hardcoded prod apex 404s the flow off-prod).
+  var CARD_BASE = /(^|\.)himrate\.com$/.test(window.location.hostname) ? "https://himrate.com" : "";
   canvas.addEventListener("dblclick", function (ev) {
     var n = nodeAt(toWorld(ev));
-    if (n) window.open("https://himrate.com/c/" + encodeURIComponent(n.login), "_blank", "noopener");
+    if (n) window.open(CARD_BASE + "/c/" + encodeURIComponent(n.login), "_blank", "noopener");
   });
   canvas.addEventListener("wheel", function (ev) {
     ev.preventDefault();
@@ -207,15 +210,23 @@
   });
   if (resetBtn) resetBtn.addEventListener("click", function () { if (focusInput) focusInput.value = ""; load(null); });
 
+  // Auth gate: ONLY the lk/status probe (and its own network failure) decides the /login redirect.
+  // Boot/data errors show the honest graph note instead of bouncing the user to /login.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
-    .then(function (s) {
-      if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      resize();
-      // Deep link: /graph?focus=<login> (ego mode from channel cards / brand surfaces).
-      var qf = new URLSearchParams(window.location.search).get("focus");
-      if (qf && focusInput) focusInput.value = qf;
-      load(qf ? qf.toLowerCase() : null);
-    })
-    .catch(function () { window.location.href = "/login"; });
+    .then(
+      function (s) {
+        if (!s || !s.authenticated) { window.location.href = "/login"; return; }
+        try {
+          resize();
+          // Deep link: /graph?focus=<login> (ego mode from channel cards / brand surfaces).
+          var qf = new URLSearchParams(window.location.search).get("focus");
+          if (qf && focusInput) focusInput.value = qf;
+          load(qf ? qf.toLowerCase() : null);
+        } catch (e) {
+          setNote("Не удалось построить граф — попробуйте обновить");
+        }
+      },
+      function () { window.location.href = "/login"; }
+    );
 })();

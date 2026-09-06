@@ -23,6 +23,15 @@
     if (n == null || isNaN(n)) return "—";
     return Math.round(n).toString().replace(/\B(?=(\d{3})+(?!\d))/g, " ");
   }
+  // «сегодня в 14:20» / «05.09 в 14:20» — real refresh time instead of the design's baked one.
+  function timeRu(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    var hm = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+    if (d.toDateString() === new Date().toDateString()) return "сегодня в " + hm;
+    return ("0" + d.getDate()).slice(-2) + "." + ("0" + (d.getMonth() + 1)).slice(-2) + " в " + hm;
+  }
   var HEADERS = { Accept: "application/json", "Accept-Language": "ru" };
   function apiGet(p) {
     return fetch(p, { headers: HEADERS, credentials: "same-origin" }).then(function (r) { return r.ok ? r.json() : Promise.reject(r.status); });
@@ -153,10 +162,15 @@
     root.insertBefore(d, root.firstChild);
   }
 
-  function renderPending() {
+  // Blank every fabricated design number (Trust Score 87 / 318 400 / 1 240 000 / «5 площадок» /
+  // «обновлено сегодня в 14:20» / «Последние 90 дней» …) — shared by pending / no-twitch / error states.
+  function blankNumbers() {
     setT("Score", "—");
     setT("Real N", "—");
     setT("Shown N", "/ — показано");
+    setT("Count T", "—");
+    setT("Sub", "Единая аналитика всех привязанных площадок");
+    setT("Period T", "—");
     PLATFORMS.forEach(function (p) {
       var name = NAMES[p];
       setT("Bar Val · " + name, "—");
@@ -172,12 +186,30 @@
     });
     setT("Rel Label", "");
     setT("Rel Trend", "");
+  }
+
+  function renderPending() {
+    blankNumbers();
     renderPendingNote();
+  }
+
+  // Visible failure note — a silent catch used to leave the design mock on screen.
+  function renderErrorNote() {
+    if (q("ErrorNote")) return; // idempotent
+    var hero = q("Real Headline");
+    var root = (hero && hero.parentNode) || document.body;
+    var d = document.createElement("div");
+    d.setAttribute("data-pencil-name", "ErrorNote");
+    d.style.cssText = "padding:20px 8px;color:#F0616D;font-family:Inter,system-ui,sans-serif;font-size:14px;";
+    d.textContent = "Не удалось загрузить данные по площадкам — попробуйте позже.";
+    root.insertBefore(d, root.firstChild);
   }
 
   function render(profile) {
     var note = q("PendingNote");
     if (note) note.remove();
+    var err = q("ErrorNote");
+    if (err) err.remove();
 
     var platforms = (profile && profile.platforms) || {};
     var linked = {};
@@ -188,6 +220,16 @@
     renderBars(platforms);
     PLATFORMS.forEach(function (p) { renderCard(p, platforms[p], linked); });
     renderDeferredPanels();
+
+    // real header stats instead of the design's baked «5» / «обновлено сегодня в 14:20» /
+    // «Последние 90 дней» (there is no period windowing on this data — never fake one)
+    var visible = PLATFORMS.filter(function (p) {
+      return (platforms[p] && platforms[p].available) || linked[p];
+    }).length;
+    setT("Count T", visible ? String(visible) : "—");
+    var gen = timeRu(profile && profile.generated_at);
+    setT("Sub", "Единая аналитика всех привязанных площадок" + (gen ? " · обновлено " + gen : ""));
+    setT("Period T", "—");
   }
 
   var pollTimer;
@@ -204,7 +246,7 @@
         }
         render(d);
       })
-      .catch(function () { render({}); });
+      .catch(function () { render({}); renderErrorNote(); });
   }
 
   function boot() {
@@ -212,7 +254,11 @@
       .then(function (resp) {
         var u = (resp && resp.data) || {};
         if (!u.twitch_login) {
-          // No Twitch linked → no socials to discover. Honest CTA in place of the cards.
+          // No Twitch linked → no socials to discover. Honest CTA in place of the cards —
+          // AFTER stripping the design's fake Score/followers/demography mock.
+          hideFraud();
+          blankNumbers();
+          renderDeferredPanels();
           setT("Real Headline", "Привяжите Twitch");
           setT("Real Label", "Соцсети находятся автоматически по вашему каналу Twitch");
           hide(q("Real Nums"));
@@ -220,11 +266,18 @@
         }
         load(u.twitch_login);
       })
-      .catch(function () { render({}); });
+      .catch(function () { render({}); renderErrorNote(); });
   }
 
+  // Auth gate: ONLY the lk/status probe (and its own network failure) decides the /login redirect.
+  // Data/boot errors render honest empty/error states instead of bouncing the user to /login.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
-    .then(function (s) { if (!s || !s.authenticated) { window.location.href = "/login"; return; } boot(); })
-    .catch(function () { window.location.href = "/login"; });
+    .then(
+      function (s) {
+        if (!s || !s.authenticated) { window.location.href = "/login"; return; }
+        try { boot(); } catch (e) { render({}); renderErrorNote(); }
+      },
+      function () { window.location.href = "/login"; }
+    );
 })();

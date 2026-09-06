@@ -111,6 +111,9 @@
         setP(document, "Card Title · Приватность", "Видимость моей активности");
       })
       .catch(function () {
+        // honest error state: the design's sample rows + «Всё включено» cap must not survive a failed load
+        if (privacyBody) DESIGN_PRIVACY_ROWS.forEach(function (name) { var n = q(privacyBody, name); if (n) n.remove(); });
+        setP(document, "Card Cap T · Приватность", "—");
         dim(q(document, "Card · Приватность"), "Недоступно");
       });
   }
@@ -142,7 +145,16 @@
           tw.parentNode.insertBefore(g, tw.nextSibling);
         }
       })
-      .catch(function () {});
+      .catch(function () {
+        // honest error state: the design's sample «denis_h · Подключён» must not read as real
+        var tw = q(document, "Acc · Twitch");
+        if (tw) {
+          setP(tw, "Acc Hd", "—");
+          setP(tw, "Acc St T", "не удалось проверить");
+          var st = qp(tw, "Acc St T"); if (st) st.style.color = "#9A9AA9";
+          var d = qp(tw, "Acc St Dot"); if (d) d.style.backgroundColor = "#5E5E6B";
+        }
+      });
 
     // Telegram / Steam — no backend → honest not-connected + disabled.
     var tg = q(document, "Acc · Telegram");
@@ -164,6 +176,13 @@
     setP(document, "TG Handle", "—");
     setP(document, "TG Linked", "аккаунт не привязан");
     setP(document, "TG Av", "?");
+    // ...and the sample notification content (real channel names / viewer counts / timestamps
+    // stay readable through the dim and look like the user's data) — neutral example instead.
+    setP(document, "Row Desc · Любимый стример в эфире", "Уведомление, когда канал из ваших списков начинает эфир");
+    setP(document, "TG Chip V · Игра", "—");
+    setP(document, "TG Chip V · Каналы", "—");
+    setP(document, "TG Bot Time", "");
+    setP(document, "TG Bubble Body", "Пример уведомления — так бот сообщит о начале эфира.");
   }
 
   // ---- promo card (TASK-H8 Day-0) ----
@@ -216,11 +235,15 @@
     wirePromo();
   }
 
+  // Auth gate: ONLY the lk/status probe (and its own network failure) decides the /login redirect.
+  // Data/boot errors render honest degraded states instead of bouncing the user to /login.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
-    .then(function (s) {
-      if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      boot();
-    })
-    .catch(function () { window.location.href = "/login"; });
+    .then(
+      function (s) {
+        if (!s || !s.authenticated) { window.location.href = "/login"; return; }
+        try { boot(); } catch (e) { /* per-card fetches carry their own honest error states */ }
+      },
+      function () { window.location.href = "/login"; }
+    );
 })();

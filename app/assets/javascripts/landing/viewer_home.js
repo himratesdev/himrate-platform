@@ -111,6 +111,16 @@
     });
   }
 
+  // Honest error state: same clean-up branch as an empty payload (sample cards + «Недавние» chips
+  // removed), with an error message instead of the empty-state copy. Never leaves the design mock.
+  function renderRecentError() {
+    renderSection("Rec List", "RRow ", [], fillRecent, "Не удалось загрузить — попробуйте позже.");
+    renderHeroChips([]);
+  }
+  function renderLiveError() {
+    renderSection("Live Row", "LCard ", [], fillLive, "Не удалось загрузить — попробуйте позже.");
+  }
+
   function load() {
     var opts = { headers: { Accept: "application/json", "Accept-Language": "ru" }, credentials: "same-origin" };
     fetch("/api/v1/me/home/recent_channels", opts)
@@ -120,20 +130,25 @@
         renderSection("Rec List", "RRow ", list, fillRecent, "Вы ещё не открывали каналы — найдите канал через поиск.");
         renderHeroChips(list);
       })
-      .catch(function () {});
+      .catch(renderRecentError);
     fetch("/api/v1/me/home/live_channels?source=watchlists", opts)
       .then(function (r) { return r.ok ? r.json() : { data: [] }; })
       .then(function (d) {
         renderSection("Live Row", "LCard ", (d && d.data) || [], fillLive, "Нет каналов в эфире из ваших списков наблюдения.");
       })
-      .catch(function () {});
+      .catch(renderLiveError);
   }
 
+  // Auth gate: ONLY the lk/status probe (and its own network failure) decides the /login redirect.
+  // Data/boot errors render honest empty states instead — a throw in load() must never bounce an
+  // authenticated user back to /login (that loops /home → /login → /home).
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
-    .then(function (s) {
-      if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      load();
-    })
-    .catch(function () { window.location.href = "/login"; });
+    .then(
+      function (s) {
+        if (!s || !s.authenticated) { window.location.href = "/login"; return; }
+        try { load(); } catch (e) { renderRecentError(); renderLiveError(); }
+      },
+      function () { window.location.href = "/login"; }
+    );
 })();
