@@ -34,6 +34,16 @@ RSpec.describe TelegramAlertWorker do
       expect { described_class.new.perform("Test") }.to raise_error(RuntimeError, /Telegram API HTTP 429/)
     end
 
+    it "pins the connect IP when TELEGRAM_API_IPADDR is set (ISP DC-subnet block)" do
+      allow(ENV).to receive(:[]).with("TELEGRAM_API_IPADDR").and_return("149.154.167.220")
+      http = instance_double(Net::HTTP, "use_ssl=": nil, "open_timeout=": nil, "read_timeout=": nil)
+      allow(Net::HTTP).to receive(:new).and_return(http)
+      allow(http).to receive(:request).and_return(Net::HTTPSuccess.allocate)
+
+      expect(http).to receive(:ipaddr=).with("149.154.167.220")
+      described_class.new.perform("Test")
+    end
+
     it "skips when TELEGRAM_BOT_TOKEN not set" do
       allow(ENV).to receive(:[]).with("TELEGRAM_BOT_TOKEN").and_return(nil)
 

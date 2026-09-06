@@ -24,6 +24,11 @@ class TelegramAlertWorker
     http.use_ssl = true
     http.open_timeout = TIMEOUT
     http.read_timeout = TIMEOUT
+    # The server ISP blocks the Telegram DC subnet the public DNS A/AAAA records point at,
+    # while other official DC IPs stay reachable. TELEGRAM_API_IPADDR pins the connect IP
+    # (TLS SNI/verification still use the hostname). Empty env = normal DNS resolution.
+    # Re-probe on delivery failures: curl --resolve api.telegram.org:443:<ip> https://api.telegram.org/
+    http.ipaddr = ENV["TELEGRAM_API_IPADDR"] if ENV["TELEGRAM_API_IPADDR"].present?
 
     request = Net::HTTP::Post.new(uri)
     request.content_type = "application/json"
