@@ -46,13 +46,27 @@
 
   // Brand mark → back to marketing (escape hatch: a guest who reached /login and changed
   // their mind had no way back; SITE-AUDIT-2). Legal links are real <a href> in the view.
+  // On the app host "/" is the LK home whose guest-gate bounces right back to /login — the
+  // marketing site lives on the apex, so escape cross-host there.
+  var MARKETING_HOME = location.hostname.indexOf("app.") === 0 ? "https://himrate.com/" : "/";
   ["L Logo", "L Wordmark"].forEach(function (name) {
     var n = el(name);
     if (n) {
       n.style.cursor = "pointer";
-      n.addEventListener("click", go("/"));
+      n.addEventListener("click", go(MARKETING_HOME));
     }
   });
+
+  // The promo card next to the form shows an invented channel with invented metrics — label it
+  // as a sample so it can't be read as a real verdict about a real streamer.
+  (function () {
+    var row = el("LT Row1");
+    if (!row || !row.parentNode) return;
+    var cap = document.createElement("div");
+    cap.textContent = "Пример карточки";
+    cap.style.cssText = "font-size:11px;color:#5E5E6B;letter-spacing:.4px;margin-bottom:6px;";
+    row.parentNode.insertBefore(cap, row);
+  })();
 
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) {

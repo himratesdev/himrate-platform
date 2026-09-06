@@ -126,7 +126,8 @@
     var band = hl.band || {};
     var rows = [];
     var bandState = band.color === "green" ? "ok" : band.color === "grey" ? "dim" : "warn";
-    rows.push(["Вердикт эфира", hl.erv_label || "—", bandState]);
+    // No verdict at all (error/empty scrub) → zero rows, everything hidden below.
+    if (hl.erv_label || band.color) rows.push(["Вердикт эфира", hl.erv_label || "—", bandState]);
     (hl.reason_codes || []).forEach(function (code) {
       var m = REASON_RU[code];
       if (m) rows.push(m);
@@ -147,7 +148,7 @@
         row.style.display = "none";
       }
     }
-    setText("Checks Pass", rows.length + " реальных сигналов");
+    setText("Checks Pass", rows.length ? rows.length + " реальных сигналов" : "—");
   }
 
   // W2: real L3 — the drawn 4-level reputation scale highlights the channel's ACTUAL band from
@@ -186,7 +187,25 @@
     ["L1 Real", "L1 Shown", "L1 D1 T", "L1 D2 T", "L1 Total", "Leg T bot", "Leg T real"].forEach(function (p) {
       setText(p, "—");
     });
+    // The mock check pills («норма»/«внимание»), the static reputation marker and the sample
+    // trend bars are only scrubbed on the happy path (renderChecks/renderReputation) — run the
+    // same scrub here so an API failure never shows fabricated verdicts on a real channel.
+    renderChecks({});
+    renderReputation(null);
   }
+
+  // Static export chrome that must never show as-is:
+  //  • «DH» topbar avatar — a signed-in persona shown to guests on a public page;
+  //  • «Подтверждён в HimRate» — a verification badge with no verification system behind it.
+  (function () {
+    var av = el("TB Avatar");
+    if (av) av.style.display = "none";
+    var verified = el("H Verified T");
+    if (verified) {
+      var wrap = verified.parentElement || verified;
+      wrap.style.display = "none";
+    }
+  })();
 
   // Navigation wiring (SITE-AUDIT-2 CJM). The public card renders on the landing layout
   // WITHOUT hr-shared.js (the marketing nav engine), so its chrome was dead: the card was
@@ -206,7 +225,11 @@
       }
     });
   }
-  // Registration Gate → sign-in (both CTAs open LK/paid surfaces that require an account).
+  // The card lives on the apex (SEO host) while the LK lives on app.himrate.com — LK links are
+  // cross-host there. Off production (staging/localhost run single-host) use the /app scheme.
+  var APP_ORIGIN = window.location.hostname === "himrate.com" ? "https://app.himrate.com" : "";
+  function appHref(p) { return APP_ORIGIN ? APP_ORIGIN + p : "/app" + p; }
+
   // W5 deep link: the graph page's ego mode for THIS channel (registered surface — gates to
   // login like the other LK links). Injected as a real anchor under the reputation layer.
   (function () {
@@ -214,14 +237,30 @@
     if (!l3) return;
     var a = document.createElement("a");
     a.setAttribute("data-pencil-name", "Graph Link");
-    a.href = "https://app.himrate.com/graph?focus=" + encodeURIComponent(login);
+    a.href = appHref("/graph?focus=" + encodeURIComponent(login));
     a.textContent = "Паутинка пересечений аудитории этого канала →";
     a.style.cssText = "display:block;margin:14px 0 0;color:#A78BFA;font:500 13.5px Inter,system-ui,sans-serif;text-decoration:none;";
     l3.appendChild(a);
   })();
 
-  nav("Gate CTA1", "/login"); // «Открыть в кабинете»
-  nav("Gate CTA2", "/login"); // «Разовый отчёт за период»
+  // Registration Gate CTAs: a signed-in visitor goes straight to the LK surface for this channel
+  // (bouncing them через /login costs three hops and loses the channel context); guests → /login.
+  fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
+    .then(function (r) { return r.ok ? r.json() : {}; })
+    .catch(function () { return {}; })
+    .then(function (s) {
+      var authed = !!(s && s.authenticated);
+      nav("Gate CTA1", authed ? appHref("/streamers/" + encodeURIComponent(login)) : "/login");
+      nav("Gate CTA2", authed ? appHref("/streamers/" + encodeURIComponent(login)) : "/login");
+      // The export ships the LK sidebar on this page but brand_nav.js isn't loaded here — wire
+      // its three live items cross-host so they aren't dead clicks on the busiest SEO surface.
+      nav("Nav · Главная", authed ? appHref("/home") : "/login");
+      nav("Nav · Куда пойти", authed ? appHref("/discover") : "/login");
+      nav("Nav · Watchlists", authed ? appHref("/watchlists") : "/login");
+      var acct = el("Account");
+      if (acct) nav("Account", authed ? appHref("/home") : "/login");
+    });
+
   // Escape hatches back to marketing (the card is a shared / SEO landing surface).
   nav("Logo", "/");
   nav("Wordmark", "/");

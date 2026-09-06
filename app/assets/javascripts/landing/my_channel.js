@@ -68,10 +68,16 @@
     setT(document, "Ch Meta", "twitch.tv/" + (channel.login || login)); // category: no field
     setT(document, "H Sub", (channel.display_name || login) + " · " + (channel.login || login) +
       (hl.calculated_at ? " · обновлено " + String(hl.calculated_at).slice(11, 16) : ""));
+    setT(document, "Avatar T", (channel.display_name || login).slice(0, 1).toUpperCase());
 
     if (band) {
-      setT(document, "Rel Label", BAND_RU[band] || band);
-      var rl = q(document, "Rel Label"); if (rl) rl.style.color = BAND_COLOR[band] || "#9A9AA9";
+      // The export has TWO «Rel Label» nodes (hero + reputation block) — update both, else the
+      // second keeps the design-sample verdict «Стабильная» next to the real one.
+      var rels = document.querySelectorAll('[data-pencil-name="Rel Label"]');
+      Array.prototype.forEach.call(rels, function (rl) {
+        rl.textContent = BAND_RU[band] || band;
+        rl.style.color = BAND_COLOR[band] || "#9A9AA9";
+      });
     }
 
     // Real vs shown: authenticity = % real, erv = the native subtracted real-viewer COUNT
@@ -196,10 +202,39 @@
       .catch(function () { hide(q(document, "Reputation · 30 стримов")); });
   }
 
+  // ---- fabricated design sections with no engine behind them ----
+  // The export ships whole narrative sections built on invented events (a bot-raid timeline with
+  // fake timestamps, an anomaly log with fake raids, a "verification" block linking himrate.io/v/…).
+  // None of these engines exist — hide them entirely rather than show fiction as the user's data.
+  function scrubFabricatedSections() {
+    ["Chain · bot-raid", "Anomalies · Онлайн", "Proof · Подтвердить"].forEach(function (n) {
+      hide(q(document, n));
+    });
+    // Live-uptime pill «В эфире · 2:14:08» — no uptime source wired; renderHero shows real
+    // live state in the hero, so drop the fake timer instead of inventing one.
+    hide(q(document, "Period Btn"));
+    // Chart X labels are the design's 30-MINUTE window; renderChart draws 30 DAYS.
+    hide(q(document, "X Labels"));
+    // Pro-preview blocks show invented cohorts/schedules/transcripts as if they were THIS
+    // channel's data — keep them as a teaser but say honestly that it's sample data.
+    ["Pro · Куда уходит моя аудитория", "Pro · Посещаемость по расписанию",
+     "Pro · Транскрипция + авто-клипы", "Pro · Тренды и аудитория за период",
+     "Pro · Экспорт · единый отчёт"].forEach(function (n) {
+      var sec = q(document, n);
+      if (!sec) return;
+      sec.style.opacity = "0.55";
+      var cap = document.createElement("div");
+      cap.textContent = "Пример данных — Pro-функция в разработке";
+      cap.style.cssText = "font-size:11px;color:#9A9AA9;letter-spacing:.4px;margin:0 0 8px;";
+      sec.insertBefore(cap, sec.firstChild);
+    });
+  }
+
   // ---- boot ----
   function boot() {
     // per-signal verdicts don't exist yet (ADR DEC-3, post-TI-v2) — never fake pass/flag pills
     hide(q(document, "Checks · 7 проверок"));
+    scrubFabricatedSections();
 
     apiGet("/api/v1/user/me")
       .then(function (resp) {
@@ -219,7 +254,8 @@
     .then(function (r) { return r.ok ? r.json() : {}; })
     .then(function (s) {
       if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      boot();
+      // Data/render failures must NOT read as "logged out" — boot has its own honest fallbacks.
+      try { boot(); } catch (e) { if (window.console) console.warn("[my_channel] boot failed:", e); }
     })
     .catch(function () { window.location.href = "/login"; });
 })();

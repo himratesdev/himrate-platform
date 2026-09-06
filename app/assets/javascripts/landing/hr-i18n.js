@@ -178,7 +178,7 @@ window.HR_TRANS = {
   "Где в эфире зашло, где провалилось — настроение чата": "Where the stream landed, where it flopped — chat mood",
   "Глубокая аналитика": "Deep analytics",
   "Глубокая аналитика канала": "Deep channel analytics",
-  "Год назад ты впервые открыл канал «xQc» и досмотрел 47 минут подряд. Сегодня он в твоём топ-5.": "A year ago you first opened \u201cxQc\u201d and watched 47 minutes straight. Today he's in your top 5.",
+  "Год назад ты впервые открыл канал «shadow_play» и досмотрел 47 минут подряд. Сегодня он в твоём топ-5.": "A year ago you first opened \u201cshadow_play\u201d and watched 47 minutes straight. Today it's in your top 5.",
   "Готов увидеть, куда уходит": "Ready to see where they go",
   "Готовые нарезки лучших моментов": "Ready clips of the best moments",
   "Готовые шаблоны договоров": "Ready contract templates",
@@ -765,13 +765,31 @@ window.HR_TRANS = {
       if(el.children.length) return;
       var tag=el.tagName; if(tag==='SCRIPT'||tag==='STYLE'||tag==='SVG'||tag==='PATH') return;
       var ru=el.getAttribute&&el.getAttribute('data-i18n-ru');
+      var cur=el.textContent;
       if(ru==null){
-        var cur=el.textContent; if(!cur||!RE.test(cur)) return;
+        if(!cur||!RE.test(cur)) return;
         ru=cur.replace(/\s+/g,' ').trim();
         try{ el.setAttribute('data-i18n-ru',ru); el.setAttribute('data-i18n-o',cur); }catch(e){ return; }
+      } else if(cur && RE.test(cur)){
+        // The data layer rewrote this node after the first snapshot (live API values land
+        // asynchronously). Adopt the LIVE text as the new baseline — otherwise every re-apply
+        // (boot retries, EN→RU toggle) rolled real data back to the design-sample snapshot.
+        var norm=cur.replace(/\s+/g,' ').trim();
+        if(norm!==ru){
+          try{ el.setAttribute('data-i18n-ru',norm); el.setAttribute('data-i18n-o',cur); el.removeAttribute('data-i18n-en-active'); }catch(e){ return; }
+          ru=norm;
+        }
       }
-      if(lang==='en'){ var en=T[ru]; if(en!=null && el.textContent!==en) el.textContent=en; }
-      else { var o=el.getAttribute('data-i18n-o'); if(o!=null && el.textContent!==o) el.textContent=o; }
+      if(lang==='en'){
+        var en=T[ru];
+        if(en!=null && el.textContent!==en){ el.textContent=en; try{ el.setAttribute('data-i18n-en-active','1'); }catch(e){} }
+      } else if(el.getAttribute('data-i18n-en-active')!=null){
+        // Restore RU only on nodes actually showing the EN translation — untouched nodes keep
+        // whatever the data layer wrote (no snapshot rollback at the default language).
+        var o=el.getAttribute('data-i18n-o');
+        if(o!=null && el.textContent!==o) el.textContent=o;
+        try{ el.removeAttribute('data-i18n-en-active'); }catch(e){}
+      }
     });
     try{ document.documentElement.setAttribute('lang', lang==='en'?'en':'ru'); }catch(e){}
     $all('[data-hr-lang-btn]').forEach(function(b){ var on=b.getAttribute('data-hr-lang-btn')===lang; b.style.background=on?'#FFFFFF1A':'transparent'; b.style.color=on?'#F5F2EC':'#8E8A9A'; });
