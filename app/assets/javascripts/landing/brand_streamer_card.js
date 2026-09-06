@@ -1,6 +1,7 @@
 // Brand dashboard streamer card (screen 21) — wires REAL 30-day track-record verification into the
 // faithful Pencil export. Auth-gated: /api/v1/lk/status (httpOnly cookie) → /login when unauthenticated,
-// brand paywall on 403. Data from the brand-gated GET /api/v1/brand/streamers/:login/card (4 layers
+// brand paywall for the non-brand role BEFORE any data request (403 stays as insurance). Data from
+// the brand-gated GET /api/v1/brand/streamers/:login/card (4 layers
 // composed from the live engine, no mocks; anything the engine can't back is in `deferred`).
 //
 // Layer-2 (authenticity) note (PO decision 2026-07-20): the design shows a per-check verdict for each
@@ -95,6 +96,8 @@
       setText(document, "Big", "—");
       setText(document, "HL2", "Недостаточно данных за 30 дней");
       hide(document, "Delta");
+      hide(document, "RS Bar");
+      hide(document, "Legend");
     } else {
       setText(document, "Big", fmt(l1.real_avg_viewers));
       var big = q(document, "Big");
@@ -107,6 +110,27 @@
       var corr = l1.bot_correction_pct == null ? null : Math.abs(l1.bot_correction_pct);
       if (corr == null || corr < 1) hide(document, "Delta");
       else setText(document, "DT", "−" + Math.round(corr) + "% от показанных");
+
+      // Reality bar + legend — recomputed from the real window (the design bakes 72% / «8 920
+      // реальных (72%)» / «3 480 скрытая разница»). Same pattern as brand_search.js RS Fill.
+      var rp = l1.real_pct != null ? l1.real_pct
+        : (l1.shown_avg_viewers ? (l1.real_avg_viewers / l1.shown_avg_viewers) * 100 : null);
+      if (rp == null) {
+        hide(document, "RS Bar");
+        hide(document, "Legend");
+      } else {
+        var fill = q(document, "RS Fill");
+        if (fill) fill.style.width = Math.max(0, Math.min(100, rp)) + "%";
+        var legReal = q(document, "Leg · 8 920 реальных (72%)");
+        if (legReal) setText(legReal, "LT", fmt(l1.real_avg_viewers) + " реальных (" + Math.round(rp) + "%)");
+        var diff = (l1.shown_avg_viewers != null && l1.real_avg_viewers != null)
+          ? l1.shown_avg_viewers - l1.real_avg_viewers : null;
+        var legDiff = q(document, "Leg · 3 480 скрытая разница");
+        if (legDiff) {
+          if (diff == null || diff < 1) legDiff.style.display = "none";
+          else setText(legDiff, "LT", fmt(diff) + " скрытая разница");
+        }
+      }
     }
 
     // Anomaly banner — real layer-5. Hide when there are none.
@@ -215,8 +239,11 @@
       hide(document, "Disp Col");
       hide(document, "Dispute");
     }
-    // 12-month reputation bars have no honest per-month series in this contract → hide the sample bars.
+    // 12-month reputation bars have no honest per-month series in this contract → hide the sample
+    // bars AND their baked month labels (Май…Апр) + the fake-position meter knob.
     hide(document, "Rep Bars");
+    hide(document, "Rep Labels");
+    hide(document, "Rep Knob");
   }
 
   // Deferred whole-sections / Pro-gated panels (no engine backing) — hidden honestly.
@@ -273,11 +300,24 @@
       });
   }
 
+  // Brand endpoints are gated on the brand role (business tier / active business-team — mirrors
+  // BrandStreamerCardPolicy). lk/status carries `roles`, so non-brand users get the paywall
+  // up-front, without firing a doomed data request. The in-load 403 path stays as insurance.
+  function isBrand(s) { return ((s && s.roles) || []).indexOf("brand") !== -1; }
+
+  // Only the lk/status outcome decides the /login redirect; any later boot/data error surfaces
+  // in-page — an authenticated user must never be bounced to /login by a data failure.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
+    .catch(function () { return null; })
     .then(function (s) {
       if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      load();
-    })
-    .catch(function () { window.location.href = "/login"; });
+      if (!isBrand(s)) { renderPaywall(); return; } // pre-request paywall for non-brand users
+      try {
+        load();
+      } catch (e) {
+        if (window.console) console.warn("[brand_streamer_card] boot failed:", e);
+        fullScreenMsg('<div style="font-size:15px;color:#9A9AA9;">Не удалось загрузить — попробуйте позже.</div>');
+      }
+    });
 })();

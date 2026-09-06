@@ -1,6 +1,7 @@
 // Brand dashboard compare (screen 23) — wires REAL side-by-side data into the faithful Pencil export.
 // Auth-gated: checks /api/v1/lk/status (httpOnly session cookie); unauthenticated → /login, non-brand
-// (403) → in-page upgrade prompt. Compared channels come from the URL (?channels=a,b,c&prices=…, in
+// role → in-page upgrade prompt BEFORE any data request (403 stays as insurance).
+// Compared channels come from the URL (?channels=a,b,c&prices=…, in
 // order); data from the brand-gated GET /api/v1/brand/compare (real 30-day audience, no mocks).
 //
 // The design is a metrics×streamers table with 3 sample columns; we render 2-4 real columns by cloning
@@ -105,6 +106,8 @@
   function renderSlots(channels) {
     var slots = q(document, "Slots");
     var addBtn = q(document, "Slot · Добавить");
+    // Real slot count (the design bakes "3 из 4").
+    setText(document, "Slots Count", channels.length + " из 4");
     // remove existing streamer slots (keep the Add button)
     Array.prototype.slice.call(slots.querySelectorAll('[data-pencil-name^="Slot · "]')).forEach(function (n) {
       if (n.getAttribute("data-pencil-name") !== "Slot · Добавить") n.remove();
@@ -291,17 +294,30 @@
       });
   }
 
-  function boot() {
+  // Brand endpoints are gated on the brand role (business tier / active business-team — mirrors
+  // BrandComparePolicy). lk/status carries `roles`, so non-brand users get the paywall up-front,
+  // without firing a doomed data request. The in-load 403 path stays as insurance.
+  function isBrand(s) { return ((s && s.roles) || []).indexOf("brand") !== -1; }
+
+  function boot(brandOk) {
+    if (!brandOk) { renderPaywall(); return; } // pre-request paywall for non-brand users
     if (!capture()) return; // markup changed — fail safe
     disableDeferred();
     load();
   }
 
+  // Only the lk/status outcome decides the /login redirect; any later boot/data error surfaces
+  // in-page — an authenticated user must never be bounced to /login by a data failure.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
+    .catch(function () { return null; })
     .then(function (s) {
       if (!s || !s.authenticated) { location.href = "/login"; return; }
-      boot();
-    })
-    .catch(function () { location.href = "/login"; });
+      try {
+        boot(isBrand(s));
+      } catch (e) {
+        if (window.console) console.warn("[brand_compare] boot failed:", e);
+        fullScreenMsg('<div style="font-size:15px;color:#9A9AA9;">Не удалось загрузить — попробуйте позже.</div>');
+      }
+    });
 })();

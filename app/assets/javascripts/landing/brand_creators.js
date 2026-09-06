@@ -2,7 +2,8 @@
 // REUSING the existing brand streamer search (GET /api/v1/brand/streamers/search — real 30-day audience
 // over trends_daily_aggregates, already scale-correct to ~10k channels; NO new backend). The result
 // card opens the cross-platform blogger profile (screen 61, /app/blogger/:login). Auth-gated:
-// /api/v1/lk/status → /login; 403 → in-page brand paywall.
+// /api/v1/lk/status → /login; non-brand role → in-page brand paywall before any data request
+// (403 stays as insurance).
 //
 // Twitch-anchored + descriptive (PO 2026-07-22): the design's social-platform / topic filter chips need
 // a footprint index / taxonomy → deferred (dimmed, «Скоро»); per-card «фейки N%», «480K ₽» price
@@ -134,6 +135,39 @@
     var perPage = data.per_page || results.length;
     var base = ((data.page || 1) - 1) * perPage;
     results.forEach(function (s, i) { grid.appendChild(buildCard(s, base + i + 1)); });
+    renderLoadMore(data, base, results.length);
+  }
+
+  // Real pagination for the design's baked "Показать ещё 24 блогера / Показаны 1–8 из 248" block:
+  // real range + remaining count from the API's page/per_page/total; hidden when the last page is shown.
+  var loadMoreWired = false;
+  function renderLoadMore(data, base, count) {
+    var block = q(document, "Load More");
+    if (!block) return;
+    var total = data.total || 0;
+    var shownEnd = base + count;
+    if (shownEnd >= total) { block.style.display = "none"; return; }
+    block.style.display = "";
+    var next = Math.min(data.per_page || count, total - shownEnd);
+    setText(document, "Load More T",
+      "Показать ещё " + next + " " + plural(next, "блогера", "блогера", "блогеров"));
+    setText(document, "Load More Count", "Показаны " + (base + 1) + "–" + shownEnd + " из " + fmt(total));
+    var btn = q(document, "Load More Btn");
+    if (btn && !loadMoreWired) {
+      loadMoreWired = true;
+      btn.style.cursor = "pointer";
+      btn.addEventListener("click", function () {
+        var p = currentParams();
+        p.page = String((parseInt(p.page, 10) || 1) + 1);
+        pushParams(p);
+        load();
+      });
+    }
+  }
+
+  function hideLoadMore() {
+    var block = q(document, "Load More");
+    if (block) block.style.display = "none";
   }
 
   function renderEmpty(msg) {
@@ -143,6 +177,7 @@
     box.textContent = msg;
     clearCards();
     grid.appendChild(box);
+    hideLoadMore();
   }
 
   function renderPaywall() {
@@ -157,6 +192,7 @@
     clearCards();
     grid.appendChild(box);
     setText(document, "TB Found", "");
+    hideLoadMore();
   }
 
   function load() {
@@ -203,6 +239,22 @@
       n.style.pointerEvents = "none";
       n.title = "Скоро";
     });
+    // Geo / demographics / ER filter sections have no API backing (search params: category, language,
+    // platform, min_real, frequency, classification, sort, page) → dim like the topic chips and blank
+    // their baked demo values («Россия», «Москва, СПб +3», «25–34 (ядро)») — no fake filter state.
+    ["Sec · Гео", "Sec · Демография", "Sec · Вовлечённость (ER)"].forEach(function (a) {
+      var n = q(document, a);
+      if (n) { n.style.opacity = "0.4"; n.style.pointerEvents = "none"; n.title = "Скоро"; }
+    });
+    ["SelV · Страна", "SelV · Город", "SelV · Возраст"].forEach(function (a) { setText(document, a, "—"); });
+    setText(document, "LRb · ER", "—");            // baked «от 4.0%» value of the dimmed ER slider
+    hide(q(document, "Rail Count"));               // baked «23 параметра» badge — no honest live count
+    setText(document, "Apply T", "Показать");      // baked «Показать 248 блогеров» — no number upfront
+    var apply = q(document, "Apply Btn");
+    if (apply) {
+      apply.style.cursor = "pointer";
+      apply.addEventListener("click", function () { load(); }); // re-run the search with current params
+    }
   }
 
   function chipSelected(node, on) {
@@ -231,19 +283,35 @@
     });
   }
 
-  function boot() {
+  // Brand endpoints are gated on the brand role (business tier / active business-team — mirrors
+  // BrandStreamerSearchPolicy). lk/status carries `roles`, so non-brand users get the paywall
+  // up-front, without firing a doomed data request. The in-load 403 path stays as insurance.
+  function isBrand(s) { return ((s && s.roles) || []).indexOf("brand") !== -1; }
+
+  function boot(brandOk) {
     if (!captureTemplate()) return; // markup changed — fail safe, leave the design as-is
-    wireSort();
     stripAndDefer();
+    if (!brandOk) { renderPaywall(); return; } // pre-request paywall for non-brand users
+    wireSort();
     wirePlatform();
     load();
   }
 
+  // Only the lk/status outcome decides the /login redirect; any later boot/data error surfaces
+  // in-page (renderEmpty) — an authenticated user must never be bounced to /login by a data failure.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
+    .catch(function () { return null; })
     .then(function (s) {
       if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      boot();
-    })
-    .catch(function () { window.location.href = "/login"; });
+      try {
+        boot(isBrand(s));
+      } catch (e) {
+        if (window.console) console.warn("[brand_creators] boot failed:", e);
+        if (grid) {
+          setText(document, "TB Found", "—");
+          renderEmpty("Не удалось загрузить — попробуйте позже.");
+        }
+      }
+    });
 })();

@@ -1,5 +1,6 @@
 // Brand-side blogger social profile (screen 61) — wires REAL descriptive cross-platform analytics into
-// the faithful Pencil export for ANY streamer (login from /app/blogger/:login). Same keyless engine as
+// the faithful Pencil export for ANY streamer (login from /blogger/:login, /app-prefixed on staging).
+// Same keyless engine as
 // screen 50: GET /api/v1/social/streamers/:login (Twitch socialMedias seed → Telegram/YouTube public
 // metrics: subs / reach / ER / просматриваемость). Brand-gated shell (/api/v1/lk/status → /login).
 //
@@ -59,6 +60,9 @@
   function stripFraud() {
     hide(q("Card Доверие"));               // trust/methodology card — «bot-corrected», not computed
     hide(q("KPITag Реальная аудитория"));  // «наш расчёт» fraud tag on the hero KPI
+    hide(q("Rel Hero"));                   // baked «Безупречная» reliability verdict — no reputation verdict on socials
+    hide(q("HimVerified"));                // baked «HimRate Verified» badge (HV I/HV T) — no verification system exists
+    hide(q("Verified"));                   // baked blue check next to the name — same nonexistent verification claim
     hide(q("KPI Подписчики всего"));        // raw-vs-corrected pair → keep only the descriptive sum
     hide(q("KPI Div"));                     // one divider left over from the hidden KPI (best-effort)
     hide(q("PromoOrg"));                    // promo vs organic split — we do not classify posts
@@ -144,8 +148,27 @@
 
   function renderHeader(profile) {
     var socials = (profile && profile.socials) || [];
-    if (profile && profile.login) setT("Handle", "@" + String(profile.login).replace(/^@/, ""));
-    setT("Plat Count", socials.length + " " + plural(socials.length, "площадка", "площадки", "площадок"));
+    var login = profile && profile.login;
+    // Real identity — the export bakes «Мария Вэй» / «@maryway …»; never leave the demo persona.
+    setT("Name", (profile && (profile.display_name || profile.login)) || "—");
+    setT("Handle", login ? "@" + String(login).replace(/^@/, "") : "—");
+    setT("Plat Count", login
+      ? socials.length + " " + plural(socials.length, "площадка", "площадки", "площадок")
+      : "—");
+    renderPlatIcons(socials);
+  }
+
+  // Header platform icons are baked (yt/ig/tg/vk/tt in Plat Row) — show only the platforms actually
+  // linked on Twitch; everything else is a fake platform claim and gets hidden.
+  function renderPlatIcons(socials) {
+    var row = q("Plat Row");
+    if (!row) return;
+    var linked = {};
+    (socials || []).forEach(function (s) { if (s && s.platform) linked[s.platform] = true; });
+    PLATFORMS.forEach(function (p) {
+      var icon = q("Plat " + AB[p], row);
+      if (icon) icon.style.display = linked[p] ? "" : "none";
+    });
   }
 
   // Honest pending state: while the worker warms up (first crawl takes minutes) the Pencil export's
@@ -162,7 +185,7 @@
     root.insertBefore(d, root.firstChild);
   }
 
-  function renderPending() {
+  function renderPending(login) {
     // KPIV/KPIS of every slot + SV of every metric — prefix-scan (slot labels vary per export)
     ["KPIV ", "KPIS ", "SV "].forEach(function (prefix) {
       Array.prototype.slice.call(document.querySelectorAll('[data-pencil-name^="' + cssEsc(prefix) + '"]')).forEach(function (n) {
@@ -173,13 +196,32 @@
       setT("AcctV " + AB[p], "—");
       setT("AcctERt " + AB[p], "—");
     });
-    setT("Handle", "—");
+    // Identity we already know (the URL login) is real — show it; everything unknown goes blank,
+    // including the baked header platform icons (footprint not fetched yet).
+    setT("Name", login || "—");
+    setT("Handle", login ? "@" + login : "—");
+    setT("Plat Count", "—");
+    renderPlatIcons([]);
     renderPendingNote();
+  }
+
+  // Visible load-failure note (the old silent render({}) hid the failure entirely).
+  function renderErrorNote() {
+    if (q("ErrorNote")) return; // idempotent
+    var hero = q("Handle");
+    var root = (hero && hero.parentNode) || document.body;
+    var d = document.createElement("div");
+    d.setAttribute("data-pencil-name", "ErrorNote");
+    d.style.cssText = "padding:20px 8px;color:#F0616D;font-family:Inter,system-ui,sans-serif;font-size:14px;";
+    d.textContent = "Не удалось загрузить — попробуйте позже.";
+    root.insertBefore(d, root.firstChild);
   }
 
   function render(profile) {
     var note = q("PendingNote");
     if (note) note.remove();
+    var err = q("ErrorNote");
+    if (err) err.remove();
 
     var platforms = (profile && profile.platforms) || {};
     var footprint = {};
@@ -200,27 +242,43 @@
         var d = (resp && resp.data) || {};
         clearTimeout(pollTimer);
         if (d.status === "pending") {
-          if (!pendingShown) { pendingShown = true; stripFraud(); renderPending(); }
+          if (!pendingShown) { pendingShown = true; stripFraud(); renderPending(login); }
           pollTimer = setTimeout(function () { load(login); }, 6000);
           return;
         }
         render(d);
       })
-      .catch(function () { render({}); });
+      .catch(function (e) {
+        // Data failure → blank the export's mocks + a VISIBLE error (never a silent demo persona).
+        if (window.console) console.warn("[blogger_profile] load failed:", e);
+        render({});
+        // Keep the real identity from the URL — only the analytics failed, not who the page is about.
+        setT("Name", login);
+        setT("Handle", "@" + login);
+        renderErrorNote();
+      });
   }
 
   function loginFromPath() {
-    var m = location.pathname.match(/\/app\/blogger\/([A-Za-z0-9_]+)/);
+    // Works in both path schemes: canonical app.himrate.com/blogger/:login and staging /app/blogger/:login.
+    var m = location.pathname.match(/\/blogger\/([A-Za-z0-9_]+)/);
     if (m) return m[1];
     return new URLSearchParams(location.search).get("login") || "";
   }
 
+  // Only the lk/status outcome decides the /login redirect; any later boot/data error surfaces
+  // in-page — an authenticated user must never be bounced to /login by a data failure.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
+    .catch(function () { return null; })
     .then(function (s) {
       if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      var login = loginFromPath();
-      if (login) load(login); else render({});
-    })
-    .catch(function () { window.location.href = "/login"; });
+      try {
+        var login = loginFromPath();
+        if (login) load(login); else render({}); // no login in URL → blank the export's mocks
+      } catch (e) {
+        if (window.console) console.warn("[blogger_profile] boot failed:", e);
+        renderErrorNote();
+      }
+    });
 })();

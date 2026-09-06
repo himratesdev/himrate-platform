@@ -1,6 +1,7 @@
 // Brand dashboard streamer search (screen 20) — wires REAL ranked data into the faithful Pencil
 // export. Auth-gated: checks /api/v1/lk/status (httpOnly session cookie); unauthenticated → /login,
-// non-brand (403) → in-page upgrade prompt. Results come from the brand-gated
+// non-brand role → in-page upgrade prompt BEFORE any data request (403 stays as insurance).
+// Results come from the brand-gated
 // GET /api/v1/brand/streamers/search (real 30-day audience over trends_daily_aggregates, no mocks).
 //
 // Scope (working page, additive): results grid + count are fully real; Sort (click-cycles the 3 real
@@ -44,6 +45,10 @@
     "Check · Twitch", "Check · YouTube", "Check · Telegram", "Check · VK Play",
     "Check · Безупречная", "Check · Стабильная", "Check · Изменчивая", "Check · Нестабильная",
     "Btn · Сохранить поиск",
+    // Unwired controls carrying baked demo values (category/language selects, min-real/budget
+    // sliders) — dimmed here; their fake values are blanked in disableDeferred().
+    "Select · Dota 2, CS2 +2", "Select · Русский",
+    "Field · Мин. реальных зрителей", "Field · Бюджет за интеграцию",
   ];
   // Compare/overlap selection (feeds /app/compare + /app/overlap, both take 2-4 channels).
   var MAX_SELECT = 4;
@@ -53,6 +58,9 @@
   // ---- dom helpers ----
   function q(root, name) {
     return (root || document).querySelector('[data-pencil-name="' + name + '"]');
+  }
+  function qaAll(name) {
+    return Array.prototype.slice.call(document.querySelectorAll('[data-pencil-name="' + name + '"]'));
   }
   function setText(root, name, text) {
     var n = q(root, name);
@@ -352,6 +360,11 @@
         n.title = "Скоро";
       }
     });
+    // Blank the baked demo values of the disabled controls (select values, slider values, per-platform
+    // counts) — a dimmed fake number is still a fake number.
+    qaAll("Sel V").concat(qaAll("Sl Val")).concat(qaAll("Cnt")).forEach(function (n) {
+      n.textContent = "—";
+    });
   }
 
   // ---- selection action bar (Compare / Overlap of the picked streamers) ----
@@ -399,21 +412,37 @@
     setBtn(overlapBtn, ready ? "Пересечение (" + n + ")" : "Пересечение аудиторий", ready);
   }
 
-  // ---- boot: auth gate then load ----
-  function boot() {
+  // ---- boot: auth + role gate then load ----
+  // Brand endpoints are gated on the brand role (business tier / active business-team — mirrors
+  // BrandStreamerSearchPolicy). lk/status carries `roles`, so non-brand users get the paywall
+  // up-front, without firing a doomed data request. The in-load 403 path stays as insurance.
+  function isBrand(s) { return ((s && s.roles) || []).indexOf("brand") !== -1; }
+
+  function boot(brandOk) {
     if (!captureTemplates()) return; // markup changed — fail safe, leave design as-is
+    disableDeferred();
+    if (!brandOk) { renderPaywall(); return; } // pre-request paywall for non-brand users
     wireSort();
     wireFrequency();
     wireSelection();
-    disableDeferred();
     load();
   }
 
+  // Only the lk/status outcome decides the /login redirect; any later boot/data error surfaces
+  // in-page (renderEmpty) — an authenticated user must never be bounced to /login by a data failure.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
+    .catch(function () { return null; })
     .then(function (s) {
       if (!s || !s.authenticated) { window.location.href = "/login"; return; }
-      boot();
-    })
-    .catch(function () { window.location.href = "/login"; });
+      try {
+        boot(isBrand(s));
+      } catch (e) {
+        if (window.console) console.warn("[brand_search] boot failed:", e);
+        if (grid) {
+          setText(document, "RT Count", "—");
+          renderEmpty("Не удалось загрузить — попробуйте позже.");
+        }
+      }
+    });
 })();

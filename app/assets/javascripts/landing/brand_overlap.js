@@ -1,6 +1,7 @@
 // Brand dashboard audience overlap (screen 24) — wires REAL chat-audience overlap into the faithful
 // Pencil export. Auth-gated: checks /api/v1/lk/status (httpOnly session cookie); unauthenticated →
-// /login, non-brand (403) → in-page upgrade prompt. Compared channels come from the URL
+// /login, non-brand role → in-page upgrade prompt BEFORE any data request (403 stays as
+// insurance). Compared channels come from the URL
 // (?channels=a,b,c); data from the brand-gated GET /api/v1/brand/overlap (chat-presence graph).
 //
 // The overlap is a CHATTERS-only basis (audience_basis="chat_presence") — the design has no such
@@ -75,7 +76,7 @@
   function render(d) {
     var channels = d.channels || [];
     renderHero(d, channels);
-    renderKpi(d);
+    renderKpi(d, channels);
     renderMatrix(channels, d.matrix || {});
     renderPairwise(d.pairwise || []);
     renderComposition(d.composition || [], channels);
@@ -90,14 +91,28 @@
     setText(document, "Big V", fmt(d.unique_reach));
     setText(document, "DL V", pct(d.unique_percentage));
     setText(document, "Hero Sub", "из " + fmt(d.total_reach) + " суммарно — " + fmt(d.total_reach - d.unique_reach) + " дублей");
+    // Composition subtitle — the design bakes "…17 240 реальных людей"; use the real unique reach
+    // (chat-presence basis, so no "реальных людей" claim — the basis disclaimer is injected below).
+    setText(document, "CS", d.unique_reach != null
+      ? "из чего складываются " + fmt(d.unique_reach) + " уникальных зрителей"
+      : "структура уникального охвата");
   }
 
-  function renderKpi(d) {
+  function renderKpi(d, channels) {
     var total = q(document, "KPI · Суммарно по каналам");
-    if (total) setText(total, "K V", fmt(d.total_reach));
+    if (total) {
+      setText(total, "K V", fmt(d.total_reach));
+      // KPI tag — the design bakes "3 канала"; sync with the real channel count.
+      setText(total, "KT", channels.length + " " + plural(channels.length, "канал", "канала", "каналов"));
+    }
     var shared = (d.composition || []).filter(function (s) { return s.segment === "shared_2plus"; })[0];
+    var sharedCount = shared ? shared.count : d.total_reach - d.unique_reach;
     var inter = q(document, "KPI · Пересечение аудиторий");
-    if (inter) setText(inter, "K V", fmt(shared ? shared.count : d.total_reach - d.unique_reach));
+    if (inter) {
+      setText(inter, "K V", fmt(sharedCount));
+      // KPI tag — the design bakes "24%"; recompute the shared share of the summed reach.
+      setText(inter, "KT", d.total_reach ? pct(sharedCount / d.total_reach * 100) : "—");
+    }
     // "Переплата за дубли" needs a CPM the engine doesn't have → hide honestly (no fabricated ₽).
     hide(q(document, "KPI · Переплата за дубли"));
   }
@@ -267,18 +282,31 @@
         fullScreenMsg('<div style="font-size:15px;color:#9A9AA9;">Не удалось загрузить пересечение. Попробуйте позже.</div>');
       });
   }
-  function boot() {
+  // Brand endpoints are gated on the brand role (business tier / active business-team — mirrors
+  // BrandOverlapPolicy). lk/status carries `roles`, so non-brand users get the paywall up-front,
+  // without firing a doomed data request. The in-load 403 path stays as insurance.
+  function isBrand(s) { return ((s && s.roles) || []).indexOf("brand") !== -1; }
+
+  function boot(brandOk) {
+    if (!brandOk) { renderPaywall(); return; } // pre-request paywall for non-brand users
     if (!capture()) return;
     var rc = q(document, "Btn · Пересчитать");
     if (rc) { rc.style.cursor = "pointer"; rc.addEventListener("click", function () { location.href = hrApp("/search"); }); }
     load();
   }
 
+  // Only the lk/status outcome decides the /login redirect; any later boot/data error surfaces
+  // in-page — an authenticated user must never be bounced to /login by a data failure.
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
+    .catch(function () { return null; })
     .then(function (s) {
       if (!s || !s.authenticated) { location.href = "/login"; return; }
-      boot();
-    })
-    .catch(function () { location.href = "/login"; });
+      try {
+        boot(isBrand(s));
+      } catch (e) {
+        if (window.console) console.warn("[brand_overlap] boot failed:", e);
+        fullScreenMsg('<div style="font-size:15px;color:#9A9AA9;">Не удалось загрузить — попробуйте позже.</div>');
+      }
+    });
 })();
