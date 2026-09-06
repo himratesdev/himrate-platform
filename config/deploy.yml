@@ -137,6 +137,11 @@ servers:
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
+      # Server ISP blocks the Telegram DC subnet the DNS A-record points at (149.154.166.x)
+      # while 149.154.167.220 stays reachable — pin it so TelegramAlertWorker can egress.
+      # Same pin lives in ~/bin/himrate-watchdog.sh on the host. If alerts stop delivering,
+      # re-probe: curl --resolve api.telegram.org:443:<ip> https://api.telegram.org/
+      add-host: "api.telegram.org:149.154.167.220"
 
   # TASK-110 v1.2 (CR S-7): dedicated Sidekiq role для whisper_transcripts queue concurrency=1.
   # CPU isolation — один transcript job в момент, prevents starvation web/job (HOSTKEY 8 vCPU).
