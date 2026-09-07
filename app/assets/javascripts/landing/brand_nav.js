@@ -134,6 +134,37 @@
     });
   }
 
+  // The topbar carries a search control on EVERY dashboard page («Поиск канала или стримера…»), but
+  // the export ships it as a plain caption — clicking it did nothing anywhere. Turn that caption into
+  // the real search box here, once, so every page gets it (a page-local widget would have to be
+  // repeated 16 times and would fight each page's own re-renders).
+  function wireTopbarSearch() {
+    var placeholder = q("Search Ph") || q("BS Ph");
+    if (!placeholder || !window.hrMountSearch) return;
+    var box = placeholder.parentNode;
+    if (!box) return;
+
+    placeholder.style.display = "none";
+    var slot = document.createElement("div");
+    slot.setAttribute("data-pencil-name", "Topbar Search Slot");
+    slot.style.cssText = "flex:1 1 0;min-width:0;";
+    box.insertBefore(slot, placeholder);
+
+    var mounted = window.hrMountSearch({
+      mount: slot,
+      placeholder: placeholder.textContent.trim() || "Поиск канала или стримера…",
+      onPick: function (row) { window.location.href = "/c/" + encodeURIComponent(row.login); }
+    });
+    if (mounted && mounted.input) {
+      // Sit inside the design's own pill: no border/background of our own, just the field.
+      mounted.input.style.border = "0";
+      mounted.input.style.background = "transparent";
+      mounted.input.style.padding = "0";
+      mounted.input.parentNode.style.maxWidth = "none";
+    }
+  }
+  wireTopbarSearch();
+
   fetch("/api/v1/lk/status", { headers: { Accept: "application/json" }, credentials: "same-origin" })
     .then(function (r) { return r.ok ? r.json() : {}; })
     .then(function (s) {

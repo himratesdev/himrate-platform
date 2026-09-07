@@ -15,14 +15,18 @@
   "use strict";
 
   // Channel search — the surface promises "поиск", but the design ships only filters: there was no
-  // way to look a streamer up by name. Mounted above the results; a pick opens that streamer's card.
+  // way to look a streamer up by name. Mounted ABOVE the results block as a sibling: the results
+  // container itself is rebuilt on every load, so anything placed inside it gets wiped.
+  // Idempotent — re-running after a re-render just reuses the existing slot.
   function mountChannelSearch() {
     if (!window.hrMountSearch) return;
-    var host = q(document, "TB Left") || q(document, "Filters") || document.body;
+    if (document.querySelector('[data-pencil-name="Search Slot"]')) return;
+    var anchor = q(document, "Results") || q(document, "Grid") || q(document, "TB Left");
+    if (!anchor || !anchor.parentNode) return;
     var slot = document.createElement("div");
     slot.setAttribute("data-pencil-name", "Search Slot");
-    slot.style.cssText = "margin:0 0 14px;";
-    host.insertBefore(slot, host.firstChild);
+    slot.style.cssText = "margin:0 0 14px;width:100%;";
+    anchor.parentNode.insertBefore(slot, anchor);
     window.hrMountSearch({
       mount: slot,
       placeholder: "Поиск блогера: ник, Telegram, YouTube…",
@@ -321,7 +325,6 @@
     .then(function (s) {
       if (!s || !s.authenticated) { window.location.href = "/login"; return; }
       try {
-        mountChannelSearch();
         boot(isBrand(s));
       } catch (e) {
         if (window.console) console.warn("[brand_creators] boot failed:", e);

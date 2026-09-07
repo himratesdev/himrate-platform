@@ -26,11 +26,15 @@ module SocialAnalytics
 
       # Build-for-scale: no single external source may crash the whole warm. Each fetch degrades to
       # its own empty/unavailable result so the profile always assembles (footprint + whatever analysed).
-      socials = safe("TwitchSocials") { TwitchSocials.call(@login) }
+      panel = safe("TwitchSocials") { TwitchSocials.call(@login) }
+      stored = stored_links
       # nil = the Twitch socialMedias SEED fetch failed (transient GQL rate-limit / service error) — return
       # nil so ProfileRefreshWorker does NOT cache an empty profile for 24h (a streamer would see «no
       # socials» until expiry); the endpoint re-warms on the next request. [] = genuinely no linked socials.
-      return nil if socials.nil?
+      # Exception: when we already hold stored links, serve those rather than nothing.
+      return nil if panel.nil? && stored.empty?
+
+      socials = merge_sources(panel || [], stored)
 
       {
         login: @login,
@@ -43,6 +47,32 @@ module SocialAnalytics
     end
 
     private
+
+    # The Twitch panel is only what a streamer bothered to fill in — plenty never add their Telegram
+    # (dear_hellgirl declares one donation link there, while her real Telegram is announced in chat
+    # every stream). channel_social_links holds that second, harvested footprint, so the profile must
+    # read BOTH. Provenance rides along in `source` so the UI can say where a link came from.
+    def stored_links
+      channel = Channel.active.find_by(login: @login)
+      return [] unless channel
+
+      channel.social_links.map do |link|
+        { platform: link.platform, title: link.title, url: link.url, handle: link.handle,
+          analyzable: link.analyzable, source: link.source }
+      end
+    end
+
+    # Panel wins on conflict (a declared link is a statement of fact; a harvested one is our
+    # inference), and identity is (platform + handle-or-url) so the same account never doubles up.
+    def merge_sources(panel, stored)
+      panel_rows = panel.map { |row| row.merge(source: row[:source] || "twitch_panel") }
+      seen = panel_rows.to_set { |row| identity(row) }
+      panel_rows + stored.reject { |row| seen.include?(identity(row)) }
+    end
+
+    def identity(row)
+      [ row[:platform].to_s.downcase, (row[:handle].presence || row[:url]).to_s.downcase.chomp("/") ]
+    end
 
     def safe(label)
       yield
