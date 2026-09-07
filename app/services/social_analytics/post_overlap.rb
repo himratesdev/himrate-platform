@@ -46,19 +46,22 @@ module SocialAnalytics
     # → { reposted:, repost_partners:, giveaway:, posts_seen: }
     def context_for(handle)
       escaped = handle.to_s.downcase.gsub("'", "''")
+      # ClickHouse has no correlated subqueries ("Resolve identifier from parent scope only supported
+      # for constants and CTE") — pre-aggregate how many channels carry each text, then join.
       row = @client.select(<<~SQL).first
-        SELECT countIf(shared > 1) AS reposted_posts,
-               countIf(has_giveaway = 1) AS giveaway_posts,
-               count() AS posts_seen
-        FROM (
-          SELECT p.text_hash AS text_hash, p.has_giveaway AS has_giveaway,
-                 (SELECT uniqExact(handle) FROM #{table}
-                   WHERE text_hash = p.text_hash AND text_hash != 0
-                     AND published_at > now() - INTERVAL #{LOOKBACK_DAYS} DAY) AS shared
-          FROM #{table} AS p
-          WHERE lower(p.handle) = '#{escaped}'
-            AND p.published_at > now() - INTERVAL #{LOOKBACK_DAYS} DAY
+        WITH spread AS (
+          SELECT text_hash, uniqExact(handle) AS channels
+          FROM #{table}
+          WHERE published_at > now() - INTERVAL #{LOOKBACK_DAYS} DAY AND text_hash != 0
+          GROUP BY text_hash
         )
+        SELECT countIf(s.channels > 1) AS reposted_posts,
+               countIf(p.has_giveaway = 1) AS giveaway_posts,
+               count() AS posts_seen
+        FROM #{table} AS p
+        LEFT JOIN spread AS s ON s.text_hash = p.text_hash
+        WHERE lower(p.handle) = '#{escaped}'
+          AND p.published_at > now() - INTERVAL #{LOOKBACK_DAYS} DAY
       SQL
       return {} if row.nil?
 
