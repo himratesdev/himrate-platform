@@ -120,6 +120,15 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-251.B: classify captured IRC raids into RaidAttribution (signal #9), gated :raid_detection"
       },
+      # «Паутинка»: the full audience-overlap graph is a heavy pairwise aggregate over the
+      # ClickHouse presence layer. Recompute it in the background every 2h so a page load is always
+      # a cache hit (its CACHE_TTL is 3h — longer than this cadence, so the entry never lapses).
+      "graph_cache_warm" => {
+        "cron" => "7 */2 * * *", # every 2 hours, off the top of the hour
+        "class" => "Graph::CacheWarmWorker",
+        "queue" => "long_running",
+        "description" => "Warm the full audience-overlap graph payload (compute-on-read, tens of seconds)"
+      },
       # TASK-H8 Day-0: nightly close-out of expired promo grants (subscription deactivate +
       # tier recompute). 03:30 UTC — staggered from the 03:00/03:15 heavy jobs; itself light.
       "promo_expiry_nightly" => {

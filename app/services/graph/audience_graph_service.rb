@@ -21,11 +21,14 @@ module Graph
     TOP_CHANNELS = 200
     EGO_NEIGHBOURS = 60
     WINDOW_DAYS = 30
-    CACHE_TTL = 1.hour
-    FOCUS_CACHE_TTL = 10.minutes
+    CACHE_TTL = 3.hours
+    FOCUS_CACHE_TTL = 30.minutes
+    FULL_CACHE_KEY = "graph:audience:v2:full"
 
+    # The full graph is kept warm by Graph::CacheWarmWorker (the pairwise join is background work,
+    # not request work); this fetch is the safety net for a cold cache, not the normal path.
     def self.call(focus: nil)
-      key = focus ? "graph:audience:v2:focus:#{focus}" : "graph:audience:v2:full"
+      key = focus ? "graph:audience:v2:focus:#{focus}" : FULL_CACHE_KEY
       Rails.cache.fetch(key, expires_in: focus ? FOCUS_CACHE_TTL : CACHE_TTL) do
         new(focus: focus).build
       end

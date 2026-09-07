@@ -62,19 +62,24 @@ module Chat
       return [] if logins.blank? || logins.size < 2
 
       rows = @client.select(<<~SQL)
-        WITH targets AS (
-          -- Only chatters of the asked-for channels can form an edge between them: narrowing here
-          -- keeps the eligibility pass off the full 2M-chatter table (10.7s → sub-second).
-          SELECT DISTINCT username
-          FROM #{TABLE}
-          WHERE #{window_filter} AND #{source_filter} AND channel_login IN (#{quoted(logins)})
-        ),
-        eligible AS (
+        WITH linkers AS (
+          -- A chatter can only create an edge INSIDE the asked-for set if they appear in at least
+          -- two of those channels. Filtering on that first shrinks the self-join input by an order
+          -- of magnitude (the global 2..N eligibility pass alone scanned every chatter we know).
           SELECT username
           FROM #{TABLE}
-          WHERE #{window_filter} AND #{source_filter} AND username IN (SELECT username FROM targets)
+          WHERE #{window_filter} AND #{source_filter} AND channel_login IN (#{quoted(logins)})
           GROUP BY username
-          HAVING uniqExact(channel_login) BETWEEN 2 AND #{MAX_USER_CHANNELS}
+          HAVING uniqExact(channel_login) >= 2
+        ),
+        eligible AS (
+          -- Serial-lurker cap stays global: someone sitting in more than MAX_USER_CHANNELS channels
+          -- overall would wire everything to everything.
+          SELECT username
+          FROM #{TABLE}
+          WHERE #{window_filter} AND #{source_filter} AND username IN (SELECT username FROM linkers)
+          GROUP BY username
+          HAVING uniqExact(channel_login) <= #{MAX_USER_CHANNELS}
         ),
         p AS (
           SELECT DISTINCT channel_login, username
