@@ -189,6 +189,14 @@ module FlipperDefaults
     # (chat_writes_clickhouse, chat_backfill_running, chat_reads_clickhouse_dual_read,
     # chat_reads_clickhouse). All paths now CH-only; backfill service deleted. Any future
     # re-backfill would require new source + new service implementation, не re-using these flags.
+    # OPEN-HOUSE: treat every SIGNED-IN user as top tier so testers can walk the whole product
+    # without promo codes (ApplicationPolicy#open_house? + User#brand? for the client-side
+    # paywalls). Registered here on purpose — created-but-OFF on boot, flipped by hand: a switch
+    # that gives paid surfaces away must never come back ON by accident on a redeploy.
+    #   on:  bin/rails runner 'Flipper.enable(:open_house_all_features)'
+    #   off: bin/rails runner 'Flipper.disable(:open_house_all_features)'
+    # Inventory of what it opens: docs/access/paid_surface_registry.md
+    open_house_all_features: "OPEN-HOUSE",
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
     accessory_auto_remediation: "BUG-010 PR3" # Kill switch для AutoRemediation::TriggerService
     # GitHub workflow_dispatch. Default OFF — operators enable через

@@ -71,9 +71,12 @@ class User < ApplicationRecord
     is_streamer
   end
 
-  # Mirrors ApplicationPolicy#effective_business? (business tier OR active business-team).
+  # Mirrors ApplicationPolicy#effective_business? (business tier OR active business-team), plus the
+  # OPEN-HOUSE testing switch (Flipper :open_house_all_features) so the CLIENT-side paywalls — which
+  # read `roles` from /lk/status — open together with the server-side ones. Without this the API
+  # would answer while the UI still drew a paywall.
   def brand?
-    tier == "business" || business_via_active_team?
+    tier == "business" || business_via_active_team? || Flipper.enabled?(:open_house_all_features)
   end
 
   ROLE_NAMES = %i[viewer streamer brand].freeze

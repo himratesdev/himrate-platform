@@ -48,12 +48,21 @@ class ApplicationPolicy
     user.present?
   end
 
+  # OPEN-HOUSE (Flipper :open_house_all_features) — a testing switch, not a pricing change.
+  # While enabled EVERY signed-in user is treated as top tier, so friends/testers can walk the
+  # whole product without codes. Guests stay guests (nothing public changes). Flip it off and
+  # paid gating is exactly as before — no migration, no data touched. The inventory of what this
+  # opens is docs/access/paid_surface_registry.md.
+  def open_house?
+    registered? && Flipper.enabled?(:open_house_all_features)
+  end
+
   def business?
-    registered? && user.tier == "business"
+    registered? && (user.tier == "business" || open_house?)
   end
 
   def premium?
-    registered? && user.tier == "premium"
+    registered? && (user.tier == "premium" || open_house?)
   end
 
   def free?
