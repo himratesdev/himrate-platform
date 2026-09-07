@@ -120,6 +120,15 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-251.B: classify captured IRC raids into RaidAttribution (signal #9), gated :raid_detection"
       },
+      # Store streamers' public Telegram posts so a view spike can be explained (giveaway / repost)
+      # and so identical posts across channels surface as repost networks. External HTTP per channel
+      # → bounded batch, hourly, on :long_running.
+      "social_post_harvest" => {
+        "cron" => "25 * * * *",
+        "class" => "Social::PostHarvestWorker",
+        "queue" => "long_running",
+        "description" => "Harvest public Telegram posts (views/text/links) for explanation + overlap"
+      },
       # Social footprint, second source: mine the chat archive for links a channel announces in its
       # own chat (Twitch's panel only carries what the streamer bothered to fill in). Nightly —
       # announcements repeat for weeks, nothing is time-critical, and it is one ClickHouse pass.

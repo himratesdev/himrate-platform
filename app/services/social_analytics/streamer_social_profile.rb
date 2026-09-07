@@ -89,11 +89,19 @@ module SocialAnalytics
       base = { handle: tg[:handle], url: tg[:url] }
       return base.merge(available: false) unless profile
 
+      # Descriptive observations, NOT a verdict (socials carry no fraud judgement — canon). Post
+      # context comes from the stored corpus so an unusual number can be explained by what actually
+      # happened (a giveaway, a repost) instead of hanging there as a bare suspicion.
+      context = safe("PostOverlap") { PostOverlap.new.context_for(tg[:handle]) } || {}
+      observations = Telegram::Observations.call(profile, posts_context: context)
+
       base.merge(
         available: true,
         title: profile[:title],
         subscribers: profile[:subscribers],
         metrics: profile[:metrics],
+        observations: observations.map { |o| { code: o.code, text: o.text, tone: o.tone, evidence: o.evidence } },
+        post_context: context,
         recent_posts: profile[:posts].first(20)
       )
     end

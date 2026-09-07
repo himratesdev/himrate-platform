@@ -97,13 +97,30 @@ module SocialAnalytics
       end
 
       # Each message bubble carries a views span + an ISO datetime; media presence is a photo/video wrap.
+      # We also lift the post id and its text: a view spike is only interpretable when you can see
+      # WHAT the post was — a giveaway, or the same text reposted across channels. Without that a
+      # brand reads a spike as reach it can buy, when it was one contest or one big-channel repost.
       def self.parse_posts(html)
         views = html.scan(/tgme_widget_message_views">([^<]+)</).flatten
         dates = html.scan(/datetime="([^"]+)"/).flatten
+        ids = html.scan(/data-post="([^"]+)"/).flatten
+        texts = html.scan(%r{js-message_text[^>]*>(.*?)</div>}m).flatten
         n = [ views.size, dates.size ].min
         (0...n).map do |i|
-          { views: to_i(views[i]), at: dates[i] }
+          text = strip_tags(texts[i])
+          { views: to_i(views[i]), at: dates[i], post_id: ids[i],
+            text: text, links: text.to_s.scan(%r{https?://\S+}).first(5) }
         end
+      end
+
+      # Telegram wraps text in markup and encodes entities; we keep the readable line only.
+      def self.strip_tags(fragment)
+        return nil if fragment.nil?
+
+        fragment.gsub(%r{<br\s*/?>}i, " ").gsub(/<[^>]*>/, "")
+                .gsub("&quot;", '"').gsub("&#39;", "'").gsub("&amp;", "&")
+                .gsub("&lt;", "<").gsub("&gt;", ">").gsub("&nbsp;", " ")
+                .squeeze(" ").strip.presence
       end
 
       def self.compute_metrics(subscribers, posts, reactions_total = 0)
