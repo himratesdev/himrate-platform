@@ -74,4 +74,34 @@ RSpec.describe Social::ChatLinkHarvesterWorker do
 
     expect { described_class.new.perform }.not_to raise_error
   end
+
+  it "rejects a link that names another channel we know (shared-chat announce-bots)" do
+    create(:channel, login: "sledovatel_game")
+    allow(ch).to receive(:select).and_return([ row("https://t.me/sledovatel_game", insider: 1, days: 9, posters: 4) ])
+
+    described_class.new.perform
+
+    expect(channel.reload.social_links).to be_empty
+  end
+
+  it "rejects content URLs that are not accounts (youtube/watch, shorts, youtu.be, vk video)" do
+    allow(ch).to receive(:select).and_return([
+      row("https://www.youtube.com/watch?v=ps3N4PZEu5A", insider: 1),
+      row("https://www.youtube.com/shorts/abc123", insider: 1),
+      row("https://youtu.be/ps3N4PZEu5A", insider: 1),
+      row("https://vk.com/video-123_456", insider: 1)
+    ])
+
+    described_class.new.perform
+
+    expect(channel.reload.social_links).to be_empty
+  end
+
+  it "still accepts a real YouTube channel handle" do
+    allow(ch).to receive(:select).and_return([ row("https://www.youtube.com/@HellkaHellka/shorts", insider: 1) ])
+
+    described_class.new.perform
+
+    expect(channel.reload.social_links.pluck(:platform, :handle)).to eq([ [ "youtube", "HellkaHellka" ] ])
+  end
 end

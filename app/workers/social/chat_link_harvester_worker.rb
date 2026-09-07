@@ -68,6 +68,12 @@ module Social
           FROM chat_messages
           WHERE timestamp > now() - INTERVAL #{WINDOW_DAYS} DAY
             AND positionCaseInsensitive(message_text, 'http') > 0
+            -- SHARED CHAT is the main contamination source: Twitch merges other rooms into this
+            -- one and their announce-bots (mods THERE) advertise THEIR socials here. Such messages
+            -- carry `source-room-id`; native ones do not. Notices (raids/subs/announcements) are
+            -- cross-room by nature too, so only real chat lines count.
+            AND positionCaseInsensitive(raw_tags, 'source-room-id') = 0
+            AND msg_type = 'privmsg'
         )
         WHERE match(url, '(?i)(t\\\\.me|telegram\\\\.me|youtube\\\\.com|youtu\\\\.be|tiktok\\\\.com|vk\\\\.com|vkvideo\\\\.ru|instagram\\\\.com|boosty\\\\.to|discord\\\\.(gg|com))/')
           AND channel_login IN (SELECT channel_login FROM (
@@ -109,22 +115,57 @@ module Social
 
       handle = path.split(%r{[/?#]}).first.to_s.delete_prefix("@").delete_prefix("s/")
       return nil if handle.blank? || handle.length > 64
+      return nil unless account_handle?(platform, host, path, handle)
 
       { platform: platform, handle: handle, url: "https://#{host}/#{path}",
         days: row["days"].to_i, posters: row["posters"].to_i,
         by_insider: row["by_insider"].to_i == 1 }
     end
 
+    # A social ACCOUNT, not a piece of content: youtube.com/watch?v=…, /shorts/…, youtu.be/<id>,
+    # vk.com/video…, tiktok video permalinks — all are links people share, none identify an account.
+    def account_handle?(platform, host, path, handle)
+      case platform
+      when "youtube"
+        return false if host.include?("youtu.be") # always a video id
+        return false unless path.start_with?("@", "c/", "channel/", "user/")
+      when "tiktok"
+        return false unless path.start_with?("@")
+      when "vk"
+        return false if handle.start_with?("video", "wall", "clip", "photo", "public_page")
+      when "instagram"
+        return false if %w[p reel reels explore stories].include?(handle)
+      end
+      true
+    end
+
     # Evidence gate — see the class comment. Handle-resemblance uses the channel login stripped of
     # separators, so "dear_hellgirl" matches "DearHellGirl" but not an unrelated handle.
     def trusted?(candidate, login)
+      return false if belongs_to_another_channel?(candidate, login)
+      return true if resembles?(candidate[:handle], login)
       return true if candidate[:by_insider]
 
-      normalized_login = login.to_s.downcase.gsub(/[_\-.]/, "")
-      normalized_handle = candidate[:handle].downcase.gsub(/[_\-.]/, "")
-      return true if normalized_handle.include?(normalized_login) || normalized_login.include?(normalized_handle)
-
       candidate[:days] >= MIN_DAYS && candidate[:posters] >= MIN_POSTERS
+    end
+
+    def resembles?(handle, login)
+      a = login.to_s.downcase.gsub(/[_\-.]/, "")
+      b = handle.to_s.downcase.gsub(/[_\-.]/, "")
+      return false if a.length < 4 || b.length < 4
+
+      a.include?(b) || b.include?(a)
+    end
+
+    # Last line of defence: if the handle names ANOTHER channel we know, it is that channel's social
+    # account, not this one's — no amount of repetition in this chat makes it ours.
+    def belongs_to_another_channel?(candidate, login)
+      other = known_logins.find { |known| known != login.to_s.downcase && resembles?(candidate[:handle], known) }
+      other.present?
+    end
+
+    def known_logins
+      @known_logins ||= Channel.active.pluck(:login).map(&:downcase)
     end
   end
 end
