@@ -9,6 +9,9 @@ RSpec.describe "Api::V1::ClipTranscripts", type: :request do
   let(:clip_id) { "AwkwardHelplessSalamanderSwiftRage" }
 
   before do
+    # Pin pundit ON without freezing every other flag lookup (policies also probe the
+    # open-house switch) — call_original keeps the rest at their real state.
+    allow(Flipper).to receive(:enabled?).and_call_original
     allow(Flipper).to receive(:enabled?).with(:pundit_authorization).and_return(true)
   end
 
