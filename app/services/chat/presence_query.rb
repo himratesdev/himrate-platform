@@ -62,10 +62,17 @@ module Chat
       return [] if logins.blank? || logins.size < 2
 
       rows = @client.select(<<~SQL)
-        WITH eligible AS (
+        WITH targets AS (
+          -- Only chatters of the asked-for channels can form an edge between them: narrowing here
+          -- keeps the eligibility pass off the full 2M-chatter table (10.7s → sub-second).
+          SELECT DISTINCT username
+          FROM #{TABLE}
+          WHERE #{window_filter} AND #{source_filter} AND channel_login IN (#{quoted(logins)})
+        ),
+        eligible AS (
           SELECT username
           FROM #{TABLE}
-          WHERE #{window_filter} AND #{source_filter}
+          WHERE #{window_filter} AND #{source_filter} AND username IN (SELECT username FROM targets)
           GROUP BY username
           HAVING uniqExact(channel_login) BETWEEN 2 AND #{MAX_USER_CHANNELS}
         ),

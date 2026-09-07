@@ -52,6 +52,7 @@
     if (sub) {
       sub.textContent = (raw.focus ? "Паутинка канала " + raw.focus + " · " : "") +
         ns.length + " каналов · " + es.length + " связей · основа: активность в чатах" +
+        (raw.truncated ? " (показаны сильнейшие)" : "") +
         (ns.length < raw.nodes.length || es.length < raw.edges.length ? " · фильтры активны" : "");
     }
     renderSelChips();
@@ -496,7 +497,8 @@
       })
       .then(function (resp) {
         var d = (resp && resp.data) || {};
-        raw = { nodes: d.nodes || [], edges: d.edges || [], focus: focus || null };
+        raw = { nodes: d.nodes || [], edges: d.edges || [], focus: focus || null,
+                truncated: !!d.edges_truncated };
         buildToolbar();
         applyFilters();
       })

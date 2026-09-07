@@ -43,6 +43,7 @@ module Graph
       return empty_payload if logins.empty?
 
       edges = @presence.edges(logins)
+      truncated = edges.size >= Chat::PresenceQuery::MAX_EDGES
       audience = @presence.audiences(logins)
       # Drop nodes the edge set never mentions (in full mode a tie-less node is unreadable dust);
       # the ego channel always stays so its "no overlaps yet" state is honest, not empty.
@@ -56,6 +57,9 @@ module Graph
         window_days: WINDOW_DAYS,
         generated_at: Time.current.iso8601,
         focus: @focus,
+        # The denser CH source can exceed the edge budget; say so instead of passing a silently
+        # truncated top-N off as the whole picture (the UI shows "показаны сильнейшие связи").
+        edges_truncated: truncated,
         nodes: nodes,
         edges: edges.map do |e|
           denom = [ audience[e[:a]], audience[e[:b]] ].compact.min
