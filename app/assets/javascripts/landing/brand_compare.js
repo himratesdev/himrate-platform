@@ -101,6 +101,28 @@
     renderHeader(channels);
     renderRows(channels, best);
     renderRecommendation(data.recommendation);
+    wireOverlapHandoff(channels);
+  }
+
+  // Compare and Overlap answer two halves of the same question about the SAME channel set
+  // («кто сильнее» vs «сколько аудитории дублируется»), but the design gives Overlap no sidebar
+  // entry — so from Compare it was unreachable without hand-editing the URL. Offer the one-click
+  // handoff carrying the current channels.
+  function wireOverlapHandoff(channels) {
+    var slots = q(document, "Slots");
+    if (!slots || channels.length < 2) return;
+    var existing = q(document, "Link · Пересечение");
+    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    var a = document.createElement("a");
+    a.setAttribute("data-pencil-name", "Link · Пересечение");
+    a.textContent = "Пересечение аудиторий этих каналов →";
+    a.title = "Сколько зрителей дублируется между выбранными каналами";
+    a.href = hrApp("/overlap?channels=" + channels.map(function (c) {
+      return encodeURIComponent(c.login);
+    }).join(","));
+    a.style.cssText = "display:inline-block;margin:10px 0 0;font-size:13px;font-weight:600;" +
+      "color:#A78BFA;text-decoration:none;font-family:Inter,system-ui,sans-serif;";
+    slots.appendChild(a);
   }
 
   function renderSlots(channels) {
