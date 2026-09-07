@@ -21,7 +21,7 @@ RSpec.describe Social::ChatLinkHarvesterWorker do
 
     described_class.new.perform
 
-    link = channel.reload.channel_social_links.find_by(platform: "telegram")
+    link = channel.reload.social_links.find_by(platform: "telegram")
     expect(link.handle).to eq("SomeOtherName")
     expect(link.source).to eq("chat")
   end
@@ -31,7 +31,7 @@ RSpec.describe Social::ChatLinkHarvesterWorker do
 
     described_class.new.perform
 
-    expect(channel.reload.channel_social_links.pluck(:handle)).to eq([ "DearHellGirl" ])
+    expect(channel.reload.social_links.pluck(:handle)).to eq([ "DearHellGirl" ])
   end
 
   it "accepts a standing announcement (several days, several posters)" do
@@ -39,7 +39,7 @@ RSpec.describe Social::ChatLinkHarvesterWorker do
 
     described_class.new.perform
 
-    expect(channel.reload.channel_social_links.pluck(:handle)).to eq([ "our_cosy_chat" ])
+    expect(channel.reload.social_links.pluck(:handle)).to eq([ "our_cosy_chat" ])
   end
 
   it "rejects a one-off stranger link (the shared-chat / self-promo case)" do
@@ -47,7 +47,7 @@ RSpec.describe Social::ChatLinkHarvesterWorker do
 
     described_class.new.perform
 
-    expect(channel.reload.channel_social_links).to be_empty
+    expect(channel.reload.social_links).to be_empty
   end
 
   it "never overwrites a link the streamer declared on Twitch" do
@@ -66,7 +66,7 @@ RSpec.describe Social::ChatLinkHarvesterWorker do
 
     described_class.new.perform
 
-    expect(channel.reload.channel_social_links).to be_empty
+    expect(channel.reload.social_links).to be_empty
   end
 
   it "degrades quietly when ClickHouse is unavailable" do

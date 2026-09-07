@@ -120,8 +120,8 @@ module Social
     def trusted?(candidate, login)
       return true if candidate[:by_insider]
 
-      normalized_login = login.to_s.downcase.delete("_-.")
-      normalized_handle = candidate[:handle].downcase.delete("_-.")
+      normalized_login = login.to_s.downcase.gsub(/[_\-.]/, "")
+      normalized_handle = candidate[:handle].downcase.gsub(/[_\-.]/, "")
       return true if normalized_handle.include?(normalized_login) || normalized_login.include?(normalized_handle)
 
       candidate[:days] >= MIN_DAYS && candidate[:posters] >= MIN_POSTERS
