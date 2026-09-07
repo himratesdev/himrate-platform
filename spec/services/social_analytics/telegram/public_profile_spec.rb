@@ -58,4 +58,28 @@ RSpec.describe SocialAnalytics::Telegram::PublicProfile do
       expect(described_class.parse("<html>nothing here</html>")).to be_nil
     end
   end
+
+  describe "#fetch connect-IP pin (ISP blocks most Telegram edges)" do
+    it "pins the connect IP when TELEGRAM_WEB_IPADDR is set, TLS still on the real host" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("TELEGRAM_WEB_IPADDR").and_return("149.154.167.220")
+      http = instance_double(Net::HTTP, "use_ssl=": nil, "open_timeout=": nil, "read_timeout=": nil)
+      allow(Net::HTTP).to receive(:new).with("t.me", 443).and_return(http)
+      allow(http).to receive(:request).and_return(instance_double(Net::HTTPSuccess, body: "<html></html>"))
+
+      expect(http).to receive(:ipaddr=).with("149.154.167.220")
+      described_class.new("someone").fetch
+    end
+
+    it "uses ordinary DNS when the pin is unset" do
+      allow(ENV).to receive(:[]).and_call_original
+      allow(ENV).to receive(:[]).with("TELEGRAM_WEB_IPADDR").and_return(nil)
+      http = instance_double(Net::HTTP, "use_ssl=": nil, "open_timeout=": nil, "read_timeout=": nil)
+      allow(Net::HTTP).to receive(:new).and_return(http)
+      allow(http).to receive(:request).and_return(instance_double(Net::HTTPSuccess, body: "<html></html>"))
+
+      expect(http).not_to receive(:ipaddr=)
+      described_class.new("someone").fetch
+    end
+  end
 end

@@ -134,12 +134,8 @@ servers:
     env:
       clear:
         RAILS_MAX_THREADS: 5
-        # Server ISP blocks the Telegram DC subnet public DNS points at (149.154.166.x + AAAA)
-        # while 149.154.167.220 stays reachable — TelegramAlertWorker pins its connect IP to it
-        # (TLS still verifies the hostname). Same pin lives in ~/bin/himrate-watchdog.sh on the
-        # host. If alerts stop delivering, re-probe reachable DC IPs:
-        #   curl --resolve api.telegram.org:443:<ip> https://api.telegram.org/
-        TELEGRAM_API_IPADDR: "149.154.167.220"
+        # NB the Telegram connect-IP pins live in the shared `env.clear` at the bottom of this file —
+        # both the alert worker (here) and the t.me social fetcher (web/long_running) need them.
     options:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
@@ -289,6 +285,13 @@ env:
     # accessory's full container name. Port defaults to 8123 in Clickhouse::Client; database is
     # per-destination (config/deploy.{staging,production}.yml CLICKHOUSE_DATABASE).
     CLICKHOUSE_HOST: himrate-clickhouse
+    # The server's ISP blocks most Telegram edge IPs (the DNS answers resolve to blocked ones), so
+    # both Telegram paths pin the one address that stays reachable from here: the bot API (alerts)
+    # and the t.me web preview (public-channel social metrics). TLS still validates the hostname —
+    # this only fixes which IP we connect to. Empty value = plain DNS.
+    # Re-probe if either stops working: curl --resolve <host>:443:<ip> https://<host>/
+    TELEGRAM_API_IPADDR: "149.154.167.220"
+    TELEGRAM_WEB_IPADDR: "149.154.167.220"
 
 # Accessories: PostgreSQL + Redis + observability stack on the same VPS
 # BUG-010 PR1: +grafana, prometheus, loki, promtail, alertmanager, prometheus-pushgateway

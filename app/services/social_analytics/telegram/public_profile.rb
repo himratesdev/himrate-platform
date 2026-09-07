@@ -37,9 +37,21 @@ module SocialAnalytics
         nil
       end
 
+      # The server's ISP blocks most Telegram edge IPs, so a plain DNS connect to t.me times out and
+      # every Telegram profile silently degrades to "unavailable" (that is exactly what happened on
+      # the home server). TELEGRAM_WEB_IPADDR pins the one address that stays reachable; TLS and SNI
+      # still use the real hostname, so this chooses the route only. Empty env → ordinary DNS (CI,
+      # dev, any unblocked host). Re-probe when it breaks: curl --resolve t.me:443:<ip> https://t.me/
       def fetch
-        response = HTTP.headers("User-Agent" => USER_AGENT).timeout(TIMEOUT).get(format(SOURCE_URL, @handle))
-        response.status.success? ? response.body.to_s : nil
+        uri = URI(format(SOURCE_URL, @handle))
+        http = Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = true
+        http.open_timeout = TIMEOUT
+        http.read_timeout = TIMEOUT
+        http.ipaddr = ENV["TELEGRAM_WEB_IPADDR"] if ENV["TELEGRAM_WEB_IPADDR"].present?
+
+        response = http.request(Net::HTTP::Get.new(uri, "User-Agent" => USER_AGENT))
+        response.is_a?(Net::HTTPSuccess) ? response.body.to_s : nil
       end
 
       # Pure parser — no I/O. Returns nil when the page carries no channel signal (private/not found).
