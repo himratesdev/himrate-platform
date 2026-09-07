@@ -61,13 +61,13 @@ RSpec.describe "Open-house access switch", type: :request do
 
     it "keeps browse surfaces closed to a guest while OFF" do
       Flipper.disable(:open_house_guest_access)
-      expect(DiscoverPolicy.new(guest, :discover).live?).to be(false)
+      expect(DiscoverPolicy.new(guest, nil).live?).to be(false)
       expect(GraphPolicy.new(guest, :graph).audience?).to be(false)
     end
 
     it "opens browse surfaces to a guest while ON, without crashing on the nil user" do
       Flipper.enable(:open_house_guest_access)
-      expect(DiscoverPolicy.new(guest, :discover).live?).to be(true)
+      expect(DiscoverPolicy.new(guest, nil).live?).to be(true)
       expect(GraphPolicy.new(guest, :graph).audience?).to be(true)
       expect(ChannelPolicy.new(guest, channel).card_live_drill?).to be(true)
     end
