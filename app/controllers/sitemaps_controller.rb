@@ -18,12 +18,19 @@ class SitemapsController < ApplicationController
   # daily — the sitemap needs nightly freshness (SA-12 AC), not per-request recompute.
   CHANNELS_MIN_STREAMS = 10
   CHANNELS_CAP = 500
-  CHANNELS_CACHE_KEY = "sitemap:channel_paths:v1"
+  # v2: entries carry [path, lastmod-date] — <lastmod> tells Google WHICH pages changed, so the
+  # crawl budget goes to fresh channel cards instead of even re-sweeps (GSC showed a long
+  # «discovered, not indexed» tail; lastmod is the standard prioritization signal for it).
+  CHANNELS_CACHE_KEY = "sitemap:channel_paths:v2"
   CHANNELS_CACHE_TTL = 24.hours
 
   def show
-    paths = PATHS + top_paths + channel_paths
-    @urls = paths.map { |path| "#{ApplicationHelper::CANONICAL_HOST}#{path}" }
+    channel_entries = channel_paths
+    data_lastmod = channel_entries.filter_map(&:last).max
+    entries = PATHS.map { |p| [ p, nil ] } +
+              top_paths.map { |p| [ p, data_lastmod ] } +
+              channel_entries
+    @urls = entries.map { |path, lastmod| [ "#{ApplicationHelper::CANONICAL_HOST}#{path}", lastmod ] }
     render layout: false, formats: :xml
   end
 
@@ -35,6 +42,8 @@ class SitemapsController < ApplicationController
     tops.empty? ? [] : [ "/top" ] + tops
   end
 
+  # → [[path, lastmod-date]]: lastmod = the channel's latest in-window aggregate date (the day
+  # its public card content last materially changed).
   def channel_paths
     Rails.cache.fetch(CHANNELS_CACHE_KEY, expires_in: CHANNELS_CACHE_TTL) do
       window = PublicTop::Categories::WINDOW_DAYS.days.ago.to_date..Date.current
@@ -43,16 +52,17 @@ class SitemapsController < ApplicationController
                                        .pluck(:channel_id)
       next [] if active_ids.empty?
 
-      banded_ids = TrendsDailyAggregate
-                   .from(
-                     TrendsDailyAggregate.where(date: window, channel_id: active_ids)
-                                         .select("DISTINCT ON (channel_id) channel_id, band_row_at_end")
-                                         .order("channel_id, date DESC"), :t
-                   )
-                   .where.not(t: { band_row_at_end: nil })
-                   .limit(CHANNELS_CAP)
-                   .pluck("t.channel_id")
-      Channel.where(id: banded_ids).order(:login).pluck(:login).map { |l| "/c/#{l}" }
+      banded = TrendsDailyAggregate
+               .from(
+                 TrendsDailyAggregate.where(date: window, channel_id: active_ids)
+                                     .select("DISTINCT ON (channel_id) channel_id, date, band_row_at_end")
+                                     .order("channel_id, date DESC"), :t
+               )
+               .where.not(t: { band_row_at_end: nil })
+               .limit(CHANNELS_CAP)
+               .pluck("t.channel_id", "t.date").to_h
+      Channel.where(id: banded.keys).order(:login).pluck(:login, :id)
+             .map { |login, id| [ "/c/#{login}", banded[id] ] }
     end
   end
 

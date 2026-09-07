@@ -70,6 +70,18 @@ RSpec.describe "Sitemap + robots", type: :request do
         expect(response.body).to include("<loc>https://himrate.com/c/curated_ch</loc>")
         expect(response.body).not_to include("/c/bandless_ch")
       end
+
+      it "stamps /c/ and /top entries with a real lastmod (latest aggregate date)" do
+        get "/sitemap.xml"
+
+        stamp = 2.days.ago.to_date.strftime("%Y-%m-%d")
+        card = response.body[/<url>\s*<loc>https:\/\/himrate\.com\/c\/curated_ch<\/loc>.*?<\/url>/m]
+        expect(card).to include("<lastmod>#{stamp}</lastmod>")
+        top = response.body[/<url>\s*<loc>https:\/\/himrate\.com\/top<\/loc>.*?<\/url>/m]
+        expect(top).to include("<lastmod>#{stamp}</lastmod>")
+        home = response.body[/<url>\s*<loc>https:\/\/himrate\.com\/<\/loc>.*?<\/url>/m]
+        expect(home).not_to include("<lastmod>")
+      end
     end
   end
 
