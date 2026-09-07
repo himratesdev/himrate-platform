@@ -132,7 +132,9 @@ module SocialAnalytics
       # a plain request dies with "Name or service not known" and every YouTube metric silently
       # vanishes. Resolve over DoH and pin the connect IP; TLS/SNI keep the real hostname. Falls
       # back to ordinary DNS wherever the block does not exist (CI, dev).
-      def http_get(uri)
+      MAX_REDIRECTS = 3
+
+      def http_get(uri, redirects_left = MAX_REDIRECTS)
         http = ::Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = uri.scheme == "https"
         http.open_timeout = TIMEOUT
@@ -141,6 +143,15 @@ module SocialAnalytics
         http.ipaddr = pinned if pinned.present?
 
         response = http.request(::Net::HTTP::Get.new(uri, "User-Agent" => USER_AGENT))
+        # youtube.com answers 301 → www.youtube.com, and Net::HTTP does not follow on its own; the
+        # profile silently came back empty until this hop was handled. Each hop re-resolves through
+        # DoH, so the pin applies to the redirect target too.
+        if response.is_a?(::Net::HTTPRedirection) && redirects_left.positive?
+          location = response["location"].to_s
+          return nil if location.blank?
+
+          return http_get(URI.join(uri.to_s, location), redirects_left - 1)
+        end
         return nil unless response.is_a?(::Net::HTTPSuccess)
 
         response.body.to_s.dup.force_encoding(Encoding::UTF_8).scrub
