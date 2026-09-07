@@ -51,7 +51,11 @@ module SocialAnalytics
         http.ipaddr = ENV["TELEGRAM_WEB_IPADDR"] if ENV["TELEGRAM_WEB_IPADDR"].present?
 
         response = http.request(Net::HTTP::Get.new(uri, "User-Agent" => USER_AGENT))
-        response.is_a?(Net::HTTPSuccess) ? response.body.to_s : nil
+        return nil unless response.is_a?(Net::HTTPSuccess)
+
+        # Net::HTTP hands back ASCII-8BIT; the parser's regexes are UTF-8 (Russian titles), and
+        # mixing the two raises Encoding::CompatibilityError. scrub drops any stray invalid byte.
+        response.body.to_s.dup.force_encoding(Encoding::UTF_8).scrub
       end
 
       # Pure parser — no I/O. Returns nil when the page carries no channel signal (private/not found).

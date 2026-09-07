@@ -120,6 +120,15 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "TASK-251.B: classify captured IRC raids into RaidAttribution (signal #9), gated :raid_detection"
       },
+      # Social footprint, second source: mine the chat archive for links a channel announces in its
+      # own chat (Twitch's panel only carries what the streamer bothered to fill in). Nightly —
+      # announcements repeat for weeks, nothing is time-critical, and it is one ClickHouse pass.
+      "social_chat_link_harvest" => {
+        "cron" => "40 4 * * *", # 04:40 UTC — after the nightly heavy jobs, before the morning
+        "class" => "Social::ChatLinkHarvesterWorker",
+        "queue" => "long_running",
+        "description" => "Harvest social links announced in channel chats (attribution-gated)"
+      },
       # «Паутинка»: the full audience-overlap graph is a heavy pairwise aggregate over the
       # ClickHouse presence layer. Recompute it in the background every 2h so a page load is always
       # a cache hit (its CACHE_TTL is 3h — longer than this cadence, so the entry never lapses).
