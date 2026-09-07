@@ -17,9 +17,9 @@ RSpec.describe Brand::AudienceOverlapService, type: :service do
   let!(:c) { create(:channel, login: login_c) }
 
   before do
-    seed(login_a => [ alice, ns("bob"), ns("eve") ],
+    seed({login_a => [ alice, ns("bob"), ns("eve") ],
          login_b => [ alice, carol ],
-         login_c => [ carol, ns("dave") ])
+         login_c => [ carol, ns("dave") ] })
   end
 
   it "rejects fewer than 2 channels" do
