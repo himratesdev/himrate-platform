@@ -88,6 +88,36 @@ module Chat
       rows.map { |r| { a: r["a"], b: r["b"], shared: r["shared"].to_i } }
     end
 
+    # First circle of one channel: who its chatters also chat with, strongest first.
+    # → [{ login:, shared: }]. Unlike #edges this is NOT restricted to a known channel set — the
+    # untracked neighbours are the discovery value of the ego view.
+    def neighbours(login, min_shared: MIN_SHARED, limit: 60)
+      rows = @client.select(<<~SQL)
+        WITH mine AS (
+          SELECT DISTINCT username
+          FROM #{TABLE}
+          WHERE #{window_filter} AND #{source_filter} AND channel_login = '#{escape(login)}'
+        ),
+        eligible AS (
+          SELECT username
+          FROM #{TABLE}
+          WHERE #{window_filter} AND #{source_filter} AND username IN (SELECT username FROM mine)
+          GROUP BY username
+          HAVING uniqExact(channel_login) BETWEEN 2 AND #{MAX_USER_CHANNELS}
+        )
+        SELECT channel_login AS login, uniqExact(username) AS shared
+        FROM #{TABLE}
+        WHERE #{window_filter} AND #{source_filter}
+          AND channel_login != '#{escape(login)}'
+          AND username IN (SELECT username FROM eligible)
+        GROUP BY login
+        HAVING shared >= #{min_shared.to_i}
+        ORDER BY shared DESC
+        LIMIT #{limit.to_i}
+      SQL
+      rows.map { |r| { login: r["login"], shared: r["shared"].to_i } }
+    end
+
     # Distinct chatter sets for a small channel list (brand overlap: 2-4 channels) —
     # → { "login" => Set[username] }. Bounded by the caller's channel count.
     def chatter_sets(logins)
@@ -131,7 +161,11 @@ module Chat
     end
 
     def quoted(logins)
-      Array(logins).map { |l| "'#{l.to_s.downcase.gsub("'", "''")}'" }.join(",")
+      Array(logins).map { |l| "'#{escape(l)}'" }.join(",")
+    end
+
+    def escape(login)
+      login.to_s.downcase.gsub("\\", "\\\\\\\\").gsub("'", "''")
     end
   end
 end

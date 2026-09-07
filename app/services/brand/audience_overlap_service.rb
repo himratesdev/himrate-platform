@@ -7,6 +7,7 @@ module Brand
   class AudienceOverlapService
     MIN_CHANNELS = 2
     MAX_CHANNELS = 4
+    WINDOW_DAYS = 30 # matches the graph window; both sources cover it (farm capture TTL = 30d)
     Result = Struct.new(:ok, :error, :payload, keyword_init: true)
 
     def initialize(logins)
@@ -29,25 +30,51 @@ module Brand
 
     private
 
-    # Distinct chatter-username set per channel (within the selected set only). source: "live" keeps
-    # the "chat_presence" basis honest — excludes future VOD-backfill edges (T1-058) that would
-    # otherwise silently blend into live-stream chatters without a label distinction (CR nit-2).
-    def channel_sets(channel_ids)
+    # Distinct chatter-username set per channel, read from the ClickHouse presence layer
+    # (Chat::PresenceQuery — monitored archive + farm capture, deduped; db/clickhouse/005). The
+    # Postgres `cross_channel_presences` ledger covers only the monitored set and restarted with
+    # the 2026-08 server migration, which made real channel pairs read "0 shared"; ClickHouse
+    # already holds both sources. Falls back to the ledger when CH is unavailable so the page
+    # degrades instead of erroring — the payload always states which basis produced the numbers.
+    def channel_sets(channels)
+      sets = Chat::PresenceQuery.new(days: WINDOW_DAYS).chatter_sets(channels.map(&:login))
+      @basis_source = "clickhouse_presence"
+      channels.to_h { |c| [ c.id, sets[c.login] || Set.new ] }
+    rescue StandardError => e
+      Rails.logger.warn("AudienceOverlapService: ClickHouse presence unavailable (#{e.class}) — ledger fallback")
+      @basis_source = "pg_ledger"
+      ledger_sets(channels.map(&:id))
+    end
+
+    def ledger_sets(channel_ids)
       sets = channel_ids.index_with { Set.new }
       CrossChannelPresence.where(channel_id: channel_ids, source: "live").distinct
                           .pluck(:channel_id, :username).each { |cid, user| sets[cid] << user }
       sets
     end
 
+    # Coverage is asymmetric — the farm pool rotates, so one channel can be observed on fewer days
+    # than another. Surfacing it stops a thin-coverage pair from reading as "these audiences barely
+    # overlap" when the truth is "we watched one of them less".
+    def coverage_days(channels)
+      Chat::PresenceQuery.new(days: WINDOW_DAYS).days_observed(channels.map(&:login))
+    rescue StandardError
+      {}
+    end
+
     def build(channels)
       by_id = channels.index_by(&:id)
       ids = channels.map(&:id)
-      sets = channel_sets(ids)
+      sets = channel_sets(channels)
+      coverage = coverage_days(channels)
       all_users = sets.values.reduce(Set.new, :|)
       channel_count = user_channel_counts(sets)
 
       {
-        channels: channels.map { |c| { login: c.login, display_name: c.display_name, reach: sets[c.id].size } },
+        channels: channels.map do |c|
+          { login: c.login, display_name: c.display_name, reach: sets[c.id].size,
+            days_observed: coverage[c.login] }
+        end,
         unique_reach: all_users.size,
         total_reach: ids.sum { |cid| sets[cid].size },
         unique_percentage: pct(all_users.size, ids.sum { |cid| sets[cid].size }),
@@ -55,7 +82,9 @@ module Brand
         pairwise: pairwise_for(ids, sets, by_id),
         composition: composition_for(ids, sets, channel_count, all_users, by_id),
         recommendations: recommendations_for(ids, sets, by_id),
-        audience_basis: "chat_presence"
+        audience_basis: "chat_presence",
+        basis_source: @basis_source,
+        window_days: WINDOW_DAYS
       }
     end
 

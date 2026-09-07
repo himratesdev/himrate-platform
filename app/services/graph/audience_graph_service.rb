@@ -1,24 +1,31 @@
 # frozen_string_literal: true
 
 module Graph
-  # W5 «Паутинка»: the audience-overlap graph over the chat-presence ledger
-  # (cross_channel_presences, T1-057). Nodes = channels (size = unique chat audience, colour =
-  # latest v2 band), edges = shared-chatter counts between channel pairs. Honest basis: this is
-  # CHAT audience (the platform-wide viewer list does not exist — chatters-only disclaimer).
+  # W5 «Паутинка»: the audience-overlap graph. Nodes = channels (size = unique chat audience,
+  # colour = latest v2 band), edges = shared-chatter counts between channel pairs.
   #
-  # Noise control: "power users" present in > MAX_USER_CHANNELS channels are excluded from edge
-  # building (serial lurkers/bots would wire everything to everything); pairs below MIN_SHARED
-  # are dropped. Full mode covers the TOP_CHANNELS by audience; focus mode is a channel's
-  # first-circle ego graph. Compute-on-read behind a Rails.cache (grow-style).
+  # Source (2026-09): the ClickHouse presence layer `chat_presence_daily` (Chat::PresenceQuery) —
+  # the monitored chat archive PLUS the farm's category-join capture, deduped per (day, channel,
+  # chatter). The previous Postgres `cross_channel_presences` ledger only covered the monitored set
+  # and restarted with the 2026-08 server migration, so real channel pairs showed "0 shared".
+  # Postgres is not written to for this at all; CH already had both streams.
+  #
+  # Mixed-source discipline: this graph answers "who else does this audience watch". Verdicts
+  # (TI / band / ERV) keep running on the monitored archive alone — farm chat never enters an
+  # accusation. Nodes carry `tracked` so a channel we do not monitor (no verdict, band "grey") is
+  # visibly different from one we do.
+  #
+  # Honest basis: this is CHAT audience (the platform-wide viewer list does not exist).
+  # Noise control lives in Chat::PresenceQuery (serial-lurker cap, min-shared floor).
   class AudienceGraphService
     TOP_CHANNELS = 200
-    MIN_SHARED = 5
-    MAX_USER_CHANNELS = 30
+    EGO_NEIGHBOURS = 60
+    WINDOW_DAYS = 30
     CACHE_TTL = 1.hour
     FOCUS_CACHE_TTL = 10.minutes
 
     def self.call(focus: nil)
-      key = focus ? "graph:audience:focus:#{focus}" : "graph:audience:full"
+      key = focus ? "graph:audience:v2:focus:#{focus}" : "graph:audience:v2:full"
       Rails.cache.fetch(key, expires_in: focus ? FOCUS_CACHE_TTL : CACHE_TTL) do
         new(focus: focus).build
       end
@@ -26,107 +33,92 @@ module Graph
 
     def initialize(focus: nil)
       @focus = focus.to_s.strip.downcase.presence
+      @presence = Chat::PresenceQuery.new(days: WINDOW_DAYS)
     end
 
     def build
-      focus_channel = nil
-      if @focus
-        focus_channel = Channel.find_by(login: @focus)
-        return { error: "CHANNEL_NOT_FOUND" } unless focus_channel
-      end
+      return { error: "CHANNEL_NOT_FOUND" } if @focus && Channel.find_by(login: @focus).nil?
 
-      edges = fetch_edges(focus_channel)
-      node_ids = edges.flat_map { |e| [ e["a_id"], e["b_id"] ] }.uniq
-      node_ids << focus_channel.id if focus_channel && node_ids.exclude?(focus_channel.id)
-      nodes = fetch_nodes(node_ids)
-      audience = nodes.to_h { |n| [ n[:id], n[:audience] ] }
+      logins = @focus ? ego_logins : full_logins
+      return empty_payload if logins.empty?
+
+      edges = @presence.edges(logins)
+      audience = @presence.audiences(logins)
+      # Drop nodes the edge set never mentions (in full mode a tie-less node is unreadable dust);
+      # the ego channel always stays so its "no overlaps yet" state is honest, not empty.
+      linked = edges.flat_map { |e| [ e[:a], e[:b] ] }.to_set
+      linked << @focus if @focus
+      nodes = build_nodes(logins.select { |l| linked.include?(l) }, audience)
 
       {
         basis: "chat_presence",
+        basis_source: "clickhouse_presence",
+        window_days: WINDOW_DAYS,
         generated_at: Time.current.iso8601,
         focus: @focus,
         nodes: nodes,
         edges: edges.map do |e|
-          denom = [ audience[e["a_id"]], audience[e["b_id"]] ].compact.min
-          { a: e["a_id"], b: e["b_id"], shared: e["shared"].to_i,
-            share: denom.to_i.positive? ? (e["shared"].to_f / denom).round(3) : nil }
+          denom = [ audience[e[:a]], audience[e[:b]] ].compact.min
+          { a: e[:a], b: e[:b], shared: e[:shared],
+            share: denom.to_i.positive? ? (e[:shared].to_f / denom).round(3) : nil }
         end
       }
     end
 
     private
 
-    # Pairwise shared-chatter counts. Full mode restricts both endpoints to the top-N channels;
-    # focus mode takes every edge incident to the focus channel (its whole first circle).
-    def fetch_edges(focus_channel)
-      scope_join, scope_filter =
-        if focus_channel
-          [ "", "AND (a.channel_id = :focus OR b.channel_id = :focus)" ]
-        else
-          [ "JOIN top_channels ta ON ta.channel_id = a.channel_id
-             JOIN top_channels tb ON tb.channel_id = b.channel_id", "" ]
-        end
-
-      sql = <<~SQL
-        WITH eligible AS (
-          SELECT username FROM cross_channel_presences
-          GROUP BY username
-          HAVING COUNT(DISTINCT channel_id) BETWEEN 2 AND :max_ch
-        ),
-        top_channels AS (
-          SELECT channel_id FROM cross_channel_presences
-          GROUP BY channel_id
-          ORDER BY COUNT(DISTINCT username) DESC
-          LIMIT :top_n
-        ),
-        p AS (
-          SELECT DISTINCT ccp.channel_id, ccp.username
-          FROM cross_channel_presences ccp
-          JOIN eligible e ON e.username = ccp.username
-        )
-        SELECT a.channel_id AS a_id, b.channel_id AS b_id, COUNT(*) AS shared
-        FROM p a
-        JOIN p b ON a.username = b.username AND a.channel_id < b.channel_id
-        #{scope_join}
-        WHERE TRUE #{scope_filter}
-        GROUP BY 1, 2
-        HAVING COUNT(*) >= :min_shared
-        ORDER BY shared DESC
-        LIMIT 3000
-      SQL
-
-      binds = { max_ch: MAX_USER_CHANNELS, top_n: TOP_CHANNELS, min_shared: MIN_SHARED }
-      binds[:focus] = focus_channel.id if focus_channel
-      ActiveRecord::Base.connection.select_all(
-        ActiveRecord::Base.sanitize_sql([ sql, binds ])
-      ).to_a
+    def empty_payload
+      { basis: "chat_presence", basis_source: "clickhouse_presence", window_days: WINDOW_DAYS,
+        generated_at: Time.current.iso8601, focus: @focus, nodes: [], edges: [] }
     end
 
-    def fetch_nodes(ids)
-      return [] if ids.empty?
+    # Full mode: the top monitored channels by chat audience — every node carries a verdict, which
+    # is what the colour axis means. (Untracked farm channels appear only in ego mode, where the
+    # question is "where else does THIS audience go".)
+    def full_logins
+      monitored = Channel.where(is_monitored: true, deleted_at: nil).pluck(:login)
+      @presence.top_channels(TOP_CHANNELS, within: monitored)
+    end
 
-      audiences = CrossChannelPresence.where(channel_id: ids)
-                                      .group(:channel_id).distinct.count(:username)
-      bands = TrustIndexHistory
-              .where(channel_id: ids, engine_version: "v2")
-              .select("DISTINCT ON (channel_id) channel_id, band_color")
-              .order(:channel_id, calculated_at: :desc)
-              .to_h { |t| [ t.channel_id, t[:band_color] ] }
-      # Category/language for the brand filters («стримеры Dota 2 на русском без пересечений») —
-      # channels don't carry them, so denormalize from each channel's latest stream (same
-      # DISTINCT ON pattern as Brand::StreamerSearchQuery#latest_streams_by_channel; bounded to
-      # the graph's ≤200 node ids and cached with the graph payload).
+    # Ego mode: the channel plus its strongest first circle — including channels we do not track
+    # (they are exactly the discovery value; they render grey/untracked).
+    def ego_logins
+      neighbours = @presence.neighbours(@focus, limit: EGO_NEIGHBOURS).map { |n| n[:login] }
+      ([ @focus ] + neighbours).uniq
+    end
+
+    def build_nodes(logins, audience)
+      channels = Channel.where(login: logins).index_by(&:login)
+      ids = channels.values.map(&:id)
+      bands = latest_bands(ids)
       latest_streams = Stream.where(channel_id: ids)
                              .select("DISTINCT ON (channel_id) channel_id, game_name, language")
                              .order("channel_id, started_at DESC")
                              .index_by(&:channel_id)
-      Channel.where(id: ids).map do |ch|
-        stream = latest_streams[ch.id]
-        { id: ch.id, login: ch.login, name: ch.display_name || ch.login,
-          audience: audiences[ch.id].to_i, band: bands[ch.id] || "grey",
+
+      logins.map do |login|
+        channel = channels[login]
+        stream = channel && latest_streams[channel.id]
+        # `id` is the login: it keys nodes to edges and stays stable for channels that have no
+        # Channel row at all (farm-only neighbours).
+        { id: login, login: login,
+          name: channel&.display_name.presence || login,
+          audience: audience[login].to_i,
+          band: (channel && bands[channel.id]) || "grey",
+          tracked: channel.present?,
           category: stream&.game_name.presence,
           language: stream&.language.presence&.upcase }
       end
+    end
+
+    def latest_bands(ids)
+      return {} if ids.empty?
+
+      TrustIndexHistory
+        .where(channel_id: ids, engine_version: "v2")
+        .select("DISTINCT ON (channel_id) channel_id, band_color")
+        .order(:channel_id, calculated_at: :desc)
+        .to_h { |t| [ t.channel_id, t[:band_color] ] }
     end
   end
 end
