@@ -89,6 +89,25 @@ class User < ApplicationRecord
     [ :viewer, (:streamer if streamer?), (:brand if brand?) ].compact
   end
 
+  # OPEN-HOUSE guest mode (Flipper :open_house_guest_access): visitors without an account are bound
+  # to ONE shared demo account, so every page — including the personal ones — renders instead of
+  # bouncing to /login. It is an ordinary free-tier user with no Twitch identity, so «мой канал»
+  # honestly shows the connect CTA and channel-ownership rights stay false. Everything guests do
+  # (watchlists, drafts) lands in this shared sandbox — that is the trade for a no-login demo.
+  DEMO_EMAIL = "demo@himrate.local"
+
+  def self.open_house_demo
+    find_or_create_by!(email: DEMO_EMAIL) do |u|
+      u.username = "demo"
+      u.role = "viewer"
+      u.tier = "free"
+    end
+  end
+
+  def demo?
+    email == DEMO_EMAIL
+  end
+
   def record_registration_event
     UserEvents::Recorder.record(self, UserEvent::REGISTERED, { email_source: email_source })
   rescue StandardError => e

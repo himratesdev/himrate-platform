@@ -5,8 +5,7 @@
 module Api
   module V1
     class GraphController < Api::BaseController
-      # OPEN-HOUSE: a browse surface — answers a guest while :open_house_guest_access is on.
-      before_action :authenticate_user_or_guest!
+      before_action :authenticate_user!
 
       # GET /api/v1/graph/audience[?focus=login]
       def audience

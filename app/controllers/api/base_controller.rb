@@ -23,9 +23,29 @@ module Api
       I18n.locale = LocaleResolver.call(request.env)
     end
 
+    # OPEN-HOUSE guest mode (Flipper :open_house_guest_access) — a testing switch, not a pricing
+    # change. While enabled, a request WITHOUT a session is bound to one shared demo account
+    # (User.open_house_demo) instead of being rejected, so every page — browse AND personal —
+    # renders and a visitor can walk the whole product without signing up. The demo account has no
+    # Twitch identity, so ownership-keyed rights stay false and «мой канал» honestly shows its
+    # connect CTA. Everything guests create lands in that shared sandbox. Flip the flag off and
+    # this branch disappears: 401 exactly as before, no data migration.
+    def open_house_guest_session!
+      return false unless Flipper.enabled?(:open_house_guest_access)
+
+      @surface = Auth::AuthContext::DASHBOARD
+      @current_user = User.open_house_demo
+      true
+    rescue StandardError => e
+      Rails.logger.error("OPEN-HOUSE demo session unavailable: #{e.class} #{e.message}")
+      false
+    end
+
     def authenticate_user!
       token = bearer_or_cookie_token
       unless token
+        return if open_house_guest_session!
+
         Rails.logger.warn("Auth failed: no token from #{request.remote_ip}")
         render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.bearer_required") }, status: :unauthorized
         return
@@ -49,18 +69,6 @@ module Api
     rescue ActiveRecord::RecordNotFound
       Rails.logger.warn("Auth failed: user not found from #{request.remote_ip}")
       render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.user_not_found") }, status: :unauthorized
-    end
-
-    # OPEN-HOUSE guest mode (Flipper :open_house_guest_access) — testing switch, not a pricing
-    # change. While enabled, the browse surfaces (discover / graph / brand tools / streamer cards)
-    # answer WITHOUT a login so a visitor can look around; policies treat the guest as registered
-    # (ApplicationPolicy#registered?). Endpoints that read "your" data (watchlists, personal
-    # analytics, settings, own channel) keep authenticate_user! — there is nothing to show a guest
-    # there, and current_user would be nil. Flip off → 401 exactly as before.
-    def authenticate_user_or_guest!
-      return authenticate_user_optional! if Flipper.enabled?(:open_house_guest_access)
-
-      authenticate_user!
     end
 
     def authenticate_user_optional!

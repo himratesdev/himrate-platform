@@ -10,15 +10,16 @@ module Api
 
       # GET /api/v1/lk/status — single routing source for the ЛК shell.
       def status
-        guest_access = Flipper.enabled?(:open_house_guest_access)
+        # OPEN-HOUSE guest mode: bind a session-less visitor to the shared demo account so EVERY
+        # page (browse and personal alike) renders instead of bouncing to /login. The client reads
+        # `guest_access` to know it is a demo session — the pages themselves need no special case.
+        open_house_guest_session! if current_user.nil?
+
         render json: {
           saas_lk_live: Flipper.enabled?(:saas_lk_live, current_user),
           authenticated: current_user.present?,
-          # OPEN-HOUSE guest mode: the BROWSE pages skip their login redirect when this is true
-          # (their APIs answer without a session). Personal pages still send a guest to /login —
-          # there is nothing of "theirs" to show. Flip the flag off → the gates are back.
-          guest_access: guest_access,
-          roles: current_user&.roles || (guest_access ? %w[viewer brand] : []),
+          guest_access: current_user&.demo? || false,
+          roles: current_user&.roles || [],
           email: current_user&.email
         }
       end

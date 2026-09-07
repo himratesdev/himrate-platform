@@ -44,13 +44,12 @@ class ApplicationPolicy
     user.nil?
   end
 
-  # OPEN-HOUSE guest mode (Flipper :open_house_guest_access): a visitor without an account is
-  # treated as registered so the BROWSE surfaces render (the controllers that need "your" data
-  # still demand a real login — see Api::BaseController#authenticate_user_or_guest!). Anything
-  # keyed on identity (owns_channel?, channel_tracked?, teams) stays false for a guest by
-  # construction, so this can only open shared/analytical data, never someone else's account.
+  # NB OPEN-HOUSE guest mode: a visitor without a session is bound to the shared demo account
+  # (Api::BaseController#open_house_guest_session!), so `user` is a real record here and this
+  # predicate needs no special case. Identity-keyed rights (owns_channel?, channel_tracked?)
+  # stay false for that account because it has no Twitch link and owns nothing.
   def registered?
-    user.present? || Flipper.enabled?(:open_house_guest_access)
+    user.present?
   end
 
   # OPEN-HOUSE (Flipper :open_house_all_features) — a testing switch, not a pricing change.

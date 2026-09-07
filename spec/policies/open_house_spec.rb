@@ -54,41 +54,42 @@ RSpec.describe "Open-house access switch", type: :request do
     end
   end
 
-  describe "guest browse mode (:open_house_guest_access)" do
-    let(:guest) { Auth::AuthContext.new(nil, Auth::AuthContext::DASHBOARD) }
-
+  describe "no-login mode (:open_house_guest_access)" do
     after { Flipper.disable(:open_house_guest_access) }
 
-    it "keeps browse surfaces closed to a guest while OFF" do
+    it "401s a session-less request while OFF" do
       Flipper.disable(:open_house_guest_access)
-      expect(DiscoverPolicy.new(guest, nil).live?).to be(false)
-      expect(GraphPolicy.new(guest, :graph).audience?).to be(false)
+      get "/api/v1/discover/live"
+      expect(response).to have_http_status(:unauthorized)
     end
 
-    it "opens browse surfaces to a guest while ON, without crashing on the nil user" do
+    it "serves a session-less request from the shared demo account while ON" do
       Flipper.enable(:open_house_guest_access)
-      expect(DiscoverPolicy.new(guest, nil).live?).to be(true)
-      expect(GraphPolicy.new(guest, :graph).audience?).to be(true)
-      # card_live_drill? additionally requires the channel to be live / inside the post-stream
-      # window — the factory channel is neither, so registered? alone must not grant it.
-      expect(BrandOverlapPolicy.new(guest, :overlap).index?).to be(false) # brand tier still required
+      get "/api/v1/discover/live"
+      expect(response).to have_http_status(:ok)
+      expect(User.find_by(email: User::DEMO_EMAIL)).to be_present
     end
 
-    it "never grants identity-keyed rights to a guest" do
+    it "opens the PERSONAL surfaces too (that is the point of the switch)" do
       Flipper.enable(:open_house_guest_access)
-      policy = ChannelPolicy.new(guest, channel)
-      expect(policy.send(:owns_channel?, channel)).to be(false)
-      expect(policy.send(:channel_tracked?, channel)).to be(false)
-      expect(policy.send(:streamer_on_channel?, channel)).to be(false)
+      get "/api/v1/watchlists"
+      expect(response).to have_http_status(:ok)
     end
 
-    it "reports guest_access in /lk/status so browse pages skip their login redirect" do
+    it "marks the session as demo in /lk/status so the UI can say so" do
       Flipper.enable(:open_house_guest_access)
       get "/api/v1/lk/status"
       body = response.parsed_body
-      expect(body["authenticated"]).to be(false)
+      expect(body["authenticated"]).to be(true)
       expect(body["guest_access"]).to be(true)
-      expect(body["roles"]).to include("brand")
+    end
+
+    it "grants the demo account no channel ownership" do
+      Flipper.enable(:open_house_guest_access)
+      demo = User.open_house_demo
+      policy = ChannelPolicy.new(Auth::AuthContext.new(demo, Auth::AuthContext::DASHBOARD), channel)
+      expect(policy.send(:owns_channel?, channel)).to be(false)
+      expect(policy.send(:channel_tracked?, channel)).to be(false)
     end
   end
 end

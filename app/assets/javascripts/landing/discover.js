@@ -229,9 +229,7 @@
     .then(function (r) { return r.ok ? r.json() : {}; })
     .then(
       function (s) {
-        // OPEN-HOUSE guest mode: `guest_access` from /lk/status means this browse page is served
-        // without a login (the API answers a guest too). Personal pages keep the redirect.
-        if (!s || (!s.authenticated && !s.guest_access)) { window.location.href = "/login"; return; }
+        if (!s || !s.authenticated) { window.location.href = "/login"; return; }
         try { boot(); } catch (e) { renderLoadError(); }
       },
       function () { window.location.href = "/login"; }
