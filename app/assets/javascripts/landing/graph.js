@@ -23,7 +23,7 @@
 
   // ---- client-side filters over the loaded payload ----
   var raw = { nodes: [], edges: [], focus: null };
-  var filters = { bands: null, minAud: 0, minShare: 0 }; // bands=null → all verdicts
+  var filters = { bands: null, minAud: 0, minShare: 0, category: "", language: "" }; // bands=null → all verdicts
   var selected = {}; // login → node (shift+click set, feeds the exact /overlap deep-link)
   var searchTerm = "";
 
@@ -31,6 +31,8 @@
     var ns = raw.nodes.filter(function (n) {
       if (raw.focus && n.login === raw.focus) return true; // never filter the ego out
       if (filters.bands && !filters.bands[n.band || "grey"]) return false;
+      if (filters.category && n.category !== filters.category) return false;
+      if (filters.language && n.language !== filters.language) return false;
       return (n.audience || 0) >= filters.minAud;
     });
     var present = {};
@@ -173,11 +175,29 @@
     bar.appendChild(select("доля общих ≥", [[0, "любая"], [0.05, "5%"], [0.1, "10%"], [0.2, "20%"], [0.4, "40%"]],
       filters.minShare, function (v) { filters.minShare = parseFloat(v) || 0; }));
 
+    // Category / language options come from the loaded nodes themselves (denormalized server-side
+    // from each channel's latest stream) — the lists always match what's actually on the graph.
+    function distinct(field) {
+      var seen = {};
+      raw.nodes.forEach(function (n) { if (n[field]) seen[n[field]] = true; });
+      return Object.keys(seen).sort();
+    }
+    var cats = distinct("category");
+    if (cats.length) {
+      bar.appendChild(select("категория", [["", "все"]].concat(cats.map(function (c) { return [c, c]; })),
+        filters.category, function (v) { filters.category = v; }));
+    }
+    var langs = distinct("language");
+    if (langs.length) {
+      bar.appendChild(select("язык", [["", "все"]].concat(langs.map(function (l) { return [l, l]; })),
+        filters.language, function (v) { filters.language = v; }));
+    }
+
     var reset = el("button", "padding:6px 11px;border-radius:8px;border:1px solid #25252F;background:transparent;" +
       "color:#8E8A9A;font-size:11.5px;cursor:pointer;font-family:inherit;", "сбросить");
     reset.type = "button";
     reset.addEventListener("click", function () {
-      filters = { bands: null, minAud: 0, minShare: 0 };
+      filters = { bands: null, minAud: 0, minShare: 0, category: "", language: "" };
       buildToolbar();
       applyFilters();
     });
@@ -477,6 +497,7 @@
       .then(function (resp) {
         var d = (resp && resp.data) || {};
         raw = { nodes: d.nodes || [], edges: d.edges || [], focus: focus || null };
+        buildToolbar();
         applyFilters();
       })
       .catch(function (e) { if (e !== "auth" && e !== "nf") setNote("Не удалось построить граф — попробуйте обновить"); });

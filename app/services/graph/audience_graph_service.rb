@@ -112,9 +112,20 @@ module Graph
               .select("DISTINCT ON (channel_id) channel_id, band_color")
               .order(:channel_id, calculated_at: :desc)
               .to_h { |t| [ t.channel_id, t[:band_color] ] }
+      # Category/language for the brand filters («стримеры Dota 2 на русском без пересечений») —
+      # channels don't carry them, so denormalize from each channel's latest stream (same
+      # DISTINCT ON pattern as Brand::StreamerSearchQuery#latest_streams_by_channel; bounded to
+      # the graph's ≤200 node ids and cached with the graph payload).
+      latest_streams = Stream.where(channel_id: ids)
+                             .select("DISTINCT ON (channel_id) channel_id, game_name, language")
+                             .order("channel_id, started_at DESC")
+                             .index_by(&:channel_id)
       Channel.where(id: ids).map do |ch|
+        stream = latest_streams[ch.id]
         { id: ch.id, login: ch.login, name: ch.display_name || ch.login,
-          audience: audiences[ch.id].to_i, band: bands[ch.id] || "grey" }
+          audience: audiences[ch.id].to_i, band: bands[ch.id] || "grey",
+          category: stream&.game_name.presence,
+          language: stream&.language.presence&.upcase }
       end
     end
   end

@@ -21,6 +21,25 @@ RSpec.describe "Audience graph API" do
     expect(data).to have_key("edges")
   end
 
+  it "denormalizes category/language from the channel's latest stream into nodes" do
+    user = create(:user, tier: "free")
+    token = Auth::JwtService.encode_access(user.id)
+    a = create(:channel)
+    b = create(:channel)
+    5.times do |i| # MIN_SHARED edge between a and b
+      %w[a b].each { |side| create(:cross_channel_presence, channel: side == "a" ? a : b, username: "shared_#{i}") }
+    end
+    create(:stream, channel: a, game_name: "Dota 2", language: "ru", started_at: 2.hours.ago)
+    Rails.cache.clear
+
+    get "/api/v1/graph/audience", params: { focus: a.login },
+        headers: { "Authorization" => "Bearer #{token}" }
+
+    node = response.parsed_body["data"]["nodes"].find { |n| n["login"] == a.login }
+    expect(node["category"]).to eq("Dota 2")
+    expect(node["language"]).to eq("RU")
+  end
+
   it "404s an unknown focus" do
     user = create(:user, tier: "free")
     token = Auth::JwtService.encode_access(user.id)
