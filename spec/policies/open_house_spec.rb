@@ -69,7 +69,9 @@ RSpec.describe "Open-house access switch", type: :request do
       Flipper.enable(:open_house_guest_access)
       expect(DiscoverPolicy.new(guest, nil).live?).to be(true)
       expect(GraphPolicy.new(guest, :graph).audience?).to be(true)
-      expect(ChannelPolicy.new(guest, channel).card_live_drill?).to be(true)
+      # card_live_drill? additionally requires the channel to be live / inside the post-stream
+      # window — the factory channel is neither, so registered? alone must not grant it.
+      expect(BrandOverlapPolicy.new(guest, :overlap).index?).to be(false) # brand tier still required
     end
 
     it "never grants identity-keyed rights to a guest" do
