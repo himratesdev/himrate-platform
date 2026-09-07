@@ -150,6 +150,10 @@ Rails.application.routes.draw do
       put "business_profile", to: "business_profiles#update"
       post "business_profile/submit", to: "business_profiles#submit"
 
+      # Free-text channel search by nickname OR linked social handle (Telegram/YouTube/TikTok/VK…).
+      # The product had no name search at all — every "поиск" surface now calls this one endpoint.
+      get "search", to: "search#index"
+
       namespace :me do
         # ONBOARD-D0 (screen 11): own-channel data-source status.
         get "connect/status", to: "connect#status"
