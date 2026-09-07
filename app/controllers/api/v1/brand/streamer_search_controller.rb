@@ -6,7 +6,8 @@ module Api
       # Screen 20: brand streamer search/discovery — ranked by real 30-day audience with filters.
       # Brand-gated, compute-on-read over trends_daily_aggregates (real data, no mocks).
       class StreamerSearchController < Api::BaseController
-        before_action :authenticate_user!
+        # OPEN-HOUSE: a browse surface — answers a guest while :open_house_guest_access is on.
+        before_action :authenticate_user_or_guest!
 
         # GET /api/v1/brand/streamers/search?category=&language=&min_real=&frequency=&classification=&sort=&page=&per_page=
         def index

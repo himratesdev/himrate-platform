@@ -334,7 +334,9 @@
     .then(function (r) { return r.ok ? r.json() : {}; })
     .catch(function () { return null; })
     .then(function (s) {
-      if (!s || !s.authenticated) { location.href = "/login"; return; }
+      // OPEN-HOUSE guest mode: `guest_access` from /lk/status means this browse page is served
+        // without a login (the API answers a guest too). Personal pages keep the redirect.
+        if (!s || (!s.authenticated && !s.guest_access)) { location.href = "/login"; return; }
       try {
         boot(isBrand(s));
       } catch (e) {

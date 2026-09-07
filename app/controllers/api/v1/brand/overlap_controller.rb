@@ -6,7 +6,8 @@ module Api
       # Screen 24: audience overlap between 2-4 channels, brand-gated, compute-on-read from the
       # chat-presence graph (cross_channel_presences). Chatters-only basis (audience_basis).
       class OverlapController < Api::BaseController
-        before_action :authenticate_user!
+        # OPEN-HOUSE: a browse surface — answers a guest while :open_house_guest_access is on.
+        before_action :authenticate_user_or_guest!
 
         # GET /api/v1/brand/overlap?channels=a,b,c
         def index

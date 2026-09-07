@@ -272,7 +272,9 @@
     .then(function (r) { return r.ok ? r.json() : {}; })
     .catch(function () { return null; })
     .then(function (s) {
-      if (!s || !s.authenticated) { window.location.href = "/login"; return; }
+      // OPEN-HOUSE guest mode: `guest_access` from /lk/status means this browse page is served
+        // without a login (the API answers a guest too). Personal pages keep the redirect.
+        if (!s || (!s.authenticated && !s.guest_access)) { window.location.href = "/login"; return; }
       try {
         var login = loginFromPath();
         if (login) load(login); else render({}); // no login in URL → blank the export's mocks

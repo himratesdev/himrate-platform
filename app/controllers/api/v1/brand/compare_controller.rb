@@ -6,7 +6,8 @@ module Api
       # Screen 23: compare 2-4 streamers by real 30-day audience (+ optional brand-supplied price →
       # price per real viewer). Brand-gated, compute-on-read over existing engine (real data, no mocks).
       class CompareController < Api::BaseController
-        before_action :authenticate_user!
+        # OPEN-HOUSE: a browse surface — answers a guest while :open_house_guest_access is on.
+        before_action :authenticate_user_or_guest!
 
         # GET /api/v1/brand/compare?channels=a,b,c&prices=180000,120000,240000
         def index

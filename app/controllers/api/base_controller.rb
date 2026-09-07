@@ -51,6 +51,18 @@ module Api
       render json: { error: "UNAUTHORIZED", message: I18n.t("auth.errors.user_not_found") }, status: :unauthorized
     end
 
+    # OPEN-HOUSE guest mode (Flipper :open_house_guest_access) — testing switch, not a pricing
+    # change. While enabled, the browse surfaces (discover / graph / brand tools / streamer cards)
+    # answer WITHOUT a login so a visitor can look around; policies treat the guest as registered
+    # (ApplicationPolicy#registered?). Endpoints that read "your" data (watchlists, personal
+    # analytics, settings, own channel) keep authenticate_user! — there is nothing to show a guest
+    # there, and current_user would be nil. Flip off → 401 exactly as before.
+    def authenticate_user_or_guest!
+      return authenticate_user_optional! if Flipper.enabled?(:open_house_guest_access)
+
+      authenticate_user!
+    end
+
     def authenticate_user_optional!
       token = bearer_or_cookie_token
       return unless token

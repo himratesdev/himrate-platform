@@ -197,6 +197,12 @@ module FlipperDefaults
     #   off: bin/rails runner 'Flipper.disable(:open_house_all_features)'
     # Inventory of what it opens: docs/access/paid_surface_registry.md
     open_house_all_features: "OPEN-HOUSE",
+    # OPEN-HOUSE guest mode: the BROWSE surfaces (discover / graph / brand tools / streamer &
+    # blogger cards) answer without a login, so a visitor can look around before signing up.
+    # Personal surfaces keep the gate. Same reasoning for HOOK_FLAGS: never auto-ON on deploy.
+    #   on:  bin/rails runner 'Flipper.enable(:open_house_guest_access)'
+    #   off: bin/rails runner 'Flipper.disable(:open_house_guest_access)'
+    open_house_guest_access: "OPEN-HOUSE",
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
     accessory_auto_remediation: "BUG-010 PR3" # Kill switch для AutoRemediation::TriggerService
     # GitHub workflow_dispatch. Default OFF — operators enable через

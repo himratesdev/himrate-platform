@@ -24,6 +24,33 @@ docker exec <web> bin/rails runner 'puts Flipper.enabled?(:open_house_all_featur
 не выдаёт права владельца канала (`owns_channel?` / `streamer_on_channel?` — это идентичность по
 Twitch, а не тир) и не влияет на движок/вердикты.
 
+## Второй рубильник: гостевой режим `open_house_guest_access`
+
+```bash
+docker exec <web> bin/rails runner 'Flipper.enable(:open_house_guest_access)'   # смотреть без входа
+docker exec <web> bin/rails runner 'Flipper.disable(:open_house_guest_access)'  # вернуть вход
+```
+
+Открывает БЕЗ логина только витрины — те, где нечего показывать «твоего»:
+
+| Открыто гостю | Требует входа даже с флагом |
+|---|---|
+| `/discover` — кто в эфире | `/home` — личная главная |
+| `/graph` — паутинка аудиторий | `/activity` — личная аналитика |
+| `/search`, `/creators` — поиск стримеров и блогеров | `/watchlists` — свои списки |
+| `/compare`, `/overlap` — сравнение и пересечение | `/channel`, `/grow`, `/social`, `/connect` — свой канал |
+| `/streamers/:login`, `/blogger/:login` — карточки | `/settings`, `/business/new` — аккаунт и заявка |
+| публичные `/c/:login`, `/top` (и так открыты) | `/moments` — свои моменты |
+
+Механика: `Api::BaseController#authenticate_user_or_guest!` на витринных контроллерах пропускает
+запрос без сессии, `ApplicationPolicy#registered?` считает гостя зарегистрированным, а `/lk/status`
+отдаёт `guest_access: true` — по нему клиентские скрипты витрин не редиректят на `/login`.
+Всё, что завязано на личность (владение каналом, свои трекнутые каналы, команда), для гостя
+остаётся ложным по построению — открыть чужой аккаунт этим флагом нельзя.
+
+Два флага независимы: `open_house_guest_access` пускает без входа, `open_house_all_features`
+снимает платные замки. Для «полностью открытого» демо нужны оба.
+
 ## Границы доступа (канон access-model v2)
 
 | Поверхность | Бесплатно | Платно |

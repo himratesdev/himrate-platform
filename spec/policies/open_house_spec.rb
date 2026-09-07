@@ -5,7 +5,7 @@ require "rails_helper"
 # OPEN-HOUSE switch (Flipper :open_house_all_features): every SIGNED-IN user is treated as top tier
 # so testers can walk the product without promo codes. Guests must stay guests, and flipping the
 # switch off must restore the paid gating exactly — no data is touched either way.
-RSpec.describe "Open-house access switch" do
+RSpec.describe "Open-house access switch", type: :request do
   let(:free_user) { create(:user, tier: "free") }
   let(:channel) { create(:channel) }
 
@@ -51,6 +51,42 @@ RSpec.describe "Open-house access switch" do
       expect(free_user.reload.tier).to eq("free")
       Flipper.disable(:open_house_all_features)
       expect(BrandOverlapPolicy.new(context_for(free_user), :overlap).index?).to be(false)
+    end
+  end
+
+  describe "guest browse mode (:open_house_guest_access)" do
+    let(:guest) { Auth::AuthContext.new(nil, Auth::AuthContext::DASHBOARD) }
+
+    after { Flipper.disable(:open_house_guest_access) }
+
+    it "keeps browse surfaces closed to a guest while OFF" do
+      Flipper.disable(:open_house_guest_access)
+      expect(DiscoverPolicy.new(guest, :discover).live?).to be(false)
+      expect(GraphPolicy.new(guest, :graph).audience?).to be(false)
+    end
+
+    it "opens browse surfaces to a guest while ON, without crashing on the nil user" do
+      Flipper.enable(:open_house_guest_access)
+      expect(DiscoverPolicy.new(guest, :discover).live?).to be(true)
+      expect(GraphPolicy.new(guest, :graph).audience?).to be(true)
+      expect(ChannelPolicy.new(guest, channel).card_live_drill?).to be(true)
+    end
+
+    it "never grants identity-keyed rights to a guest" do
+      Flipper.enable(:open_house_guest_access)
+      policy = ChannelPolicy.new(guest, channel)
+      expect(policy.send(:owns_channel?, channel)).to be(false)
+      expect(policy.send(:channel_tracked?, channel)).to be(false)
+      expect(policy.send(:streamer_on_channel?, channel)).to be(false)
+    end
+
+    it "reports guest_access in /lk/status so browse pages skip their login redirect" do
+      Flipper.enable(:open_house_guest_access)
+      get "/api/v1/lk/status"
+      body = response.parsed_body
+      expect(body["authenticated"]).to be(false)
+      expect(body["guest_access"]).to be(true)
+      expect(body["roles"]).to include("brand")
     end
   end
 end

@@ -5,7 +5,8 @@ module Api
     # LK-BACKEND screen 04 «Куда пойти»: live-now channels ranked by real audience. Viewer-free
     # (any signed-in user, access-model v2) — compute-on-read over live streams + latest TIH.
     class DiscoverController < Api::BaseController
-      before_action :authenticate_user!
+      # OPEN-HOUSE: a browse surface — answers a guest while :open_house_guest_access is on.
+      before_action :authenticate_user_or_guest!
 
       # GET /api/v1/discover/live?limit=24
       def live

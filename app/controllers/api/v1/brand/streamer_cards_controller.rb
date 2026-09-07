@@ -6,7 +6,8 @@ module Api
       # Screen 21: brand streamer card — independent 30-day track-record verification of a streamer
       # before a deal. Brand-gated, compute-on-read over existing engine (real data, no mocks).
       class StreamerCardsController < Api::BaseController
-        before_action :authenticate_user!
+        # OPEN-HOUSE: a browse surface — answers a guest while :open_house_guest_access is on.
+        before_action :authenticate_user_or_guest!
 
         # GET /api/v1/brand/streamers/:login/card
         def show

@@ -44,8 +44,13 @@ class ApplicationPolicy
     user.nil?
   end
 
+  # OPEN-HOUSE guest mode (Flipper :open_house_guest_access): a visitor without an account is
+  # treated as registered so the BROWSE surfaces render (the controllers that need "your" data
+  # still demand a real login — see Api::BaseController#authenticate_user_or_guest!). Anything
+  # keyed on identity (owns_channel?, channel_tracked?, teams) stays false for a guest by
+  # construction, so this can only open shared/analytical data, never someone else's account.
   def registered?
-    user.present?
+    user.present? || Flipper.enabled?(:open_house_guest_access)
   end
 
   # OPEN-HOUSE (Flipper :open_house_all_features) — a testing switch, not a pricing change.
@@ -58,15 +63,15 @@ class ApplicationPolicy
   end
 
   def business?
-    registered? && (user.tier == "business" || open_house?)
+    registered? && (user&.tier == "business" || open_house?)
   end
 
   def premium?
-    registered? && (user.tier == "premium" || open_house?)
+    registered? && (user&.tier == "premium" || open_house?)
   end
 
   def free?
-    registered? && user.tier == "free"
+    registered? && user&.tier == "free"
   end
 
   def dashboard_surface?
@@ -77,11 +82,11 @@ class ApplicationPolicy
   # Orthogonal to the channel-ownership axis (owns_channel?/streamer_on_channel?), which
   # stays keyed on streamer_twitch_ids ∩ channel.twitch_id.
   def streamer?
-    registered? && user.is_streamer
+    registered? && !!user&.is_streamer
   end
 
   def brand?
-    registered? && user.brand?
+    registered? && !!user&.brand?
   end
 
   def owns_channel?(channel)
@@ -96,10 +101,13 @@ class ApplicationPolicy
   def streamer_on_channel?(channel)
     return false unless registered?
 
-    user.streamer_twitch_ids.include?(channel.twitch_id)
+    user&.streamer_twitch_ids&.include?(channel.twitch_id) || false
   end
 
+  # Identity-keyed: a guest (open-house browse mode) has no tracked channels by construction.
   def channel_tracked?(channel)
+    return false if user.nil?
+
     user.tracked_channels
         .joins(:subscription)
         .where(channel: channel, tracking_enabled: true)
@@ -109,6 +117,8 @@ class ApplicationPolicy
   end
 
   def channel_in_grace_period?(channel)
+    return false if user.nil?
+
     user.tracked_channels
         .joins(:subscription)
         .where(channel: channel, tracking_enabled: true)
@@ -121,7 +131,7 @@ class ApplicationPolicy
   # User#business_via_active_team? (also used by User#brand?), so the business-team semantics
   # can't drift between policy gating and the brand role.
   def business_via_team?
-    registered? && user.business_via_active_team?
+    registered? && !!user&.business_via_active_team?
   end
 
   def effective_business?
