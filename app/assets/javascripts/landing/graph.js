@@ -102,7 +102,22 @@
   }
 
   // ---- filter toolbar (built into #hr-graph-filters) ----
-  var BAND_LABEL = { green: "реальная", amber: "amber", yellow: "аномалия", red: "значительная", grey: "мало данных" };
+  // Short forms of the canonical TI v2 band verdicts (Glossary §D) — never internal color
+  // jargon like "amber" in the UI; full canonical labels ride along as chip tooltips.
+  var BAND_LABEL = {
+    green: "аудитория реальная",
+    amber: "онлайн выше активности",
+    yellow: "аномалия онлайна",
+    red: "значительная аномалия",
+    grey: "недостаточно данных"
+  };
+  var BAND_FULL = {
+    green: "Аудитория реальная / Аномалий не замечено",
+    amber: "Онлайн выше наблюдаемой активности",
+    yellow: "Аномалия онлайна",
+    red: "Значительная аномалия онлайна",
+    grey: "Недостаточно данных для оценки"
+  };
   function buildToolbar() {
     var bar = document.getElementById("hr-graph-filters");
     if (!bar) return;
@@ -116,6 +131,7 @@
         "border:1px solid " + (on ? "#3A2F63" : "#25252F") + ";background:" + (on ? "#19152E" : "#141419") +
         ";color:" + (on ? "#F4F4F7" : "#5E5E6B") + ";font-size:11.5px;cursor:pointer;font-family:inherit;");
       chip.type = "button";
+      chip.title = BAND_FULL[band] || "";
       var dot = el("span", "width:8px;height:8px;border-radius:99px;background:" + (BAND_HEX[band] || "#9A9AA9") +
         ";opacity:" + (on ? "1" : ".35") + ";");
       chip.appendChild(dot);
