@@ -21,6 +21,40 @@
   var isBrand = false; // from lk/status roles — gates the brand-value insight blocks
   var APP_PREFIX = (window.location.pathname === "/app" || window.location.pathname.indexOf("/app/") === 0) ? "/app" : "";
 
+  // ---- client-side filters over the loaded payload ----
+  var raw = { nodes: [], edges: [], focus: null };
+  var filters = { bands: null, minAud: 0, minShare: 0 }; // bands=null → all verdicts
+  var selected = {}; // login → node (shift+click set, feeds the exact /overlap deep-link)
+  var searchTerm = "";
+
+  function applyFilters() {
+    var ns = raw.nodes.filter(function (n) {
+      if (raw.focus && n.login === raw.focus) return true; // never filter the ego out
+      if (filters.bands && !filters.bands[n.band || "grey"]) return false;
+      return (n.audience || 0) >= filters.minAud;
+    });
+    var present = {};
+    ns.forEach(function (n) { present[n.id] = true; });
+    var es = raw.edges.filter(function (e) {
+      return present[e.a] && present[e.b] && (e.share || 0) >= filters.minShare;
+    });
+    // Full mode: drop nodes left with no ties — they'd float as unreadable dust. Ego keeps all.
+    if (!raw.focus) {
+      var deg = {};
+      es.forEach(function (e) { deg[e.a] = 1; deg[e.b] = 1; });
+      ns = ns.filter(function (n) { return deg[n.id]; });
+    }
+    start(ns, es, raw.focus);
+    markSearch();
+    buildInsights(ns, es, raw.focus);
+    if (sub) {
+      sub.textContent = (raw.focus ? "Паутинка канала " + raw.focus + " · " : "") +
+        ns.length + " каналов · " + es.length + " связей · основа: активность в чатах" +
+        (ns.length < raw.nodes.length || es.length < raw.edges.length ? " · фильтры активны" : "");
+    }
+    renderSelChips();
+  }
+
   // ---- interpretation panel (the paid-value layer over the picture) ----
   var insightPanel = document.getElementById("hr-insight-panel");
   var insightBody = document.getElementById("hr-insight-body");
@@ -44,9 +78,15 @@
     if (hint) s.appendChild(el("div", "font-size:10.5px;color:#5E5E6B;", hint));
     return s;
   }
-  function line(s, text, tone) {
+  function line(s, text, tone, login) {
     var colors = { ok: "#C7C7D1", warn: "#F6A823", dim: "#8E8A9A", strong: "#F4F4F7" };
-    s.appendChild(el("div", "font-size:12px;line-height:1.45;color:" + (colors[tone] || colors.ok) + ";", text));
+    var d = el("div", "font-size:12px;line-height:1.45;color:" + (colors[tone] || colors.ok) + ";", text);
+    if (login) { // any named channel row acts as a drill-down into that channel's ego web
+      d.style.cursor = "pointer";
+      d.title = "Открыть паутинку " + login;
+      d.addEventListener("click", function () { if (focusInput) focusInput.value = login; load(login); });
+    }
+    s.appendChild(d);
   }
   function focusLink(s, login, label) {
     var a = el("a", "font-size:12px;color:#A78BFA;cursor:pointer;text-decoration:none;", label);
@@ -59,6 +99,123 @@
     var a = el("a", "display:inline-block;margin-top:4px;font-size:12px;font-weight:600;color:#C9B8FF;text-decoration:none;cursor:pointer;", "Создать бизнес-учётку →");
     a.href = APP_PREFIX + "/business/new";
     s.appendChild(a);
+  }
+
+  // ---- filter toolbar (built into #hr-graph-filters) ----
+  var BAND_LABEL = { green: "реальная", amber: "amber", yellow: "аномалия", red: "значительная", grey: "мало данных" };
+  function buildToolbar() {
+    var bar = document.getElementById("hr-graph-filters");
+    if (!bar) return;
+    bar.textContent = "";
+    bar.appendChild(el("span", "font-size:11.5px;color:#5E5E6B;", "Фильтры:"));
+
+    // verdict chips (multi-toggle; all on = no filter)
+    Object.keys(BAND_LABEL).forEach(function (band) {
+      var on = !filters.bands || filters.bands[band];
+      var chip = el("button", "display:flex;align-items:center;gap:6px;padding:6px 11px;border-radius:999px;" +
+        "border:1px solid " + (on ? "#3A2F63" : "#25252F") + ";background:" + (on ? "#19152E" : "#141419") +
+        ";color:" + (on ? "#F4F4F7" : "#5E5E6B") + ";font-size:11.5px;cursor:pointer;font-family:inherit;");
+      chip.type = "button";
+      var dot = el("span", "width:8px;height:8px;border-radius:99px;background:" + (BAND_HEX[band] || "#9A9AA9") +
+        ";opacity:" + (on ? "1" : ".35") + ";");
+      chip.appendChild(dot);
+      chip.appendChild(document.createTextNode(BAND_LABEL[band]));
+      chip.addEventListener("click", function () {
+        if (!filters.bands) { // first narrowing click: keep only this band
+          filters.bands = {};
+          Object.keys(BAND_LABEL).forEach(function (b) { filters.bands[b] = (b === band); });
+        } else {
+          filters.bands[band] = !filters.bands[band];
+          var anyOff = Object.keys(BAND_LABEL).some(function (b) { return !filters.bands[b]; });
+          if (!anyOff) filters.bands = null;
+          else if (!Object.keys(BAND_LABEL).some(function (b) { return filters.bands[b]; })) filters.bands = null; // none left → reset
+        }
+        buildToolbar();
+        applyFilters();
+      });
+      bar.appendChild(chip);
+    });
+
+    function select(labelText, options, current, onChange) {
+      var wrap = el("label", "display:flex;align-items:center;gap:6px;font-size:11.5px;color:#8E8A9A;");
+      wrap.appendChild(document.createTextNode(labelText));
+      var sel = document.createElement("select");
+      sel.style.cssText = "background:#141419;color:#F4F4F7;border:1px solid #25252F;border-radius:8px;" +
+        "padding:6px 8px;font-size:11.5px;font-family:inherit;outline:none;cursor:pointer;";
+      options.forEach(function (o) {
+        var opt = document.createElement("option");
+        opt.value = o[0]; opt.textContent = o[1];
+        if (String(o[0]) === String(current)) opt.selected = true;
+        sel.appendChild(opt);
+      });
+      sel.addEventListener("change", function () { onChange(sel.value); applyFilters(); });
+      wrap.appendChild(sel);
+      return wrap;
+    }
+    bar.appendChild(select("аудитория ≥", [[0, "любая"], [100, "100"], [500, "500"], [1000, "1 000"], [5000, "5 000"]],
+      filters.minAud, function (v) { filters.minAud = parseInt(v, 10) || 0; }));
+    bar.appendChild(select("доля общих ≥", [[0, "любая"], [0.05, "5%"], [0.1, "10%"], [0.2, "20%"], [0.4, "40%"]],
+      filters.minShare, function (v) { filters.minShare = parseFloat(v) || 0; }));
+
+    var reset = el("button", "padding:6px 11px;border-radius:8px;border:1px solid #25252F;background:transparent;" +
+      "color:#8E8A9A;font-size:11.5px;cursor:pointer;font-family:inherit;", "сбросить");
+    reset.type = "button";
+    reset.addEventListener("click", function () {
+      filters = { bands: null, minAud: 0, minShare: 0 };
+      buildToolbar();
+      applyFilters();
+    });
+    bar.appendChild(reset);
+  }
+
+  // ---- search highlight (find on the FULL graph without switching to ego) ----
+  var searchInput = document.getElementById("hr-graph-search");
+  function markSearch() {
+    var hit = null;
+    nodes.forEach(function (n) {
+      n.hl = !!(searchTerm && n.login.indexOf(searchTerm) !== -1);
+      if (n.hl && !hit) hit = n;
+    });
+    if (hit) { // center the first match
+      var W = canvas.width / devicePixelRatio, H = canvas.height / devicePixelRatio;
+      view.x = W / 2 - hit.x * view.k;
+      view.y = H / 2 - hit.y * view.k;
+    }
+    draw();
+  }
+  if (searchInput) searchInput.addEventListener("input", function () {
+    searchTerm = searchInput.value.trim().toLowerCase();
+    markSearch();
+  });
+
+  // ---- shift+click media-set selection → exact /overlap deep-link (max 4 channels) ----
+  function renderSelChips() {
+    var box = document.getElementById("hr-graph-selchips");
+    if (!box) return;
+    box.textContent = "";
+    var logins = Object.keys(selected);
+    if (!logins.length) return;
+    box.appendChild(el("span", "font-size:11px;color:#8E8A9A;", "Набор для сравнения:"));
+    logins.forEach(function (login) {
+      var chip = el("button", "display:flex;align-items:center;gap:5px;padding:4px 9px;border-radius:999px;" +
+        "border:1px solid #3A2F63;background:#19152E;color:#E9E4FF;font-size:11px;cursor:pointer;font-family:inherit;",
+        login + " ×");
+      chip.type = "button";
+      chip.title = "Убрать из набора";
+      chip.addEventListener("click", function () { delete selected[login]; renderSelChips(); draw(); });
+      box.appendChild(chip);
+    });
+    if (logins.length >= 2 && logins.length <= 4) {
+      var a = el("a", "padding:5px 11px;border-radius:999px;background:#7B5CFA;color:#fff;font-size:11px;" +
+        "font-weight:600;text-decoration:none;cursor:pointer;", "Точный охват набора →");
+      a.href = APP_PREFIX + "/overlap?channels=" + logins.join(",");
+      a.title = "Точный пересчёт уникального охвата этих каналов (инструмент бренда)";
+      box.appendChild(a);
+    } else if (logins.length > 4) {
+      box.appendChild(el("span", "font-size:11px;color:#F6A823;", "максимум 4 канала"));
+    } else {
+      box.appendChild(el("span", "font-size:11px;color:#5E5E6B;", "добавьте ещё канал (shift+клик)"));
+    }
   }
 
   // Lightweight communities: keep each node's top-3 strongest ties (by overlap share) and take
@@ -122,7 +279,7 @@
 
     var s1 = section("Куда уходит аудитория " + ego.name, "доля = от аудитории меньшего канала в паре");
     neigh.slice(0, 6).forEach(function (x) {
-      line(s1, x.n.name + " — " + fmtN(x.shared) + " общих · " + pct(x.share), "strong");
+      line(s1, x.n.name + " — " + fmtN(x.shared) + " общих · " + pct(x.share), "strong", x.n.login);
     });
     insightBody.appendChild(s1);
 
@@ -143,7 +300,7 @@
     if (donors.length) {
       var s3 = section("Доноры роста", "крупные каналы, где ваша аудитория уже сидит — там вас найдут");
       donors.forEach(function (x) {
-        line(s3, x.n.name + " · аудитория " + fmtN(x.n.audience) + " · " + fmtN(x.shared) + " общих", "ok");
+        line(s3, x.n.name + " · аудитория " + fmtN(x.n.audience) + " · " + fmtN(x.shared) + " общих", "ok", x.n.login);
       });
       insightBody.appendChild(s3);
     }
@@ -158,7 +315,56 @@
     }
   }
 
+  // «Проверить пару» — the direct brand question: how much do channels A and B share?
+  // Answered from the loaded edge set; absent edge → honest note + the exact /overlap tool link.
+  function buildPairCheck() {
+    var s = section("Проверить пару каналов", "сколько аудитории у двух каналов общее");
+    var wrap = el("div", "display:flex;gap:6px;align-items:center;");
+    var mk = function (ph) {
+      var i = document.createElement("input");
+      i.type = "text"; i.placeholder = ph;
+      i.style.cssText = "flex:1;min-width:0;background:#0F0F16;color:#F4F4F7;border:1px solid #25252F;" +
+        "border-radius:8px;padding:7px 9px;font-size:12px;font-family:inherit;outline:none;";
+      return i;
+    };
+    var ia = mk("логин A"), ib = mk("логин B");
+    var btn = el("button", "padding:7px 11px;border-radius:8px;border:0;background:#7B5CFA;color:#fff;" +
+      "font-size:12px;font-weight:600;cursor:pointer;font-family:inherit;", "OK");
+    btn.type = "button";
+    wrap.appendChild(ia); wrap.appendChild(ib); wrap.appendChild(btn);
+    s.appendChild(wrap);
+    var out = el("div", "font-size:12px;line-height:1.45;color:#C7C7D1;");
+    s.appendChild(out);
+    function check() {
+      var a = ia.value.trim().toLowerCase(), b = ib.value.trim().toLowerCase();
+      if (!a || !b) { out.textContent = "Введите оба логина."; return; }
+      var na = null, nb = null;
+      raw.nodes.forEach(function (n) { if (n.login === a) na = n; if (n.login === b) nb = n; });
+      var edge = null;
+      if (na && nb) raw.edges.forEach(function (e) {
+        if ((e.a === na.id && e.b === nb.id) || (e.a === nb.id && e.b === na.id)) edge = e;
+      });
+      out.textContent = "";
+      if (edge) {
+        out.appendChild(el("div", "color:#F4F4F7;font-weight:600;",
+          a + " ↔ " + b + ": " + fmtN(edge.shared) + " общих · " + pct(edge.share || 0) + " аудитории меньшего"));
+      } else {
+        out.appendChild(el("div", "color:#8E8A9A;",
+          (na && nb ? "В текущем графе пересечение этой пары не найдено (ниже порога или вне топ-200)."
+                    : "Канал" + (!na && !nb ? "ы не найдены" : (!na ? " " + a : " " + b) + " не найден") + " в графе.")));
+      }
+      var link = el("a", "display:inline-block;margin-top:4px;font-size:12px;color:#A78BFA;text-decoration:none;",
+        "Точный пересчёт пары в оверлапе →");
+      link.href = APP_PREFIX + "/overlap?channels=" + encodeURIComponent(a) + "," + encodeURIComponent(b);
+      out.appendChild(link);
+    }
+    btn.addEventListener("click", check);
+    [ia, ib].forEach(function (i) { i.addEventListener("keydown", function (e) { if (e.key === "Enter") check(); }); });
+    insightBody.appendChild(s);
+  }
+
   function buildFullInsights(ns, es) {
+    buildPairCheck();
     var com = communities(ns, es);
 
     if (com.list.length) {
@@ -187,7 +393,7 @@
     if (bridges.length) {
       var s2 = section("Мосты между сообществами", "аудитория этих каналов дотягивается сразу до нескольких кластеров");
       bridges.slice(0, 4).forEach(function (n) {
-        line(s2, n.name + " · аудитория " + fmtN(n.audience) + " · соединяет " + Object.keys(span[n.id]).length + "+ сообществ", "ok");
+        line(s2, n.name + " · аудитория " + fmtN(n.audience) + " · соединяет " + Object.keys(span[n.id]).length + "+ сообществ", "ok", n.login);
       });
       insightBody.appendChild(s2);
     }
@@ -210,7 +416,7 @@
       var s3 = section("Уникальный охват — где реклама не дублируется", "оценка ядра, которое не пересекается с другими каналами графа");
       uniq.slice(0, isBrand ? 6 : 2).forEach(function (x) {
         line(s3, x.n.name + " · аудитория " + fmtN(x.n.audience) + " · макс. пересечение " + pct(x.mp) +
-          " → уникальное ядро ≈ " + fmtN(x.core), "strong");
+          " → уникальное ядро ≈ " + fmtN(x.core), "strong", x.n.login);
       });
       brandGate(s3, 2, Math.min(uniq.length, 6), "каналов");
       insightBody.appendChild(s3);
@@ -254,13 +460,8 @@
       })
       .then(function (resp) {
         var d = (resp && resp.data) || {};
-        start(d.nodes || [], d.edges || [], focus);
-        buildInsights(d.nodes || [], d.edges || [], focus);
-        if (sub) {
-          sub.textContent = (focus ? "Паутинка канала " + focus + " · " : "") +
-            (d.nodes ? d.nodes.length : 0) + " каналов · " + (d.edges ? d.edges.length : 0) +
-            " связей · основа: активность в чатах";
-        }
+        raw = { nodes: d.nodes || [], edges: d.edges || [], focus: focus || null };
+        applyFilters();
       })
       .catch(function (e) { if (e !== "auth" && e !== "nf") setNote("Не удалось построить граф — попробуйте обновить"); });
   }
@@ -350,7 +551,15 @@
       ctx.fillStyle = BAND_HEX[n.band] || BAND_HEX.grey;
       ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.fill();
       if (n.focus) { ctx.strokeStyle = "#7C3AED"; ctx.lineWidth = 3; ctx.stroke(); }
-      if (n.r > 9 || n.focus || (hoverSet && hoverSet[n.id])) {
+      if (selected[n.login]) { // media-set pick (shift+click)
+        ctx.strokeStyle = "#C9B8FF"; ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 4, 0, Math.PI * 2); ctx.stroke();
+      }
+      if (n.hl) { // search match
+        ctx.strokeStyle = "#FFFFFF"; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(n.x, n.y, n.r + 7, 0, Math.PI * 2); ctx.stroke();
+      }
+      if (n.r > 9 || n.focus || n.hl || selected[n.login] || (hoverSet && hoverSet[n.id])) {
         ctx.fillStyle = "#F4F4F7";
         ctx.font = "11px Inter, system-ui, sans-serif";
         ctx.textAlign = "center";
@@ -398,7 +607,44 @@
   window.addEventListener("mouseup", function () { dragging = false; dragStart = null; });
   canvas.addEventListener("click", function (ev) {
     var n = nodeAt(toWorld(ev));
-    if (n && !dragging) { if (focusInput) focusInput.value = n.login; load(n.login); }
+    if (!n || dragging) return;
+    if (ev.shiftKey) { // add/remove from the comparison media-set instead of switching to ego
+      if (selected[n.login]) delete selected[n.login];
+      else selected[n.login] = true;
+      renderSelChips();
+      draw();
+      return;
+    }
+    if (focusInput) focusInput.value = n.login;
+    load(n.login);
+  });
+
+  // Touch support: the graph must work on phones/tablets too (canvas mouse events don't fire there).
+  // One-finger drag pans (or taps a node = the click behavior); pinch zoom is left to page zoom.
+  var touchStart = null, touchMoved = false;
+  canvas.addEventListener("touchstart", function (ev) {
+    if (ev.touches.length !== 1) return;
+    var t = ev.touches[0];
+    touchStart = { x: t.clientX, y: t.clientY };
+    touchMoved = false;
+  }, { passive: true });
+  canvas.addEventListener("touchmove", function (ev) {
+    if (!touchStart || ev.touches.length !== 1) return;
+    var t = ev.touches[0];
+    if (Math.abs(t.clientX - touchStart.x) + Math.abs(t.clientY - touchStart.y) > 6) touchMoved = true;
+    view.x += t.clientX - touchStart.x;
+    view.y += t.clientY - touchStart.y;
+    touchStart = { x: t.clientX, y: t.clientY };
+    draw();
+    ev.preventDefault();
+  }, { passive: false });
+  canvas.addEventListener("touchend", function (ev) {
+    if (!touchStart) return;
+    if (!touchMoved) {
+      var n = nodeAt(toWorld({ clientX: touchStart.x, clientY: touchStart.y }));
+      if (n) { if (focusInput) focusInput.value = n.login; load(n.login); }
+    }
+    touchStart = null;
   });
   // Host-aware card link: production keeps the canonical apex URL, staging/localhost open the
   // relative /c/ card on the same host (a hardcoded prod apex 404s the flow off-prod).
@@ -432,6 +678,7 @@
         if (!s || !s.authenticated) { window.location.href = "/login"; return; }
         isBrand = ((s.roles || []).indexOf("brand") !== -1);
         try {
+          buildToolbar();
           resize();
           // Deep link: /graph?focus=<login> (ego mode from channel cards / brand surfaces).
           var qf = new URLSearchParams(window.location.search).get("focus");

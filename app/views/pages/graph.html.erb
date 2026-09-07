@@ -10,12 +10,18 @@
       </div>
     </div>
     <div class="box-border w-fit h-fit flex flex-row gap-[10px] items-center">
-      <input id="hr-graph-focus" type="text" placeholder="Фокус: логин канала…"
-             class="box-border w-[220px] p-[10px_14px] bg-[#141419] text-[#F4F4F7] text-[13px] font-[Inter,system-ui,sans-serif] [border:1px_solid_#25252F] rounded-[10px] outline-none placeholder:text-[#5E5E6B]" />
+      <input id="hr-graph-search" type="text" placeholder="Найти канал на графе…"
+             class="box-border w-[190px] p-[10px_14px] bg-[#141419] text-[#F4F4F7] text-[13px] font-[Inter,system-ui,sans-serif] [border:1px_solid_#25252F] rounded-[10px] outline-none placeholder:text-[#5E5E6B]" />
+      <input id="hr-graph-focus" type="text" placeholder="Паутинка канала: логин…"
+             class="box-border w-[200px] p-[10px_14px] bg-[#141419] text-[#F4F4F7] text-[13px] font-[Inter,system-ui,sans-serif] [border:1px_solid_#25252F] rounded-[10px] outline-none placeholder:text-[#5E5E6B]" />
       <button id="hr-graph-reset" type="button"
               class="box-border p-[10px_16px] bg-[#141419] text-[#A7A3B0] text-[12.5px] font-[Inter,system-ui,sans-serif] [border:1px_solid_#25252F] rounded-[10px] cursor-pointer">Весь граф</button>
     </div>
   </div>
+  <%# Filter toolbar (built/wired by landing/graph.js): verdict chips + min-audience + edge-share
+      threshold — client-side re-filter of the same payload, insights recompute with it. %>
+  <div id="hr-graph-filters"
+       class="box-border w-full h-fit flex flex-row flex-wrap gap-[10px] p-[10px_24px] items-center [border-width:0px_0px_1px_0px] [border-style:solid] [border-color:#1C1C24] font-[Inter,system-ui,sans-serif]"></div>
   <div class="box-border w-full [flex:1_1_0] relative overflow-hidden" style="min-height:70vh">
     <canvas id="hr-graph-canvas" class="box-border w-full h-full block"></canvas>
     <div id="hr-graph-note" class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 text-[14px] text-[#9A9AA9] font-[Inter,system-ui,sans-serif]">
@@ -39,13 +45,17 @@
       </div>
       <div id="hr-insight-body" class="flex flex-col gap-[12px]"></div>
     </aside>
-    <div class="absolute left-[16px] bottom-[14px] flex flex-row gap-[14px] text-[11.5px] text-[#8E8A9A] font-[Inter,system-ui,sans-serif]">
-      <span><span style="color:#25D9A4">●</span> реальная</span>
-      <span><span style="color:#F6A823">●</span> amber</span>
-      <span><span style="color:#F5C451">●</span> аномалия</span>
-      <span><span style="color:#F0616D">●</span> значительная</span>
-      <span><span style="color:#9A9AA9">●</span> мало данных</span>
-      <span>размер узла = аудитория чата · толщина ребра = доля общих</span>
+    <div class="absolute left-[16px] bottom-[14px] flex flex-col gap-[6px] text-[11.5px] text-[#8E8A9A] font-[Inter,system-ui,sans-serif]">
+      <div id="hr-graph-selchips" class="flex flex-row flex-wrap gap-[8px] items-center"></div>
+      <div class="flex flex-row flex-wrap gap-[14px]">
+        <span><span style="color:#25D9A4">●</span> реальная</span>
+        <span><span style="color:#F6A823">●</span> amber</span>
+        <span><span style="color:#F5C451">●</span> аномалия</span>
+        <span><span style="color:#F0616D">●</span> значительная</span>
+        <span><span style="color:#9A9AA9">●</span> мало данных</span>
+        <span title="Цвет узла — вердикт последнего эфира канала (Индекс доверия v2). Размер узла — сколько уникальных людей писали в чате канала. Толщина линии — какая доля аудитории меньшего канала в паре общая.">размер узла = аудитория чата · толщина ребра = доля общих ⓘ</span>
+      </div>
+      <div class="text-[11px] text-[#5E5E6B]">клик — паутинка канала · двойной клик — карточка · shift+клик — добавить в набор для сравнения · колесо — масштаб · граф строится по общим участникам чатов</div>
     </div>
   </div>
 </div>
