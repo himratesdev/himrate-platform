@@ -12,7 +12,7 @@ RSpec.describe Chat::PresenceQuery do
 
   describe "#audiences / #days_observed" do
     it "counts unique chatters and observed days per channel" do
-      seed({a => shared_users + [ ns("solo") ] })
+      seed({ a => shared_users + [ ns("solo") ] })
       seed({ a => shared_users.first(2) }, date: Date.current - 1)
 
       q = described_class.new
@@ -31,7 +31,7 @@ RSpec.describe Chat::PresenceQuery do
 
   describe "#edges" do
     it "returns shared counts for pairs at or above the floor, strongest first" do
-      seed({a => shared_users + [ ns("only_a") ], b => shared_users, c => [ ns("loner") ] })
+      seed({ a => shared_users + [ ns("only_a") ], b => shared_users, c => [ ns("loner") ] })
 
       edges = described_class.new.edges([ a, b, c ])
 
@@ -42,14 +42,14 @@ RSpec.describe Chat::PresenceQuery do
 
     it "drops pairs below MIN_SHARED" do
       thin = (1..3).map { |i| ns("t#{i}") }
-      seed({a => thin, b => thin })
+      seed({ a => thin, b => thin })
 
       expect(described_class.new.edges([ a, b ])).to be_empty
     end
 
     it "excludes serial lurkers present in more than MAX_USER_CHANNELS channels" do
       lurkers = (1..6).map { |i| ns("lurk#{i}") }
-      seed({a => lurkers, b => lurkers })
+      seed({ a => lurkers, b => lurkers })
       # each lurker also sits in 30 more channels → over the cap, so the pair loses its only tie
       31.times { |i| seed({ ns("noise#{i}") => lurkers }) }
 
@@ -59,7 +59,7 @@ RSpec.describe Chat::PresenceQuery do
 
   describe "#neighbours" do
     it "finds the ego channel's first circle, including untracked channels" do
-      seed({a => shared_users, b => shared_users, c => shared_users.first(2) })
+      seed({ a => shared_users, b => shared_users, c => shared_users.first(2) })
 
       neighbours = described_class.new.neighbours(a)
 
@@ -71,7 +71,7 @@ RSpec.describe Chat::PresenceQuery do
 
   describe "#chatter_sets / #top_channels" do
     it "returns per-channel username sets and ranks channels by audience within a scope" do
-      seed({a => shared_users + [ ns("extra") ], b => shared_users.first(3) })
+      seed({ a => shared_users + [ ns("extra") ], b => shared_users.first(3) })
 
       q = described_class.new
       sets = q.chatter_sets([ a, b ])

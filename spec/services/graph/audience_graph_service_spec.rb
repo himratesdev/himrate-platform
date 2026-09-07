@@ -15,7 +15,7 @@ RSpec.describe Graph::AudienceGraphService do
   before { Rails.cache.clear }
 
   it "builds nodes with audience/band/category and edges with shared counts + overlap share" do
-    seed({login_a => shared_users + [ ns("only_a1"), ns("only_a2") ], login_b => shared_users })
+    seed({ login_a => shared_users + [ ns("only_a1"), ns("only_a2") ], login_b => shared_users })
     create(:trust_index_history, channel: ch_a, band_color: "green", engine_version: "v2")
     create(:stream, channel: ch_a, game_name: "Dota 2", language: "ru")
 
@@ -36,14 +36,14 @@ RSpec.describe Graph::AudienceGraphService do
 
   it "drops pairs under the shared floor" do
     thin = (1..2).map { |i| ns("u#{i}") }
-    seed({login_a => thin, login_b => thin })
+    seed({ login_a => thin, login_b => thin })
 
     edges = described_class.new.build[:edges]
     expect(edges.select { |e| [ e[:a], e[:b] ].include?(login_a) }).to be_empty
   end
 
   it "focus mode returns the ego circle incl. untracked neighbours, 404s an unknown login" do
-    seed({login_a => shared_users, login_b => shared_users, login_c => shared_users })
+    seed({ login_a => shared_users, login_b => shared_users, login_c => shared_users })
     # gamma has chat presence but no monitored Channel row → discovery node, no verdict
     create(:channel, login: login_c, is_monitored: false)
 
