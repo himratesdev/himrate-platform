@@ -18,6 +18,218 @@
   var nodes = [], edges = [], byId = {};
   var view = { x: 0, y: 0, k: 1 };
   var hover = null, dragging = false, dragStart = null, raf = null, alpha = 0;
+  var isBrand = false; // from lk/status roles — gates the brand-value insight blocks
+  var APP_PREFIX = (window.location.pathname === "/app" || window.location.pathname.indexOf("/app/") === 0) ? "/app" : "";
+
+  // ---- interpretation panel (the paid-value layer over the picture) ----
+  var insightPanel = document.getElementById("hr-insight-panel");
+  var insightBody = document.getElementById("hr-insight-body");
+  var insightToggle = document.getElementById("hr-insight-toggle");
+  if (insightToggle) insightToggle.addEventListener("click", function () {
+    if (insightPanel) insightPanel.hidden = !insightPanel.hidden;
+  });
+
+  function fmtN(n) { return (n == null ? "—" : Math.round(n).toLocaleString("ru-RU")); }
+  function pct(x) { return Math.round(x * 100) + "%"; }
+
+  function el(tag, css, text) {
+    var d = document.createElement(tag);
+    if (css) d.style.cssText = css;
+    if (text != null) d.textContent = text;
+    return d;
+  }
+  function section(title, hint) {
+    var s = el("div", "display:flex;flex-direction:column;gap:6px;padding:10px 12px;background:#141419;border:1px solid #25252F;border-radius:12px;");
+    s.appendChild(el("div", "font-size:12.5px;font-weight:700;color:#F4F4F7;", title));
+    if (hint) s.appendChild(el("div", "font-size:10.5px;color:#5E5E6B;", hint));
+    return s;
+  }
+  function line(s, text, tone) {
+    var colors = { ok: "#C7C7D1", warn: "#F6A823", dim: "#8E8A9A", strong: "#F4F4F7" };
+    s.appendChild(el("div", "font-size:12px;line-height:1.45;color:" + (colors[tone] || colors.ok) + ";", text));
+  }
+  function focusLink(s, login, label) {
+    var a = el("a", "font-size:12px;color:#A78BFA;cursor:pointer;text-decoration:none;", label);
+    a.addEventListener("click", function () { if (focusInput) focusInput.value = login; load(login); });
+    s.appendChild(a);
+  }
+  function brandGate(s, teaserCount, totalCount, what) {
+    if (isBrand) return;
+    if (totalCount > teaserCount) line(s, "… ещё " + (totalCount - teaserCount) + " " + what + " — в бизнес-тарифе", "dim");
+    var a = el("a", "display:inline-block;margin-top:4px;font-size:12px;font-weight:600;color:#C9B8FF;text-decoration:none;cursor:pointer;", "Создать бизнес-учётку →");
+    a.href = APP_PREFIX + "/business/new";
+    s.appendChild(a);
+  }
+
+  // Lightweight communities: keep each node's top-3 strongest ties (by overlap share) and take
+  // connected components — dense-graph-safe (full components on 3000 edges would merge everything).
+  function communities(ns, es) {
+    var top = {};
+    es.forEach(function (e) {
+      if (e.share == null) return;
+      [e.a, e.b].forEach(function (id) {
+        (top[id] = top[id] || []).push(e);
+      });
+    });
+    var kept = {};
+    Object.keys(top).forEach(function (id) {
+      top[id].sort(function (x, y) { return (y.share || 0) - (x.share || 0); });
+      top[id].slice(0, 3).forEach(function (e) { kept[e.a + ":" + e.b] = e; });
+    });
+    var parent = {};
+    function find(x) { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; }
+    ns.forEach(function (n) { parent[n.id] = n.id; });
+    Object.keys(kept).forEach(function (k) {
+      var e = kept[k];
+      if (parent[e.a] === undefined || parent[e.b] === undefined) return;
+      var ra = find(e.a), rb = find(e.b);
+      if (ra !== rb) parent[ra] = rb;
+    });
+    var comps = {};
+    ns.forEach(function (n) { var r = find(n.id); (comps[r] = comps[r] || []).push(n); });
+    var list = Object.keys(comps).map(function (r) { return comps[r]; }).filter(function (c) { return c.length >= 3; });
+    list.forEach(function (c) { c.sort(function (x, y) { return (y.audience || 0) - (x.audience || 0); }); });
+    list.sort(function (x, y) { return y.length - x.length; });
+    return { list: list, root: find, parent: parent };
+  }
+
+  function buildInsights(ns, es, focus) {
+    if (!insightBody || !insightPanel) return;
+    insightBody.textContent = "";
+    if (!ns.length) { insightPanel.hidden = true; return; }
+    insightPanel.hidden = false;
+
+    if (focus) buildEgoInsights(ns, es, focus);
+    else buildFullInsights(ns, es);
+  }
+
+  function buildEgoInsights(ns, es, focus) {
+    var ego = null;
+    ns.forEach(function (n) { if (n.login === focus) ego = n; });
+    if (!ego) return;
+    var neigh = [];
+    es.forEach(function (e) {
+      var other = e.a === ego.id ? byId[e.b] : (e.b === ego.id ? byId[e.a] : null);
+      if (other) neigh.push({ n: other, shared: e.shared || 0, share: e.share || 0 });
+    });
+    if (!neigh.length) {
+      var s0 = section("Пересечений пока нет");
+      line(s0, "Канал ещё не набрал общих чаттеров с другими каналами графа — загляните после пары эфиров.", "dim");
+      insightBody.appendChild(s0);
+      return;
+    }
+    neigh.sort(function (x, y) { return y.shared - x.shared; });
+
+    var s1 = section("Куда уходит аудитория " + ego.name, "доля = от аудитории меньшего канала в паре");
+    neigh.slice(0, 6).forEach(function (x) {
+      line(s1, x.n.name + " — " + fmtN(x.shared) + " общих · " + pct(x.share), "strong");
+    });
+    insightBody.appendChild(s1);
+
+    var collab = neigh.filter(function (x) {
+      var ratio = (x.n.audience || 1) / (ego.audience || 1);
+      return ratio >= 0.33 && ratio <= 3 && x.share >= 0.08;
+    }).slice(0, 4);
+    if (collab.length) {
+      var s2 = section("Коллаб / рейд-кандидаты", "сопоставимый размер + тёплая общая аудитория → максимальная конверсия рейда");
+      collab.forEach(function (x) {
+        line(s2, x.n.name + " · аудитория " + fmtN(x.n.audience) + " · " + pct(x.share) + " общих", "ok");
+        focusLink(s2, x.n.login, "смотреть паутинку " + x.n.login + " →");
+      });
+      insightBody.appendChild(s2);
+    }
+
+    var donors = neigh.filter(function (x) { return (x.n.audience || 0) >= 2 * (ego.audience || 1); }).slice(0, 4);
+    if (donors.length) {
+      var s3 = section("Доноры роста", "крупные каналы, где ваша аудитория уже сидит — там вас найдут");
+      donors.forEach(function (x) {
+        line(s3, x.n.name + " · аудитория " + fmtN(x.n.audience) + " · " + fmtN(x.shared) + " общих", "ok");
+      });
+      insightBody.appendChild(s3);
+    }
+
+    var anom = neigh.filter(function (x) { return x.share >= 0.6 && Math.min(x.n.audience || 0, ego.audience || 0) >= 50; });
+    if (anom.length) {
+      var s4 = section("Сигнал внимания");
+      anom.slice(0, 3).forEach(function (x) {
+        line(s4, "С каналом " + x.n.name + " общие " + pct(x.share) + " аудитории меньшего — аномально высокая общность.", "warn");
+      });
+      insightBody.appendChild(s4);
+    }
+  }
+
+  function buildFullInsights(ns, es) {
+    var com = communities(ns, es);
+
+    if (com.list.length) {
+      var s1 = section("Сообщества аудиторий", "каналы, связанные сильнейшими пересечениями");
+      com.list.slice(0, 5).forEach(function (c) {
+        var core = c.slice(0, 2).map(function (n) { return n.name; }).join(" + ");
+        var sum = c.reduce(function (acc, n) { return acc + (n.audience || 0); }, 0);
+        line(s1, c.length + " каналов вокруг " + core + " · сумма аудиторий " + fmtN(sum), "strong");
+      });
+      insightBody.appendChild(s1);
+    }
+
+    // Bridges: nodes whose meaningful edges span 2+ communities — the widest-reach placements.
+    var compOf = {};
+    com.list.forEach(function (c, i) { c.forEach(function (n) { compOf[n.id] = i; }); });
+    var span = {};
+    es.forEach(function (e) {
+      if ((e.share || 0) < 0.05) return;
+      var ca = compOf[e.a], cb = compOf[e.b];
+      if (ca == null || cb == null || ca === cb) return;
+      (span[e.a] = span[e.a] || {})[cb] = true;
+      (span[e.b] = span[e.b] || {})[ca] = true;
+    });
+    var bridges = ns.filter(function (n) { return span[n.id] && Object.keys(span[n.id]).length >= 2; })
+      .sort(function (x, y) { return (y.audience || 0) - (x.audience || 0); });
+    if (bridges.length) {
+      var s2 = section("Мосты между сообществами", "аудитория этих каналов дотягивается сразу до нескольких кластеров");
+      bridges.slice(0, 4).forEach(function (n) {
+        line(s2, n.name + " · аудитория " + fmtN(n.audience) + " · соединяет " + Object.keys(span[n.id]).length + "+ сообществ", "ok");
+      });
+      insightBody.appendChild(s2);
+    }
+
+    // Unique reach (brand value): big audience, low max overlap → placements that don't duplicate.
+    var maxPortion = {};
+    es.forEach(function (e) {
+      var a = byId[e.a], b = byId[e.b];
+      if (!a || !b) return;
+      if (a.audience) maxPortion[a.id] = Math.max(maxPortion[a.id] || 0, (e.shared || 0) / a.audience);
+      if (b.audience) maxPortion[b.id] = Math.max(maxPortion[b.id] || 0, (e.shared || 0) / b.audience);
+    });
+    var uniq = ns.filter(function (n) { return (n.audience || 0) >= 100; })
+      .map(function (n) {
+        var mp = Math.min(1, maxPortion[n.id] || 0);
+        return { n: n, mp: mp, core: Math.round((n.audience || 0) * (1 - mp)) };
+      })
+      .sort(function (x, y) { return y.core - x.core; });
+    if (uniq.length) {
+      var s3 = section("Уникальный охват — где реклама не дублируется", "оценка ядра, которое не пересекается с другими каналами графа");
+      uniq.slice(0, isBrand ? 6 : 2).forEach(function (x) {
+        line(s3, x.n.name + " · аудитория " + fmtN(x.n.audience) + " · макс. пересечение " + pct(x.mp) +
+          " → уникальное ядро ≈ " + fmtN(x.core), "strong");
+      });
+      brandGate(s3, 2, Math.min(uniq.length, 6), "каналов");
+      insightBody.appendChild(s3);
+    }
+
+    // Anomalous overlaps (bot lens, legal-safe wording).
+    var anomPairs = es.filter(function (e) {
+      var a = byId[e.a], b = byId[e.b];
+      return a && b && (e.share || 0) >= 0.6 && Math.min(a.audience || 0, b.audience || 0) >= 50;
+    }).sort(function (x, y) { return (y.share || 0) - (x.share || 0); });
+    if (anomPairs.length) {
+      var s4 = section("Аномально высокая общность", "у меньшего канала в паре большинство аудитории — общее; сигнал внимания");
+      anomPairs.slice(0, isBrand ? 5 : 2).forEach(function (e) {
+        line(s4, byId[e.a].name + " ↔ " + byId[e.b].name + " · " + pct(e.share) + " общих", "warn");
+      });
+      brandGate(s4, 2, Math.min(anomPairs.length, 5), "пар");
+      insightBody.appendChild(s4);
+    }
+  }
 
   function resize() {
     var r = canvas.parentElement.getBoundingClientRect();
@@ -43,6 +255,7 @@
       .then(function (resp) {
         var d = (resp && resp.data) || {};
         start(d.nodes || [], d.edges || [], focus);
+        buildInsights(d.nodes || [], d.edges || [], focus);
         if (sub) {
           sub.textContent = (focus ? "Паутинка канала " + focus + " · " : "") +
             (d.nodes ? d.nodes.length : 0) + " каналов · " + (d.edges ? d.edges.length : 0) +
@@ -217,6 +430,7 @@
     .then(
       function (s) {
         if (!s || !s.authenticated) { window.location.href = "/login"; return; }
+        isBrand = ((s.roles || []).indexOf("brand") !== -1);
         try {
           resize();
           // Deep link: /graph?focus=<login> (ego mode from channel cards / brand surfaces).

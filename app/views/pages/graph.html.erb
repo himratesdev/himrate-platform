@@ -23,6 +23,22 @@
     </div>
     <div id="hr-graph-tip" hidden
          class="absolute z-10 p-[10px_14px] bg-[#141419] [border:1px_solid_#25252F] rounded-[10px] text-[12.5px] text-[#F4F4F7] font-[Inter,system-ui,sans-serif] pointer-events-none"></div>
+    <%# Interpretation panel: insights computed client-side from the SAME real graph payload
+        (landing/graph.js buildInsights) — communities, unique reach, anomalous overlaps, ego
+        collab/donor picks. Brand-value blocks are role-gated with a /business/new CTA. %>
+    <button id="hr-insight-toggle" type="button"
+            class="absolute right-[16px] top-[14px] z-20 box-border p-[9px_14px] bg-[#141419] text-[#C9B8FF] text-[12.5px] font-[Inter,system-ui,sans-serif] font-semibold [border:1px_solid_#2B2440] rounded-[10px] cursor-pointer">
+      Интерпретация
+    </button>
+    <aside id="hr-insight-panel" hidden
+           class="absolute right-[16px] top-[58px] bottom-[14px] z-20 w-[372px] max-w-[86vw] box-border flex flex-col gap-[12px] p-[16px] bg-[#101018] [border:1px_solid_#25252F] rounded-[14px] overflow-y-auto font-[Inter,system-ui,sans-serif]"
+           style="box-shadow:0 12px 40px rgba(0,0,0,.55)">
+      <div class="flex flex-row justify-between items-center">
+        <div class="text-[14px] text-[#F4F4F7] font-bold">Интерпретация</div>
+        <div id="hr-insight-basis" class="text-[10.5px] text-[#5E5E6B]">основа: чат-присутствие</div>
+      </div>
+      <div id="hr-insight-body" class="flex flex-col gap-[12px]"></div>
+    </aside>
     <div class="absolute left-[16px] bottom-[14px] flex flex-row gap-[14px] text-[11.5px] text-[#8E8A9A] font-[Inter,system-ui,sans-serif]">
       <span><span style="color:#25D9A4">●</span> реальная</span>
       <span><span style="color:#F6A823">●</span> amber</span>
