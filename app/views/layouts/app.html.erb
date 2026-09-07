@@ -17,6 +17,9 @@
         Deliberately NO hr-shared.js — that is the MARKETING bundle (animated dot canvas + a nav-wiring
         that hijacks buttons to /methodology). The product UI must stay free of it (it broke the login
         Twitch button, and PO: «не вставляй везде анимцию на фон»). %>
+    <%# Shared channel-search box (window.hrMountSearch) — loaded BEFORE the page bundle so a page
+        script can mount it during its own boot. %>
+    <%= javascript_include_tag "landing/hr-search" %>
     <% if @page %><%= javascript_include_tag "landing/#{@page}" %><% end %>
     <% if @brand_dashboard %><%= javascript_include_tag "landing/brand_nav" %><% end %>
     <%= javascript_include_tag "landing/hr-i18n" %>

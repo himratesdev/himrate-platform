@@ -14,6 +14,22 @@
 (function () {
   "use strict";
 
+  // Channel search — the surface promises "поиск", but the design ships only filters: there was no
+  // way to look a streamer up by name. Mounted above the results; a pick opens that streamer's card.
+  function mountChannelSearch() {
+    if (!window.hrMountSearch) return;
+    var host = q(document, "TB Left") || q(document, "Filters") || document.body;
+    var slot = document.createElement("div");
+    slot.setAttribute("data-pencil-name", "Search Slot");
+    slot.style.cssText = "margin:0 0 14px;";
+    host.insertBefore(slot, host.firstChild);
+    window.hrMountSearch({
+      mount: slot,
+      placeholder: "Поиск блогера: ник, Telegram, YouTube…",
+      onPick: function (row) { window.location.href = hrApp("/blogger/" + encodeURIComponent(row.login)); }
+    });
+  }
+
   // Host-mapping (2026-09): links must stay in the path scheme the page was served under
   // (canonical short paths on app.himrate.com, /app-prefixed on staging/dev). Local fallback —
   // page scripts load BEFORE brand_nav.js, so window.hrAppPath may not exist yet.
@@ -305,6 +321,7 @@
     .then(function (s) {
       if (!s || !s.authenticated) { window.location.href = "/login"; return; }
       try {
+        mountChannelSearch();
         boot(isBrand(s));
       } catch (e) {
         if (window.console) console.warn("[brand_creators] boot failed:", e);
