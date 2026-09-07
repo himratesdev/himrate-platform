@@ -118,13 +118,32 @@ module SocialAnalytics
       end
 
       def api_get(path, **params)
-        r = HTTP.timeout(TIMEOUT).get("#{API}#{path}", params: params.merge(key: api_key))
-        r.status.success? ? JSON.parse(r.body.to_s) : nil
+        uri = URI("#{API}#{path}")
+        uri.query = URI.encode_www_form(params.merge(key: api_key))
+        body = http_get(uri)
+        body && JSON.parse(body)
       end
 
       def get_raw(url)
-        r = HTTP.headers("User-Agent" => USER_AGENT).timeout(TIMEOUT).get(url)
-        r.status.success? ? r.body.to_s : nil
+        http_get(URI(url))
+      end
+
+      # The host's DNS refuses to resolve YouTube (ISP-level), while the address answers normally —
+      # a plain request dies with "Name or service not known" and every YouTube metric silently
+      # vanishes. Resolve over DoH and pin the connect IP; TLS/SNI keep the real hostname. Falls
+      # back to ordinary DNS wherever the block does not exist (CI, dev).
+      def http_get(uri)
+        http = ::Net::HTTP.new(uri.host, uri.port)
+        http.use_ssl = uri.scheme == "https"
+        http.open_timeout = TIMEOUT
+        http.read_timeout = TIMEOUT
+        pinned = ::Net::BlockedHostResolver.resolve(uri.host)
+        http.ipaddr = pinned if pinned.present?
+
+        response = http.request(::Net::HTTP::Get.new(uri, "User-Agent" => USER_AGENT))
+        return nil unless response.is_a?(::Net::HTTPSuccess)
+
+        response.body.to_s.dup.force_encoding(Encoding::UTF_8).scrub
       end
     end
   end

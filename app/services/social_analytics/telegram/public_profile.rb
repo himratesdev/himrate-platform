@@ -42,7 +42,24 @@ module SocialAnalytics
       # the home server). TELEGRAM_WEB_IPADDR pins the one address that stays reachable; TLS and SNI
       # still use the real hostname, so this chooses the route only. Empty env → ordinary DNS (CI,
       # dev, any unblocked host). Re-probe when it breaks: curl --resolve t.me:443:<ip> https://t.me/
+      # The block is INTERMITTENT: the same address refuses connections for a stretch and answers
+      # again minutes later (measured live). One attempt therefore reports "channel unavailable" for
+      # a channel that is perfectly fine — retry briefly before giving up.
+      ATTEMPTS = 3
+      RETRY_PAUSE = 2
+
       def fetch
+        attempt = 0
+        begin
+          attempt += 1
+          fetch_once
+        rescue Net::OpenTimeout, Net::ReadTimeout, Errno::ECONNREFUSED, Errno::ECONNRESET, SocketError
+          retry if attempt < ATTEMPTS && (sleep(RETRY_PAUSE) || true)
+          raise
+        end
+      end
+
+      def fetch_once
         uri = URI(format(SOURCE_URL, @handle))
         http = Net::HTTP.new(uri.host, uri.port)
         http.use_ssl = true
