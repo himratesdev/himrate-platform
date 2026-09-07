@@ -45,12 +45,30 @@ module SocialAnalytics
       # ── resolution ──────────────────────────────────────────────────────────
       # A /channel/UC… URL carries the id directly; anything else (/@handle, /user, /c/custom) is resolved
       # by reading the canonical channelId out of the page HTML (keyless, one fetch, form-agnostic).
+      # YouTube moved the id around in its markup: the old `"channelId":"UC…"` is no longer emitted
+      # on a /@handle page (verified live 2026-09-08 — the page carries `externalId` and a canonical
+      # /channel/UC… link instead). Try every known carrier so a future markup shuffle degrades to
+      # one dead pattern, not to a silently empty profile.
+      ID = /UC[A-Za-z0-9_-]{22}/
+      ID_PATTERNS = [
+        %r{rel="canonical"\s+href="https://www\.youtube\.com/channel/(#{ID})"},
+        /"externalId"\s*:\s*"(#{ID})"/,
+        /"channelId"\s*:\s*"(#{ID})"/,
+        /"browseId"\s*:\s*"(#{ID})"/
+      ].freeze
+
       def resolve_channel_id
-        direct = @url[%r{youtube\.com/channel/(UC[A-Za-z0-9_-]{22})}, 1]
+        direct = @url[%r{youtube\.com/channel/(#{ID})}, 1]
         return direct if direct
 
         html = get_raw(@url)
-        html && html[/"channelId":"(UC[A-Za-z0-9_-]{22})"/, 1]
+        return nil if html.blank?
+
+        ID_PATTERNS.each do |pattern|
+          found = html[pattern, 1]
+          return found if found
+        end
+        nil
       end
 
       def fetch_channel(channel_id)

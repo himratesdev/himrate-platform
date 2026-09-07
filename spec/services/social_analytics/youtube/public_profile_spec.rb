@@ -48,4 +48,36 @@ RSpec.describe SocialAnalytics::Youtube::PublicProfile do
     allow(ENV).to receive(:[]).with("YOUTUBE_API_KEY").and_return(nil)
     expect(described_class.call("https://www.youtube.com/@x")).to be_nil
   end
+
+  describe "#resolve_channel_id (YouTube markup drift)" do
+    let(:id) { "UC2-8y0CXVwPyI-5gdDAuPRw" }
+
+    it "reads the id from the canonical link (current markup on /@handle pages)" do
+      svc = described_class.new("https://youtube.com/@HellkaHellka")
+      html = %(<link rel="canonical" href="https://www.youtube.com/channel/#{id}">)
+      allow(svc).to receive(:get_raw).and_return(html)
+
+      expect(svc.send(:resolve_channel_id)).to eq(id)
+    end
+
+    it "falls back to externalId" do
+      svc = described_class.new("https://youtube.com/@somebody")
+      allow(svc).to receive(:get_raw).and_return(%({"externalId":"#{id}"}))
+
+      expect(svc.send(:resolve_channel_id)).to eq(id)
+    end
+
+    it "still reads the legacy channelId form" do
+      svc = described_class.new("https://youtube.com/@somebody")
+      allow(svc).to receive(:get_raw).and_return(%({"channelId":"#{id}"}))
+
+      expect(svc.send(:resolve_channel_id)).to eq(id)
+    end
+
+    it "takes the id straight from a /channel/ URL without fetching" do
+      svc = described_class.new("https://youtube.com/channel/#{id}")
+      expect(svc).not_to receive(:get_raw)
+      expect(svc.send(:resolve_channel_id)).to eq(id)
+    end
+  end
 end
