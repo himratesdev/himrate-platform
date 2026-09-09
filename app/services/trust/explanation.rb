@@ -165,10 +165,10 @@ module Trust
     def resolve_cell
       stream = @tih.stream || @channel&.streams&.order(started_at: :desc)&.first
       TrustIndex::V2::CellResolver.call(
-        category: stream&.game_name.presence || "default",
-        v_bucket: TrustIndex::V2::CellKey.v_bucket(shown),
-        chat_mode: TrustIndex::V2::CellKey.chat_mode(@channel&.channel_protection_config),
-        language: stream&.language.presence || "default"
+        **TrustIndex::V2::CellKey.for(
+          stream: stream, v: shown,
+          protection_config: @channel&.channel_protection_config
+        )
       )
     rescue StandardError => e
       Rails.logger.warn("Trust::Explanation cell resolve failed: #{e.class}: #{e.message}")

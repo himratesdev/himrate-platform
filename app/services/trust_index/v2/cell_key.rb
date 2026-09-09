@@ -14,6 +14,34 @@ module TrustIndex
 
       module_function
 
+      # The whole key in one call — the only correct way to ask for it.
+      #
+      # Assembling it by hand is how the read side silently misses: the corpus is keyed by the
+      # NORMALISED category slug ("just_chatting"), not by the Twitch game name ("Just Chatting"),
+      # so passing the raw name resolves nothing and the card quietly drops the baseline it was
+      # supposed to compare against. Caught live 2026-09-09 on the first channel that had one.
+      #
+      # `category:` lets a caller that already resolved it (ContextBuilder) skip the work.
+      def for(stream:, v:, protection_config: nil, category: nil)
+        {
+          category: category.presence || category_for(stream),
+          v_bucket: v_bucket(v),
+          chat_mode: chat_mode(protection_config),
+          language: language_for(stream)
+        }
+      end
+
+      def category_for(stream)
+        TrustIndex::Signals::CategoryResolver.resolve(stream&.game_name)
+      rescue StandardError
+        "default"
+      end
+
+      # Verbatim, as the engine stores it — the corpus holds "RU", not "ru".
+      def language_for(stream)
+        stream&.language.presence || "default"
+      end
+
       def v_bucket(v)
         return "0" if v.nil? || v <= 0
 

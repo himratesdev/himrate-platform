@@ -4,7 +4,10 @@ require "rails_helper"
 
 RSpec.describe Trust::Explanation do
   let(:channel) { create(:channel) }
-  let!(:stream) { create(:stream, channel: channel, game_name: "Just Chatting", language: "ru") }
+  # Mirrors production: streams carry the Twitch game NAME and an uppercase language, while the
+  # calibration corpus is keyed by the normalised category slug. Getting that wrong is exactly how
+  # the baseline silently disappears from the card.
+  let!(:stream) { create(:stream, channel: channel, game_name: "Just Chatting", language: "RU") }
 
   def snapshot(**attrs)
     create(:trust_index_history, {
@@ -58,8 +61,8 @@ RSpec.describe Trust::Explanation do
 
   describe "the peer baseline" do
     it "quotes the cell the engine used and translates it into one-in-N" do
-      CalibrationCellBaseline.create!(category: "Just Chatting", v_bucket: "1k-5k", chat_mode: "open",
-                                      language: "ru", rho_star: 0.24, rho_lo: 0.2, rho_hi: 0.3,
+      CalibrationCellBaseline.create!(category: "just_chatting", v_bucket: "1k-5k", chat_mode: "open",
+                                      language: "RU", rho_star: 0.24, rho_lo: 0.2, rho_hi: 0.3,
                                       calibrated: true)
 
       deficit = described_class.call(snapshot, channel: channel)[:arms].find { |a| a[:kind] == "deficit" }
@@ -70,12 +73,22 @@ RSpec.describe Trust::Explanation do
 
     it "says the baseline is not calibrated rather than implying a measurement" do
       CalibrationCellBaseline.create!(category: "default", v_bucket: "1k-5k", chat_mode: "open",
-                                      language: "ru", rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05,
+                                      language: "RU", rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05,
                                       calibrated: false)
 
       deficit = described_class.call(snapshot, channel: channel)[:arms].find { |a| a[:kind] == "deficit" }
 
       expect(deficit[:expected][:calibrated]).to be(false)
+    end
+
+    it "ignores a cell keyed by the raw Twitch game name — the corpus uses the category slug" do
+      CalibrationCellBaseline.create!(category: "Just Chatting", v_bucket: "1k-5k", chat_mode: "open",
+                                      language: "RU", rho_star: 0.24, rho_lo: 0.2, rho_hi: 0.3,
+                                      calibrated: true)
+
+      deficit = described_class.call(snapshot, channel: channel)[:arms].find { |a| a[:kind] == "deficit" }
+
+      expect(deficit).not_to have_key(:expected)
     end
 
     it "omits the expected share entirely when no cell resolves" do

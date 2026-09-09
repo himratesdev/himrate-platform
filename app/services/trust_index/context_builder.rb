@@ -553,10 +553,11 @@ module TrustIndex
       # cell = category × V-bucket × chat-mode × language → per-cell ρ* baseline, EC-18 coarsest fallback.
       def v2_cell(stream, context_hash, v)
         TrustIndex::V2::CellResolver.call(
-          category: context_hash[:category] || "default",
-          v_bucket: v2_v_bucket(v),
-          chat_mode: v2_chat_mode(context_hash[:channel_protection_config]),
-          language: stream.language.presence || "default"
+          **TrustIndex::V2::CellKey.for(
+            stream: stream, v: v,
+            protection_config: context_hash[:channel_protection_config],
+            category: context_hash[:category]
+          )
         ) || DEFAULT_CELL_BASELINE
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: v2 cell resolve failed (#{e.message})")
