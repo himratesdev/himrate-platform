@@ -117,7 +117,7 @@ module Coordination
           .where(channel_id: ids, engine_version: "v2")
           .select("DISTINCT ON (channel_id) channel_id, band_color")
           .order(:channel_id, calculated_at: :desc)
-          .to_h { |t| [t.channel_id, t[:band_color]] }
+          .to_h { |t| [ t.channel_id, t[:band_color] ] }
       end
     end
   end

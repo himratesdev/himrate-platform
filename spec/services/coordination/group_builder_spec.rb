@@ -44,12 +44,12 @@ RSpec.describe Coordination::GroupBuilder do
   it "reports density as the share of member pairs carrying an edge" do
     groups = described_class.call(pairs:, accounts:)
 
-    expect(groups.map(&:density).uniq).to eq([1.0]) # 3 edges over 3 possible pairs
+    expect(groups.map(&:density).uniq).to eq([ 1.0 ]) # 3 edges over 3 possible pairs
 
     sparse = described_class.call(
-      pairs: [{ a: "a", b: "b", accounts_shared: 9, events: 9 },
-              { a: "b", b: "c", accounts_shared: 9, events: 9 }],
-      accounts: [{ username: "u", events: 3, max_concurrent: 3, channels: %w[a b c], last_at: nil }]
+      pairs: [ { a: "a", b: "b", accounts_shared: 9, events: 9 },
+              { a: "b", b: "c", accounts_shared: 9, events: 9 } ],
+      accounts: [ { username: "u", events: 3, max_concurrent: 3, channels: %w[a b c], last_at: nil } ]
     )
     expect(sparse.first.density).to eq(0.667) # 2 of 3
   end

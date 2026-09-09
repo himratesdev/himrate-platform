@@ -18,7 +18,7 @@ RSpec.describe Coordination::EventsWorker do
 
   it "collects only the missing hours, freshest first, bounded per run" do
     current = Time.current.utc.beginning_of_hour
-    already = [current - 1.hour, current - 2.hours]
+    already = [ current - 1.hour, current - 2.hours ]
     allow(Clickhouse::CoordinationQueries).to receive(:collected_hours).and_return(already)
     collected = []
     allow(Clickhouse::CoordinationQueries).to receive(:collect_hour!) { |h| collected << h }

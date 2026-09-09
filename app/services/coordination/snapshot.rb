@@ -93,7 +93,7 @@ module Coordination
       scored = previous.map do |g|
         other = g.members.map(&:channel_login).to_set
         union = (set | other).size
-        [g, union.zero? ? 0.0 : (set & other).size.to_f / union]
+        [ g, union.zero? ? 0.0 : (set & other).size.to_f / union ]
       end
       best, score = scored.max_by { |(_, s)| s }
       score.to_f >= IDENTITY_OVERLAP ? best : nil
@@ -170,7 +170,7 @@ module Coordination
 
     def write_accounts(record, group)
       record.accounts.delete_all
-      kept = group.accounts.sort_by { |a| [-a[:events], -a[:channels_in_group]] }.first(ACCOUNTS_KEPT)
+      kept = group.accounts.sort_by { |a| [ -a[:events], -a[:channels_in_group] ] }.first(ACCOUNTS_KEPT)
       named = named_bot_usernames(group, kept)
       rhythm = rhythm_for(group, kept)
 

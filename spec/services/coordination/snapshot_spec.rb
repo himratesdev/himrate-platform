@@ -9,7 +9,7 @@ RSpec.describe Coordination::Snapshot do
   let(:hour) { 2.hours.ago.utc.beginning_of_hour }
   let(:pool) { (1..8).map { |i| ns("pool#{i}") } }
 
-  def seed_ring(channels: [a, b, c])
+  def seed_ring(channels: [ a, b, c ])
     pool.each { |u| seed_coordination(hour, u => { channels: channels, events: 4, max_concurrent: 3 }) }
   end
 
@@ -25,7 +25,7 @@ RSpec.describe Coordination::Snapshot do
     expect(group.accounts_shared).to eq(8)
     expect(group.density).to eq(1.0)
     expect(group.window_days).to eq(1)
-    expect(group.members.pluck(:channel_login)).to match_array([a, b, c])
+    expect(group.members.pluck(:channel_login)).to match_array([ a, b, c ])
     expect(group.edges.count).to eq(3)
     expect(group.accounts.pluck(:username)).to match_array(pool)
     # tracked channel gets its Channel row linked; the other two stay login-only
@@ -72,7 +72,7 @@ RSpec.describe Coordination::Snapshot do
     original.update_column(:first_seen_at, 5.days.ago)
 
     d = ns("ring_d")
-    pool.each { |u| seed_coordination(hour - 1.hour, u => { channels: [a, b, d], events: 4, max_concurrent: 3 }) }
+    pool.each { |u| seed_coordination(hour - 1.hour, u => { channels: [ a, b, d ], events: 4, max_concurrent: 3 }) }
     described_class.call(window_days: 1)
 
     reloaded = CoordinationGroup.for_channel_login(a).first
