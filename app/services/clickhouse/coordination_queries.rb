@@ -82,8 +82,12 @@ module Clickhouse
     # Hours already collected in the lookback — lets the worker self-heal a gap (a restart, a paused
     # flag, a failed run) instead of silently leaving a hole in the window.
     def collected_hours(hours:)
-      Clickhouse.client.select(<<~SQL).map { |r| Time.zone.parse("#{r['hour']} UTC") }
-        SELECT DISTINCT toString(hour) AS hour
+      # The alias must NOT be `hour`: ClickHouse resolves the WHERE reference to the projection
+      # alias (String) instead of the column (DateTime) and dies with NO_COMMON_TYPE. That killed
+      # every hourly run for 18 hours before it was noticed — the collector's dead set was the only
+      # trace. Same alias-shadowing family as `argMax(events, events)`.
+      Clickhouse.client.select(<<~SQL).map { |r| Time.zone.parse("#{r['collected_hour']} UTC") }
+        SELECT DISTINCT toString(hour) AS collected_hour
         FROM coordination_events
         WHERE hour >= toStartOfHour(now() - INTERVAL #{hours.to_i} HOUR)
       SQL

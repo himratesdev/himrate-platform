@@ -47,6 +47,28 @@ RSpec.describe Clickhouse::CoordinationQueries do
     end
   end
 
+  describe ".collected_hours" do
+    # Regression: the projection used to be aliased `hour`, which shadows the DateTime column in
+    # the WHERE clause and makes ClickHouse reject the comparison. The worker stubs this method in
+    # its own spec, so nothing executed the SQL and the hourly collector died silently in prod.
+    it "returns the hours already collected, as real times" do
+      seed_coordination(hour, ns("collected") => { channels: [ a, b, c ], events: 2, max_concurrent: 3 })
+
+      result = described_class.collected_hours(hours: 26)
+
+      expect(result).to be_an(Array)
+      expect(result).to all(be_a(ActiveSupport::TimeWithZone))
+      expect(result.map(&:to_i)).to include(hour.to_i)
+    end
+
+    it "ignores hours outside the lookback" do
+      old_hour = 40.hours.ago.utc.beginning_of_hour
+      seed_coordination(old_hour, ns("ancient") => { channels: [ a, b, c ], events: 2, max_concurrent: 3 })
+
+      expect(described_class.collected_hours(hours: 26).map(&:to_i)).not_to include(old_hour.to_i)
+    end
+  end
+
   describe ".accounts" do
     it "drops roamers — an account spread across too many channels is a viewer, not a pool member" do
       wide = ns("roamer")

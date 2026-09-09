@@ -9,6 +9,14 @@ RSpec.describe Coordination::EventsWorker do
     Sidekiq.redis { |r| r.del(described_class::LOCK_KEY) }
   end
 
+  it "asks ClickHouse which hours it already has, without stubbing the query" do
+    collected = []
+    allow(Clickhouse::CoordinationQueries).to receive(:collect_hour!) { |h| collected << h }
+
+    expect { described_class.new.perform }.not_to raise_error
+    expect(collected).not_to be_empty
+  end
+
   it "does nothing while the flag is off" do
     allow(Flipper).to receive(:enabled?).with(described_class::FLAG).and_return(false)
     expect(Clickhouse::CoordinationQueries).not_to receive(:collect_hour!)
