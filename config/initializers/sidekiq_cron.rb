@@ -147,6 +147,22 @@ Sidekiq.configure_server do |config|
         "queue" => "long_running",
         "description" => "Warm the full audience-overlap graph payload (compute-on-read, tens of seconds)"
       },
+      # WEB-CONSOLIDATION §9: the coordination layer. The collector keeps the 7-day window complete
+      # one cheap hour at a time (and back-fills gaps); the assembler folds those hours into rings.
+      # Split cadence on purpose — collection must not slip an hour, assembly only has to be fresh
+      # enough for a page load.
+      "coordination_events" => {
+        "cron" => "11 * * * *", # hourly, past the top so the collected hour is complete
+        "class" => "Coordination::EventsWorker",
+        "queue" => "monitoring",
+        "description" => "Collect which channels each co-firing account wrote in (gated :coordination_engine)"
+      },
+      "coordination_groups" => {
+        "cron" => "26 */2 * * *", # every 2h, offset from graph_cache_warm (7 */2)
+        "class" => "Coordination::GroupsWorker",
+        "queue" => "long_running",
+        "description" => "Assemble coordination rings from the collected hours (gated :coordination_engine)"
+      },
       # TASK-H8 Day-0: nightly close-out of expired promo grants (subscription deactivate +
       # tier recompute). 03:30 UTC — staggered from the 03:00/03:15 heavy jobs; itself light.
       "promo_expiry_nightly" => {

@@ -154,6 +154,7 @@ module FlipperDefaults
     billing_auto_subscription_creation
     farm_clips_poller
     farm_capture
+    coordination_engine
   ].freeze
   # ^ 2026-08-28 HOSTKEY-loss incident: these ten lived in HOOK_FLAGS and were manually
   # Flipper.enable'd on the old staging box — Redis-only state that died with the server.

@@ -69,6 +69,11 @@ Rails.application.routes.draw do
       # W5: audience-overlap graph («паутинка»).
       get "graph/audience", to: "graph#audience"
 
+      # WEB-CONSOLIDATION §9: coordination rings — which channels share one pool of accounts that
+      # post in three or more of them inside the same 5-second window. Public (fact about a channel).
+      get "channels/:login/coordination", to: "coordination#show", constraints: { login: /[A-Za-z0-9_]+/ }
+      get "coordination/groups/:id", to: "coordination#group"
+
       # TASK-031: User profile
       get "user/me", to: "users#me"
       patch "user/me", to: "users#update"
