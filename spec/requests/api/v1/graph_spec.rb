@@ -3,9 +3,13 @@
 require "rails_helper"
 
 RSpec.describe "Audience graph API" do
-  it "requires auth (401 guest)" do
+  # WEB-CONSOLIDATION §11.3 (2026-09-09): open to guests — the neighbours block on the public
+  # channel card reads this same ego payload. Was 401.
+  it "answers a guest — audience overlap is a fact about a channel" do
     get "/api/v1/graph/audience"
-    expect(response).to have_http_status(:unauthorized)
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body.dig("data", "basis")).to eq("chat_presence")
   end
 
   it "returns the graph shape for a registered user" do
