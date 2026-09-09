@@ -1,11 +1,12 @@
 # frozen_string_literal: true
 
-# W5 «Паутинка»: the audience-overlap graph. Registered-only for now (PO views it day one);
-# the gate moves to business-tier with monetization — see GraphPolicy.
+# W5 «Паутинка»: the audience-overlap graph. Public since 2026-09-09 — the neighbours block on
+# the channel card reads this same ego payload, and who a channel shares its audience with is a
+# fact about that channel. See GraphPolicy for the access rationale.
 module Api
   module V1
     class GraphController < Api::BaseController
-      before_action :authenticate_user!
+      before_action :authenticate_user_optional!
 
       # GET /api/v1/graph/audience[?focus=login]
       def audience

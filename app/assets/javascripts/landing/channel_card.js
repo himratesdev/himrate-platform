@@ -107,6 +107,7 @@
     renderChecks(hl, drill);
     renderReputation(layers.reputation && layers.reputation.data);
     renderExplanation(drill);
+    renderTrajectory(layers.reputation && layers.reputation.data);
   }
 
   // W2: real L2 — check rows driven by the REAL public /trust-headline signals (band verdict +
@@ -352,13 +353,14 @@
     erv_divergence: "расхождение оценок"
   };
 
-  function polyline(values, top, colour, width) {
+  function polyline(values, top, colour, width, w, h) {
+    w = w || SERIES_W; h = h || SERIES_H;
     var line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
-    var step = values.length > 1 ? (SERIES_W - PAD * 2) / (values.length - 1) : 0;
+    var step = values.length > 1 ? (w - PAD * 2) / (values.length - 1) : 0;
     var pts = [];
     values.forEach(function (v, i) {
       if (v == null) return;
-      var y = SERIES_H - PAD - (v / top) * (SERIES_H - PAD * 2);
+      var y = h - PAD - (v / top) * (h - PAD * 2);
       pts.push((PAD + i * step).toFixed(1) + "," + y.toFixed(1));
     });
     line.setAttribute("points", pts.join(" "));
@@ -538,6 +540,101 @@
     } catch (e) { return "—"; }
   }
 
+  // ── block 5 — reputation on the distance ───────────────────────────────────
+  // The export drew a four-level scale and a set of sample bars; the bars were hidden because they
+  // were invented. The trajectory is real data (authenticity per completed broadcast over the
+  // rolling window) and it is the answer to "покажи историю, я хочу её изучить".
+  var TRAJ_W = 860, TRAJ_H = 90;
+
+  function renderTrajectory(repData) {
+    var points = (repData && repData.real_audience_trajectory) || [];
+    if (points.length < 3) return; // two dots are not a history
+
+    var box = mk("div", CARD_CSS);
+    box.setAttribute("data-pencil-name", "Reputation Trend");
+    var head = mk("div", "width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:16px;");
+    head.appendChild(mk("h2", TITLE_CSS, "История канала"));
+    head.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px Inter,system-ui,sans-serif;",
+      "последние " + points.length + " эфиров"));
+    box.appendChild(head);
+
+    var trend = repData.trend || {};
+    if (trend.direction) {
+      box.appendChild(mk("p", "margin:0;color:#C9C9D1;font:400 13.5px/1.55 Inter,system-ui,sans-serif;",
+        TREND_RU[trend.direction] || trend.direction));
+    }
+
+    var values = points.map(function (p) { return p.authenticity; });
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 " + TRAJ_W + " " + TRAJ_H);
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.style.cssText = "width:100%;height:90px;display:block;";
+    svg.appendChild(polyline(values, 100, "#25D9A4", 2, TRAJ_W, TRAJ_H));
+    box.appendChild(svg);
+    box.appendChild(mk("span", "color:" + MUTED + ";font:400 12px Inter,system-ui,sans-serif;",
+      "по вертикали — доля реальной аудитории эфира, 0–100%"));
+
+    mount(box, el("Stream Series") ? "Stream Series" : (el("Explain") ? "Explain" : "L1 Headline"));
+  }
+
+  var TREND_RU = {
+    up: "Доля реальной аудитории растёт от эфира к эфиру.",
+    down: "Доля реальной аудитории снижается от эфира к эфиру.",
+    flat: "Доля реальной аудитории держится ровно."
+  };
+
+  // ── block 6 — who this channel shares its audience with ────────────────────
+  // The neighbours list is the entry point to the lateral walk (channel → neighbour → channel)
+  // and the place the ring becomes visible even when it has not crossed the accusation threshold.
+  function renderNeighbours(payload) {
+    var g = (payload && payload.data) || {};
+    var edges = (g.edges || []).filter(function (e) { return e.a === login || e.b === login; });
+    if (!edges.length) return;
+
+    var byLogin = {};
+    (g.nodes || []).forEach(function (n) { byLogin[n.login] = n; });
+    edges.sort(function (a, b) { return b.shared - a.shared; });
+
+    var box = mk("div", CARD_CSS);
+    box.setAttribute("data-pencil-name", "Neighbours");
+    var head = mk("div", "width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:16px;");
+    head.appendChild(mk("h2", TITLE_CSS, "С кем делит аудиторию"));
+    head.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px Inter,system-ui,sans-serif;",
+      "окно " + (g.window_days || 30) + " дней"));
+    box.appendChild(head);
+
+    var list = mk("div", "width:100%;display:flex;flex-direction:column;gap:2px;");
+    edges.slice(0, 8).forEach(function (e) {
+      var other = e.a === login ? e.b : e.a;
+      var node = byLogin[other] || {};
+      var row = mk("a", "display:flex;gap:14px;justify-content:space-between;align-items:center;" +
+        "padding:9px 0;border-bottom:1px solid #1F1F27;text-decoration:none;");
+      var left = mk("span", "display:inline-flex;align-items:center;gap:9px;color:#E7E7EC;" +
+        "font:500 13.5px Inter,system-ui,sans-serif;");
+      left.appendChild(mk("span", "width:8px;height:8px;border-radius:50%;background:" +
+        (LABEL_COLOR[node.band] || "#9A9AA9") + ";"));
+      left.appendChild(mk("span", "", node.name || other));
+      row.appendChild(left);
+      row.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px Inter,system-ui,sans-serif;white-space:nowrap;",
+        "общих зрителей " + fmt(e.shared) + (e.share != null ? " · " + Math.round(e.share * 100) + "%" : "")));
+      row.href = "/c/" + encodeURIComponent(other);
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+
+    var strongest = edges[0];
+    if (strongest && strongest.share != null && strongest.share >= 0.6) {
+      box.appendChild(mk("p", "margin:0;color:#F6A823;font:400 13px/1.55 Inter,system-ui,sans-serif;",
+        "Аномально высокая общность аудитории с ближайшим каналом — " +
+        Math.round(strongest.share * 100) + "% меньшей из двух аудиторий."));
+    }
+    box.appendChild(mk("span", "color:" + MUTED + ";font:400 11.5px/1.5 Inter,system-ui,sans-serif;",
+      "Считается по чатам за 30 дней: сколько зрителей писали и здесь, и там."));
+
+    mount(box, el("Reputation Trend") ? "Reputation Trend"
+      : (el("Stream Series") ? "Stream Series" : (el("Explain") ? "Explain" : "L1 Headline")));
+  }
+
   function renderError() {
     setText("H Name", login);
     setText("H Meta", "Канал не найден или ещё не проанализирован");
@@ -657,4 +754,5 @@
   loadOptional("/api/v1/channels/" + encodeURIComponent(login) + "/coordination", renderCoordination);
   loadOptional("/api/v1/channels/" + encodeURIComponent(login) + "/trust/history?period=30m",
                function (body) { renderStreamChart((body && body.data) || {}); });
+  loadOptional("/api/v1/graph/audience?focus=" + encodeURIComponent(login), renderNeighbours);
 })();

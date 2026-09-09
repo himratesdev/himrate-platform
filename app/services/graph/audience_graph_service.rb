@@ -22,7 +22,11 @@ module Graph
     EGO_NEIGHBOURS = 60
     WINDOW_DAYS = 30
     CACHE_TTL = 3.hours
-    FOCUS_CACHE_TTL = 30.minutes
+    # Was 30 minutes, which churned for nothing: the presence layer underneath is DAY-grain
+    # (chat_presence_daily), so an ego circle cannot change between two half-hours. It matters now
+    # that the public channel card asks for the ego circle on every visit — a cold build is ~4s of
+    # ClickHouse, and one cache entry serves both the card block and /graph?focus= for that channel.
+    FOCUS_CACHE_TTL = 3.hours
     FULL_CACHE_KEY = "graph:audience:v2:full"
 
     # The full graph is kept warm by Graph::CacheWarmWorker (the pairwise join is background work,
