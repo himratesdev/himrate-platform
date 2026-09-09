@@ -331,8 +331,9 @@
       list.appendChild(mk("span", "color:#C9C9D1;font:500 13.5px Inter,system-ui,sans-serif;", "Что происходило"));
       anomalies.forEach(function (a) {
         var when = a.timestamp ? new Date(a.timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+        var kind = a.anomaly_type || a.type; // /trust/history maps it to `type`, the report does not
         list.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px Inter,system-ui,sans-serif;",
-          when + " · " + (ANOMALY_RU[a.type] || a.type)));
+          when + " · " + (ANOMALY_RU[kind] || kind)));
       });
       box.appendChild(list);
     }

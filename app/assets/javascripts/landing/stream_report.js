@@ -45,7 +45,7 @@
     if (d.ccv_timeline && d.ccv_timeline.length > 1) content.appendChild(series(d.ccv_timeline));
     var facts = chatFacts(d);
     if (facts) content.appendChild(facts);
-    if ((d.anomalies || []).length) content.appendChild(eventList("Что происходило", d.anomalies.map(anomalyLine)));
+    if ((d.anomalies || []).length) content.appendChild(eventList("Что происходило", anomalyLines(d.anomalies)));
     if ((d.raids || []).length) content.appendChild(eventList("Притоки с других каналов", d.raids.map(raidLine)));
     content.appendChild(backLink());
   }
@@ -134,16 +134,20 @@
     return wrap;
   }
 
+  // chat_stats arrives in one of two shapes (the chat rollup or the CCV rollup), so render
+  // whichever keys are actually present instead of assuming one of them.
   function chatFacts(d) {
     var c = d.chat_stats || {};
     var items = [];
     if (c.unique_chatters != null) items.push("писавших в чате " + fmt(c.unique_chatters));
     if (c.total_messages != null) items.push("сообщений " + fmt(c.total_messages));
+    if (c.ccv_peak != null) items.push("пик онлайна " + fmt(c.ccv_peak));
     if (c.ccv_avg != null) items.push("средний онлайн " + fmt(c.ccv_avg));
+    if (c.duration_ms) items.push("длительность " + (Math.round(c.duration_ms / 3600000 * 10) / 10) + " ч");
     if (!items.length) return null;
 
     var box = mk("div", CARD);
-    box.appendChild(mk("h2", TITLE, "Чат за эфир"));
+    box.appendChild(mk("h2", TITLE, "Эфир в цифрах"));
     var wrap = mk("div", "display:flex;flex-wrap:wrap;gap:8px;");
     items.forEach(function (t) {
       wrap.appendChild(mk("span",
@@ -188,10 +192,38 @@
     erv_divergence: "расхождение оценок"
   };
 
-  function anomalyLine(a) {
-    var when = a.timestamp ? hhmm(a.timestamp) + " · " : "";
-    var impact = a.ccv_impact != null ? " · онлайн " + (a.ccv_impact > 0 ? "+" : "") + fmt(a.ccv_impact) : "";
-    return when + (ANOMALY_RU[a.type] || a.type) + impact;
+  function anomalyType(a) { return a.anomaly_type || a.type; }
+
+  // Russian counts: 1 раз, 2-4 раза, 5-20 раз, 21 раз, 22 раза…
+  function plural(n, one, few, many) {
+    var m10 = n % 10, m100 = n % 100;
+    if (m100 >= 11 && m100 <= 14) return many;
+    if (m10 === 1) return one;
+    if (m10 >= 2 && m10 <= 4) return few;
+    return many;
+  }
+
+  // 23 identical rows are not a story. Group by kind, count them, and give the span they cover —
+  // that is what a reader takes away from "what happened during this broadcast".
+  function anomalyLines(list) {
+    var order = [], byType = {};
+    list.forEach(function (a) {
+      var t = anomalyType(a);
+      if (!t) return;
+      if (!byType[t]) { byType[t] = { n: 0, first: a.timestamp, last: a.timestamp, impact: 0 }; order.push(t); }
+      var g = byType[t];
+      g.n += 1;
+      g.last = a.timestamp || g.last;
+      if (a.ccv_impact != null) g.impact += a.ccv_impact;
+    });
+    return order.map(function (t) {
+      var g = byType[t];
+      var span = g.n > 1 && g.first && g.last ? " · " + hhmm(g.first) + "–" + hhmm(g.last)
+                                              : (g.first ? " · " + hhmm(g.first) : "");
+      var times = g.n > 1 ? " · " + g.n + " " + plural(g.n, "раз", "раза", "раз") : "";
+      var impact = g.impact ? " · онлайн " + (g.impact > 0 ? "+" : "") + fmt(g.impact) : "";
+      return (ANOMALY_RU[t] || t) + times + span + impact;
+    });
   }
 
   function raidLine(r) {
