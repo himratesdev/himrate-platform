@@ -67,9 +67,13 @@ RSpec.describe "TI v2 contract finish", type: :request do
         v: 5000, f_hard: 120.0, f_soft: 1400.0, f_hat: 1400.0,
         interval: { lo: 1200.0, hi: 1600.0 }
       )
-      expect(payload[:reason_codes_detail]).to eq([
-        { code: "CHATTER_QUALITY_LOW", label_key: "reason.chatter_quality_low", params: {} }
-      ])
+      # label_key stays for clients translating against their own bundle (the extension); the
+      # resolved title/text/tone landed with config/locales/reason.*.yml on 2026-09-09.
+      expect(payload[:reason_codes_detail].first).to include(
+        code: "CHATTER_QUALITY_LOW", label_key: "reason.chatter_quality_low", params: {}
+      )
+      expect(payload[:reason_codes_detail].first[:title]).to be_present
+      expect(payload[:reason_codes_detail].first[:tone]).to eq("dim")
       # v2 rows persist no per-signal trace yet — the key is REQUIRED by the extension, [] not missing.
       expect(payload[:signal_breakdown]).to eq([])
     end

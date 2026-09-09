@@ -68,11 +68,11 @@ module Cards
     def trust_payload
       @trust_payload ||= begin
         view = live_drill_granted? ? :drill_down : :headline
-        # Reuses the TrustController cache key (trust:id:view) — intentionally NOT scoped by
+        # Reuses the TrustController cache key (trust:id:view:locale) — intentionally NOT scoped by
         # user/surface. Safe today: the only user-dependent drill field (post_stream_window_expired)
         # is always false whenever :drill_down is reachable here. A future user-specific field in
         # build_drill_down would leak across users — scope the key by user then.
-        Rails.cache.fetch("trust:#{@channel.id}:#{view}", expires_in: TRUST_CACHE_TTL) do
+        Rails.cache.fetch(Trust::ShowService.cache_key(@channel.id, view), expires_in: TRUST_CACHE_TTL) do
           Trust::ShowService.new(channel: @channel, view: view, user: @user).call
         end
       end
@@ -92,7 +92,7 @@ module Cards
     # v2: signal_breakdown retired (reason_codes live in the headline layer).
     def live_drill_layer(granted)
       if granted
-        keys = [ :erv_breakdown, :reason_codes_detail, :signal_breakdown,
+        keys = [ :erv_breakdown, :explanation, :reason_codes_detail, :signal_breakdown,
                  :anomaly_alerts, :post_stream_expires_at, :post_stream_window_expired ]
         return { available: true, data: trust_payload.slice(*keys) }
       end

@@ -56,9 +56,12 @@ class ChannelPolicy < ApplicationPolicy
     true
   end
 
-  # TASK-035 FR-017: Trust history — Guest denied, Free 30m live only, Premium all
+  # TASK-035 FR-017: Trust history — the 30m live series is free to everyone; 7d depth stays paid
+  # (view_7d_trust_history?, unchanged). WEB-CONSOLIDATION §7 block 4: how the online moved during
+  # THIS broadcast is a fact about the channel, and that minute chart is the answer to "I open the
+  # stream and there is nothing there". Depth over a period remains the paid boundary.
   def show_trust_history?
-    registered?
+    true
   end
 
   # TASK-035 FR-035: Badge — Streamer own channel only
@@ -75,10 +78,16 @@ class ChannelPolicy < ApplicationPolicy
     true
   end
 
-  # T1-061 layer 2 (live_drill): free, but registered + (live OR post-stream window) — mirrors the
-  # serializer_view :drill_down ladder.
+  # T1-061 layer 2 (live_drill): the verdict taken apart — what was subtracted, on what basis,
+  # against which peer baseline.
+  #
+  # WEB-CONSOLIDATION §7 block 3 (PO 2026-09-09): open to everyone, guests included. A verdict
+  # without its reasoning is not a product — it is a number to distrust; keeping the reasoning
+  # behind a login meant almost nobody ever saw the thing we actually sell. The paid boundary moves
+  # to working with SETS of channels, depth over a period and exports — see card_period_depth?,
+  # deliberately unchanged. (Was: registered? && (live || post-stream window).)
   def card_live_drill?
-    registered? && (record.live? || post_stream_window_open?(record))
+    true
   end
 
   # T1-061 layer 4 (period_depth): ROLE + PAYMENT only. Deliberately NOT view_trends_historical? —
@@ -143,16 +152,12 @@ class ChannelPolicy < ApplicationPolicy
   end
 
   # TASK-031 FR-008: Serializer view selection — single source of truth for tier-scoped fields.
+  # Follows card_live_drill? (open since 2026-09-09): the drill IS the explanation of the verdict,
+  # so every reader gets at least :drill_down and the ladder now only decides the paid :full extras.
   def serializer_view
-    return :headline unless registered?
+    return :full if registered? && premium_access_for?(record)
 
-    if premium_access_for?(record)
-      :full
-    elsif record.live? || post_stream_window_open?(record)
-      :drill_down
-    else
-      :headline
-    end
+    :drill_down
   end
 
   # TASK-039 FR-012: Trends Tab historical access (7d/30d/60d/90d).

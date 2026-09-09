@@ -37,11 +37,12 @@ RSpec.describe Cards::CardService do
   end
 
   describe "free layers (1-3) for any viewer" do
-    it "TC-1 guest (extension) → headline + reputation available; live_drill + paid not" do
+    it "TC-1 guest (extension) → headline, reputation AND the verdict drill; only paid depth is held back" do
       result = card(build_channel, user: nil, surface: "extension")
       expect(result[:layers][:headline][:available]).to be(true)
       expect(result[:layers][:reputation][:available]).to be(true)
-      expect(result[:layers][:live_drill][:available]).to be(false)
+      # The drill carries the explanation of the verdict — free since 2026-09-09.
+      expect(result[:layers][:live_drill][:available]).to be(true)
       expect(result[:layers][:period_depth][:available]).to be(false)
       expect(result[:layers][:period_depth][:cta][:action]).to eq("open_dashboard")
     end
@@ -52,10 +53,11 @@ RSpec.describe Cards::CardService do
         .to eq(Reputation::HistoryService.cached_for(c))
     end
 
-    it "guest on a LIVE channel → live_drill register CTA (funnel)" do
+    it "guest on a LIVE channel → live_drill carries the breakdown, no register wall" do
       ld = card(build_channel(live: true), user: nil, surface: "extension")[:layers][:live_drill]
-      expect(ld[:available]).to be(false)
-      expect(ld[:cta][:action]).to eq("register")
+      expect(ld[:available]).to be(true)
+      expect(ld[:cta]).to be_nil
+      expect(ld[:data]).to include(:erv_breakdown, :explanation, :reason_codes_detail)
     end
 
     it "TC-2 free registered on LIVE channel → live_drill available" do

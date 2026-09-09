@@ -19,7 +19,9 @@ module TrustIndex
     # EC-18 coarsest fallback: illustrative honest chat-share baseline when no calibration_cell_baseline
     # row resolves (pre-GATE-0 / novel cell). Values from SRS FR-003 example — refined per-cell at GATE 0.
     DEFAULT_CELL_BASELINE = TrustIndex::V2::CellResolver::Baseline.new(rho_star: 0.03, rho_lo: 0.02, rho_hi: 0.05, calibrated: false, rho_p1: nil, ccv_typical: nil)
-    V_BUCKETS = [ [ 1_000, "0-1k" ], [ 5_000, "1k-5k" ], [ 20_000, "5k-20k" ] ].freeze
+    # Cell-key derivation moved to TrustIndex::V2::CellKey — the card resolves the same cell to show
+    # the reader what "below the norm" is measured against, and the two must not drift.
+    V_BUCKETS = TrustIndex::V2::CellKey::V_BUCKETS
 
     # i_event EPIC (T1-074) — external-conjunct window/min-sample constants.
     I_EVENT_TREND_MIN_PTS = 30 # ≥30 clean own-CCV points → [2] v_above_own_trend has a stable distribution
@@ -561,24 +563,9 @@ module TrustIndex
         DEFAULT_CELL_BASELINE
       end
 
-      def v2_v_bucket(v)
-        return "0" if v.nil? || v <= 0
+      def v2_v_bucket(v) = TrustIndex::V2::CellKey.v_bucket(v)
 
-        V_BUCKETS.each { |ceil, label| return label if v < ceil }
-        "20k+"
-      end
-
-      def v2_chat_mode(config)
-        return "open" unless config
-        return "sub-only" if config.subs_only_enabled
-
-        fol = config.followers_only_duration_min
-        return "followers-only" if fol && fol >= 0
-        return "slow" if config.slow_mode_seconds.to_i.positive?
-        return "emote-only" if config.emote_only_enabled
-
-        "open"
-      end
+      def v2_chat_mode(config) = TrustIndex::V2::CellKey.chat_mode(config)
 
       # Q = fraction of present chatters that are temporal-clean = NOT flagged, OR flagged only as the
       # "utility" allowlist (spam/unknown = fraud, mirroring v2_chatter_signals). graph_diversity factor

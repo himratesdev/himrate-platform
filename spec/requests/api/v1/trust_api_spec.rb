@@ -29,8 +29,11 @@ RSpec.describe "Trust API", type: :request do
   end
 
   describe "GET /api/v1/channels/:id/trust" do
-    # TC-001: Guest → headline only
-    it "returns headline for guest (no auth)" do
+    # TC-001: Guest → the verdict AND the reasoning behind it.
+    # WEB-CONSOLIDATION §7 block 3 (2026-09-09): the drill explains the verdict, and a verdict
+    # without its explanation is a number to distrust. Only the paid :full extras stay behind the
+    # ladder. Was: guest got :headline and no decomposition.
+    it "returns the verdict and its breakdown for a guest (no auth)" do
       get "/api/v1/channels/#{channel.id}/trust"
 
       expect(response).to have_http_status(:ok)
@@ -38,8 +41,10 @@ RSpec.describe "Trust API", type: :request do
       expect(data["authenticity"]).to eq(72.0)
       expect(data.dig("band", "color")).to eq("yellow")
       expect(data["erv_label"]).to be_present
-      # Guest should NOT get the drill decomposition
-      expect(data).not_to have_key("signal_breakdown")
+      expect(data).to have_key("erv_breakdown")
+      expect(data).to have_key("explanation")
+      # The paid depth is still not here.
+      expect(data).not_to have_key("streamer_reputation")
     end
 
     # TC-002: Free live → drill_down with signals
@@ -145,8 +150,9 @@ RSpec.describe "Trust API", type: :request do
       expect(response).to have_http_status(:ok)
       data = response.parsed_body["data"]
       expect(data["authenticity"]).to eq(72.0)
-      # Guest still gets headline only
-      expect(data).not_to have_key("signal_breakdown")
+      # Same open drill as any other guest; the paid depth stays out.
+      expect(data).to have_key("erv_breakdown")
+      expect(data).not_to have_key("streamer_reputation")
     end
 
     # TC-023: Redis cache hit (second call should use cache)
@@ -164,11 +170,13 @@ RSpec.describe "Trust API", type: :request do
 
     # TASK-085 FR-008 (ADR-085 D-4 OVERRIDE): anomaly_alerts gated за :drill_down/:full views.
     describe "anomaly_alerts field gating (D-4)" do
-      it "Guest :headline view does NOT include anomaly_alerts" do
+      # The alerts describe what happened on the channel — a fact about it, free like the rest of
+      # the drill since 2026-09-09. Previously guests were on :headline and never saw the key.
+      it "Guest sees anomaly_alerts along with the rest of the drill" do
         get "/api/v1/channels/#{channel.id}/trust"
 
         data = response.parsed_body["data"]
-        expect(data).not_to have_key("anomaly_alerts")
+        expect(data).to have_key("anomaly_alerts")
       end
 
       it "Free live :drill_down view INCLUDES anomaly_alerts (empty array if нет аномалий)" do

@@ -7,12 +7,13 @@ RSpec.describe "Trust History API" do
   let(:user) { create(:user) }
 
   describe "GET /api/v1/channels/:id/trust/history" do
-    # T1-060: a guest (E1) stays on SUBSCRIPTION_REQUIRED on both surfaces — not the extension
-    # honest-empty code (a guest needs to register/subscribe, not "open dashboard").
-    it "returns 403 SUBSCRIPTION_REQUIRED for guest (no auth)" do
+    # WEB-CONSOLIDATION §7 block 4 (2026-09-09): how the online moved during THIS broadcast is a
+    # fact about the channel, so the 30m series is open to a guest too. The 7-day depth stays paid
+    # (view_7d_trust_history?, covered below). Was: 403 SUBSCRIPTION_REQUIRED for a guest.
+    it "returns the 30m series for a guest (no auth)" do
       get "/api/v1/channels/#{channel.id}/trust/history"
-      expect(response).to have_http_status(:forbidden)
-      expect(response.parsed_body.dig("error", "code")).to eq("SUBSCRIPTION_REQUIRED")
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body.dig("data", "period")).to eq("30m")
     end
 
     it "returns 30m data for registered user" do

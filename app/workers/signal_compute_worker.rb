@@ -308,7 +308,9 @@ class SignalComputeWorker
   # TASK-032 CR #16: Invalidate REST API cache after TI recompute
   def invalidate_api_cache(channel_id)
     %w[headline drill_down full].each do |view|
-      Rails.cache.delete("trust:#{channel_id}:#{view}")
+      # Locale-scoped since the drill carries resolved reason copy — drop every variant, otherwise
+      # one language keeps serving a stale verdict after a recompute.
+      I18n.available_locales.each { |loc| Rails.cache.delete(Trust::ShowService.cache_key(channel_id, view, locale: loc)) }
       # PR3b SF-5: /erv cache keys are engine-scoped (erv:<engine>:...) — invalidate both variants
       # so the D-8b "fresh on next poll" intent survives the flip in either direction.
       Rails.cache.delete("erv:v1:#{channel_id}:#{view}")

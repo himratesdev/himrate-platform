@@ -1,0 +1,60 @@
+# English mirror of reason.ru.yml. Same rule: describe the OBSERVATION, never accuse — the words
+# "bots", "fake" and their friends stay out of the neutral scale. See the Russian file's header.
+en:
+  reason:
+    hard_named_fraction:
+      title: "Part of the chat behaves like automation"
+      text: "We looked at the writers one by one: %{n} accounts (%{pct}%% of the chat) post at machine-even intervals and take part in several channels at once. Their share of the online count has been subtracted."
+      tone: warn
+    self_history_inflation_event:
+      title: "The online count jumped against the channel's own history"
+      text: "Viewer numbers stepped up while chat activity stayed where it was. This channel has not behaved like that before."
+      tone: warn
+    self_history_sustained_inflation:
+      title: "The gap has lasted more than one broadcast"
+      text: "For several broadcasts in a row the online count has been higher than the chat activity supports."
+      tone: warn
+    inflation_event_corroboration:
+      title: "The jump is backed by a second signal"
+      text: "The rise in viewers coincided with an independent signal and is not explained by a raid or an embedded player."
+      tone: warn
+    population_chat_deficit:
+      title: "Fewer people write than in comparable channels"
+      text: "For this category, audience size and language a noticeably larger share of viewers usually writes."
+      tone: warn
+    self_history_stable_clean:
+      title: "The channel's history is steady"
+      text: "The ratio of viewers to chat activity holds at the same level from broadcast to broadcast."
+      tone: ok
+    chatter_quality_high:
+      title: "The chat is alive"
+      text: "The people writing have a history on the platform rather than freshly created empty accounts."
+      tone: ok
+    provisional_basic:
+      title: "Provisional assessment"
+      text: "Broadcasts collected so far: %{n}. The full assessment appears after the tenth."
+      tone: dim
+    engagement_deficit_uncorroborated:
+      title: "Activity is below expectation, but nothing corroborates it"
+      text: "Fewer people write than the norm, yet no independent signal supports the reading. This is what a channel with a quiet audience looks like."
+      tone: dim
+    chatter_quality_low:
+      title: "Little is known about the chat accounts"
+      text: "The people writing have empty or very new profiles. That is not an accusation — it lowers our confidence in the assessment."
+      tone: dim
+    cold_start_insufficient:
+      title: "Not enough data for an assessment yet"
+      text: "Broadcasts collected: %{n}. A verdict appears from the third one."
+      tone: dim
+    raid_host_embed_window:
+      title: "Traffic arrived from elsewhere"
+      text: "A raid landed inside the measurement window, or the stream was watched through an embedded player on another site. We do not attribute that jump to the channel."
+      tone: dim
+    unattributed_surge:
+      title: "A surge with no source"
+      text: "The online count rose, but where the viewers came from could not be determined."
+      tone: warn
+    wide_interval_thin_sample:
+      title: "A wider range than usual"
+      text: "This broadcast has few observations, so the bounds of the estimate are further apart than normal."
+      tone: dim

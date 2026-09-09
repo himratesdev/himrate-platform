@@ -5,6 +5,13 @@
 
 module Trust
   class ShowService
+    # Single source of truth for the shared 30s payload key (TrustController, Cards::CardService,
+    # SignalComputeWorker's invalidation). Locale-scoped since 2026-09-09: the drill now carries
+    # server-resolved reason copy, so a Russian reader must not be served an English cache entry.
+    def self.cache_key(channel_id, view, locale: I18n.locale)
+      "trust:#{channel_id}:#{view}:#{locale}"
+    end
+
     def initialize(channel:, view:, user: nil)
       @channel = channel
       @view = view
@@ -105,6 +112,9 @@ module Trust
       tih = latest_v2_ti
       {
         erv_breakdown: erv_breakdown_v2(tih),
+        # WEB-CONSOLIDATION §7 block 3: the verdict taken apart — what was subtracted, on what
+        # basis, against which peer baseline. The card's whole reason to exist.
+        explanation: Trust::Explanation.call(tih, channel: @channel),
         reason_codes_detail: reason_codes_detail_v2(tih),
         signal_breakdown: signal_breakdown_v2(tih),
         post_stream_expires_at: PostStreamWindowService.expires_at(@channel)&.iso8601,
@@ -112,18 +122,37 @@ module Trust
       }
     end
 
-    # Drill detail objects: {code, label_key, params}. label_key = deterministic derivation
-    # ("reason.<code downcased>") — clients resolve against their own bundle and hide unknown
-    # keys (same defence as band label_key); no server-side copywriting here (legal-safe copy
-    # ships with the i18n pass, not this contract PR).
+    # Drill detail objects: {code, label_key, params, title, text, tone}.
+    #
+    # `label_key` stays for clients that translate against their own bundle (the extension) and hide
+    # unknown keys — same defence as the band label_key. `title`/`text`/`tone` are the server-resolved
+    # copy that landed with config/locales/reason.*.yml on 2026-09-09: before that no reason text
+    # existed anywhere on the server and the web card carried a partial hardcoded map that silently
+    # dropped six of the fourteen codes. Resolution follows the request locale (Api::BaseController
+    # sets I18n.locale), exactly like the band label above.
     def reason_codes_detail_v2(tih)
       (tih&.reason_codes || []).filter_map do |c|
         code = c.is_a?(Hash) ? (c["code"] || c[:code]) : c
         next nil if code.blank?
 
         params = c.is_a?(Hash) ? (c["params"] || c[:params] || {}) : {}
-        { code: code, label_key: "reason.#{code.to_s.downcase}", params: params }
+        key = "reason.#{code.to_s.downcase}"
+        { code: code, label_key: key, params: params }.merge(reason_copy(key, params))
       end
+    end
+
+    # An unknown/undocumented code must not blow up the card — it degrades to code-only, the same
+    # way the clients hide keys they cannot resolve.
+    def reason_copy(key, params)
+      symbolized = params.symbolize_keys
+      {
+        title: I18n.t("#{key}.title", default: nil),
+        text: I18n.t("#{key}.text", default: nil, **symbolized),
+        tone: I18n.t("#{key}.tone", default: nil)
+      }.compact
+    rescue I18n::MissingInterpolationArgument => e
+      Rails.logger.warn("Trust::ShowService reason copy #{key}: #{e.message}")
+      { title: I18n.t("#{key}.title", default: nil), tone: I18n.t("#{key}.tone", default: nil) }.compact
     end
 
     # v2 signal breakdown [{layer, source, kind, value}] from TIH.signal_breakdown. The v2 engine

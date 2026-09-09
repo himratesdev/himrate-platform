@@ -21,8 +21,8 @@ module Api
 
         view = ChannelPolicy.new(current_user, @channel).serializer_view
 
-        # CR #10: Redis cache 30s per channel + view
-        payload = Rails.cache.fetch("trust:#{@channel.id}:#{view}", expires_in: 30.seconds) do
+        # CR #10: Redis cache 30s per channel + view (+ locale — the drill carries resolved copy)
+        payload = Rails.cache.fetch(Trust::ShowService.cache_key(@channel.id, view), expires_in: 30.seconds) do
           Trust::ShowService.new(channel: @channel, view: view, user: current_user).call
         end
 

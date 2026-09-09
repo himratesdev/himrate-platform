@@ -182,13 +182,16 @@ RSpec.describe ChannelPolicy, type: :policy do
         expect(described_class.new(create(:user, tier: "free"), channel).card_live_drill?).to be(true)
       end
 
-      it "denies a guest on a live channel" do
+      # WEB-CONSOLIDATION §7 block 3 (PO 2026-09-09): the drill is the EXPLANATION of the verdict
+      # and is open to everyone. Previously a guest was denied and a registered viewer only got it
+      # on a live channel or inside the post-stream window.
+      it "allows a guest — the reasoning behind a verdict is not what we charge for" do
         create(:stream, channel: channel, ended_at: nil)
-        expect(described_class.new(nil, channel).card_live_drill?).to be(false)
+        expect(described_class.new(nil, channel).card_live_drill?).to be(true)
       end
 
-      it "denies a registered viewer on an offline channel (no window)" do
-        expect(described_class.new(create(:user, tier: "free"), channel).card_live_drill?).to be(false)
+      it "allows a viewer on an offline channel — the last verdict still has to be explainable" do
+        expect(described_class.new(create(:user, tier: "free"), channel).card_live_drill?).to be(true)
       end
     end
 
