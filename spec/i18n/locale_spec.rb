@@ -10,11 +10,13 @@ RSpec.describe "i18n Configuration" do
     let(:token) { Auth::JwtService.encode_access(user.id) }
     let(:channel) { create(:channel) }
 
-    # T1-060: on the extension surface a free viewer's streams-history denial is the
-    # honest-empty EXTENSION_DEEP_LOCKED message; assert its locale-distinguishing words.
+    # T1-060: on the extension surface a free viewer's deep-history denial is the honest-empty
+    # EXTENSION_DEEP_LOCKED message; assert its locale-distinguishing words. The probe moved from
+    # /streams to /trends on 2026-09-09 — the broadcast list stopped denying when it became free,
+    # and this example is about LOCALE detection, not about which endpoint gates.
     it "returns RU error for Accept-Language: ru", type: :request do
       Flipper.enable(:pundit_authorization)
-      get "/api/v1/channels/#{channel.id}/streams",
+      get "/api/v1/channels/#{channel.id}/trends/erv",
           headers: { "Authorization" => "Bearer #{token}", "Accept-Language" => "ru" }
       body = JSON.parse(response.body)
       expect(body.dig("error", "message")).to include("кабинете")
@@ -22,7 +24,7 @@ RSpec.describe "i18n Configuration" do
 
     it "returns EN error for Accept-Language: en", type: :request do
       Flipper.enable(:pundit_authorization)
-      get "/api/v1/channels/#{channel.id}/streams",
+      get "/api/v1/channels/#{channel.id}/trends/erv",
           headers: { "Authorization" => "Bearer #{token}", "Accept-Language" => "en" }
       body = JSON.parse(response.body)
       expect(body.dig("error", "message")).to include("dashboard")

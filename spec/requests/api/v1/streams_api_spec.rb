@@ -35,10 +35,13 @@ RSpec.describe "Streams API", type: :request do
   end
 
   describe "GET /api/v1/channels/:id/streams" do
-    # TC-009: Free → 403
-    it "returns 403 for Free user" do
+    # WEB-CONSOLIDATION §7 block 5 / §8 (2026-09-09): a channel's broadcasts and the report
+    # for one of them are facts about the channel — open to everyone. The paid depth is the
+    # period aggregate and the trends endpoints, both untouched.
+    it "returns the list to a Free user" do
       get "/api/v1/channels/#{channel.id}/streams", headers: headers_free
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["data"]).to be_an(Array)
     end
 
     # TC-008: Premium tracked → paginated list
@@ -76,21 +79,22 @@ RSpec.describe "Streams API", type: :request do
       expect(response.parsed_body["data"].size).to eq(3)
     end
 
-    it "returns 401 without auth" do
+    it "answers a guest with no auth at all" do
       get "/api/v1/channels/#{channel.id}/streams"
-      expect(response).to have_http_status(:unauthorized)
+      expect(response).to have_http_status(:ok)
+      # Each row carries the verdict wording resolved server-side.
+      expect(response.parsed_body["data"].first).to have_key("label")
     end
   end
 
   describe "GET /api/v1/channels/:id/streams/:stream_id/report" do
     let(:stream) { channel.streams.order(started_at: :desc).first }
 
-    # TC-012: Free expired → 403
-    it "returns 403 for Free when window expired" do
+    it "returns the report to a Free user long after the broadcast ended" do
       channel.streams.update_all(ended_at: 20.hours.ago)
 
       get "/api/v1/channels/#{channel.id}/streams/#{stream.id}/report", headers: headers_free
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:ok)
     end
 
     # TC-011: Free in window → full report

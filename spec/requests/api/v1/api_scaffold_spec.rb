@@ -36,11 +36,11 @@ RSpec.describe "API Scaffold", type: :request do
     end
   end
 
-  # TC-004: GET /channels/:id/streams → 403 (Free without post-stream window)
+  # WEB-CONSOLIDATION §7 block 5 (2026-09-09): the broadcast list is a fact about the channel.
   describe "GET /api/v1/channels/:id/streams" do
-    it "returns 403 for free user without active stream window" do
+    it "returns the list to a free user" do
       get "/api/v1/channels/#{channel.id}/streams", headers: auth_headers
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:ok)
     end
   end
 
@@ -85,13 +85,12 @@ RSpec.describe "API Scaffold", type: :request do
     end
   end
 
-  # TC-012: GET /channels/:id/streams/:stream_id/report → 403 (Free without window)
-  # TASK-032: streams show replaced by report action
+  # WEB-CONSOLIDATION §8 (2026-09-09): one broadcast's report is a fact about that broadcast.
   describe "GET /api/v1/channels/:id/streams/:stream_id/report" do
-    it "returns 403 for free user without active stream window" do
+    it "returns the report to a free user long after the broadcast ended" do
       stream = create(:stream, channel: channel, started_at: 2.days.ago, ended_at: 2.days.ago)
       get "/api/v1/channels/#{channel.id}/streams/#{stream.id}/report", headers: auth_headers
-      expect(response).to have_http_status(:forbidden)
+      expect(response).to have_http_status(:ok)
     end
   end
 
