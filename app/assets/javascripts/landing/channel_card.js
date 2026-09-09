@@ -103,34 +103,26 @@
       setText("Updated", age < 1 ? "обновлено только что" : "обновлено " + age + " мин назад");
     }
 
-    renderChecks(hl);
+    var drill = (layers.live_drill && layers.live_drill.data) || {};
+    renderChecks(hl, drill);
     renderReputation(layers.reputation && layers.reputation.data);
+    renderExplanation(drill);
   }
 
   // W2: real L2 — check rows driven by the REAL public /trust-headline signals (band verdict +
-  // reason_codes). No invented numbers: rows without a real code are hidden.
-  var REASON_RU = {
-    CHATTER_QUALITY_HIGH: ["Качество чата", "аудитория с историей — признак живых зрителей", "ok"],
-    CHATTER_QUALITY_LOW: ["Качество чата", "мало аккаунтов с историей — сигнал внимания", "warn"],
-    SELF_HISTORY_STABLE_CLEAN: ["История канала", "текущий эфир совпадает с собственной нормой", "ok"],
-    SELF_HISTORY_INFLATION_EVENT: ["История канала", "разовый всплеск против собственной нормы", "warn"],
-    SELF_HISTORY_SUSTAINED_INFLATION: ["История канала", "устойчивое превышение собственной нормы", "warn"],
-    HARD_NAMED_FRACTION: ["Известные боты", "в чате замечены аккаунты из бот-реестров", "warn"],
-    WIDE_INTERVAL_THIN_SAMPLE: ["Достаточность выборки", "оценка с широким интервалом — данных пока мало", "dim"],
-    PROVISIONAL_BASIC: ["Глубина истории", "предварительная оценка — меньше 10 стримов", "dim"],
-    ONLINE_EXCEEDS_ACTIVITY: ["Онлайн vs активность", "онлайн выше наблюдаемой активности чата", "warn"]
-  };
+  // reason codes). The nine-entry RU map that used to live here is gone: the server resolves all
+  // fourteen texts from config/locales/reason.*.yml (it carried one code the engine had stopped
+  // emitting and silently dropped six it does emit).
   var STATE_COLOR = { ok: "#25D9A4", warn: "#F6A823", dim: "#9A9AA9" };
 
-  function renderChecks(hl) {
+  function renderChecks(hl, drill) {
     var band = hl.band || {};
     var rows = [];
     var bandState = band.color === "green" ? "ok" : band.color === "grey" ? "dim" : "warn";
     // No verdict at all (error/empty scrub) → zero rows, everything hidden below.
     if (hl.erv_label || band.color) rows.push(["Вердикт эфира", hl.erv_label || "—", bandState]);
-    (hl.reason_codes || []).forEach(function (code) {
-      var m = REASON_RU[code];
-      if (m) rows.push(m);
+    ((drill && drill.reason_codes_detail) || []).forEach(function (r) {
+      if (r && r.title) rows.push([r.title, r.text || "", r.tone || "dim"]);
     });
     for (var i = 1; i <= 7; i++) {
       var row = el("Chk " + i);
@@ -175,6 +167,373 @@
     setText("Trend Avg", lvl ? ("окно: " + (count != null ? count : "—") + " стримов") : "недостаточно истории");
     var chart = el("Trend Chart");
     if (chart) chart.style.display = "none"; // sample bars — no fabricated series
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+  // Blocks the Pencil export never had. There is no design frame for them yet, so they are built
+  // in the card's own visual language (same card shell as "L1 Headline": #141419 on #25252F,
+  // 20px radius, 28px padding) — the /graph precedent for a hand-built surface. When the frames
+  // land these render functions are what the port replaces.
+  // ────────────────────────────────────────────────────────────────────────────
+
+  var CARD_CSS =
+    "box-sizing:border-box;width:100%;display:flex;flex-direction:column;gap:16px;padding:28px;" +
+    "background:#141419;border:1px solid #25252F;border-radius:20px;";
+  var TITLE_CSS = "margin:0;color:#F4F4F6;font:600 17px Inter,system-ui,sans-serif;";
+  var MUTED = "#9A9AA9";
+
+  function mk(tag, css, text) {
+    var n = document.createElement(tag);
+    if (css) n.style.cssText = css;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  // Insert a section as a sibling of the headline card, keeping the Content column's flow.
+  function mount(node, afterPencilName) {
+    var anchor = el(afterPencilName);
+    if (!anchor || !anchor.parentElement) return false;
+    anchor.parentElement.insertBefore(node, anchor.nextSibling);
+    return true;
+  }
+
+  // ── block 3 — the verdict, taken apart ─────────────────────────────────────
+  // Renders the subtraction the engine actually did, including the rule it used to combine the
+  // arms. It never draws a tidy waterfall: under the cumulative convention only the largest arm
+  // is applied, and pretending otherwise would misstate the arithmetic.
+  function renderExplanation(drill) {
+    var e = drill && drill.explanation;
+    if (!e) return;
+
+    var box = mk("div", CARD_CSS);
+    box.setAttribute("data-pencil-name", "Explain");
+    box.appendChild(mk("h2", TITLE_CSS, "Из чего сложилась оценка"));
+
+    var table = mk("div", "width:100%;display:flex;flex-direction:column;gap:10px;");
+    table.appendChild(explainRow("Показано зрителей", fmt(e.shown), "#F4F4F6", null));
+
+    (e.arms || []).forEach(function (arm) {
+      var copy = ARM_COPY[arm.kind];
+      if (!copy) return;
+      var amount = arm.applied ? "−" + fmt(arm.amount) : fmt(arm.amount);
+      var colour = arm.applied ? "#F0616D" : MUTED;
+      table.appendChild(explainRow(copy.title, amount, colour, armDetail(arm, copy)));
+    });
+
+    var real = e.real || {};
+    var span = real.lo != null && real.hi != null ? "диапазон " + fmt(real.lo) + "–" + fmt(real.hi) : null;
+    table.appendChild(explainRow("Реальных зрителей", fmt(real.value), "#25D9A4", span));
+    box.appendChild(table);
+
+    var rule = e.fusion && e.fusion.mode === "sum"
+      ? "Вычитания складываются: аккаунты с признаками автоматизации и молчаливая часть аудитории — это разные люди."
+      : "Берётся наибольшее из вычитаний, чтобы одних и тех же зрителей не посчитать дважды.";
+    box.appendChild(mk("p", "margin:0;color:" + MUTED + ";font:400 13px/1.55 Inter,system-ui,sans-serif;", rule));
+
+    var facts = factChips(e);
+    if (facts) box.appendChild(facts);
+
+    mount(box, "L1 Headline");
+  }
+
+  var ARM_COPY = {
+    named: { title: "Аккаунты с признаками автоматизации" },
+    deficit: { title: "Недобор активности против нормы" },
+    self_history: { title: "Расхождение с собственной историей канала" }
+  };
+
+  function explainRow(label, value, colour, note) {
+    var row = mk("div", "width:100%;display:flex;flex-direction:column;gap:3px;");
+    var top = mk("div", "width:100%;display:flex;flex-direction:row;gap:16px;justify-content:space-between;align-items:baseline;");
+    top.appendChild(mk("span", "color:#C9C9D1;font:500 14.5px Inter,system-ui,sans-serif;", label));
+    top.appendChild(mk("span", "color:" + colour + ";font:600 16px Inter,system-ui,sans-serif;white-space:nowrap;", value));
+    row.appendChild(top);
+    if (note) row.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px/1.5 Inter,system-ui,sans-serif;", note));
+    return row;
+  }
+
+  function armDetail(arm) {
+    if (arm.kind === "named" && arm.accounts != null) {
+      return arm.accounts + " аккаунтов из писавших в чате" +
+        (arm.share_of_chat_pct != null ? " — " + arm.share_of_chat_pct + "% чата" : "");
+    }
+    if (arm.kind === "deficit") {
+      var o = arm.observed, x = arm.expected;
+      if (!o) return null;
+      var here = "здесь пишет каждый " + o.one_in + "-й зритель";
+      if (!x) return here + "; сравнивать пока не с чем — для этой категории и размера нет измеренной нормы";
+      var peers = "у похожих каналов — каждый " + x.one_in + "-й";
+      return here + "; " + peers + (x.calibrated ? "" : " (норма пока приблизительная, не измеренная)");
+    }
+    return null;
+  }
+
+  // The measurements the subtraction rests on. Shown as plain sentences, not as raw coefficients.
+  function factChips(e) {
+    var chat = e.chat || {}, conf = e.confidence || {};
+    var items = [];
+    if (chat.writers_effective != null) items.push("в чате писали ≈ " + fmt(chat.writers_effective) + " человек");
+    if (conf.interval_pct != null) items.push("ширина оценки " + conf.interval_pct + "% от показанного");
+    if (conf.cold_start_tier === "basic") items.push("оценка предварительная");
+    if (!items.length) return null;
+
+    var wrap = mk("div", "width:100%;display:flex;flex-wrap:wrap;gap:8px;");
+    items.forEach(function (t) {
+      wrap.appendChild(mk("span",
+        "padding:5px 10px;border-radius:999px;background:#1B1B22;border:1px solid #25252F;" +
+        "color:#C9C9D1;font:400 12px Inter,system-ui,sans-serif;", t));
+    });
+    return wrap;
+  }
+
+  // ── block 4 — how the online moved during this broadcast ───────────────────
+  // The answer to "I open a stream and there is nothing there". Two series over the last 30
+  // minutes: what Twitch showed and what the engine counts as real. Fewer than two points means
+  // there is nothing to draw — the block is not rendered at all rather than shown empty.
+  var SERIES_W = 860, SERIES_H = 150, PAD = 6;
+
+  function renderStreamChart(history) {
+    var pts = (history && history.points) || [];
+    if (pts.length < 2) return;
+
+    var box = mk("div", CARD_CSS);
+    box.setAttribute("data-pencil-name", "Stream Series");
+    var head = mk("div", "width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:16px;");
+    head.appendChild(mk("h2", TITLE_CSS, "Ход эфира"));
+    head.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px Inter,system-ui,sans-serif;",
+      "последние 30 минут · " + pts.length + " измерений"));
+    box.appendChild(head);
+
+    var shown = pts.map(function (p) { return p.ccv; });
+    var real = pts.map(function (p) { return p.erv_count; });
+    var top = Math.max.apply(null, shown.concat(real).filter(function (v) { return v != null; }).concat([ 1 ]));
+
+    var svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 " + SERIES_W + " " + SERIES_H);
+    svg.setAttribute("preserveAspectRatio", "none");
+    svg.style.cssText = "width:100%;height:150px;display:block;";
+    svg.appendChild(polyline(shown, top, "#4B4B57", 1.5));
+    svg.appendChild(polyline(real, top, "#25D9A4", 2));
+    box.appendChild(svg);
+
+    var legend = mk("div", "display:flex;gap:18px;flex-wrap:wrap;");
+    legend.appendChild(legendItem("#4B4B57", "показано Twitch"));
+    legend.appendChild(legendItem("#25D9A4", "реальные зрители"));
+    box.appendChild(legend);
+
+    var anomalies = (history.anomalies || []).slice(0, 5);
+    if (anomalies.length) {
+      var list = mk("div", "width:100%;display:flex;flex-direction:column;gap:6px;");
+      list.appendChild(mk("span", "color:#C9C9D1;font:500 13.5px Inter,system-ui,sans-serif;", "Что происходило"));
+      anomalies.forEach(function (a) {
+        var when = a.timestamp ? new Date(a.timestamp).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" }) : "";
+        list.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px Inter,system-ui,sans-serif;",
+          when + " · " + (ANOMALY_RU[a.type] || a.type)));
+      });
+      box.appendChild(list);
+    }
+
+    mount(box, "L1 Headline");
+  }
+
+  // Neutral names for the anomaly types the alerting layer emits — descriptions, never verdicts.
+  var ANOMALY_RU = {
+    viewbot_spike: "резкий скачок онлайна",
+    anomaly_wave: "волна аномальной активности",
+    ccv_step_function: "ступенчатое изменение онлайна",
+    ccv_tier_clustering: "онлайн держится ровными ступенями",
+    chat_behavior: "необычное поведение чата",
+    chatter_ccv_ratio: "расхождение чата и онлайна",
+    ccv_chat_correlation: "онлайн растёт, чат — нет",
+    raid_bot: "приток с другого канала",
+    host_raid: "рейд с другого канала",
+    known_bot_match: "аккаунты из бот-реестров",
+    ti_drop: "оценка резко снизилась",
+    erv_divergence: "расхождение оценок"
+  };
+
+  function polyline(values, top, colour, width) {
+    var line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+    var step = values.length > 1 ? (SERIES_W - PAD * 2) / (values.length - 1) : 0;
+    var pts = [];
+    values.forEach(function (v, i) {
+      if (v == null) return;
+      var y = SERIES_H - PAD - (v / top) * (SERIES_H - PAD * 2);
+      pts.push((PAD + i * step).toFixed(1) + "," + y.toFixed(1));
+    });
+    line.setAttribute("points", pts.join(" "));
+    line.setAttribute("fill", "none");
+    line.setAttribute("stroke", colour);
+    line.setAttribute("stroke-width", String(width));
+    line.setAttribute("stroke-linejoin", "round");
+    return line;
+  }
+
+  function legendItem(colour, label) {
+    var wrap = mk("span", "display:inline-flex;align-items:center;gap:7px;color:" + MUTED +
+      ";font:400 12.5px Inter,system-ui,sans-serif;");
+    wrap.appendChild(mk("span", "width:16px;height:2px;border-radius:2px;background:" + colour + ";"));
+    wrap.appendChild(mk("span", "", label));
+    return wrap;
+  }
+
+  // ── block 0 — coordination ring ────────────────────────────────────────────
+  // Sits above everything because it outranks the channel's own verdict: it is evidence about a
+  // GROUP of channels sharing one pool of accounts that post in three or more of them inside the
+  // same five seconds.
+  //
+  // WORDING IS THE SERVER'S CALL. `headline` is "verdict" only when the ring's pool intersects the
+  // engine's own hard named-bot evidence across at least two of its channels; otherwise it is
+  // "observation" and the block states the numbers without naming anything. The client must never
+  // upgrade one to the other.
+  function renderCoordination(payload) {
+    var d = (payload && payload.data) || {};
+    if (!d.in_group || !d.group) return;
+    var g = d.group;
+    var verdict = g.headline === "verdict";
+    var accent = verdict ? "#F0616D" : "#F6A823";
+
+    var box = mk("div", CARD_CSS.replace("#25252F", accent + "66") +
+      "background:linear-gradient(180deg," + accent + "14 0%,#141419 60%);");
+    box.setAttribute("data-pencil-name", "Coordination");
+
+    box.appendChild(mk("h2", "margin:0;color:" + accent + ";font:700 18px Inter,system-ui,sans-serif;",
+      verdict ? "Признаки скоординированной накрутки чата"
+              : "Скоординированная активность в нескольких каналах"));
+
+    var others = Math.max(0, (g.member_count || 1) - 1);
+    box.appendChild(mk("p", "margin:0;color:#E7E7EC;font:400 14px/1.6 Inter,system-ui,sans-serif;",
+      "Аккаунтов, писавших в одни и те же секунды и здесь, и ещё в " + others +
+      " каналах: " + fmt(g.accounts_shared) + ". Совместных срабатываний за " +
+      (g.window_days || 7) + " дней: " + fmt(g.events) + "."));
+
+    if (verdict && g.corroborated_accounts) {
+      box.appendChild(mk("p", "margin:0;color:#C9C9D1;font:400 13px/1.55 Inter,system-ui,sans-serif;",
+        "Из них " + fmt(g.corroborated_accounts) + " уже разобраны поимённо в " +
+        g.corroborated_channels + " каналах группы."));
+    }
+
+    box.appendChild(memberChips(g.members || []));
+
+    var actions = mk("div", "display:flex;gap:10px;flex-wrap:wrap;align-items:center;");
+    var open = mk("button", btnCss(accent, true), "Разобрать");
+    open.type = "button";
+    var panel = mk("div", "width:100%;display:none;flex-direction:column;gap:14px;");
+    open.addEventListener("click", function () {
+      if (panel.style.display === "flex") { panel.style.display = "none"; open.textContent = "Разобрать"; return; }
+      panel.style.display = "flex";
+      open.textContent = "Свернуть";
+      loadEvidence(g.id, panel);
+    });
+    actions.appendChild(open);
+
+    var dispute = mk("a", btnCss("#3A3A46", false), "Оспорить");
+    dispute.href = "mailto:support@himrate.com?subject=" +
+      encodeURIComponent("Спор по скоординированной активности: " + login);
+    actions.appendChild(dispute);
+
+    var map = mk("a", btnCss("#3A3A46", false), "Открыть на карте");
+    map.href = appHref("/graph?focus=" + encodeURIComponent(login));
+    actions.appendChild(map);
+    box.appendChild(actions);
+    box.appendChild(panel);
+
+    box.appendChild(mk("p", "margin:0;color:" + MUTED + ";font:400 11.5px/1.5 Inter,system-ui,sans-serif;",
+      "Окно наблюдения " + (g.window_days || 7) + " дней; учитываются аккаунты, писавшие в 3+ каналах внутри 5 секунд. " +
+      "Источник — архив чата наблюдаемых каналов. Обновлено: " + shortDate(g.computed_at) + "."));
+
+    var content = el("Content");
+    var first = el("Breadcrumb");
+    if (content) content.insertBefore(box, first && first.nextSibling ? first.nextSibling : content.firstChild);
+  }
+
+  function btnCss(colour, filled) {
+    return "display:inline-flex;align-items:center;padding:8px 14px;border-radius:10px;cursor:pointer;" +
+      "font:600 13px Inter,system-ui,sans-serif;text-decoration:none;border:1px solid " + colour + ";" +
+      (filled ? "background:" + colour + ";color:#0B0B0F;" : "background:transparent;color:#C9C9D1;");
+  }
+
+  function memberChips(members) {
+    var wrap = mk("div", "width:100%;display:flex;flex-wrap:wrap;gap:8px;");
+    members.forEach(function (m) {
+      var chip = mk(m.is_focus ? "span" : "a",
+        "display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 6px;border-radius:999px;" +
+        "background:#1B1B22;border:1px solid " + (m.is_focus ? "#3A3A46" : "#25252F") + ";" +
+        "color:" + (m.is_focus ? "#F4F4F6" : "#C9C9D1") + ";font:500 12.5px Inter,system-ui,sans-serif;" +
+        "text-decoration:none;");
+      chip.appendChild(mk("span", "width:8px;height:8px;border-radius:50%;background:" +
+        (LABEL_COLOR[m.band] || "#9A9AA9") + ";"));
+      chip.appendChild(mk("span", "", m.login + (m.is_focus ? " · этот канал" : "")));
+      if (!m.is_focus) chip.href = "/c/" + encodeURIComponent(m.login);
+      wrap.appendChild(chip);
+    });
+    return wrap;
+  }
+
+  // The evidence table. Loaded on demand — it is the heaviest part of the payload and most
+  // readers stop at the headline.
+  function loadEvidence(groupId, panel) {
+    if (panel.dataset.loaded === "1") return;
+    panel.dataset.loaded = "1";
+    panel.appendChild(mk("span", "color:" + MUTED + ";font:400 13px Inter,system-ui,sans-serif;", "Загружаем доказательства…"));
+
+    fetch("/api/v1/coordination/groups/" + encodeURIComponent(groupId) +
+          "?focus=" + encodeURIComponent(login),
+          { headers: { Accept: "application/json" }, credentials: "same-origin" })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (body) { panel.textContent = ""; renderEvidence((body && body.data) || {}, panel); })
+      .catch(function () {
+        panel.textContent = "";
+        panel.appendChild(mk("span", "color:" + MUTED + ";font:400 13px Inter,system-ui,sans-serif;",
+          "Доказательства сейчас недоступны."));
+        panel.dataset.loaded = "0";
+      });
+  }
+
+  function renderEvidence(g, panel) {
+    var ties = (g.edges || []).slice(0, 6);
+    if (ties.length) {
+      var t = mk("div", "width:100%;display:flex;flex-direction:column;gap:6px;");
+      t.appendChild(mk("span", "color:#C9C9D1;font:500 13.5px Inter,system-ui,sans-serif;", "Самые плотные связи"));
+      ties.forEach(function (e) {
+        t.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px Inter,system-ui,sans-serif;",
+          e.a + " ↔ " + e.b + " · общих аккаунтов " + fmt(e.accounts_shared)));
+      });
+      panel.appendChild(t);
+    }
+
+    var rows = (g.accounts || []).slice(0, 20);
+    if (!rows.length) return;
+    var head = mk("div", "width:100%;display:flex;flex-direction:column;gap:6px;");
+    head.appendChild(mk("span", "color:#C9C9D1;font:500 13.5px Inter,system-ui,sans-serif;",
+      "Аккаунты пула — показаны " + rows.length + " из " + fmt(g.accounts_shared)));
+    rows.forEach(function (a) {
+      var line = mk("div", "width:100%;display:flex;gap:14px;justify-content:space-between;" +
+        "padding:6px 0;border-bottom:1px solid #1F1F27;font:400 12.5px Inter,system-ui,sans-serif;color:" + MUTED + ";");
+      var left = mk("span", "color:#E7E7EC;", a.username + (a.named_bot ? " ·" : ""));
+      if (a.named_bot) left.appendChild(mk("span", "color:#F0616D;", " разобран поимённо"));
+      line.appendChild(left);
+      line.appendChild(mk("span", "white-space:nowrap;",
+        "каналов " + a.channels_in_group + " · срабатываний " + fmt(a.events) + rhythmNote(a)));
+      head.appendChild(line);
+    });
+    panel.appendChild(head);
+  }
+
+  // Posting rhythm in words. A coefficient of variation near zero means the gaps between messages
+  // barely differ — a metronome. Above ~1.5 the account writes the way a person does.
+  function rhythmNote(a) {
+    if (a.median_interval_sec == null) return "";
+    var cv = a.interval_cv;
+    var how = cv == null ? "" : cv < 0.5 ? ", очень ровно" : cv < 1.5 ? ", ровно" : "";
+    return " · каждые ≈" + Math.round(a.median_interval_sec) + " с" + how;
+  }
+
+  function shortDate(iso) {
+    if (!iso) return "—";
+    try {
+      return new Date(iso).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return "—"; }
   }
 
   function renderError() {
@@ -282,4 +641,18 @@
       if (window.console) console.warn("[channel_card] load failed:", e);
       renderError();
     });
+
+  // Two independent surfaces, two independent fetches: neither the ring nor the broadcast series
+  // may take the card down with it. A failure here leaves the block unrendered — an absent block
+  // is honest, a broken card is not.
+  function loadOptional(url, render) {
+    fetch(url, { headers: { Accept: "application/json", "Accept-Language": "ru" }, credentials: "same-origin" })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (body) { if (body) render(body); })
+      .catch(function (e) { if (window.console) console.warn("[channel_card] optional block:", url, e); });
+  }
+
+  loadOptional("/api/v1/channels/" + encodeURIComponent(login) + "/coordination", renderCoordination);
+  loadOptional("/api/v1/channels/" + encodeURIComponent(login) + "/trust/history?period=30m",
+               function (body) { renderStreamChart((body && body.data) || {}); });
 })();
