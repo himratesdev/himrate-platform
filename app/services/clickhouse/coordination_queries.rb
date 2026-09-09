@@ -171,14 +171,17 @@ module Clickhouse
           SELECT username,
                  dateDiff('second',
                           lagInFrame(timestamp) OVER (PARTITION BY username ORDER BY timestamp),
-                          timestamp) AS gap
+                          timestamp) AS gap,
+                 row_number() OVER (PARTITION BY username ORDER BY timestamp) AS rn
           FROM chat_messages
           WHERE msg_type = 'privmsg'
             AND channel_login IN (#{chans})
             AND username IN (#{users})
             AND timestamp > now() - INTERVAL #{hours.to_i} HOUR
         )
-        WHERE gap > 0
+        -- rn > 1: the first message of each account has no predecessor, and lagInFrame's default
+        -- (epoch 0) would otherwise contribute a ~1.7e9-second "gap" that swamps the spread.
+        WHERE rn > 1 AND gap > 0
         GROUP BY username
         HAVING gaps >= 5
       SQL
