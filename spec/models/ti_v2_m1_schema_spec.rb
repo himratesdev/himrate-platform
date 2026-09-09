@@ -30,9 +30,14 @@ RSpec.describe "TI v2 M1 additive schema", type: :model do
     expect(cols).to include("signal_breakdown") # STAYS — v2 owns it (L0/L2 per-signal trace)
   end
 
-  it "defaults engine_version to 'v1' NOT NULL (fail-safe; ADR MF-4 supersedes SRS 'v2')" do
+  # The M1-era fail-safe default was 'v1' (ADR MF-4): during the dual-write window an un-stamped
+  # row had to read as legacy. V1-RETIRE (migration 20260902100000, `change_column_default … from
+  # "v1" to "v2"`) deleted the v1 engine outright, so the fail-safe now points the other way — an
+  # un-stamped row belongs to the only engine that exists. This assertion still tracked the old
+  # value on 2026-09-09 and passed only because the CI replica's database predated the migration.
+  it "defaults engine_version to 'v2' NOT NULL (V1-RETIRE — there is no v1 to fall back to)" do
     col = conn.columns(:trust_index_histories).find { |c| c.name == "engine_version" }
-    expect(col.default).to eq("v1")
+    expect(col.default).to eq("v2")
     expect(col.null).to be(false)
   end
 
