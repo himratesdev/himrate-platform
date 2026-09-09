@@ -217,7 +217,7 @@
       if (!copy) return;
       var amount = arm.applied ? "−" + fmt(arm.amount) : fmt(arm.amount);
       var colour = arm.applied ? "#F0616D" : MUTED;
-      table.appendChild(explainRow(copy.title, amount, colour, armDetail(arm, copy)));
+      table.appendChild(explainRow(copy.title, amount, colour, armDetail(arm)));
     });
 
     var real = e.real || {};
@@ -333,7 +333,7 @@
       box.appendChild(list);
     }
 
-    mount(box, "L1 Headline");
+    mount(box, el("Explain") ? "Explain" : "L1 Headline");
   }
 
   // Neutral names for the anomaly types the alerting layer emits — descriptions, never verdicts.
@@ -443,8 +443,10 @@
       "Источник — архив чата наблюдаемых каналов. Обновлено: " + shortDate(g.computed_at) + "."));
 
     var content = el("Content");
-    var first = el("Breadcrumb");
-    if (content) content.insertBefore(box, first && first.nextSibling ? first.nextSibling : content.firstChild);
+    if (!content) return;
+    var crumb = el("Breadcrumb");
+    // insertBefore(node, null) appends — exactly right when the breadcrumb is the last child.
+    content.insertBefore(box, crumb ? crumb.nextSibling : content.firstChild);
   }
 
   function btnCss(colour, filled) {
