@@ -274,6 +274,10 @@ Rails.application.routes.draw do
   # Public channel card (screen 02) — free real-audience analysis of any channel, no account.
   # login = Twitch login (alnum/underscore); constrained so it can't shadow the pages above.
   get "c/:login", to: "pages#channel_card", as: :channel_card, constraints: { login: /[A-Za-z0-9_]+/ }
+  # WEB-CONSOLIDATION §8 — one broadcast, taken apart. A different object from the channel, so a
+  # page of its own; noindex with a canonical back to the card (a page per broadcast is crawl noise).
+  get "c/:login/s/:stream_id", to: "pages#stream_report", as: :stream_report,
+      constraints: { login: /[A-Za-z0-9_]+/, stream_id: /[0-9a-fA-F-]{36}/ }
   # EPIC-64 Phase 1 — public category tops («Топ стримеров категории»), server-rendered
   # for crawlers. Slug = transliterated category name (PublicTop::Categories is the map).
   get "top", to: "pages#top", as: :top

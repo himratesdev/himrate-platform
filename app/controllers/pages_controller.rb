@@ -29,6 +29,22 @@ class PagesController < ApplicationController
   # Public channel card (screen 02) — faithful export host. Real data is wired client-side by
   # landing/channel_card.js against the public GET /api/v1/channels/:login/card (headline +
   # reputation are free on any channel per access-model v2). No auth.
+  # WEB-CONSOLIDATION §8: one broadcast, taken apart — the series, the anomalies, the raids and the
+  # verdict at the moment it ended. A different OBJECT from the channel, hence its own page; not
+  # indexed (one page per broadcast is noise), canonical points back at the channel card.
+  def stream_report
+    channel = Channel.find_by(login: params[:login])
+    stream = channel && channel.streams.find_by(id: params[:stream_id])
+    unless stream
+      return render(file: Rails.public_path.join("404.html"), status: :not_found, layout: false)
+    end
+
+    @page = "stream_report"
+    @login = channel.login
+    @channel_name = channel.display_name.presence || channel.login
+    @stream = stream
+  end
+
   def channel_card
     # Only render the card for a channel we actually hold — the card API 404s for
     # unknown logins anyway, so a bare shell for any string was a soft-404 + indexable

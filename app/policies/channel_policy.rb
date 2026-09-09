@@ -37,11 +37,12 @@ class ChannelPolicy < ApplicationPolicy
     registered?
   end
 
-  # TASK-032 FR-002: Stream history — Premium tracked, Business, or Streamer own.
+  # TASK-032 FR-002: Stream history.
+  # WEB-CONSOLIDATION §7 block 5 (2026-09-09): the LIST of a channel's broadcasts — when it went
+  # live, for how long, what the verdict was — is a fact about the channel. Open. The paid depth is
+  # the aggregate over a period (card_period_depth?) and the trends endpoints, both untouched.
   def view_streams?
-    return false unless registered?
-
-    premium_access_for?(record)
+    true
   end
 
   # TASK-032 CR #4: show_trust? — always allows (headline for all), determines view level
@@ -111,15 +112,12 @@ class ChannelPolicy < ApplicationPolicy
     true
   end
 
-  # TASK-032 PG WARNING #2: Paywall for stream report — via Pundit (not controller)
-  # Returns true if user can view the report for this channel.
-  # Premium/Business/Streamer own: always. Free: only if live or TIME-lock window open.
+  # TASK-032 PG WARNING #2: the per-broadcast report.
+  # WEB-CONSOLIDATION §8 (2026-09-09): one broadcast's report — its series, its anomalies, its
+  # raids — is a fact about that broadcast, and it is where «провалиться и узнать подробнее» ends
+  # up. Open, like the list it is reached from. Was: registered + (premium | live | 18h window).
   def view_report?
-    return false unless registered?
-    return true if premium_access_for?(record)
-    return true if record.live?
-
-    PostStreamWindowService.open?(record)
+    true
   end
 
   # T1-060 FR-6: 7d trust-history depth requires premium-level access. Replaces the inline

@@ -9,8 +9,11 @@
     <%# Self-referencing canonical on the apex host consolidates www/http/staging duplicates onto
         https://himrate.com (TASK-060 SEO). The landing layout serves ONLY public, indexable surfaces
         (marketing pages + the public channel card /c/:login). The product UI (login + /app/*) lives on
-        the `app` layout (noindex) — see PagesController#resolve_layout. %>
-    <link rel="canonical" href="<%= canonical_url %>">
+        the `app` layout (noindex) — see PagesController#resolve_layout.
+        A page that is a DETAIL of another one (a single broadcast under a channel) sets both hooks:
+        :canonical points at the page that should rank, :robots keeps the detail out of the index. %>
+    <link rel="canonical" href="<%= content_for(:canonical).presence || canonical_url %>">
+    <% if content_for?(:robots) %><meta name="robots" content="<%= content_for(:robots) %>"><% end %>
 
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="HimRate">

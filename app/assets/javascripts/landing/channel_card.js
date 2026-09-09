@@ -216,9 +216,11 @@
     (e.arms || []).forEach(function (arm) {
       var copy = ARM_COPY[arm.kind];
       if (!copy) return;
-      var amount = arm.applied ? "−" + fmt(arm.amount) : fmt(arm.amount);
+      var zero = !arm.amount;
+      var title = zero && copy.zero ? copy.zero : copy.title;
+      var amount = arm.applied ? "−" + fmt(arm.amount) : zero ? "0" : fmt(arm.amount);
       var colour = arm.applied ? "#F0616D" : MUTED;
-      table.appendChild(explainRow(copy.title, amount, colour, armDetail(arm)));
+      table.appendChild(explainRow(title, amount, colour, armDetail(arm)));
     });
 
     var real = e.real || {};
@@ -239,7 +241,8 @@
 
   var ARM_COPY = {
     named: { title: "Аккаунты с признаками автоматизации" },
-    deficit: { title: "Недобор активности против нормы" },
+    // Titled by outcome: with nothing subtracted the row is a comparison, not a shortfall.
+    deficit: { title: "Недобор активности против нормы", zero: "Активность чата против нормы" },
     self_history: { title: "Расхождение с собственной историей канала" }
   };
 
@@ -255,8 +258,8 @@
 
   function armDetail(arm) {
     if (arm.kind === "named" && arm.accounts != null) {
-      return arm.accounts + " аккаунтов из писавших в чате" +
-        (arm.share_of_chat_pct != null ? " — " + arm.share_of_chat_pct + "% чата" : "");
+      return "разобрано поимённо: " + arm.accounts +
+        (arm.share_of_chat_pct != null ? " — это " + arm.share_of_chat_pct + "% писавших в чате" : "");
     }
     if (arm.kind === "deficit") {
       var o = arm.observed, x = arm.expected;
@@ -560,8 +563,11 @@
 
     var trend = repData.trend || {};
     if (trend.direction) {
-      box.appendChild(mk("p", "margin:0;color:#C9C9D1;font:400 13.5px/1.55 Inter,system-ui,sans-serif;",
-        TREND_RU[trend.direction] || trend.direction));
+      var phrase = TREND_RU[trend.direction];
+      if (phrase) {
+        box.appendChild(mk("p", "margin:0;color:#C9C9D1;font:400 13.5px/1.55 Inter,system-ui,sans-serif;",
+          phrase + (trend.delta_pct != null ? " — " + (trend.delta_pct > 0 ? "+" : "") + trend.delta_pct + " п.п." : "")));
+      }
     }
 
     var values = points.map(function (p) { return p.authenticity; });
@@ -577,10 +583,12 @@
     mount(box, el("Stream Series") ? "Stream Series" : (el("Explain") ? "Explain" : "L1 Headline"));
   }
 
+  // Keys as Reputation::HistoryService emits them (improving / declining / stable) — an earlier
+  // guess at up/down/flat leaked the raw word onto the page.
   var TREND_RU = {
-    up: "Доля реальной аудитории растёт от эфира к эфиру.",
-    down: "Доля реальной аудитории снижается от эфира к эфиру.",
-    flat: "Доля реальной аудитории держится ровно."
+    improving: "Доля реальной аудитории растёт от эфира к эфиру",
+    declining: "Доля реальной аудитории снижается от эфира к эфиру",
+    stable: "Доля реальной аудитории держится ровно"
   };
 
   // ── block 6 — who this channel shares its audience with ────────────────────
@@ -633,6 +641,61 @@
 
     mount(box, el("Reputation Trend") ? "Reputation Trend"
       : (el("Stream Series") ? "Stream Series" : (el("Explain") ? "Explain" : "L1 Headline")));
+  }
+
+  // ── block 5b — the broadcasts themselves ───────────────────────────────────
+  // The list is what makes the history walkable: each row opens the report for that one
+  // broadcast, which is where "провалиться и узнать подробнее" actually lands.
+  function renderStreams(body) {
+    var rows = (body && body.data) || [];
+    if (!rows.length) return;
+
+    var box = mk("div", CARD_CSS);
+    box.setAttribute("data-pencil-name", "Streams");
+    var head = mk("div", "width:100%;display:flex;justify-content:space-between;align-items:baseline;gap:16px;");
+    head.appendChild(mk("h2", TITLE_CSS, "Последние эфиры"));
+    var total = body.meta && body.meta.total;
+    head.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px Inter,system-ui,sans-serif;",
+      total ? "всего собрано: " + total : ""));
+    box.appendChild(head);
+
+    var list = mk("div", "width:100%;display:flex;flex-direction:column;gap:2px;");
+    rows.slice(0, 8).forEach(function (s) {
+      var row = mk("a", "display:flex;gap:14px;justify-content:space-between;align-items:center;" +
+        "padding:10px 0;border-bottom:1px solid #1F1F27;text-decoration:none;");
+      row.href = "/c/" + encodeURIComponent(login) + "/s/" + encodeURIComponent(s.id);
+
+      var left = mk("span", "display:flex;flex-direction:column;gap:3px;");
+      left.appendChild(mk("span", "color:#E7E7EC;font:500 13.5px Inter,system-ui,sans-serif;", streamDate(s)));
+      var meta = [];
+      if (s.duration_ms) meta.push(Math.round(s.duration_ms / 3600000 * 10) / 10 + " ч");
+      if (s.peak_ccv != null) meta.push("пик " + fmt(s.peak_ccv));
+      if (s.game_name) meta.push(s.game_name);
+      left.appendChild(mk("span", "color:" + MUTED + ";font:400 12px Inter,system-ui,sans-serif;", meta.join(" · ")));
+      row.appendChild(left);
+
+      var right = mk("span", "display:flex;flex-direction:column;gap:3px;align-items:flex-end;");
+      right.appendChild(mk("span", "color:" + (LABEL_COLOR[s.band_color] || MUTED) +
+        ";font:600 14px Inter,system-ui,sans-serif;",
+        s.erv != null ? fmt(s.erv) + " реальных" : "—"));
+      if (s.label) {
+        right.appendChild(mk("span", "color:" + MUTED + ";font:400 12px Inter,system-ui,sans-serif;", s.label));
+      }
+      row.appendChild(right);
+      list.appendChild(row);
+    });
+    box.appendChild(list);
+
+    mount(box, el("Neighbours") ? "Neighbours"
+      : (el("Reputation Trend") ? "Reputation Trend"
+        : (el("Stream Series") ? "Stream Series" : (el("Explain") ? "Explain" : "L1 Headline"))));
+  }
+
+  function streamDate(s) {
+    try {
+      return new Date(s.started_at).toLocaleString("ru-RU",
+        { day: "2-digit", month: "long", hour: "2-digit", minute: "2-digit" });
+    } catch (e) { return s.started_at || ""; }
   }
 
   function renderError() {
@@ -755,4 +818,5 @@
   loadOptional("/api/v1/channels/" + encodeURIComponent(login) + "/trust/history?period=30m",
                function (body) { renderStreamChart((body && body.data) || {}); });
   loadOptional("/api/v1/graph/audience?focus=" + encodeURIComponent(login), renderNeighbours);
+  loadOptional("/api/v1/channels/" + encodeURIComponent(login) + "/streams?per_page=8", renderStreams);
 })();

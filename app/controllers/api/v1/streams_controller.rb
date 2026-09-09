@@ -9,7 +9,12 @@ module Api
       include Channelable
 
       before_action :set_channel
-      before_action :authenticate_user!, only: %i[index report latest_summary]
+      # WEB-CONSOLIDATION §7 block 5 and §8 (2026-09-09): a channel's broadcast list and a single
+      # broadcast's report are facts about that channel, so they answer a guest too — Pundit still
+      # decides (view_streams? / view_report?). `latest_summary` keeps hard auth: it is the
+      # extension's own post-stream surface with its own product rules.
+      before_action :authenticate_user_optional!, only: %i[index report]
+      before_action :authenticate_user!, only: %i[latest_summary]
 
       # FR-002: GET /api/v1/channels/:id/streams — stream history
       def index
@@ -101,6 +106,9 @@ module Api
           authenticity: ti&.authenticity&.to_f,
           band_row: ti&.band_row,
           label_key: TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row),
+          # Server-resolved verdict wording, mirroring the headline's erv_label — a client should
+          # never have to keep its own copy of the six band strings.
+          label: I18n.t(TrustIndex::V2::BandClassifier.label_key_for(ti&.band_row), default: nil),
           band_color: ti&.band_color || "grey",
           confirmed_anomaly: ti&.confirmed_anomaly,
           engine_version: "v2"
