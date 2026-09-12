@@ -84,6 +84,17 @@ RSpec.describe Clickhouse::ChatRow do
       expect(described_class.from_pg(full_attrs)).not_to have_key(:inserted_at)
     end
 
+    it "carries ts_source through so the row records whose clock stamped it" do
+      row = described_class.from_pg(full_attrs.merge(ts_source: Twitch::IrcParser::TS_SOURCE_TWITCH))
+      expect(row[:ts_source]).to eq("twitch")
+    end
+
+    # Rows written before 2026-09-12 carry no marker, and "local" is exactly what they were:
+    # stamped off our own process clock at parse time.
+    it "defaults ts_source to 'local' when the attrs carry none" do
+      expect(described_class.from_pg(full_attrs)[:ts_source]).to eq("local")
+    end
+
     it "accepts string-keyed attrs (AR record#attributes) via with_indifferent_access" do
       string_attrs = full_attrs.stringify_keys
       symbol_row = described_class.from_pg(full_attrs)

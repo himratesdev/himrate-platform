@@ -8,6 +8,10 @@ module Clickhouse
   # defaults, booleans → UInt8, raw_tags Hash → JSON String, Time → ClickHouse DateTime64(3)
   # text. stream_id stays nil → CH NULL (Nullable(UUID)); inserted_at is omitted so CH applies
   # its DEFAULT now().
+  #
+  # `ts_source` travels with the timestamp and says whose clock produced it (Twitch's
+  # `tmi-sent-ts`, our parse-time clock, or — worst case — the drain worker's). Rows that predate
+  # 2026-09-12 carry no marker and read back as "local", which is what they in fact were.
   module ChatRow
     module_function
 
@@ -31,7 +35,8 @@ module Clickhouse
         message_text: a[:message_text].to_s,
         emotes: a[:emotes].to_s,
         raw_tags: serialize_raw_tags(a[:raw_tags]),
-        timestamp: format_timestamp(a[:timestamp])
+        timestamp: format_timestamp(a[:timestamp]),
+        ts_source: a[:ts_source].presence || Twitch::IrcParser::TS_SOURCE_LOCAL
       }
     end
 

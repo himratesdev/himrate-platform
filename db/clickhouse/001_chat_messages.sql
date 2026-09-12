@@ -39,6 +39,11 @@ CREATE TABLE IF NOT EXISTS chat_messages
     raw_tags           String CODEC(ZSTD(3)),
 
     timestamp          DateTime64(3),
+    -- Whose clock produced `timestamp`: 'twitch' (tmi-sent-ts, their NTP clock — the good case),
+    -- 'local' (our process clock at parse time, for messages Twitch sends no tag on), 'drain'
+    -- (our clock at drain time, up to ~2 min late — exclude from anything temporal). Rationale and
+    -- the measurements that forced it: 008_add_ts_source_to_chat.sql.
+    ts_source          LowCardinality(String) DEFAULT 'local',
     -- Ingestion bookkeeping (observability / dual-write lag). DateTime DEFAULT now() costs ~nothing.
     inserted_at        DateTime DEFAULT now(),
 

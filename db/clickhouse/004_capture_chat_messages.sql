@@ -36,6 +36,11 @@ CREATE TABLE IF NOT EXISTS capture_chat_messages
     raw_tags           String CODEC(ZSTD(3)),
 
     timestamp          DateTime64(3),
+    -- 'twitch' | 'local' | 'drain' — see 008_add_ts_source_to_chat.sql. Matters more here than on
+    -- the monitored table: this is the wide corpus (178k channels) any cross-channel timing signal
+    -- will be built on, and a five-second co-occurrence window cannot afford two seconds of our
+    -- own clock noise.
+    ts_source          LowCardinality(String) DEFAULT 'local',
     inserted_at        DateTime DEFAULT now(),
 
     -- game_id is not in the primary key (per-channel windows are the hot read; T-F3). A category-wide

@@ -236,4 +236,68 @@ RSpec.describe Twitch::IrcParser do
       expect(parser.to_record(nil)).to be_nil
     end
   end
+
+  # The clock is the foundation every temporal signal stands on: minute buckets, the five-second
+  # co-occurrence window, any lead/lag between channels. Before 2026-09-12 we stamped our own
+  # process clock and measured it running 305 ms behind Twitch at the median with ±2 s tails, so
+  # these examples assert the real arithmetic rather than "is a Time".
+  describe "#to_record timestamps" do
+    def record_for(tag_section)
+      line = "@#{tag_section} :testuser!testuser@testuser.tmi.twitch.tv PRIVMSG #streamer :hi"
+      parser.to_record(parser.parse(line))
+    end
+
+    it "takes the timestamp from Twitch's tmi-sent-ts, to the millisecond" do
+      sent = Time.utc(2026, 9, 12, 3, 14, 15.926)
+      record = record_for("id=m1;tmi-sent-ts=#{(sent.to_f * 1000).round}")
+
+      expect(record[:timestamp].utc.iso8601(3)).to eq(sent.iso8601(3))
+      expect(record[:ts_source]).to eq(described_class::TS_SOURCE_TWITCH)
+    end
+
+    it "does not drift with our own clock when Twitch supplies the time" do
+      sent = 42.seconds.ago
+      travel_to(Time.current) do
+        record = record_for("id=m2;tmi-sent-ts=#{(sent.to_f * 1000).round}")
+        expect(record[:timestamp]).to be_within(1.millisecond).of(sent)
+      end
+    end
+
+    it "falls back to our clock and says so when the tag is absent" do
+      record = record_for("id=m3")
+
+      expect(record[:ts_source]).to eq(described_class::TS_SOURCE_LOCAL)
+      expect(record[:timestamp]).to be_within(5.seconds).of(Time.current)
+    end
+
+    it "falls back on ROOMSTATE, which Twitch sends without the tag" do
+      record = parser.to_record(parser.parse(":tmi.twitch.tv ROOMSTATE #streamer"))
+
+      expect(record[:ts_source]).to eq(described_class::TS_SOURCE_LOCAL)
+    end
+
+    # A single malformed tag must not park a row in 1970 or in the next century, where it would
+    # silently distort every window that spans it.
+    [
+      [ "zero", "0" ],
+      [ "negative", "-1700000000000" ],
+      [ "non-numeric", "yesterday" ],
+      [ "seconds instead of milliseconds", "1789000000" ],
+      [ "far future", ((Time.current + 10.years).to_f * 1000).round.to_s ]
+    ].each do |label, value|
+      it "rejects a #{label} tmi-sent-ts and falls back to our clock" do
+        record = record_for("id=m4;tmi-sent-ts=#{value}")
+
+        expect(record[:ts_source]).to eq(described_class::TS_SOURCE_LOCAL)
+        expect(record[:timestamp]).to be_within(5.seconds).of(Time.current)
+      end
+    end
+
+    it "accepts a time slightly ahead of ours — their clock may legitimately lead" do
+      ahead = Time.current + 30.seconds
+      record = record_for("id=m5;tmi-sent-ts=#{(ahead.to_f * 1000).round}")
+
+      expect(record[:ts_source]).to eq(described_class::TS_SOURCE_TWITCH)
+    end
+  end
 end

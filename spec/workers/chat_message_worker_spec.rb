@@ -159,4 +159,39 @@ RSpec.describe ChatMessageWorker do
       expect(Redis.new(url: redis_url).llen(redis_key)).to eq(1) # restored, not lost
     end
   end
+
+  # 2026-09-12: a row reaching the drain without a usable time used to get the drain worker's own
+  # clock — up to two minutes after the event — silently, with nothing in the row to say so. It
+  # still gets our clock (there is nothing better available by then) but is labelled `drain` so
+  # temporal consumers can exclude it instead of averaging it in.
+  describe "timestamp provenance" do
+    it "carries the parser's ts_source through to ClickHouse untouched" do
+      push_message(sample_message(ts_source: Twitch::IrcParser::TS_SOURCE_TWITCH))
+      worker.perform
+
+      expect(captured_rows.first[:ts_source]).to eq(Twitch::IrcParser::TS_SOURCE_TWITCH)
+    end
+
+    it "labels a row 'drain' when the payload has no timestamp at all" do
+      push_message(sample_message(timestamp: nil))
+      worker.perform
+
+      expect(captured_rows.first[:ts_source]).to eq(Twitch::IrcParser::TS_SOURCE_DRAIN)
+      expect(Time.parse(captured_rows.first[:timestamp])).to be_within(5.seconds).of(Time.current)
+    end
+
+    it "labels a row 'drain' when the payload timestamp is unparseable" do
+      push_message(sample_message(timestamp: "not a time"))
+      worker.perform
+
+      expect(captured_rows.first[:ts_source]).to eq(Twitch::IrcParser::TS_SOURCE_DRAIN)
+    end
+
+    it "defaults to 'local' for pre-migration payloads that carry a time but no marker" do
+      push_message(sample_message)
+      worker.perform
+
+      expect(captured_rows.first[:ts_source]).to eq(Twitch::IrcParser::TS_SOURCE_LOCAL)
+    end
+  end
 end

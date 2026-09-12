@@ -13,6 +13,17 @@ module Twitch
     # USERNOTICE msg-id values that define the event type
     USERNOTICE_TYPES = %w[sub resub subgift submysterygift raid bitsbadgetier ritual announcement].freeze
 
+    # Which clock a row's timestamp came from. `drain` is set downstream by the drain workers when
+    # a row reaches them without a parseable time at all.
+    TS_SOURCE_TWITCH = "twitch"
+    TS_SOURCE_LOCAL  = "local"
+    TS_SOURCE_DRAIN  = "drain"
+
+    # Twitch has existed since 2011; anything older than this is a broken tag, not history.
+    SANE_TS_FLOOR = Time.utc(2011, 1, 1)
+    # Their clock may legitimately run a little ahead of ours; beyond this it is not their clock.
+    SANE_TS_CEILING_SKEW = 5.minutes
+
     ParsedMessage = Data.define(
       :command,       # String: PRIVMSG, USERNOTICE, ROOMSTATE, CLEARCHAT, CLEARMSG, PING, RECONNECT
       :channel_login, # String or nil: channel name without #
@@ -66,6 +77,8 @@ module Twitch
     def to_record(parsed, stream_id: nil)
       return nil unless parsed
 
+      sent_at = extract_sent_at(parsed.tags)
+
       {
         stream_id: stream_id,
         channel_login: parsed.channel_login,
@@ -84,11 +97,35 @@ module Twitch
         bits_used: parsed.tags["bits"].to_i,
         twitch_msg_id: parsed.tags["id"],
         raw_tags: parsed.tags,
-        timestamp: Time.current
+        timestamp: sent_at || Time.current,
+        ts_source: sent_at ? TS_SOURCE_TWITCH : TS_SOURCE_LOCAL
       }
     end
 
     private
+
+    # Twitch stamps every user-originated message with `tmi-sent-ts` — epoch milliseconds off its
+    # own NTP-synced clock. Until 2026-09-12 we stamped `Time.current` at parse time instead and
+    # threw that tag away into raw_tags; measured against it, our own clock sat 305 ms behind at
+    # the median and wandered from −815 ms to +1910 ms. Every temporal signal downstream — the
+    # minute buckets of the MVs, the co-occurrence windows, any lead/lag we ever compute — was
+    # reading that wander as data. ROOMSTATE and friends carry no such tag, hence the fallback;
+    # `ts_source` records which clock a row actually came from, because a timestamp without
+    # provenance is not a timestamp.
+    def extract_sent_at(tags)
+      raw = tags["tmi-sent-ts"]
+      return nil if raw.blank?
+
+      ms = raw.to_i
+      return nil unless ms.positive?
+
+      at = Time.zone.at(ms / 1000.0)
+      # A malformed or hostile tag must not park a message in 1970 or in the next century; outside
+      # this window we trust our own clock and say so.
+      return nil unless at.between?(SANE_TS_FLOOR, Time.current + SANE_TS_CEILING_SKEW)
+
+      at
+    end
 
     def parse_ping(line)
       ParsedMessage.new(

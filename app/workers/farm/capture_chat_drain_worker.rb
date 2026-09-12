@@ -71,7 +71,14 @@ module Farm
     # (CR iter-1 N5): any per-row failure is logged and the row dropped.
     def build_row(json, game_ids)
       data = JSON.parse(json)
-      row = Clickhouse::ChatRow.from_pg(data.merge("timestamp" => parse_timestamp(data["timestamp"])))
+      at = parse_timestamp(data["timestamp"])
+      row = Clickhouse::ChatRow.from_pg(
+        data.merge(
+          "timestamp" => at || Time.current,
+          "ts_source" => at ? (data["ts_source"].presence || Twitch::IrcParser::TS_SOURCE_LOCAL)
+                            : Twitch::IrcParser::TS_SOURCE_DRAIN
+        )
+      )
       row.delete(:stream_id) # capture channels have no Stream rows; the table has no such column
       row.merge(game_id: game_ids[data["channel_login"].to_s].to_s)
     rescue StandardError => e
@@ -79,10 +86,12 @@ module Farm
       nil
     end
 
+    # nil, not Time.current — see the same method on ChatMessageWorker. A row that arrives here
+    # without a time gets our drain clock and is labelled as such, never passed off as Twitch's.
     def parse_timestamp(value)
-      return Time.current if value.blank?
+      return nil if value.blank?
 
-      Time.zone.parse(value.to_s) || Time.current
+      Time.zone.parse(value.to_s)
     end
 
     def pause(seconds)

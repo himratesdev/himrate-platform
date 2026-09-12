@@ -82,6 +82,7 @@ class ChatMessageWorker
 
     # Resolve stream_id from channel_login if not provided
     stream_id = data["stream_id"] || resolve_stream_id(data["channel_login"])
+    parsed_at = parse_timestamp(data["timestamp"])
 
     {
       stream_id: stream_id,
@@ -101,7 +102,9 @@ class ChatMessageWorker
       bits_used: data["bits_used"].to_i,
       twitch_msg_id: data["twitch_msg_id"]&.truncate(255),
       raw_tags: data["raw_tags"] || {},
-      timestamp: parse_timestamp(data["timestamp"])
+      timestamp: parsed_at || Time.current,
+      ts_source: parsed_at ? (data["ts_source"].presence || Twitch::IrcParser::TS_SOURCE_LOCAL)
+                           : Twitch::IrcParser::TS_SOURCE_DRAIN
     }
   rescue JSON::ParserError => e
     Rails.logger.warn("ChatMessageWorker: invalid JSON (#{e.message})")
@@ -118,12 +121,17 @@ class ChatMessageWorker
     channel.streams.where(ended_at: nil).order(started_at: :desc).pick(:id)
   end
 
+  # Returns nil rather than Time.current when the payload has no usable time. Substituting our
+  # own clock here is the worst case available: by the time a row reaches the drain it can be up
+  # to two minutes late, and the substitution used to happen silently. The caller stamps such
+  # rows `ts_source: drain` so they can be excluded from anything temporal instead of quietly
+  # poisoning it.
   def parse_timestamp(value)
-    return Time.current unless value
+    return nil unless value
 
     Time.parse(value)
   rescue ArgumentError
-    Time.current
+    nil
   end
 
   def redis
