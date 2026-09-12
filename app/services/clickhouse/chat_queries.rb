@@ -219,6 +219,31 @@ module Clickhouse
       {}
     end
 
+    # Twitch Shared Chat (Stream Together): one viewer's message is relayed into EVERY participating
+    # channel's IRC feed, carrying `source-room-id` = the room it was actually typed in. A relayed
+    # copy is not evidence that the viewer was present in the receiving channel — they were watching
+    # one stream, not four.
+    #
+    # Without this predicate every cross-channel query reads a collab session as a coordinated
+    # botnet. Measured 2026-09-12: of 3847 accounts this pipeline had flagged as bots, 2152 (69%)
+    # were ordinary viewers whose messages are ≥50% shared-chat relay, and 1368 of those ≥90%. Their
+    # flags fed `temporal_recurrence` → LlrCalibrator → each chatter's bot score → f_hard, which is
+    # SUBTRACTED from the channel's real-viewer estimate. 860 channels were losing their own audience
+    # for the crime of streaming together.
+    #
+    # Keep the locally-originated side: `source-room-id == room-id` means the message WAS typed here
+    # (Twitch tags both sides during a session), and dropping those would delete real presence. There
+    # are no empty `source-room-id` values — measured 0 of 47752 — so an emptiness test, which is what
+    # an earlier attempt used, matches nothing at all.
+    #
+    # Cost: ~2.6s vs ~0.17s over a 24h slice (4.2M rows), because `raw_tags` is the ZSTD archive
+    # column. Affordable for a two-hourly worker; if a hot path ever needs this, it wants a
+    # MATERIALIZED column rather than this predicate.
+    SHARED_CHAT_LOCAL_ONLY = <<~SQL.strip.freeze
+      NOT (JSONHas(raw_tags, 'source-room-id')
+           AND JSONExtractString(raw_tags, 'source-room-id') != JSONExtractString(raw_tags, 'room-id'))
+    SQL
+
     # T1-057 FR-A: overlap edge-ledger source query. One row per (username, channel_login) over the
     # rolling 24h window, for the OVERLAP COHORT only — users present in 2..max_channels distinct
     # channels (single-channel chatters carry no overlap edge; users above the cap are bots/omnipresent
@@ -248,6 +273,7 @@ module Clickhouse
                  count() OVER (PARTITION BY username) AS distinct_channels
           FROM chat_messages
           WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR
+            AND #{SHARED_CHAT_LOCAL_ONLY}
           GROUP BY username, channel_login
         )
         WHERE distinct_channels BETWEEN 2 AND #{max_channels.to_i}
@@ -281,6 +307,7 @@ module Clickhouse
             FROM chat_messages
             ARRAY JOIN [0, #{half}] AS phase
             WHERE msg_type = 'privmsg' AND username != '' AND timestamp > now() - INTERVAL 24 HOUR
+              AND #{SHARED_CHAT_LOCAL_ONLY}
             GROUP BY username, phase, bucket
           )
           GROUP BY username, phase
