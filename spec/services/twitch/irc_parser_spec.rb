@@ -255,12 +255,14 @@ RSpec.describe Twitch::IrcParser do
       expect(record[:ts_source]).to eq(described_class::TS_SOURCE_TWITCH)
     end
 
-    it "does not drift with our own clock when Twitch supplies the time" do
+    # The regression this guards: a message that sat 42 s in a socket buffer must land at the
+    # moment Twitch sent it, not at the moment we got round to parsing it.
+    it "uses Twitch's time even when it is far from ours" do
       sent = 42.seconds.ago
-      travel_to(Time.current) do
-        record = record_for("id=m2;tmi-sent-ts=#{(sent.to_f * 1000).round}")
-        expect(record[:timestamp]).to be_within(1.millisecond).of(sent)
-      end
+      record = record_for("id=m2;tmi-sent-ts=#{(sent.to_f * 1000).round}")
+
+      expect(record[:timestamp]).to be_within(1.second).of(sent)
+      expect(record[:timestamp]).to be < 40.seconds.ago
     end
 
     it "falls back to our clock and says so when the tag is absent" do
