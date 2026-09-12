@@ -160,4 +160,31 @@ RSpec.describe Twitch::IrcMonitor do
       expect(monitor.connected?).to be true
     end
   end
+
+  # The seam that ate the milliseconds. Each side was correct in isolation — the parser produced a
+  # millisecond Time, the drain formatted %3N — but JSON.generate rendered the Time through to_s
+  # and dropped the fraction between them. Only a round-trip assertion can see that, so this one
+  # runs the real parser, the real serialisation and the real drain-side parse.
+  describe "Redis payload precision" do
+    let(:redis) { Redis.new(url: "redis://localhost:6379/1") }
+    let(:queue_key) { "irc:chat_messages" }
+
+    before do
+      redis.del(queue_key)
+    rescue Redis::CannotConnectError
+      skip "Redis not available"
+    end
+
+    it "preserves Twitch's millisecond send time through the queue" do
+      sent_ms = (Time.utc(2026, 9, 12, 4, 33, 15).to_f * 1000).round + 926
+      line = "@id=m1;tmi-sent-ts=#{sent_ms} :u!u@u.tmi.twitch.tv PRIVMSG #streamer :hi"
+
+      monitor.send(:push_to_redis, Twitch::IrcParser.new.parse(line))
+      payload = JSON.parse(redis.lindex(queue_key, 0))
+
+      expect(payload["ts_source"]).to eq(Twitch::IrcParser::TS_SOURCE_TWITCH)
+      # The whole point: the fraction survives the wire, and the drain reads it back unchanged.
+      expect((Time.parse(payload["timestamp"]).to_f * 1000).round).to eq(sent_ms)
+    end
+  end
 end

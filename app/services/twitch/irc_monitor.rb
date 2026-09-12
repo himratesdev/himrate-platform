@@ -389,12 +389,26 @@ module Twitch
       record = @parser.to_record(parsed)
       return unless record
 
-      payload = JSON.generate(record)
+      payload = JSON.generate(record.merge(timestamp: serialize_time(record[:timestamp])))
       redis.lpush(@queue_key, payload)
     rescue Redis::BaseError => e
       @memory_buffer.shift if @memory_buffer.size >= MEMORY_BUFFER_MAX
       @memory_buffer << payload
       Rails.logger.warn("#{label}: Redis push failed, buffered in memory (#{@memory_buffer.size})")
+    end
+
+    # `JSON.generate` does NOT go through ActiveSupport's as_json: when the JSON gem hands it a
+    # ::JSON::State, ActiveSupport's Object#to_json deliberately falls back to the gem's own
+    # behaviour, which renders a Time via to_s — "2026-09-12 04:33:15 UTC", second precision. The
+    # milliseconds died on this line, silently, and the damage was invisible while the timestamp
+    # was our own clock anyway. Measured after switching to tmi-sent-ts: drift against Twitch's tag
+    # was uniform across −984…−26 ms — the exact signature of floor-to-second, not of clock skew.
+    # iso8601(3) is unambiguous about both precision and zone, which matters because Time.parse on
+    # a bare "Y-m-d H:M:S.mmm" would resolve it in the drain process's local zone.
+    def serialize_time(value)
+      return value unless value.respond_to?(:iso8601)
+
+      value.utc.iso8601(3)
     end
 
     def flush_memory_buffer
