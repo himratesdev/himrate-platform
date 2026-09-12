@@ -255,6 +255,19 @@ RSpec.describe Twitch::IrcParser do
       expect(record[:ts_source]).to eq(described_class::TS_SOURCE_TWITCH)
     end
 
+    # Float division loses a millisecond on any fraction without an exact binary representation,
+    # which is most of them — measured live, half the sample came back 1 ms short of the tag.
+    it "reproduces every millisecond fraction exactly" do
+      base_ms = (Time.utc(2026, 9, 12, 3, 14, 15).to_f * 1000).round
+
+      (0..999).each do |frac|
+        record = record_for("id=f#{frac};tmi-sent-ts=#{base_ms + frac}")
+        got_ms = (record[:timestamp].to_f * 1000).round
+
+        expect(got_ms).to eq(base_ms + frac), "fraction .#{frac} came back as #{got_ms - base_ms}"
+      end
+    end
+
     # The regression this guards: a message that sat 42 s in a socket buffer must land at the
     # moment Twitch sent it, not at the moment we got round to parsing it.
     it "uses Twitch's time even when it is far from ours" do

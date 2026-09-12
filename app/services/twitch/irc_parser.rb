@@ -119,7 +119,10 @@ module Twitch
       ms = raw.to_i
       return nil unless ms.positive?
 
-      at = Time.zone.at(ms / 1000.0)
+      # Integer arithmetic, not `ms / 1000.0`: .926 has no exact binary float representation, so
+      # the float path lands on .92599… and truncates a millisecond off roughly half the rows.
+      # Measured live after the cutover — half the sample sat at −1 ms against Twitch's own tag.
+      at = Time.zone.at(ms / 1000, (ms % 1000) * 1000, :usec)
       # A malformed or hostile tag must not park a message in 1970 or in the next century; outside
       # this window we trust our own clock and say so.
       return nil unless at.between?(SANE_TS_FLOOR, Time.current + SANE_TS_CEILING_SKEW)
