@@ -114,11 +114,27 @@ module Clickhouse
     # (BUG-SCW-CROSS-CHANNEL) can share the same chatter set without re-running the join-style
     # second query — ContextBuilder calls this on the hot path and then looks up the count via
     # CrossChannelDigest.bulk_lookup.
+    #
+    # Reads mv_stream_user_minute_target, not chat_messages (2026-09-13). The raw table is ORDER BY
+    # (channel_login, timestamp) with stream_id only in a bloom skip-index, so a per-stream DISTINCT
+    # walks every granule of the day's partition the filter can't exclude (8.4 GiB); the MV is ORDER BY
+    # (stream_id, minute, username), 221 MiB, and the same stream is one index range. This read runs
+    # ~21k times/hour on the TI hot path — 1686 s/hour of CH CPU, the single heaviest query on the
+    # box — and halves on the MV (measured 2026-09-13 on the three busiest live streams: 20-31 ms →
+    # 14-16 ms warm; identical 500-name output on all three, identical uniqExact counts).
+    #
+    # Exactness: the MV's own WHERE is `msg_type = 'privmsg' AND stream_id IS NOT NULL` — the same
+    # predicate this query carried — and it groups by (stream_id, minute, username), so the DISTINCT
+    # username set per stream is unchanged. AggregatingMergeTree may hold several unmerged rows for
+    # one (stream, minute, username) — GROUP BY username absorbs that. The MV has covered chat_messages
+    # since the table's first row (both start 2026-08-26 21:51); a future DROP/re-CREATE of the MV
+    # would silently empty rosters for the gap — recreate with backfill, never bare.
     def stream_chatters(stream)
       rows = Clickhouse.client.select(<<~SQL)
-        SELECT DISTINCT username
-        FROM chat_messages
-        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
+        SELECT username
+        FROM mv_stream_user_minute_target
+        WHERE stream_id = '#{stream.id}'
+        GROUP BY username
         ORDER BY username
         LIMIT #{CROSS_CHANNEL_CHATTER_LIMIT}
       SQL
@@ -158,15 +174,18 @@ module Clickhouse
     # BUG-EIHC-500CAP: UNCAPPED distinct-chatter counts — the L2 deficit's scale factor. The two roster
     # reads above are alphabetical ≤500 samples (cost-bound for per-username PG lookups); dividing a
     # sample-sized EIHC by the FULL online capped ρ_obs at ≈ 500/V — a structural false deficit on any
-    # roster past the cap (guaranteed AMBER above V ≈ 500/ρ*). Same WHERE as the roster queries (no
-    # cross-source drift); uniqExact rides the stream_id bloom index like the roster read. nil on CH
-    # error → L2 degrades to the capped sum (pre-fix behavior), never crashes the verdict.
+    # roster past the cap (guaranteed AMBER above V ≈ 500/ρ*). Same source as the cumulative roster
+    # read above (mv_stream_user_minute_target, 2026-09-13 — see stream_chatters for why and for the
+    # exactness argument; 20-30 ms → 10-13 ms measured), so roster and count can never drift apart.
+    # The windowed pair below stays on the raw table: its timestamp predicate prunes by partition
+    # minmax and already runs in 7-9 ms — the MV buys nothing there. nil on CH error → L2 degrades to
+    # the capped sum (pre-fix behavior), never crashes the verdict.
     def stream_chatters_count(stream)
       validate_stream_uuid!(stream.id)
       rows = Clickhouse.client.select(<<~SQL)
         SELECT uniqExact(username) AS c
-        FROM chat_messages
-        WHERE stream_id = '#{stream.id}' AND msg_type = 'privmsg'
+        FROM mv_stream_user_minute_target
+        WHERE stream_id = '#{stream.id}'
       SQL
       rows.first&.dig("c")&.to_i
     rescue Clickhouse::Error => e

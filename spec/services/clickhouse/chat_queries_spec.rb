@@ -71,7 +71,7 @@ RSpec.describe Clickhouse::ChatQueries do
     let(:since) { Time.utc(2026, 5, 27, 12, 30, 45) }
 
     it "fetches usernames (ORDER BY) then uniqExact(channel_login) over the supplied window" do
-      expect(ch).to receive(:select).with(a_string_matching(/SELECT DISTINCT username.*ORDER BY username.*LIMIT 500/m))
+      expect(ch).to receive(:select).with(a_string_matching(/FROM mv_stream_user_minute_target.*ORDER BY username.*LIMIT 500/m))
                                     .and_return([ { "username" => "alice" }, { "username" => "bob" } ])
       expect(ch).to receive(:select).with(
         a_string_matching(/uniqExact\(channel_login\)/)
@@ -103,12 +103,14 @@ RSpec.describe Clickhouse::ChatQueries do
   # BUG-SCW-CROSS-CHANNEL (2026-06-02): the q1 username pick was extracted so the digest-backed
   # ContextBuilder path can call it without the heavy q2 24h scan that `cross_channel` still runs.
   describe ".stream_chatters" do
-    it "returns the deterministic ORDER BY username LIMIT 500 chatter list" do
+    it "returns the deterministic ORDER BY username LIMIT 500 chatter list from the per-user-minute MV" do
       expect(ch).to receive(:select).with(
-        a_string_matching(/SELECT DISTINCT username/)
+        a_string_matching(/FROM mv_stream_user_minute_target/)
           .and(a_string_matching(/stream_id = '#{stream.id}'/))
+          .and(a_string_matching(/GROUP BY username/))
           .and(a_string_matching(/ORDER BY username/))
           .and(a_string_matching(/LIMIT 500/))
+          .and(satisfy { |sql| !sql.include?("chat_messages") })
       ).and_return([ { "username" => "alice" }, { "username" => "bob" } ])
 
       expect(described_class.stream_chatters(stream)).to eq(%w[alice bob])
@@ -153,9 +155,10 @@ RSpec.describe Clickhouse::ChatQueries do
   # BUG-EIHC-500CAP: the uncapped uniqExact counts — the L2 deficit's scale factor (the ≤500 rosters
   # above are alphabetical samples; L2 measures a rate on them and scales by these exact counts).
   describe ".stream_chatters_count" do
-    it "runs an UNCAPPED uniqExact on the same predicate as the roster read (no LIMIT)" do
+    it "runs an UNCAPPED uniqExact on the same MV as the roster read (no LIMIT)" do
       expect(ch).to receive(:select).with(
         a_string_matching(/uniqExact\(username\)/)
+          .and(a_string_matching(/FROM mv_stream_user_minute_target/))
           .and(a_string_matching(/stream_id = '#{stream.id}'/))
           .and(satisfy { |sql| !sql.include?("LIMIT") })
       ).and_return([ { "c" => 8768 } ])
@@ -228,6 +231,33 @@ RSpec.describe Clickhouse::ChatQueries do
       counts = result.to_h { |r| [ r[:timestamp].utc.to_i, r[:msg_count] ] }
       expect(counts[m0.to_i]).to eq(2)
       expect(counts[(m0 + 60.seconds).to_i]).to eq(1)
+    end
+
+    # 2026-09-13: stream_chatters / stream_chatters_count moved from the raw table to
+    # mv_stream_user_minute_target. The mocked specs pin the SQL shape; this pins the CONTRACT —
+    # the MV-backed roster and count equal the raw-table DISTINCT for the same stream, privmsg
+    # only, repeats collapsed, other streams excluded, alphabetical. A bare re-CREATE of the MV
+    # (no backfill) would break exactly this equality.
+    it "stream_chatters + stream_chatters_count read the MV and equal the raw-table DISTINCT" do
+      other = SecureRandom.uuid
+      base  = t.beginning_of_minute - 3.minutes
+      insert([
+               { username: "zed",   timestamp: base + 1.second },
+               { username: "alice", timestamp: base + 2.seconds },
+               { username: "alice", timestamp: base + 70.seconds },                  # repeat, next minute
+               { username: "mike",  timestamp: base + 3.seconds, msg_type: "usernotice" }, # not privmsg
+               { username: "bob",   timestamp: base + 4.seconds, stream_id: other }   # another stream
+             ])
+
+      roster = described_class.stream_chatters(stream)
+      expect(roster).to eq(%w[alice zed])
+      expect(described_class.stream_chatters_count(stream)).to eq(2)
+
+      raw = real_client.select(<<~SQL).map { |r| r["username"] }
+        SELECT DISTINCT username FROM chat_messages
+        WHERE stream_id = '#{stream_id}' AND msg_type = 'privmsg' ORDER BY username
+      SQL
+      expect(roster).to eq(raw)
     end
 
     it "unique_chatters returns the merged uniqExact over the supplied window" do
