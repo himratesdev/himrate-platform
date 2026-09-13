@@ -103,7 +103,10 @@ RSpec.describe BotDetection::RegistrationBatch do
     # any sane threshold — which is exactly why the first version scored the whole of 2026 at
     # 0.00–0.03 and saw nothing.
     it "sees a template pool that only a handful of accounts carry" do
-      sparse = gen3.first(4) + Array.new(40) { |i| user("filler#{i}", avatar: default_avatar, day: "2026-01-19") }
+      # Two template pairs — "Stream ohne Erwartungen om/qz" and "Zocken ohne Druck il/ka" — buried
+      # among forty accounts that filled nothing, which is the live proportion.
+      pairs = gen3.values_at(0, 4, 2, 5)
+      sparse = pairs + Array.new(40) { |i| user("filler#{i}", avatar: default_avatar, day: "2026-01-19") }
       r = described_class.score(sparse)
 
       expect(r.template_bio_share).to be < 0.15     # invisible as a share of the window
