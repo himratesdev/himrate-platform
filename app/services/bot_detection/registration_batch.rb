@@ -122,19 +122,19 @@ module BotDetection
       filled.tally.values.max.to_f / @users.size
     end
 
-    # Generation 3: bios that are the same sentence with a different tail. Clusters greedily —
-    # exact clustering is quadratic and pointless at these sample sizes, and the biggest cluster is
-    # all we report.
+    # Generation 3: bios that are the same sentence with a different tail. Reports the share of
+    # ACCOUNTS whose bio has at least one near-twin elsewhere in the window — not the size of the
+    # biggest cluster, which understates a generator that rotates several templates (the January
+    # 2026 batch runs four in parallel, so no single cluster is large but almost every filled bio
+    # belongs to one).
     def template_bio_share
-      filled = @bios.reject(&:empty?).uniq
+      filled = @bios.each_with_index.reject { |bio, _| bio.empty? }
       return 0.0 if filled.size < 2
 
-      best = filled.map { |seed| filled.count { |other| templated?(seed, other) } }.max
-      # Scale by how many accounts carry a bio at all, then express over the whole window.
-      carriers = @bios.count { |b| !b.empty? }
-      return 0.0 if carriers.zero?
-
-      (best.to_f / filled.size) * (carriers.to_f / @users.size)
+      clustered = filled.count do |bio, i|
+        filled.any? { |other, j| j != i && templated?(bio, other) }
+      end
+      clustered.to_f / @users.size
     end
 
     def templated?(a, b)
