@@ -12,8 +12,9 @@ module Farm
     include Sidekiq::Worker
     sidekiq_options queue: :monitoring, retry: 2
 
-    # category slug => Twitch game_id (verified live 2026-09-02: PUBG=493057)
-    CATEGORIES = { "pubg" => "493057" }.freeze
+    # Fallback only — PUBG, verified live 2026-09-02. Used when FarmCaptureCategory is empty (a
+    # fresh environment where the seeder has not run), never as the operating configuration.
+    FALLBACK_CATEGORIES = %w[493057].freeze
     WINDOW = 26.hours # trailing window; overlaps the 3h cron so nothing is missed
     PAGES = 5
     PAGE_SIZE = 100
@@ -21,10 +22,22 @@ module Farm
     def perform
       return unless Flipper.enabled?(:farm_clips_poller)
 
-      CATEGORIES.each_value { |game_id| poll_category(game_id) }
+      game_ids.each { |game_id| poll_category(game_id) }
     end
 
     private
+
+    # The chat side of the farm has walked four categories from FarmCaptureCategory since T-F1
+    # while this worker stayed hard-coded to one, so the clip pool covered a quarter of what we
+    # were listening to and none of the channels the product actually watches. Same table, same
+    # enabled flag, one source of truth for what "a farmed category" means.
+    def game_ids
+      ids = FarmCaptureCategory.where(enabled: true).pluck(:game_id).map(&:to_s).reject(&:blank?)
+      return ids if ids.any?
+
+      Rails.logger.warn("Farm::ClipsPollerWorker: no enabled FarmCaptureCategory — falling back to #{FALLBACK_CATEGORIES.join(',')}")
+      FALLBACK_CATEGORIES
+    end
 
     def poll_category(game_id)
       helix = Twitch::HelixClient.new

@@ -75,13 +75,25 @@ module Api
           { status: "ready", items: cached.map { |c| c.merge("moment_offset_sec" => matching_moment(c, moments)) } }
         end
 
-        # Attach a clip to the nearest chat-peak window when its vod_offset lands within ±90s.
+        # How far a clip's vod_offset may sit from a chat-peak window and still be called part of
+        # it. Was ±90s, chosen as a guess for an unmeasured misalignment between the VOD timeline
+        # and our real clock.
+        #
+        # Measured 2026-09-13 on 423 clips with a known vod_offset across 94 monitored streams:
+        # where a genuine chat peak exists, `stream.started_at + vod_offset` lands ON it — p25, p50
+        # and p75 of the offset are all zero, and 75% of clips fall within 20 seconds. There is no
+        # systematic delay to absorb. The old ±90 was not compensating for a clock; it was
+        # compensating for clips that simply are not at a peak, and it did so by attaching them to
+        # a peak up to three minutes away.
+        MOMENT_MATCH_TOLERANCE = 30 # seconds — measured spread, not a guess at an offset
+
         def matching_moment(clip, moments)
           offset = clip["vod_offset"]
           return nil if offset.nil?
 
           hit = moments.find do |m|
-            offset.between?(m[:offset_sec] - 90, m[:offset_sec] + (m[:duration_sec] || 60) + 90)
+            offset.between?(m[:offset_sec] - MOMENT_MATCH_TOLERANCE,
+                            m[:offset_sec] + (m[:duration_sec] || 60) + MOMENT_MATCH_TOLERANCE)
           end
           hit && hit[:offset_sec]
         end

@@ -75,4 +75,48 @@ RSpec.describe Farm::ClipsPollerWorker do
 
     described_class.new.perform
   end
+
+  # The chat half of the farm has walked four categories from FarmCaptureCategory since T-F1 while
+  # this worker stayed hard-coded to PUBG, so the clip pool covered a quarter of what we were
+  # listening to. Same table, same enabled flag, one definition of "a farmed category".
+  describe "category source" do
+    def category(game_id, enabled: true)
+      FarmCaptureCategory.create!(game_id: game_id, game_name: "g#{game_id}",
+                                  languages: [ "ru" ], enabled: enabled)
+    end
+
+    it "polls every enabled category from FarmCaptureCategory" do
+      category("29595")  # Dota 2
+      category("32399")  # Counter-Strike
+
+      expect(helix).to receive(:get_clips_by_game).with(hash_including(game_id: "29595"))
+                                                  .and_return({ "data" => [], "cursor" => nil })
+      expect(helix).to receive(:get_clips_by_game).with(hash_including(game_id: "32399"))
+                                                  .and_return({ "data" => [], "cursor" => nil })
+
+      described_class.new.perform
+    end
+
+    it "leaves disabled categories alone" do
+      category("29595")
+      category("509658", enabled: false) # Just Chatting, switched off
+
+      expect(helix).to receive(:get_clips_by_game).with(hash_including(game_id: "29595"))
+                                                  .and_return({ "data" => [], "cursor" => nil })
+      expect(helix).not_to receive(:get_clips_by_game).with(hash_including(game_id: "509658"))
+
+      described_class.new.perform
+    end
+
+    # A fresh environment where the seeder has not run must still poll something rather than
+    # silently do nothing — but it says so in the log, so an empty table is never mistaken for a
+    # deliberate configuration.
+    it "falls back to PUBG and warns when no category is configured" do
+      expect(Rails.logger).to receive(:warn).with(/no enabled FarmCaptureCategory/)
+      expect(helix).to receive(:get_clips_by_game).with(hash_including(game_id: "493057"))
+                                                  .and_return({ "data" => [], "cursor" => nil })
+
+      described_class.new.perform
+    end
+  end
 end

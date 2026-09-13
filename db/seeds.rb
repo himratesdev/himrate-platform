@@ -80,10 +80,16 @@ if defined?(SignalConfiguration)
     { signal_type: "account_profile_scoring", category: "default", param_name: "weight_in_ti", param_value: 0.05 },
 
     # === Alert Thresholds (FR-017) ===
-    { signal_type: "auth_ratio", category: "default", param_name: "alert_threshold", param_value: 0.5 },
-    { signal_type: "chatter_ccv_ratio", category: "default", param_name: "alert_threshold", param_value: 0.5 },
-    { signal_type: "ccv_step_function", category: "default", param_name: "alert_threshold", param_value: 0.5 },
-    { signal_type: "ccv_tier_clustering", category: "default", param_name: "alert_threshold", param_value: 0.6 },
+    # Recalibrated 2026-09-13 off the signal FLOOR — the old values admitted each signal's entire
+    # observed range, so 1377 of 1440 green channels carried anomalies and a 99.91%-authentic
+    # channel's report listed seventeen. New values are the p90 of what actually fired; rationale,
+    # measurements and the caveat about ccv_step_function being near-constant live in the paired
+    # migration `20260913020000_recalibrate_alert_thresholds_off_the_signal_floor`.
+    # Migration + seed kept in sync so a fresh `db:seed` after migration is a noop.
+    { signal_type: "auth_ratio", category: "default", param_name: "alert_threshold", param_value: 0.80 },
+    { signal_type: "chatter_ccv_ratio", category: "default", param_name: "alert_threshold", param_value: 0.90 },
+    { signal_type: "ccv_step_function", category: "default", param_name: "alert_threshold", param_value: 0.62 },
+    { signal_type: "ccv_tier_clustering", category: "default", param_name: "alert_threshold", param_value: 0.90 },
     { signal_type: "chat_behavior", category: "default", param_name: "alert_threshold", param_value: 0.5 },
     # Phase 4 J PR-A (2026-06-03, CR iter-1 Must Fix #2): channel_protection_score
     # alert_threshold removed. CPS measures owner-side protective settings, not
