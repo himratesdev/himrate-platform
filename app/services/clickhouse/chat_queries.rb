@@ -130,6 +130,7 @@ module Clickhouse
     # since the table's first row (both start 2026-08-26 21:51); a future DROP/re-CREATE of the MV
     # would silently empty rosters for the gap — recreate with backfill, never bare.
     def stream_chatters(stream)
+      validate_stream_uuid!(stream.id)
       rows = Clickhouse.client.select(<<~SQL)
         SELECT username
         FROM mv_stream_user_minute_target
@@ -213,7 +214,7 @@ module Clickhouse
     # current stream → s(u) is strictly PAST). A first-time-here chatter (s=0) is an injection candidate;
     # a channel regular (s≥r_full) is a real human. ONE bounded round-trip: rides the PRIMARY ORDER BY
     # (channel_login, timestamp) → partition-pruned per-channel range scan (NO bloom-index reliance, unlike
-    # the channel-less cross_channel → strictly CHEAPER than the already-running cross_channel). Bounded by
+    # the channel-less 24h scan in cross_channel's second query → strictly CHEAPER than it). Bounded by
     # the ≤500-username IN-list. Returns { username => past_stream_count }. {} on error → gate stays 1.0
     # (recall-safe — a failed loyalty read never manufactures a deficit).
     def within_channel_recurrence(channel_login, present_usernames, current_stream_id, since:)
