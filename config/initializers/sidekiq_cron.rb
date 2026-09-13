@@ -92,15 +92,16 @@ Sidekiq.configure_server do |config|
         "queue" => "monitoring",
         "description" => "Backfill/refresh monitored Channel metadata (display_name/avatar/...) from Helix /users"
       },
-      # TASK-251.W2a: snapshot monitored channels' follower count from Helix (1 call/broadcaster,
-      # ≤200/run, once/day per channel via followers_synced_at). Feeds Streamer Reputation Growth
-      # #12 + Follower Quality #13 (both were dead — no production writer). Frequent cron clears
-      # the daily backlog in bursts then idles (stale-guard selects 0). Gated by :follower_snapshot.
+      # Snapshot monitored channels' follower count from Helix (1 call/broadcaster, ≤250/run). Feeds
+      # Streamer Reputation Growth #12 + Follower Quality #13, and since 2026-09-13 also follow-burst
+      # detection: a purchased fleet is pointed at a channel while it streams, so an activation lands
+      # as a step in the count. Live channels are on an HOURLY guard for that; idle ones stay daily.
+      # 12 runs/hour × 250 covers ~300 live hourly plus the idle rotation. Gated :follower_snapshot.
       "follower_snapshot" => {
-        "cron" => "*/15 * * * *", # Every 15 minutes — bounded batch covers all monitored within a day
+        "cron" => "*/5 * * * *",
         "class" => "FollowerSnapshotWorker",
         "queue" => "monitoring",
-        "description" => "TASK-251.W2a: daily-cadence Helix follower-count snapshots (Reputation #12/#13), gated :follower_snapshot"
+        "description" => "Helix follower counts: hourly while live, daily when idle (Reputation #12/#13 + follow-burst), gated :follower_snapshot"
       },
       # TASK-251.W2b: warm the ChatterProfile cache from GQL for recently-active chatters (≤350/run,
       # ≤10 GQL batches, once/30d per chatter). BotScoringWorker reads the cache → Account Profile

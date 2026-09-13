@@ -50,10 +50,61 @@ RSpec.describe FollowerSnapshotWorker do
     expect(channel.followers_synced_at).to be_present
   end
 
-  it "skips channels already snapshotted within STALE_AFTER" do
+  it "skips an idle channel snapshotted within the daily guard" do
     create(:channel, twitch_id: "333", is_monitored: true).update_columns(followers_synced_at: 1.hour.ago)
     expect(helix).not_to receive(:get_followers_count)
     worker.perform
+  end
+
+  # 2026-09-13: a purchased fleet is pointed at a channel WHILE IT STREAMS, and each account in the
+  # batch we enumerated follows exactly one channel — so the activation lands as a step in the
+  # follower count. At the old flat daily cadence that step sat inside a 24-hour delta and could not
+  # be seen. Live channels therefore run on an hourly guard; idle ones stay daily, because watching
+  # 2.8k mostly-dormant accounts every hour buys nothing.
+  describe "cadence: hourly while live, daily when idle" do
+    def channel_with_stream(twitch_id, live:, synced_at:)
+      channel = create(:channel, twitch_id: twitch_id, is_monitored: true)
+      channel.update_columns(followers_synced_at: synced_at)
+      create(:stream, channel: channel, ended_at: live ? nil : 1.hour.ago)
+      channel
+    end
+
+    it "re-snapshots a LIVE channel after an hour" do
+      channel_with_stream("live1", live: true, synced_at: 90.minutes.ago)
+      allow(helix).to receive(:get_followers_count).and_return(1000)
+
+      worker.perform
+
+      expect(helix).to have_received(:get_followers_count).with(broadcaster_id: "live1")
+    end
+
+    it "leaves an OFF-AIR channel alone at the same age" do
+      channel_with_stream("idle1", live: false, synced_at: 90.minutes.ago)
+      expect(helix).not_to receive(:get_followers_count)
+
+      worker.perform
+    end
+
+    it "spends a tight budget on live channels first" do
+      stub_const("FollowerSnapshotWorker::MAX_PER_RUN", 1)
+      channel_with_stream("live2", live: true, synced_at: 90.minutes.ago)
+      create(:channel, twitch_id: "stale2", is_monitored: true).update_columns(followers_synced_at: 5.days.ago)
+      allow(helix).to receive(:get_followers_count).and_return(1000)
+
+      worker.perform
+
+      expect(helix).to have_received(:get_followers_count).with(broadcaster_id: "live2")
+      expect(helix).not_to have_received(:get_followers_count).with(broadcaster_id: "stale2")
+    end
+
+    it "never snapshots the same channel twice in one run" do
+      channel_with_stream("live3", live: true, synced_at: nil)
+      allow(helix).to receive(:get_followers_count).and_return(1000)
+
+      worker.perform
+
+      expect(helix).to have_received(:get_followers_count).with(broadcaster_id: "live3").once
+    end
   end
 
   it "transient Helix nil → no snapshot and no stamp (retries next run)" do
