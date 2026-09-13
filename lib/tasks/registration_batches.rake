@@ -36,18 +36,20 @@ namespace :bots do
     end
 
     puts format("Просканировано окон: %d (шаг %d)", rows.size, step)
-    puts format("%-13s %-11s %-6s %-6s %-6s %-6s %-6s %-6s  %s",
-                "ID", "создан", "n", "score", "дубль", "шаблон", "каша", "корни", "маркеры")
+    # Only the bio columns score; каша/аватарки/корни are diagnostics that a 2023 control proved to
+    # be background (see BotDetection::RegistrationBatch#score).
+    puts format("%-13s %-11s %-5s %-6s %-6s %-7s %-6s  %s",
+                "ID", "создан", "n", "score", "дубль", "шабл/з", "заполн", "маркеры")
     rows.sort_by { |(_, _, r)| -r.score }.first(25).each do |base, day, r|
-      puts format("%-13d %-11s %-6d %-6.2f %-6.2f %-6.2f %-6.2f %-6.2f  %s",
-                  base, day, r.accounts, r.score, r.duplicate_bio_share, r.template_bio_share,
-                  r.gibberish_share, r.shared_stem_share, r.markers.join(","))
+      puts format("%-13d %-11s %-5d %-6.2f %-6.2f %-7.2f %-6d  %s",
+                  base, day, r.accounts, r.score, r.duplicate_bio_share,
+                  r.template_among_carriers, r.bio_carriers, r.markers.join(","))
     end
 
     scores = rows.map { |(_, _, r)| r.score }.sort
     puts format("\nФон: медиана score %.2f, 90-й перцентиль %.2f, максимум %.2f",
                 scores[scores.size / 2], scores[(scores.size * 0.9).to_i], scores.last)
-    puts format("Окон с ≥2 маркерами: %d", rows.count { |(_, _, r)| r.markers.size >= 2 })
+    puts format("Окон с маркером: %d из %d", rows.count { |(_, _, r)| r.markers.any? }, rows.size)
   end
 
   desc "Dump the accounts of one ID window [from,to]"

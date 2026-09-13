@@ -75,28 +75,46 @@ RSpec.describe BotDetection::RegistrationBatch do
       expect(r.markers).to include("duplicate-bio")
     end
 
-    it "scores generation 2 on uniform logins and untouched profiles" do
+    # Generation 2 is HONESTLY INVISIBLE to this scorer and the spec says so. It fills nothing, and
+    # the marks it does leave — random logins, default avatars — are what ordinary Twitch windows
+    # look like too: a 2023 control range measured 0.30–0.67 gibberish and near-universal default
+    # avatars, higher than several known factory windows. Pretending otherwise is how the first
+    # version of this class ended up ranking the control ABOVE the factories.
+    it "does not pretend to see generation 2, which fills nothing" do
       r = described_class.score(gen2)
 
-      expect(r.duplicate_bio_share).to eq(0.0) # nothing to duplicate — this is why exact matching died
+      expect(r.duplicate_bio_share).to eq(0.0)
+      expect(r.markers).to be_empty
+      # The diagnostics still describe it once something else has found it.
       expect(r.gibberish_share).to be > 0.5
       expect(r.default_avatar_share).to eq(1.0)
-      expect(r.markers).to include("gibberish-login", "default-avatar")
     end
 
-    it "still catches generation 3, which defeated duplicate matching" do
+    it "catches generation 3 by measuring templates among the accounts that filled a bio" do
       r = described_class.score(gen3)
 
-      expect(r.duplicate_bio_share).to be < 0.2 # the random tail did its job
-      expect(r.template_bio_share).to be > 0.2  # …but the template underneath is visible
+      expect(r.duplicate_bio_share).to be < 0.2   # the random tail did its job
+      expect(r.template_among_carriers).to be > 0.9 # …but among carriers the pool is obvious
       expect(r.markers).to include("template-bio")
-      expect(r.markers).to include("shared-stem") # inputgg survives in three logins
     end
 
-    it "ranks every generation above ordinary accounts" do
+    # The trap this guards: on a live window (1428000000) five of seventy-nine accounts carried a
+    # bio and four were one template pool. Measured as a share of the WINDOW that is 0.05 — below
+    # any sane threshold — which is exactly why the first version scored the whole of 2026 at
+    # 0.00–0.03 and saw nothing.
+    it "sees a template pool that only a handful of accounts carry" do
+      sparse = gen3.first(4) + Array.new(40) { |i| user("filler#{i}", avatar: default_avatar, day: "2026-01-19") }
+      r = described_class.score(sparse)
+
+      expect(r.template_bio_share).to be < 0.15     # invisible as a share of the window
+      expect(r.template_among_carriers).to be > 0.9 # visible among carriers
+      expect(r.markers).to include("template-bio")
+    end
+
+    it "ranks the detectable generations above ordinary accounts" do
       human_score = described_class.score(humans).score
 
-      [ gen1, gen2, gen3 ].each do |batch|
+      [ gen1, gen3 ].each do |batch|
         expect(described_class.score(batch).score).to be > human_score * 2
       end
     end
@@ -106,8 +124,19 @@ RSpec.describe BotDetection::RegistrationBatch do
     it "does not flag a window of real people" do
       r = described_class.score(humans)
 
-      expect(r.markers).not_to include("duplicate-bio", "template-bio", "gibberish-login")
+      expect(r.markers).to be_empty
       expect(r.score).to be < 0.25
+    end
+
+    # The regression a 2023 control range actually produced against the first version of this
+    # class: random logins and default avatars are the BACKGROUND of ordinary Twitch registrations
+    # (0.30–0.67 gibberish, near-universal defaults), so a window full of them must not outscore a
+    # real factory. This assertion is what keeps them out of the vote.
+    it "does not score a window of blank, randomly-named accounts above a real factory" do
+      blank = Array.new(30) { |i| user("q#{i}x8zvbn#{i}", avatar: default_avatar, day: "2023-09-02") }
+
+      expect(described_class.score(blank).score).to be < described_class.score(gen1).score
+      expect(described_class.score(blank).markers).to be_empty
     end
 
     # A 100-ID window spans minutes of Twitch registrations, so one creation day is the norm, not
