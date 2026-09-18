@@ -205,6 +205,12 @@ module FlipperDefaults
     #   off: bin/rails runner 'Flipper.disable(:open_house_guest_access)'
     open_house_guest_access: "OPEN-HOUSE",
     trends_pdf_export: "TASK-078", # FR-040: PDF export из Trends Tab, добавляется отдельным PR
+    # WS2: Hermes realtime viewcount ingest (bin/hermes_monitor + `hermes` Kamal role). Add-only /
+    # OFF on deploy on purpose — a NEW source feeding the CCV path must boot in STANDBY, be verified
+    # healthy, then flipped by hand with a live-verify. Auto-ON would swap the CCV writer sight-unseen.
+    #   on:  bin/rails runner 'Flipper.enable(:hermes_monitor)'
+    #   off: bin/rails runner 'Flipper.disable(:hermes_monitor)'
+    hermes_monitor: "WS2-hermes-realtime-ccv",
     accessory_auto_remediation: "BUG-010 PR3" # Kill switch для AutoRemediation::TriggerService
     # GitHub workflow_dispatch. Default OFF — operators enable через
     # `bin/rails accessory_ops:auto_remediation:enable` когда confident в auto path.

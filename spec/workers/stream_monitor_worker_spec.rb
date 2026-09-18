@@ -13,6 +13,9 @@ RSpec.describe StreamMonitorWorker do
     allow(ENV).to receive(:fetch).and_call_original
     allow(ENV).to receive(:fetch).with("REDIS_URL", anything).and_return("redis://localhost:6379/1")
     allow(Flipper).to receive(:enabled?).with(:stream_monitor).and_return(true)
+    # WS2: the 60s poll now checks :hermes_monitor before writing CCV (defers to Hermes when on).
+    # OFF here preserves the classic polling behaviour these examples assert.
+    allow(Flipper).to receive(:enabled?).with(:hermes_monitor).and_return(false)
     allow(Twitch::GqlClient).to receive(:new).and_return(gql)
     allow(Twitch::HelixClient).to receive(:new).and_return(helix)
 

@@ -1,0 +1,123 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+# WS2: Hermes realtime viewcount entrypoint for the Kamal `hermes` role.
+# Long-running process, two modes (mirrors bin/irc_monitor):
+#   STANDBY — Flipper[:hermes_monitor] disabled. Heartbeat, sleep, poll Flipper.
+#   ACTIVE  — enabled. Subscribes video-playback-by-id.<twitch_id> for monitored live channels,
+#             writes realtime CcvSnapshot (30s cadence) with collaboration_viewers.
+# Never exits on its own (except SIGTERM/SIGINT). Health-check = hermes:heartbeat.
+
+require_relative "../config/environment"
+
+HEARTBEAT_KEY = "hermes:heartbeat"
+HEARTBEAT_TTL = 120
+STANDBY_INTERVAL = 60
+ACTIVE_FLIPPER_INTERVAL = 300
+
+Rails.logger.info("bin/hermes_monitor: starting (PID: #{Process.pid})")
+
+running = true
+trap("SIGTERM") { running = false }
+trap("SIGINT") { running = false }
+
+def flipper_enabled?
+  Flipper.enabled?(:hermes_monitor)
+rescue ActiveRecord::ConnectionNotEstablished, ActiveRecord::StatementInvalid, PG::Error => e
+  Rails.logger.warn("bin/hermes_monitor: Flipper check failed (#{e.class}), treating as disabled")
+  ActiveRecord::Base.connection_pool.disconnect! rescue nil
+  false
+end
+
+def connect_redis
+  Redis.new(url: ENV.fetch("REDIS_URL", "redis://localhost:6379/1")).tap(&:ping)
+rescue Redis::CannotConnectError => e
+  Rails.logger.error("bin/hermes_monitor: Redis unavailable (#{e.message}), retrying in 30s")
+  sleep(30)
+  retry
+end
+
+def write_standby_heartbeat(redis)
+  redis.setex(HEARTBEAT_KEY, HEARTBEAT_TTL, { mode: "standby", pid: Process.pid, at: Time.current.iso8601 }.to_json)
+rescue Redis::BaseError => e
+  Rails.logger.warn("bin/hermes_monitor: heartbeat write failed (#{e.message})")
+end
+
+def run_standby(redis, running_ref)
+  write_standby_heartbeat(redis)
+  Rails.logger.info("bin/hermes_monitor: STANDBY — Flipper disabled, next check in #{STANDBY_INTERVAL}s")
+  elapsed = 0
+  while running_ref.call && elapsed < STANDBY_INTERVAL
+    sleep(1)
+    elapsed += 1
+  end
+end
+
+# Resolve a numeric twitch channel id -> currently-live Stream (memoised per active cycle).
+def live_stream_for(channel_id, cache)
+  return cache[channel_id] if cache.key?(channel_id)
+
+  channel = Channel.find_by(twitch_id: channel_id.to_s)
+  stream = channel&.streams&.where(ended_at: nil)&.order(started_at: :desc)&.first
+  cache[channel_id] = stream
+end
+
+def run_active(_redis, running_ref)
+  Rails.logger.info("bin/hermes_monitor: ACTIVE — connecting to Hermes")
+
+  monitor = Twitch::HermesWebsocket.new
+  stream_cache = {}
+
+  live = Channel.monitored.active
+    .joins(:streams).where(streams: { ended_at: nil })
+    .distinct.pluck(:twitch_id).compact
+  live.each { |cid| monitor.subscribe(cid) }
+  Rails.logger.info("bin/hermes_monitor: subscribing #{live.size} live channels")
+
+  monitor.on_viewcount = lambda do |channel_id, payload|
+    stream = live_stream_for(channel_id, stream_cache)
+    next unless stream
+
+    CcvSnapshot.create!(
+      stream: stream,
+      timestamp: Time.current,
+      ccv_count: payload["viewers"].to_i,
+      collaboration_viewers: payload["collaboration_viewers"],
+      collaboration_status: payload["collaboration_status"]
+    )
+  rescue ActiveRecord::RecordInvalid, ActiveRecord::StatementInvalid => e
+    Rails.logger.warn("bin/hermes_monitor: snapshot write failed for #{channel_id} (#{e.message})")
+  end
+
+  last_flipper_check = Time.current
+  monitor.on_periodic_check = lambda do
+    if Time.current - last_flipper_check > ACTIVE_FLIPPER_INTERVAL
+      last_flipper_check = Time.current
+      stream_cache.clear # refresh stream resolution + pick up newly-live channels next reconnect
+      unless flipper_enabled? && running_ref.call
+        Rails.logger.info("bin/hermes_monitor: Flipper disabled / shutting down, stopping")
+        monitor.stop
+      end
+    end
+  end
+
+  monitor.start
+rescue StandardError => e
+  Rails.logger.error("bin/hermes_monitor: active mode error (#{e.class}: #{e.message})")
+ensure
+  monitor&.stop rescue nil
+end
+
+# === MAIN LOOP ===
+redis = connect_redis
+
+while running
+  if flipper_enabled?
+    run_active(redis, -> { running })
+  else
+    run_standby(redis, -> { running })
+  end
+end
+
+Rails.logger.info("bin/hermes_monitor: shutting down (PID: #{Process.pid})")
+redis.del(HEARTBEAT_KEY) rescue nil

@@ -181,6 +181,19 @@ servers:
       health-cmd: "ruby -e 'puts :ok'"
       health-interval: 10s
 
+  # WS2: Hermes realtime viewcount ingest — a SEPARATE stateful WS process (like `irc`), one
+  # anonymous Hermes connection subscribing video-playback-by-id.<id> for the monitored live set,
+  # writing 30s-cadence CcvSnapshot with collaboration_viewers. Gated by :hermes_monitor
+  # (STAGING_ALL_FLAGS) — idles in STANDBY when OFF, so prod is unaffected until PO-enabled.
+  hermes:
+    hosts:
+      - 100.78.102.60
+    cmd: bin/hermes_monitor
+    proxy: false
+    options:
+      health-cmd: "ruby -e 'puts :ok'"
+      health-interval: 10s
+
   # EPIC FARM T-F1: the farm's category-join IRC pool — a SEPARATE stateful process from `irc`
   # (bot-detection set): N anonymous connections holding every live channel of the enabled
   # capture categories, pushing chat to farm:capture:chat_messages → CH capture_chat_messages.
