@@ -50,6 +50,11 @@ gem "bootsnap", require: false
 # Redis for caching + Sidekiq
 gem "redis", "~> 5.0"
 
+# WS2: Twitch::HermesWebsocket speaks WebSocket over a raw TLS socket via websocket-driver.
+# Already resolved transitively through actioncable — declared here so the direct dependency is
+# explicit in the lockfile and cannot silently break if actioncable's deps change.
+gem "websocket-driver"
+
 # Background jobs
 gem "sidekiq", "~> 7.0"
 gem "sidekiq-cron", "~> 2.0"

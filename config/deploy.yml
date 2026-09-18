@@ -183,8 +183,10 @@ servers:
 
   # WS2: Hermes realtime viewcount ingest — a SEPARATE stateful WS process (like `irc`), one
   # anonymous Hermes connection subscribing video-playback-by-id.<id> for the monitored live set,
-  # writing 30s-cadence CcvSnapshot with collaboration_viewers. Gated by :hermes_monitor
-  # (STAGING_ALL_FLAGS) — idles in STANDBY when OFF, so prod is unaffected until PO-enabled.
+  # writing 30s-cadence CcvSnapshot with collaboration_viewers. Gated by :hermes_monitor in
+  # HOOK_FLAGS (add-only, OFF on every deploy) — idles in STANDBY until an operator flips it by
+  # hand. Do NOT move the flag to STAGING_ALL_FLAGS: that auto-enables on staging(=prod) boot and
+  # would swap the CCV writer sight-unseen.
   hermes:
     hosts:
       - 100.78.102.60

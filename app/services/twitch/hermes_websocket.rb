@@ -79,11 +79,16 @@ module Twitch
 
     def open_socket
       tcp = TCPSocket.new(HOST, PORT)
+      tcp.setsockopt(Socket::IPPROTO_TCP, Socket::TCP_NODELAY, 1)
       ctx = OpenSSL::SSL::SSLContext.new
+      ctx.min_version = OpenSSL::SSL::TLS1_2_VERSION
+      ctx.verify_mode = OpenSSL::SSL::VERIFY_PEER
+      ctx.cert_store = OpenSSL::X509::Store.new.tap(&:set_default_paths)
       ssl = OpenSSL::SSL::SSLSocket.new(tcp, ctx)
       ssl.hostname = HOST # SNI — Twitch edge rejects handshakes without it
       ssl.sync_close = true
       ssl.connect
+      ssl.post_connection_check(HOST) # verify the cert actually matches hermes.twitch.tv
       @ssl = ssl
     end
 
@@ -125,7 +130,14 @@ module Twitch
         ready = IO.select([ @ssl ], nil, nil, READ_TIMEOUT)
         if ready
           chunk = read_available
-          break if chunk.nil? # peer closed
+          if chunk.nil? # peer closed the socket
+            # Route through the reconnect/backoff path (EOFError < IOError, in the rescue list) so a
+            # clean server-side close does NOT hot-loop a new TCP/TLS connection with zero delay —
+            # that would hammer Twitch's edge and risk the shared egress IP being throttled/banned.
+            raise EOFError, "hermes peer closed" if @running
+
+            break # @running == false → graceful shutdown, no reconnect
+          end
           @driver.parse(chunk) unless chunk.empty?
         end
         if Time.current - last_periodic >= 30

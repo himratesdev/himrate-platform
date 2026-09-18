@@ -53,20 +53,11 @@ def run_standby(redis, running_ref)
   end
 end
 
-# Resolve a numeric twitch channel id -> currently-live Stream (memoised per active cycle).
-def live_stream_for(channel_id, cache)
-  return cache[channel_id] if cache.key?(channel_id)
-
-  channel = Channel.find_by(twitch_id: channel_id.to_s)
-  stream = channel&.streams&.where(ended_at: nil)&.order(started_at: :desc)&.first
-  cache[channel_id] = stream
-end
-
 def run_active(_redis, running_ref)
   Rails.logger.info("bin/hermes_monitor: ACTIVE — connecting to Hermes")
 
   monitor = Twitch::HermesWebsocket.new
-  stream_cache = {}
+  writer = Twitch::HermesSnapshotWriter.new
 
   live = Channel.monitored.active
     .joins(:streams).where(streams: { ended_at: nil })
@@ -74,28 +65,19 @@ def run_active(_redis, running_ref)
   live.each { |cid| monitor.subscribe(cid) }
   Rails.logger.info("bin/hermes_monitor: subscribing #{live.size} live channels")
 
-  monitor.on_viewcount = lambda do |channel_id, payload|
-    stream = live_stream_for(channel_id, stream_cache)
-    next unless stream
-
-    CcvSnapshot.create!(
-      stream: stream,
-      timestamp: Time.current,
-      ccv_count: payload["viewers"].to_i,
-      collaboration_viewers: payload["collaboration_viewers"],
-      collaboration_status: payload["collaboration_status"]
-    )
-  rescue ActiveRecord::RecordInvalid, ActiveRecord::StatementInvalid => e
-    Rails.logger.warn("bin/hermes_monitor: snapshot write failed for #{channel_id} (#{e.message})")
-  end
+  monitor.on_viewcount = ->(channel_id, payload) { writer.write(channel_id, payload) }
 
   last_flipper_check = Time.current
   monitor.on_periodic_check = lambda do
+    # Fires every ~30s. The shutdown check is UNGATED so a SIGTERM (which flips running_ref) stops
+    # the monitor within a tick instead of waiting up to ACTIVE_FLIPPER_INTERVAL and being SIGKILLed.
+    return monitor.stop unless running_ref.call
+
     if Time.current - last_flipper_check > ACTIVE_FLIPPER_INTERVAL
       last_flipper_check = Time.current
-      stream_cache.clear # refresh stream resolution + pick up newly-live channels next reconnect
-      unless flipper_enabled? && running_ref.call
-        Rails.logger.info("bin/hermes_monitor: Flipper disabled / shutting down, stopping")
+      writer.reset_cache # refresh channel->stream resolution (newly-live / ended streams)
+      unless flipper_enabled?
+        Rails.logger.info("bin/hermes_monitor: Flipper disabled, stopping")
         monitor.stop
       end
     end

@@ -62,17 +62,20 @@ class StreamMonitorWorker
       # community_tab presence above feeds AuthRatio signal #1 (distinct: typers vs presence).
       chat_data = fetch_chat_activity(batch)
 
+      # WS2: the streams the Hermes realtime ingest already owns (a fresh CCV snapshot exists).
+      # One index-backed query per slice (stream_id IN batch) — NOT a per-stream EXISTS in the
+      # loop. Empty set when :hermes_monitor is OFF (prod default) without touching the DB.
+      hermes_covered = hermes_covered_stream_ids(batch)
+
       batch.each do |stream|
         ccv = ccv_data[stream.channel.login]
         chat = chat_data[stream.id]
         present = chatters_present_data[stream.channel.login]
 
-        # WS2: when :hermes_monitor is live it owns the CCV snapshot (30s realtime cadence). We
-        # only write here as a FALLBACK for streams Hermes isn't currently covering (no fresh
-        # snapshot in the last 45s) — so the CcvStepFunction series stays single-cadence, and no
-        # channel ever loses CCV if the Hermes WS is down or hasn't subscribed it yet. Flag OFF
-        # (prod default) short-circuits before any extra query — unchanged 60s-polling behaviour.
-        save_ccv_snapshot(stream, ccv) if ccv && !hermes_covering?(stream)
+        # When Hermes owns this stream's CCV (30s realtime cadence) the 60s poll skips its write,
+        # keeping the CcvStepFunction series single-cadence. We still write as a FALLBACK for
+        # streams Hermes isn't covering (WS down / not yet subscribed) so no channel loses CCV.
+        save_ccv_snapshot(stream, ccv) if ccv && !hermes_covered.include?(stream.id)
         save_chatters_snapshot(stream, ccv, chat, present) if (chat || present) && ccv
 
         # TASK-030: Trigger signal computation after data saved
@@ -210,17 +213,18 @@ class StreamMonitorWorker
     )
   end
 
-  # WS2: true when the Hermes realtime ingest already owns this stream's CCV — flag live AND a
-  # snapshot landed in the last 45s (Hermes cadence is ~30s). Flag-first so the OFF (prod default)
-  # path short-circuits with no extra query. When true, the 60s poll skips its CCV write to keep
-  # the CcvStepFunction series single-cadence; when Hermes is down/uncovered it falls through here
-  # and the poll writes as before.
+  # WS2: the subset of this slice's streams the Hermes realtime ingest already owns — a snapshot
+  # landed in the last 45s (Hermes cadence is ~30s). Flag-first so the OFF (prod default) path
+  # returns an empty set with no query. One query, scoped to the slice's stream_ids so it rides
+  # the (stream_id, timestamp) index.
   HERMES_FRESH_WINDOW = 45.seconds
 
-  def hermes_covering?(stream)
-    return false unless Flipper.enabled?(:hermes_monitor)
+  def hermes_covered_stream_ids(batch)
+    return Set.new unless Flipper.enabled?(:hermes_monitor)
 
-    stream.ccv_snapshots.where(timestamp: HERMES_FRESH_WINDOW.ago..).exists?
+    CcvSnapshot
+      .where(stream_id: batch.map(&:id), timestamp: HERMES_FRESH_WINDOW.ago..)
+      .distinct.pluck(:stream_id).to_set
   end
 
   # BUG-251.30 (extended): persist both active-typer columns (existing semantics) AND
