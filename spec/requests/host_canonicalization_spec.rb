@@ -249,6 +249,15 @@ RSpec.describe "Host canonicalization", type: :request do
       expect(response).to have_http_status(:ok)
     end
 
+    # Pins the documented state: the short LK paths are app-host-constrained routes, so the stand
+    # has none until its own routes block lands with the first ported page (LK lives on /app/*).
+    it "has no canonical short LK paths yet — they 404 instead of redirecting off the stand" do
+      host! "next.himrate.com"
+      get "/home"
+
+      expect(response).to have_http_status(:not_found)
+    end
+
     it "serves the public channel card on the stand" do
       create(:channel, login: "standcheck")
       host! "next.himrate.com"

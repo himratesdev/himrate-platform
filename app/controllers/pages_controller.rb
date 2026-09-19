@@ -15,9 +15,10 @@ class PagesController < ApplicationController
   # canonical URL. Scoped to PagesController → API / auth / og / up traffic (other controllers)
   # is never touched. Skips the staging test host and dev/localhost.
   before_action :canonicalize_host
-  # Header-level noindex for the two deindexed host classes — the product host and the
-  # WEB-CONSOLIDATION stand (meta noindex = suspenders; this = belt — survives any layout/meta
-  # drift and covers non-HTML responses).
+  # Header-level noindex for the two deindexed host classes. Product host: meta noindex =
+  # suspenders, this header = belt (survives layout/meta drift, covers non-HTML responses).
+  # WEB-CONSOLIDATION stand: robots Disallow does the work; the header is only the fallback
+  # (layout metas are not host-aware and may read `follow` there — harmless behind a Disallow).
   after_action :noindex_deindexed_host
 
   PAGES = %w[index streamers brands viewers methodology login].freeze
@@ -302,10 +303,18 @@ class PagesController < ApplicationController
   # split) is assembled page by page against the real DB before it takes over the apex. Same web
   # container, zero runtime cost. ENV-driven (config/deploy.staging.yml env.clear) so the cutover /
   # teardown is a value change, not a code hunt; nil = no stand → every stand branch is inert.
-  # The stand serves EVERY surface unredirected (new pages override per route in routes.rb, the
-  # rest falls through to today's pages). One exception lives outside this controller: the bare
-  # `/app` is a route-level redirect (routes.rb) and still lands on app.himrate.com/home.
-  # Deindexing: robots Disallow (STAND_ROBOTS) + X-Robots-Tag noindex,nofollow on every page.
+  # What the stand serves today, unredirected: the apex-level surfaces (marketing pages, /c/, /top,
+  # /login, /og, legal) and the legacy /app/* aliases — so today's LK is reachable there via /app/*.
+  # The canonical SHORT LK paths (/home, /discover, …) are declared only under
+  # `constraints host: "app.himrate.com"` in routes.rb and therefore 404 on the stand; the stand
+  # gets its own host-constrained routes block with the first ported page (new pages override per
+  # route, the rest keeps falling through).
+  # Three things still LEAVE the stand, by design: the bare `/app` (an unconstrained route-level
+  # redirect → app.himrate.com/home), a login INITIATED on the stand (the OAuth callback URIs are
+  # pinned to the production hosts — log in on the app host instead: the session cookie is scoped
+  # to .himrate.com and is already valid here), and the two hardcoded app.himrate.com/login links
+  # in the current channel card.
+  # Deindexing: robots Disallow (STAND_ROBOTS) first; X-Robots-Tag noindex,nofollow as the fallback.
   STAND_HOST = ENV["STAND_HOST"].presence
 
   # Short (prefixless) LK paths on the app host. SIMPLE heads are product as bare segments;

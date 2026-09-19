@@ -306,7 +306,8 @@ Rails.application.routes.draw do
   # W5: audience-overlap graph page.
   get "app/graph", to: "pages#graph"
   # Bare /app (users type it as «кабинет») — a routing-level 404 before canonicalize_host
-  # could touch it. One hop to the canonical LK home.
+  # could touch it. One hop to the canonical LK home. Unconstrained by host, so it leaves the
+  # WEB-CONSOLIDATION stand too (see PagesController::STAND_HOST).
   get "app", to: redirect("https://app.himrate.com/home", status: 301)
   # Viewer personal activity (screen 03, PVA) — watch time / top channels / insights / feed.
   get "app/activity", to: "pages#my_activity"
