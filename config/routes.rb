@@ -74,6 +74,10 @@ Rails.application.routes.draw do
       get "channels/:login/coordination", to: "coordination#show", constraints: { login: /[A-Za-z0-9_]+/ }
       get "coordination/groups/:id", to: "coordination#group"
 
+      # WEB-CONSOLIDATION: a channel's best clips right now, out of the farm clip pool. Public
+      # (a fact about the channel), keyed by login like the coordination read above.
+      get "channels/:login/clips", to: "channels/clips#index", constraints: { login: /[A-Za-z0-9_]+/ }
+
       # TASK-031: User profile
       get "user/me", to: "users#me"
       patch "user/me", to: "users#update"

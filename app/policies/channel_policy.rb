@@ -50,6 +50,12 @@ class ChannelPolicy < ApplicationPolicy
     true
   end
 
+  # WEB-CONSOLIDATION: a channel's clips. Public on Twitch already and a fact about the channel,
+  # like the list of its broadcasts (view_streams?) — open, guests included.
+  def view_clips?
+    true
+  end
+
   # T1-065 (DEC-6): Reputation history/trajectory — FREE trust-summary, always allows (mirror
   # show_trust?). Access-model v2 (PO 2026-06-21): the card incl. reputation is 100% free to the
   # viewer. Always-true → no denial path → no paywall code; surface-agnostic (extension + dashboard).
