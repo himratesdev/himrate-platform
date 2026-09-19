@@ -23,7 +23,12 @@ module TrustIndex
       )
 
       Context = Data.define(
-        :v, :raw_chatters, :cell, :rho_self_lo, :clean_self_history, :self_history_stable,
+        :v, :raw_chatters, :cell, :rho_self_lo,
+        # rho_self — the CENTRE of the channel's own clean chat-share history (rho_self_lo is its P10,
+        # the floor [1]/F_self gate on). NO layer reads it: it is carried so the persisted row says what
+        # the self-deficit was judged against, not merely that it fired (DETECTION-AUDIT 2026-09-19).
+        :rho_self,
+        :clean_self_history, :self_history_stable,
         # i_event = the FINAL self-history tripwire (C_self / F_self). The engine DERIVES it (derive_i_event,
         # after L2) from the L2-internal deficit [1] + i_event_external + raid + enabled-gate; the builder
         # passes i_event:false (a literal — the engine overrides). i_event_external = the pre-ANDed 5 external
@@ -93,8 +98,14 @@ module TrustIndex
 
       Result = Data.define(:erv, :erv_lo, :erv_hi, :authenticity, :a_hat, :n_frac, :band,
                            :reason_codes, :confirmed_anomaly, :cold_start_tier, :confidence_marker,
-                           :c_hard, :c_self, :axes, :eihc, :rho_obs, :f_hat, :f_hat_lo, :f_hat_hi,
-                           :f_hard, :f_hard_lo, :f_self,
+                           :c_hard, :c_self,
+                           # DETECTION-AUDIT 2026-09-19 (observability, no logic): the three corroboration
+                           # paths that decide an accusation without touching c_hard/c_self, the roster
+                           # n_frac divides by, the self-baseline the deficit is measured against, the P95
+                           # of the named floor and the CPS axis value. All persisted, none read back.
+                           :c_inflation, :c_hard_abs, :c_pop, :n_chat_eff, :rho_self, :cps,
+                           :axes, :eihc, :rho_obs, :f_hat, :f_hat_lo, :f_hat_hi,
+                           :f_hard, :f_hard_lo, :f_hard_hi, :f_self, :rho_self_lo,
                            # PR3a (T1-074) — additive observability breakdown (no logic change): L2 soft
                            # deficit + interval, authenticity interval, Q. Persisted for /erv
                            # erv_breakdown{f_hard,f_soft,f_hat} (Surface 2) + richer shadow diff.
@@ -121,8 +132,12 @@ module TrustIndex
       EMPTY_RESULT = {
         erv: nil, erv_lo: nil, erv_hi: nil, authenticity: nil, a_hat: nil, n_frac: nil, band: nil,
         reason_codes: [], confirmed_anomaly: false, cold_start_tier: nil, confidence_marker: "provisional",
-        c_hard: false, c_self: false, axes: nil, eihc: nil, rho_obs: nil, f_hat: nil, f_hat_lo: nil,
-        f_hat_hi: nil, f_hard: nil, f_hard_lo: nil, f_self: nil,
+        c_hard: false, c_self: false,
+        # EC-15 short-circuits BEFORE L0→L4, so no corroborator is ever evaluated here: nil (= "not
+        # evaluated"), not false. n_chat_eff/cps are known at V≤0 and overridden in offline_result.
+        c_inflation: nil, c_hard_abs: nil, c_pop: nil, n_chat_eff: nil, rho_self: nil, cps: nil,
+        axes: nil, eihc: nil, rho_obs: nil, f_hat: nil, f_hat_lo: nil,
+        f_hat_hi: nil, f_hard: nil, f_hard_lo: nil, f_hard_hi: nil, f_self: nil, rho_self_lo: nil,
         f_soft: nil, f_soft_lo: nil, f_soft_hi: nil, authenticity_lo: nil, authenticity_hi: nil, q_score: nil,
         rho_convention: nil, # V≤0 short-circuit → rho_obs nil → no convention applies
         b_hard: [], engine_version: "v2"
@@ -167,6 +182,9 @@ module TrustIndex
       # Never a headline number, never GREEN/accusatory (the division A=100·(1−F̂/V) is undefined at V=0).
       def offline_result
         Result.new(**EMPTY_RESULT, cold_start_tier: @ctx.cold_start_tier,
+          # Known without running a layer — the GREY row keeps them so a V≤0 snapshot still says how
+          # big the chat was and what protection the channel ran (mirrors the axes below).
+          n_chat_eff: @ctx.n_chat_eff, cps: @ctx.cps,
           band: BandClassifier::Band.new(row: 5, color: "grey", label_key: "band.grey_insufficient", sub: nil),
           reason_codes: [ ReasonCodeBuilder::Code.new(code: "WIDE_INTERVAL_THIN_SAMPLE", params: {}) ],
           axes: AxesBuilder.call(authenticity: nil, reputation: @ctx.reputation, rho_obs: nil, cps: @ctx.cps))
@@ -410,6 +428,10 @@ module TrustIndex
                                  authenticity_lo: a_lo, authenticity_hi: a_hi),
           eihc: soft.eihc, rho_obs: soft.rho_obs, f_hat: fraud_disp.f_hat, f_hat_lo: fraud_disp.f_hat_lo,
           f_hat_hi: fraud_disp.f_hat_hi, f_hard: hard.f_hard, f_hard_lo: hard.f_hard_lo,
+          # DETECTION-AUDIT 2026-09-19 (observability): f_hard_hi (P95 of the named floor — the dispute
+          # interval's upper end, computed since M1 but never carried out), the self-baseline the F_self
+          # branch measures against, and the CPS axis value. No layer reads any of them.
+          f_hard_hi: hard.f_hard_hi, rho_self: @ctx.rho_self, rho_self_lo: @ctx.rho_self_lo, cps: @ctx.cps,
           f_self: fraud.f_self,
           f_soft: soft.f_soft, f_soft_lo: soft.f_soft_lo, f_soft_hi: soft.f_soft_hi,
           # authenticity interval mirrors the DISPLAY ERV interval: MORE fraud (f_hat_hi) → LOWER authenticity.

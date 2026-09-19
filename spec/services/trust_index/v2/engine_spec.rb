@@ -8,7 +8,7 @@ module EngineSpecDoubles
                         :account_profile_llr, :anti_bot_llr,
                         :cluster_delta_k, :cluster_size, :age_gate, :recurrence_gate)
   Cell = Data.define(:rho_star, :rho_lo, :rho_hi, :calibrated, :rho_p1, :ccv_typical)
-  Context = Data.define(:raw_chatters, :v, :cell, :rho_self_lo, :clean_self_history, :i_event,
+  Context = Data.define(:raw_chatters, :v, :cell, :rho_self_lo, :rho_self, :clean_self_history, :i_event,
                         :i_event_external, :raid_window, :n_chat_eff, :q, :cold_start_tier, :self_history_stable,
                         :chatter_quality_high, :stream_count, :unattributed_surge, :thin_sample,
                         :cps, :reputation, :ccv_chat_divergence, :l2_roster_usernames, :v_w, :n_roster,
@@ -54,7 +54,8 @@ RSpec.describe TrustIndex::V2::Engine do
   end
 
   def context(chatters, **over)
-    base = { raw_chatters: chatters, v: 5000, cell: cell, rho_self_lo: 0.03, clean_self_history: true,
+    base = { raw_chatters: chatters, v: 5000, cell: cell, rho_self_lo: 0.03, rho_self: 0.05,
+             clean_self_history: true,
              i_event: false, i_event_external: false, raid_window: false, n_chat_eff: chatters.size, q: 0.9,
              cold_start_tier: "full", self_history_stable: true, chatter_quality_high: true,
              stream_count: 20, unattributed_surge: false, thin_sample: false, cps: 70,
@@ -94,6 +95,25 @@ RSpec.describe TrustIndex::V2::Engine do
     expect(r.authenticity_lo).to be <= r.authenticity
     expect(r.authenticity_hi).to be >= r.authenticity
     expect(r.q_score).to eq(0.9) # Q passthrough from context (helper sets q: 0.9)
+  end
+
+  # DETECTION-AUDIT 2026-09-19: the Result carries what the verdict was decided ON, not just what it
+  # decided — the corroboration paths, the roster, the self-baseline, the named-floor P95 and CPS.
+  it "carries the verdict's corroboration paths + intermediate quantities out (no verdict change)" do
+    r = described_class.compute(context: context(Array.new(150) { |i| chatter("h#{i}") }, n_chat_eff: 150), k: k)
+    expect([ r.c_inflation, r.c_hard_abs, r.c_pop ]).to eq([ false, false, false ]) # all dormant at default K
+    expect(r.n_chat_eff).to eq(150)
+    expect([ r.rho_self, r.rho_self_lo ]).to eq([ 0.05, 0.03 ])
+    expect(r.cps).to eq(70)
+    expect(r.f_hard_hi).to eq(0.0) # P95 of an empty named set
+    expect(r.band.color).to eq("green") # the clean-channel verdict from the first example, unchanged
+  end
+
+  it "EC-15: nothing is evaluated at V≤0 → the corroboration paths are NULL, not false" do
+    r = described_class.compute(context: context([ chatter("a") ], v: 0, n_chat_eff: 7), k: k)
+    expect([ r.c_inflation, r.c_hard_abs, r.c_pop, r.rho_self, r.f_hard_hi ]).to all(be_nil)
+    expect([ r.n_chat_eff, r.cps ]).to eq([ 7, 70 ]) # known without running a layer
+    expect(r.band.color).to eq("grey")
   end
 
   it "P0.5: stamps rho_convention 'cumulative' by default, 'windowed' when co-windowed inputs present" do

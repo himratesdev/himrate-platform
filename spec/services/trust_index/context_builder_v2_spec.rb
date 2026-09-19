@@ -199,6 +199,9 @@ RSpec.describe TrustIndex::ContextBuilder do
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a]))
       expect(c.clean_self_history).to be(true)
       expect(c.rho_self_lo).to be_within(0.001).of(0.02)
+      # DETECTION-AUDIT 2026-09-19: the baseline CENTRE rides the same sorted array as its P10 floor,
+      # so a persisted self-deficit can say what it fell below. Nothing gates on it.
+      expect(c.rho_self).to be_within(0.001).of(0.03)
     end
 
     it "moat-audit de-poison: BOTTED (non-green) self-history rows are excluded from the baseline" do

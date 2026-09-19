@@ -46,6 +46,13 @@ module TrustIndex
           band_row: @r.band.row, band_sub: @r.band.sub, band_color: @r.band.color,
           reason_codes: @r.reason_codes.map(&:to_h), c_hard: @r.c_hard, c_self: @r.c_self,
           i_event: @r.c_self, # C_self = (I=1); the i_event column mirrors it (SRS §5.1)
+          # DETECTION-AUDIT 2026-09-19 — the REST of the corroboration set + the quantities the verdict
+          # turned on. Until now a YELLOW driven by C_inflation / c_hard_abs / C_pop persisted with both
+          # flags false and read as an uncorroborated accusation; n_chat_eff / ρ_self / ρ_self_lo /
+          # F_hard_hi / CPS had columns but no writer. Write-only — nothing reads these back.
+          c_inflation: @r.c_inflation, c_hard_abs: @r.c_hard_abs, c_pop: @r.c_pop,
+          n_chat_eff: @r.n_chat_eff, cps: @r.cps,
+          rho_self: @r.rho_self, rho_self_lo: @r.rho_self_lo, f_hard_hi: @r.f_hard_hi,
           confirmed_anomaly: @r.confirmed_anomaly, cold_start_tier: @r.cold_start_tier,
           confidence_marker: @r.confidence_marker }
       end

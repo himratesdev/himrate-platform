@@ -6,9 +6,13 @@ module PersistenceSpecDoubles
   Band = Data.define(:row, :sub, :color)
   Code = Data.define(:code, :params)
   Chatter = Data.define(:username, :p_u)
-  Result = Data.define(:erv, :erv_lo, :erv_hi, :f_hat, :f_hat_lo, :f_hat_hi, :f_hard, :f_hard_lo, :f_self,
+  Result = Data.define(:erv, :erv_lo, :erv_hi, :f_hat, :f_hat_lo, :f_hat_hi, :f_hard, :f_hard_lo, :f_hard_hi,
+                       :f_self,
                        :f_soft, :f_soft_lo, :f_soft_hi, :authenticity, :authenticity_lo, :authenticity_hi,
                        :n_frac, :q_score, :eihc, :rho_obs, :rho_convention, :band, :reason_codes, :c_hard, :c_self,
+                       # DETECTION-AUDIT 2026-09-19 — the rest of the corroboration set + the quantities
+                       # the verdict turned on (columns that existed but had no writer).
+                       :c_inflation, :c_hard_abs, :c_pop, :n_chat_eff, :cps, :rho_self, :rho_self_lo,
                        :confirmed_anomaly, :cold_start_tier, :confidence_marker, :b_hard)
 end
 
@@ -19,7 +23,9 @@ RSpec.describe TrustIndex::V2::Persistence do
   def result(**over)
     base = {
       erv: 2000.4, erv_lo: 1800.6, erv_hi: 2100.2, f_hat: 3000.0, f_hat_lo: 2900.0, f_hat_hi: 3100.0,
-      f_hard: 290.0, f_hard_lo: 285.0, f_self: 0.0,
+      f_hard: 290.0, f_hard_lo: 285.0, f_hard_hi: 295.0, f_self: 0.0,
+      c_inflation: false, c_hard_abs: false, c_pop: false, n_chat_eff: 420, cps: 65,
+      rho_self: 0.12, rho_self_lo: 0.09,
       f_soft: 3000.0, f_soft_lo: 2800.0, f_soft_hi: 3200.0,
       authenticity: 40.0, authenticity_lo: 38.0, authenticity_hi: 42.0, n_frac: 0.58, q_score: 0.73,
       eihc: 45.0, rho_obs: 0.009, rho_convention: "cumulative",
@@ -85,6 +91,30 @@ RSpec.describe TrustIndex::V2::Persistence do
     expect(tih.authenticity_lo).to eq(38.0)
     expect(tih.authenticity_hi).to eq(42.0)
     expect(tih.q_score).to eq(0.73)
+  end
+
+  # DETECTION-AUDIT 2026-09-19 (ENGINE-RCA Q2): a YELLOW/RED decided by C_inflation, the integer
+  # named-count trigger or C_pop persisted with c_hard=c_self=false and read back as an accusation
+  # with no corroborator at all — the audit had to re-derive the path from the reason codes.
+  describe "corroboration-path observability" do
+    it "persists every path the plashka reads, not just c_hard/c_self" do
+      tih = persist(result(c_inflation: true, c_hard_abs: false, c_pop: true, confirmed_anomaly: true))
+      expect([ tih.c_inflation, tih.c_hard_abs, tih.c_pop ]).to eq([ true, false, true ])
+    end
+
+    it "leaves a path NULL when it was never evaluated (EC-15 V≤0 skeleton) — NULL ≠ false" do
+      tih = persist(result(c_inflation: nil, c_hard_abs: nil, c_pop: nil, n_chat_eff: nil))
+      expect([ tih.c_inflation, tih.c_hard_abs, tih.c_pop, tih.n_chat_eff ]).to all(be_nil)
+    end
+
+    it "persists the quantities the verdict turned on (roster, CPS, self-baseline, F_hard P95)" do
+      tih = persist(result).reload
+      expect(tih.n_chat_eff).to eq(420)  # the N_frac denominator — the number the accusation divides by
+      expect(tih.cps).to eq(65)
+      expect(tih.rho_self).to eq(0.12)
+      expect(tih.rho_self_lo).to eq(0.09)
+      expect(tih.f_hard_hi).to eq(295.0)
+    end
   end
 
   it "writes a named_bot_evidence row per B_hard account when C_hard fires (EC-13)" do
