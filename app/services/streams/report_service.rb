@@ -62,8 +62,8 @@ module Streams
       build_assembled_v2
     end
 
-    # v2 fallback (no PSR yet): read the final v2 TIH directly; ErvEstimate is retired (v2 writes
-    # none) — the erv block comes from the same row.
+    # v2 fallback (no PSR yet): read the final v2 TIH directly — the erv block comes from the
+    # same row (the v1 erv_estimates table it used to fall back to was dropped 2026-09-19).
     def build_assembled_v2
       ti = final_v2_tih
 

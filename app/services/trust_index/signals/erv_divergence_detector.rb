@@ -1,7 +1,7 @@
 # frozen_string_literal: true
 
 # TASK-085 FR-015: ERV Divergence Detector — extends signal_compute_worker chain.
-# Reads ErvEstimate stream-scoped за 15min window. Triggers anomaly при ratio Δ > 10%.
+# Reads the stream's v2 trust_index_histories over a 15min window. Triggers anomaly при ratio Δ > 10%.
 # Severity computed в presenter (yellow Δ ≥ 10%, red ≥ 20% per BR-011).
 #
 # Reuses AnomalyAlerter dedup pattern (5min window per stream + anomaly_type) per FR-016.
@@ -14,15 +14,13 @@ module TrustIndex
       DEDUP_WINDOW = 5.minutes
 
       # Check real-viewer-share divergence > 10%. Returns array of created anomaly IDs.
-      # Basis = TIH.authenticity (v2 writes NO ErvEstimate). authenticity = 100·(1−F̂/V) is the exact semantic
-      # heir of erv_percent (both = "% of online that is real"), so the ratio thresholds carry over
-      # unchanged and the detector stays immune to organic CCV growth (a raw ERV-count basis would
-      # false-fire on raids). EC-15 GREY rows (authenticity NULL) excluded. details keys keep their
-      # names — values remain "% real viewers", the presenter contract (BR-011 delta_pct) is intact.
+      # Basis = TIH.authenticity — the single source since the cutover (the v1 erv_estimates table
+      # it once read was dropped 2026-09-19, empty and writerless). authenticity = 100·(1−F̂/V) is the
+      # exact semantic heir of erv_percent (both = "% of online that is real"), so the ratio thresholds
+      # carry over unchanged and the detector stays immune to organic CCV growth (a raw ERV-count basis
+      # would false-fire on raids). EC-15 GREY rows (authenticity NULL) excluded. details keys keep
+      # their names — values remain "% real viewers", the presenter contract (BR-011 delta_pct) is intact.
       def self.check(stream)
-        # CR #432 N-1: capture the flag ONCE — a transient Flipper hiccup between the basis
-        # selection and the details emit would write a torn row (authenticity values labeled
-        # axis: "erv_percent"), the exact mislabel `axis` exists to prevent.
         estimates =
         TrustIndexHistory
           .where(stream_id: stream.id, engine_version: "v2")
@@ -71,7 +69,6 @@ module TrustIndex
                .where("timestamp > ?", DEDUP_WINDOW.ago).exists?
       end
 
-      # Flag-store hiccup must not take SCW down → false = v1 branch (ErvEstimate, safe pre-flip).
       private_class_method :recent_anomaly_exists?
     end
   end

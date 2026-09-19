@@ -63,10 +63,8 @@ RSpec.describe SignalComputeWorker do
     10.times { Stream.create!(channel: channel, started_at: 3.hours.ago, ended_at: 2.hours.ago) }
   end
 
-  it "executes full pipeline and creates a v2 TIH row (no ErvEstimate — v1 artifact retired)" do
-    expect {
-      worker.perform(stream.id)
-    }.to change(TrustIndexHistory, :count).by(1).and change(ErvEstimate, :count).by(0)
+  it "executes full pipeline and creates a v2 TIH row" do
+    expect { worker.perform(stream.id) }.to change(TrustIndexHistory, :count).by(1)
   end
 
   it "skips when Flipper disabled" do
@@ -99,10 +97,9 @@ RSpec.describe SignalComputeWorker do
   # V1-RETIRE: v2 is the unconditional engine — persists TIH engine_version='v2' + ccv and
   # ships the v2 headline over the wire. A v2 failure FAILS the stage (Sidekiq retry).
   describe "TI v2 engine (unconditional)" do
-    it "persists a v2 row (no ErvEstimate) with ccv = engine V" do
+    it "persists a v2 row with ccv = engine V" do
       expect { worker.perform(stream.id) }
         .to change(TrustIndexHistory.where(engine_version: "v2"), :count).by(1)
-        .and change(ErvEstimate, :count).by(0)
       row = TrustIndexHistory.where(engine_version: "v2").last
       expect(row.band_color).to be_present
     end

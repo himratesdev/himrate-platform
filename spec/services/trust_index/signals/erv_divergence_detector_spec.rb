@@ -2,8 +2,9 @@
 
 require "rails_helper"
 
-# V1-RETIRE: basis = TIH.authenticity (the erv_percent heir, stream-scoped, 15min window);
-# ErvEstimate is a retired source the detector must ignore.
+# V1-RETIRE: basis = TIH.authenticity (the erv_percent heir, stream-scoped, 15min window).
+# DETECTION-AUDIT 2026-09-19: the erv_estimates table the detector used to read is dropped, so the
+# «ignores the retired source» guard is now structural — there is nothing left to read.
 RSpec.describe TrustIndex::Signals::ErvDivergenceDetector do
   let(:channel) { Channel.create!(twitch_id: "ed_ch", login: "ed_channel", display_name: "ED") }
   let(:stream) { Stream.create!(channel: channel, started_at: 1.hour.ago) }
@@ -91,14 +92,6 @@ RSpec.describe TrustIndex::Signals::ErvDivergenceDetector do
       make_history(authenticity: 90, calculated_at: 10.minutes.ago)
       TrustIndexHistory.create!(channel: channel, stream: stream, engine_version: "v2",
                                 authenticity: nil, calculated_at: 1.minute.ago, cold_start_tier: "full")
-      expect { described_class.check(stream) }.not_to change(Anomaly, :count)
-    end
-
-    it "ignores ErvEstimate rows (retired source)" do
-      ErvEstimate.create!(stream: stream, timestamp: 10.minutes.ago,
-                          erv_count: 900, erv_percent: 90, confidence: 1.0)
-      ErvEstimate.create!(stream: stream, timestamp: 1.minute.ago,
-                          erv_count: 400, erv_percent: 40, confidence: 1.0)
       expect { described_class.check(stream) }.not_to change(Anomaly, :count)
     end
   end
