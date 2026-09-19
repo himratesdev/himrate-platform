@@ -57,6 +57,29 @@ RSpec.describe "TI v2 contract finish", type: :request do
       expect(data.dig("confirmed_anomaly", "shown")).to eq(true)
       expect(data.dig("confirmed_anomaly", "provenance")).to eq("HARD_NAMED_FRACTION")
     end
+
+    # DETECTION-AUDIT 2026-09-19 (CR iter-1 Nit-6): the other three plashka paths used to come back
+    # confirmed_anomaly:true with provenance:nil — an accusation with no stated basis.
+    describe "provenance for the paths that don't set c_hard/c_self" do
+      def provenance_for(**flags)
+        tih.update!(confirmed_anomaly: true, band_row: 2, band_color: "yellow", **flags)
+        Trust::ShowService.new(channel: channel, view: :headline).call[:confirmed_anomaly]
+      end
+
+      it "names each path by the reason code the engine emits for it" do
+        expect(provenance_for(c_hard_abs: true)[:provenance]).to eq("HARD_NAMED_FRACTION")
+        expect(provenance_for(c_hard_abs: false, c_inflation: true)[:provenance]).to eq("INFLATION_EVENT_CORROBORATION")
+        expect(provenance_for(c_inflation: false, c_pop: true)[:provenance]).to eq("POPULATION_CHAT_DEFICIT")
+      end
+
+      it "keeps named evidence ahead of the CCV-shape and population paths (ReasonCodeBuilder precedence)" do
+        expect(provenance_for(c_hard: true, c_inflation: true, c_pop: true)[:provenance]).to eq("HARD_NAMED_FRACTION")
+      end
+
+      it "a row persisted before these columns existed (all NULL) keeps its old provenance" do
+        expect(provenance_for(c_inflation: nil, c_hard_abs: nil, c_pop: nil)).to eq(shown: true, provenance: nil)
+      end
+    end
   end
 
   describe "Trust::ShowService :drill_down — decomposition fields (extension CardLiveDrillData)" do
