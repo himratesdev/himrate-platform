@@ -28,6 +28,9 @@ RSpec.describe PublicTop::CategoryTop do
     expect(first[:shown_avg_viewers]).to eq(10_000)
     expect(first[:band_label]).to be_present
     expect(first[:band_color]).to eq("green")
+    # The scale hint that explains the badge — pinned to RU like the label it accompanies,
+    # because the page cache key carries no locale.
+    expect(first[:band_tooltip]).to eq(I18n.t("band.tooltip.red_significant", locale: :ru))
     # public-safe: no brand-only fields leak through
     expect(first).not_to have_key(:bot_correction_pct)
     expect(first).not_to have_key(:classification)
@@ -45,6 +48,8 @@ RSpec.describe PublicTop::CategoryTop do
 
     row = described_class.call("Dota 2").first
     expect(row[:band_color]).to be_nil
+    expect(row[:band_label]).to be_nil
+    expect(row[:band_tooltip]).to be_nil
   end
 
   it "caches the computed rows" do

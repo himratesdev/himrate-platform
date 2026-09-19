@@ -26,9 +26,12 @@ RSpec.describe Discover::LiveNowQuery do
       expect(row[:erv_percent]).to eq(72.0)         # authenticity
       expect(row[:erv_label]).to eq("Аудитория реальная") # band_row 3 → band.green_real (request locale ru)
       expect(row[:erv_label_color]).to eq("green")
+      # The scale hint behind the label — resolved server-side, same key derivation, same locale.
+      expect(row[:erv_tooltip]).to eq(I18n.t("band.tooltip.green_real", locale: :ru))
 
       en_row = I18n.with_locale(:en) { described_class.new(user: user).call }.find { |r| r[:login] == "v2chan" }
       expect(en_row[:erv_label]).to eq("Audience is real") # same key, EN request locale
+      expect(en_row[:erv_tooltip]).to eq(I18n.t("band.tooltip.green_real", locale: :en))
     end
 
     # V1-RETIRE: the wire keys erv_percent/ti_score are legacy NAMES only — both carry

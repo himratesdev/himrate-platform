@@ -210,17 +210,25 @@ module Trust
       }
     end
 
+    # `tooltip` is the resolved scale hint, paired with tooltip_key exactly as erv_label is paired
+    # with label_key and the reason copy with reason.<code> — request locale, nil for a key with no
+    # translation. The six texts have lived in config/locales/band.{ru,en}.yml since PR3b, but only
+    # the KEY ever crossed the wire and no web client carries the bundle, so the hint reached no
+    # reader. label_key/tooltip_key stay for clients that translate themselves (the extension).
     def band_payload(tih)
       unless tih&.band_row
         return { row: 5, color: "grey", label_key: "band.grey_insufficient",
-                 tooltip_key: "band.tooltip.grey_insufficient", sub: nil }
+                 tooltip_key: "band.tooltip.grey_insufficient",
+                 tooltip: I18n.t("band.tooltip.grey_insufficient", default: nil), sub: nil }
       end
 
+      tooltip_key = TrustIndex::V2::BandClassifier.tooltip_key_for(tih.band_row)
       {
         row: tih.band_row,
         color: tih.band_color,
         label_key: TrustIndex::V2::BandClassifier.label_key_for(tih.band_row),
-        tooltip_key: TrustIndex::V2::BandClassifier.tooltip_key_for(tih.band_row),
+        tooltip_key: tooltip_key,
+        tooltip: I18n.t(tooltip_key, default: nil),
         sub: tih.band_sub
       }
     end

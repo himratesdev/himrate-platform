@@ -48,6 +48,26 @@ RSpec.describe "TI v2 contract finish", type: :request do
       expect(data["confirmed_anomaly"]).to have_key("provenance")
     end
 
+    # The six scale hints lived in config/locales/band.{ru,en}.yml since PR3b, but only the KEY
+    # crossed the wire and no web client carries the bundle — the hint reached no reader.
+    it "resolves the scale hint next to its key, in the request locale" do
+      get "/api/v1/channels/#{channel.id}/trust", headers: headers_free.merge("Accept-Language" => "ru")
+      expect(response.parsed_body.dig("data", "band", "tooltip"))
+        .to eq(I18n.t("band.tooltip.amber_exceeds", locale: :ru))
+
+      get "/api/v1/channels/#{channel.id}/trust", headers: headers_free.merge("Accept-Language" => "en")
+      expect(response.parsed_body.dig("data", "band", "tooltip"))
+        .to eq(I18n.t("band.tooltip.amber_exceeds", locale: :en))
+    end
+
+    it "carries the hint on the card headline too" do
+      context = Auth::AuthContext.new(user_free, "dashboard")
+      band = Cards::CardService.new(channel: channel, context: context).call[:layers][:headline][:data][:band]
+
+      expect(band[:tooltip_key]).to eq("band.tooltip.amber_exceeds")
+      expect(band[:tooltip]).to be_present
+    end
+
     it "reports provenance for a hard-corroborated confirmed anomaly" do
       tih.update!(confirmed_anomaly: true, c_hard: true, band_row: 2, band_color: "yellow")
 

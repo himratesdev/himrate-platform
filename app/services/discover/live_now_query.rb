@@ -116,7 +116,7 @@ module Discover
 
     def build(row, watched)
       pct = row["authenticity"]&.to_f
-      label, color = label_and_color(row)
+      label, color, tooltip = verdict_copy(row)
       started_at = row["started_at"]
       {
         login: row["login"],
@@ -129,15 +129,20 @@ module Discover
         erv_percent: pct&.round(1),
         erv_label: label,
         erv_label_color: color,
+        erv_tooltip: tooltip,
         ti_score: pct&.round(1)
       }
     end
 
     # v2 rows carry no erv_label text — re-derive it from the persisted band_row via the canonical
-    # BandClassifier map + band.<key> locale, resolved under the REQUEST locale. Returns [label, color].
-    def label_and_color(row)
-      key = TrustIndex::V2::BandClassifier.label_key_for(row["band_row"].to_i)
-      [ I18n.t(key, default: nil), row["band_color"] ]
+    # BandClassifier maps + band.<key> locale, resolved under the REQUEST locale. erv_tooltip is the
+    # scale hint that belongs with the label (band.tooltip.*) — a board of six verdicts is unreadable
+    # without it, and the key alone was all a web client ever got. Returns [label, color, tooltip].
+    def verdict_copy(row)
+      band_row = row["band_row"].to_i
+      [ I18n.t(TrustIndex::V2::BandClassifier.label_key_for(band_row), default: nil),
+        row["band_color"],
+        I18n.t(TrustIndex::V2::BandClassifier.tooltip_key_for(band_row), default: nil) ]
     end
   end
 end

@@ -59,6 +59,9 @@ RSpec.describe "Channels API", type: :request do
       expect(ti["signal_breakdown"]).to eq({})
       expect(ti["authenticity"]).to eq(72.0)
       expect(ti["band"]).to include("row" => 4, "color" => "green")
+      # The scale hint travels resolved next to its key — the key alone reached no web client.
+      expect(ti["band"]).to include("tooltip_key" => "band.tooltip.green_no_anomaly")
+      expect(ti.dig("band", "tooltip")).to eq(I18n.t("band.tooltip.green_no_anomaly"))
     end
 
     # TC-005: Premium user tracking channel → full (recent_streams visible)

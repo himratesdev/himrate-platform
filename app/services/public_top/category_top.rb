@@ -19,7 +19,7 @@ module PublicTop
     end
 
     # => [{ rank:, login:, display_name:, real_avg_viewers:, shown_avg_viewers:,
-    #       band_label:, band_color: }, ...]
+    #       band_label:, band_tooltip:, band_color: }, ...]
     def call
       Rails.cache.fetch(cache_key, expires_in: CACHE_TTL) { compute }
     end
@@ -30,13 +30,14 @@ module PublicTop
       results = Brand::StreamerSearchQuery
                 .new(category: @category, sort: "real_avg", per_page: PER_PAGE)
                 .call[:results]
-      colors = band_colors(results.map { |r| r[:login] })
+      bands = latest_bands(results.map { |r| r[:login] })
 
       results.each_with_index.map do |row, i|
         # The verdict badge renders only from a REAL v2 band (color persisted on the latest
         # in-window aggregate). Channels without one get nil/nil → the view hides the badge
         # entirely (hide-not-dim) — no mixed v1-fallback label under a guessed color.
-        color = colors[row[:login]]
+        band = bands[row[:login]]
+        color = band && band[:color]
         {
           rank: i + 1,
           login: row[:login],
@@ -44,30 +45,42 @@ module PublicTop
           real_avg_viewers: row[:real_avg_viewers],
           shown_avg_viewers: row[:shown_avg_viewers],
           band_label: color ? row[:classification_label] : nil,
+          band_tooltip: color ? tooltip_for(band[:row]) : nil,
           band_color: color
         }
       end
     end
 
-    # login => latest in-window band color ("green"/"yellow"/"amber"/"red"/"grey").
+    # The scale hint behind the badge's label (config/locales/band.tooltip.*). Pinned to :ru like
+    # the label it accompanies (Brand::StreamerSearchQuery#classification_label_for) — this payload
+    # is cached under a locale-less key, so resolving the two texts in different locales is the one
+    # thing that would actually break. A localized /top means a locale-scoped cache key first.
+    def tooltip_for(band_row)
+      return nil unless band_row
+
+      I18n.t(TrustIndex::V2::BandClassifier.tooltip_key_for(band_row), locale: :ru, default: nil)
+    end
+
+    # login => { row:, color: } of the latest in-window band ("green"/"yellow"/"amber"/"red"/"grey").
     # Mirrors Brand::StreamerSearchQuery#load_latest_bands (which keeps band_row for its label) —
     # re-derived here instead of widening the brand contract for a public page.
-    def band_colors(logins)
+    def latest_bands(logins)
       return {} if logins.empty?
 
       window = WINDOW_DAYS.days.ago.to_date..Date.current
       ids_by_login = Channel.where(login: logins).pluck(:login, :id).to_h
       latest = TrendsDailyAggregate
                .where(date: window, channel_id: ids_by_login.values)
-               .select("DISTINCT ON (channel_id) channel_id, band_color_at_end")
+               .select("DISTINCT ON (channel_id) channel_id, band_row_at_end, band_color_at_end")
                .order("channel_id, date DESC")
                .to_a
-      colors_by_id = latest.to_h { |r| [ r.channel_id, r[:band_color_at_end] ] }
-      ids_by_login.transform_values { |id| colors_by_id[id] }
+      bands_by_id = latest.to_h { |r| [ r.channel_id, { row: r[:band_row_at_end], color: r[:band_color_at_end] } ] }
+      ids_by_login.transform_values { |id| bands_by_id[id] }
     end
 
+    # v2: rows carry band_tooltip. Bumped so a warm v1 entry cannot serve the old shape for an hour.
     def cache_key
-      "public_top:category:v1:#{Digest::SHA1.hexdigest(@category.to_s)}"
+      "public_top:category:v2:#{Digest::SHA1.hexdigest(@category.to_s)}"
     end
   end
 end
