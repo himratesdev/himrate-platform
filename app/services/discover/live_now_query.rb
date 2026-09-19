@@ -17,14 +17,38 @@ module Discover
   #   - DISTINCT ON (channel_id) dedups stale duplicates per channel,
   #   - LATERAL latest-TIH lookup per live channel (index-served by (channel_id, calculated_at)),
   #   - ORDER BY real DESC + LIMIT in PG — nothing unbounded ever reaches Ruby.
+  #
+  # Filters (WEB-CONSOLIDATION home board; before this every param but `limit` was silently
+  # dropped — `?game=Dota 2` answered 50 rows across 18 games):
+  #   game         — exact category name of the CURRENT broadcast, case-insensitive
+  #   language     — broadcast language code ("ru", "en", …), case-insensitive
+  #   band         — comma-separated verdict colours (BAND_COLORS); a channel with no v2 verdict yet
+  #                  counts as "grey", the colour its «Недостаточно данных» label already carries
+  #   min_viewers / max_viewers — inclusive bounds on the REAL audience (the ranking key); a channel
+  #                  with no verdict has no real audience and never satisfies a bound
+  # Unknown / malformed values are ignored (an unfiltered board, never a 400) — this is a browse
+  # surface. Where they apply: game/language on the DEDUPED current-broadcast row (filtering before
+  # DISTINCT ON would let a stale ghost duplicate in another category stand in for the channel), and
+  # before the LATERAL, so a filtered request only runs the TIH lookup for channels that passed.
+  # Verdict/audience bounds need the LATERAL row and apply after it. Every filter works on the
+  # already-bounded live set (at most one row per live channel) — none can widen the scan of
+  # `streams` or `trust_index_histories`.
   # No recommendations/ML here — the design's «Рекомендации» tab stays deferred.
   class LiveNowQuery
     LIMIT = 24
     RECENT_HOURS = 48 # a "live" row older than this is a ghost, not a stream
+    # Every colour TrustIndex::V2::BandClassifier can persist on a v2 row.
+    BAND_COLORS = %w[green amber yellow red grey].freeze
 
-    def initialize(user:, limit: LIMIT)
+    def initialize(user:, limit: LIMIT, filters: {})
       @user = user
       @limit = limit.to_i.clamp(1, 50)
+      @game = filters[:game].to_s.strip.presence
+      @language = filters[:language].to_s.strip.presence
+      @bands = filters[:band].to_s.split(",").map { |b| b.strip.downcase }
+                             .select { |b| BAND_COLORS.include?(b) }.uniq.presence
+      @min_viewers = non_negative_int(filters[:min_viewers])
+      @max_viewers = non_negative_int(filters[:max_viewers])
     end
 
     def call
@@ -39,32 +63,49 @@ module Discover
 
     def select_rows
       sql = <<~SQL
-        SELECT ranked.*
+        SELECT live.channel_id, live.game_name, live.started_at, live.login, live.display_name,
+               ti.ccv, ti.authenticity, ti.band_row, ti.band_color,
+               ti.erv AS real_viewers
         FROM (
           SELECT DISTINCT ON (s.channel_id)
-                 s.channel_id, s.game_name, s.started_at,
-                 c.login, c.display_name,
-                 ti.ccv, ti.erv, ti.authenticity, ti.band_row, ti.band_color,
-                 ti.erv AS real_viewers
+                 s.channel_id, s.game_name, s.language, s.started_at,
+                 c.login, c.display_name
           FROM streams s
           JOIN channels c ON c.id = s.channel_id AND c.deleted_at IS NULL AND c.is_monitored = TRUE
-          LEFT JOIN LATERAL (
-            SELECT tih.ccv, tih.erv, tih.authenticity, tih.band_row, tih.band_color
-            FROM trust_index_histories tih
-            WHERE tih.channel_id = s.channel_id
-              AND tih.engine_version = 'v2' AND tih.erv IS NOT NULL
-            ORDER BY tih.calculated_at DESC
-            LIMIT 1
-          ) ti ON TRUE
           WHERE s.ended_at IS NULL AND s.started_at > :since
           ORDER BY s.channel_id, s.started_at DESC
-        ) ranked
-        ORDER BY ranked.real_viewers DESC NULLS LAST, ranked.channel_id ASC
+        ) live
+        LEFT JOIN LATERAL (
+          SELECT tih.ccv, tih.erv, tih.authenticity, tih.band_row, tih.band_color
+          FROM trust_index_histories tih
+          WHERE tih.channel_id = live.channel_id
+            AND tih.engine_version = 'v2' AND tih.erv IS NOT NULL
+          ORDER BY tih.calculated_at DESC
+          LIMIT 1
+        ) ti ON TRUE
+        #{filter_clause}
+        ORDER BY ti.erv DESC NULLS LAST, live.channel_id ASC
         LIMIT :limit
       SQL
-      ActiveRecord::Base.connection.select_all(
-        ActiveRecord::Base.sanitize_sql([ sql, { since: RECENT_HOURS.hours.ago, limit: @limit } ])
-      ).to_a
+      binds = { since: RECENT_HOURS.hours.ago, limit: @limit, game: @game, language: @language,
+                bands: @bands, min_viewers: @min_viewers, max_viewers: @max_viewers }
+      ActiveRecord::Base.connection.select_all(ActiveRecord::Base.sanitize_sql([ sql, binds ])).to_a
+    end
+
+    # Fixed SQL fragments only — every value travels as a named bind.
+    def filter_clause
+      conditions = []
+      conditions << "LOWER(live.game_name) = LOWER(:game)" if @game
+      conditions << "LOWER(live.language) = LOWER(:language)" if @language
+      conditions << "COALESCE(ti.band_color, 'grey') IN (:bands)" if @bands
+      conditions << "ti.erv >= :min_viewers" if @min_viewers
+      conditions << "ti.erv <= :max_viewers" if @max_viewers
+      conditions.empty? ? "" : "WHERE #{conditions.join(' AND ')}"
+    end
+
+    def non_negative_int(value)
+      n = Integer(value.to_s, 10, exception: false)
+      n if n && n >= 0
     end
 
     def watched_ids

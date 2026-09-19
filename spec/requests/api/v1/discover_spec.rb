@@ -7,9 +7,10 @@ RSpec.describe "Api::V1::Discover", type: :request do
   let(:headers) { { "Authorization" => "Bearer #{Auth::JwtService.encode_access(user.id)}" } }
 
   # V1-RETIRE: v2 rows — native erv count + authenticity (ti = % real), band persisted.
-  def live_channel(login:, ccv:, ti:, started_at: 1.hour.ago, band_row: 3, band_color: "green")
+  def live_channel(login:, ccv:, ti:, started_at: 1.hour.ago, band_row: 3, band_color: "green",
+                   game: "Dota 2", language: "ru")
     channel = create(:channel, login: login, is_monitored: true)
-    create(:stream, channel: channel, started_at: started_at, ended_at: nil, game_name: "Dota 2")
+    create(:stream, channel: channel, started_at: started_at, ended_at: nil, game_name: game, language: language)
     create(:trust_index_history, channel: channel, ccv: ccv, erv: (ccv * ti / 100.0).round,
                                  authenticity: ti.to_f, band_row: band_row, band_color: band_color,
                                  calculated_at: 5.minutes.ago)
@@ -81,6 +82,28 @@ RSpec.describe "Api::V1::Discover", type: :request do
     it "returns [] when nothing is live (honest empty, no samples)" do
       get "/api/v1/discover/live", headers: headers
       expect(response.parsed_body["data"]).to eq([])
+    end
+
+    # Live 2026-09-19: `?game=Dota 2&limit=50` answered 50 rows across 18 games — only `limit` was read.
+    it "applies the category filter from the query string" do
+      live_channel(login: "dota_one", ccv: 100, ti: 90, game: "Dota 2")
+      live_channel(login: "cs_one", ccv: 900, ti: 90, game: "Counter-Strike 2")
+
+      get "/api/v1/discover/live", params: { game: "Dota 2", limit: 50 }
+
+      expect(response.parsed_body["data"].map { |c| c["login"] }).to eq(%w[dota_one])
+    end
+
+    it "wires every filter param through to the query" do
+      live_channel(login: "match", ccv: 2000, ti: 50, band_row: 2, band_color: "yellow", language: "en")
+      live_channel(login: "wrong_lang", ccv: 2000, ti: 50, band_row: 2, band_color: "yellow", language: "ru")
+      live_channel(login: "wrong_band", ccv: 2000, ti: 50, language: "en")
+      live_channel(login: "too_small", ccv: 100, ti: 50, band_row: 2, band_color: "yellow", language: "en")
+
+      get "/api/v1/discover/live",
+          params: { game: "dota 2", language: "EN", band: "yellow", min_viewers: 500, max_viewers: 1500 }
+
+      expect(response.parsed_body["data"].map { |c| c["login"] }).to eq(%w[match])
     end
   end
 end
