@@ -8,8 +8,9 @@ class SitemapsController < ApplicationController
   # Indexable marketing + legal paths, relative to the canonical apex host. The legal
   # pages (/privacy, /terms) are self-canonical and required for the Chrome Web Store
   # listing (privacy-policy URL); the marketing nav does not link them, so the sitemap
-  # is their only discovery channel.
-  PATHS = %w[/ /streamers /brands /viewers /methodology /privacy /terms].freeze
+  # is their only discovery channel. /support is listed on the same footing; its twin
+  # /feedback is the SAME page and canonicalizes to /support, so it is deliberately absent.
+  PATHS = %w[/ /streamers /brands /viewers /methodology /privacy /terms /support].freeze
 
   # EPIC-64: the long-deferred «curated real-data set» gate for /c/:login entries — a
   # channel earns a sitemap slot with ≥ MIN_STREAMS tracked streams over the 30-day

@@ -1,0 +1,8 @@
+# Public support / feedback page (/support, /feedback). See support.ru.yml.
+en:
+  support:
+    title: "Support — HimRate"
+    meta_description: "How to reach HimRate support: questions about the service, the extension and your account."
+    heading: "Support"
+    intro: "Write to us if something is broken, a verdict looks wrong, or you have an idea for what is missing — we answer every message."
+    email_hint: "Support inbox:"

@@ -270,6 +270,18 @@ Rails.application.routes.draw do
   # submission (privacy policy URL) + footer trust links. (TASK-060)
   get "privacy", to: "pages#privacy"
   get "terms",   to: "pages#terms"
+  # Landing pads for the links the Chrome extension ships (5 × /pricing from the settings tab and
+  # the watchlist paywalls, /support and /feedback from the side panel) — all three 404'd, which is
+  # what a reader hit from inside the product. /pricing is «как считаем и сколько стоит», which the
+  # site brief puts on the methodology page, so this is the final destination, not a stopgap.
+  # `redirect(path:)` (not the String form) carries the query string over — the extension sends
+  # ?plan=premium&utm_source=extension&utm_medium=settings and that attribution must survive.
+  get "pricing", to: redirect(path: "/methodology", status: 301)
+  get "support", to: "pages#support"
+  # Feedback goes to the same inbox, so it is the same page. /support is the canonical of the two
+  # (the view declares it) and the only one in the sitemap; /feedback stays a working URL because
+  # shipped extension builds link to it.
+  get "feedback", to: "pages#support"
   # Dashboard login (screen 70) + isolated web OAuth flow (session via httpOnly cookie).
   get "login", to: "pages#login"
   get "auth/web/twitch", to: "web/auth#twitch"

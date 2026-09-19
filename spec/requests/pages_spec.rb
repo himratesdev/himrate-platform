@@ -245,4 +245,56 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).to include('<link rel="canonical" href="https://himrate.com/terms">')
     end
   end
+
+  # The Chrome extension ships links to all three; every one of them 404'd, so a reader who
+  # clicked «Тарифы» or «Поддержка» from inside the product landed on an error page.
+  describe "the paths the extension links to" do
+    it "GET /pricing → 301 to the methodology page (where «как считаем и сколько стоит» lives)" do
+      get "/pricing"
+
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to end_with("/methodology")
+    end
+
+    it "keeps the extension's query string across the redirect (plan + utm attribution)" do
+      get "/pricing?plan=premium&utm_source=extension&utm_medium=settings"
+
+      expect(response.location)
+        .to end_with("/methodology?plan=premium&utm_source=extension&utm_medium=settings")
+    end
+
+    it "GET /support → 200 with the support inbox" do
+      get "/support"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("mailto:support@himrate.com")
+      expect(response.body).to include('<link rel="canonical" href="https://himrate.com/support">')
+    end
+
+    it "GET /feedback → the same page, canonical to /support (one page, one indexable URL)" do
+      get "/feedback"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("mailto:support@himrate.com")
+      expect(response.body).to include('<link rel="canonical" href="https://himrate.com/support">')
+    end
+
+    it "answers in the reader's language — the extension runs in whatever the browser is set to" do
+      get "/support", headers: { "Accept-Language" => "ru" }
+      expect(response.body).to include(I18n.t("support.heading", locale: :ru))
+      expect(response.body).to include('<html lang="ru">')
+
+      get "/support", headers: { "Accept-Language" => "en-US,en;q=0.9" }
+      expect(response.body).to include(I18n.t("support.intro", locale: :en))
+      expect(response.body).to include('<html lang="en">')
+    end
+
+    it "leaves the Russian-only legal pages Russian after a translated page rendered" do
+      get "/support", headers: { "Accept-Language" => "en" }
+      get "/privacy"
+
+      expect(response.body).to include('<html lang="ru">')
+      expect(response.body).to include("Политика конфиденциальности")
+    end
+  end
 end

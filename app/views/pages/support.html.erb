@@ -1,0 +1,16 @@
+<%# Support / feedback — served at both /support and /feedback (the extension links to each).
+    /support is the canonical of the two; the page follows the request locale, so it also sets
+    the document language the legal layout otherwise pins to Russian. %>
+<% content_for :title, t("support.title") %>
+<% content_for :description, t("support.meta_description") %>
+<% content_for :canonical, "#{canonical_host}/support" %>
+<% content_for :html_lang, I18n.locale.to_s %>
+
+<h1><%= t("support.heading") %></h1>
+
+<p><%= t("support.intro") %></p>
+
+<p>
+  <%= t("support.email_hint") %>
+  <a href="mailto:support@himrate.com">support@himrate.com</a>
+</p>

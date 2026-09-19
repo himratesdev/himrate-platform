@@ -1,0 +1,9 @@
+# Public support / feedback page (/support, /feedback) — the two addresses the Chrome
+# extension links to. Kept to what a reader needs: where to write and what for.
+ru:
+  support:
+    title: "Поддержка — HimRate"
+    meta_description: "Как связаться с поддержкой HimRate: вопросы по сервису, расширению и аккаунту."
+    heading: "Поддержка"
+    intro: "Напишите нам, если что-то не работает, оценка выглядит странно или есть идея, чего не хватает, — отвечаем на все письма."
+    email_hint: "Почта поддержки:"

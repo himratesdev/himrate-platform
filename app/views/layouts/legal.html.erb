@@ -1,17 +1,22 @@
+<%# Russian by default — the legal texts exist only in Russian. A translated page on this layout
+    (the support page) declares its own language and its own canonical, because /support and
+    /feedback are one page and must point at a single URL. %>
+<% page_lang = content_for(:html_lang).presence || "ru" %>
+<% page_canonical = content_for(:canonical).presence || canonical_url %>
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="<%= page_lang %>">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title><%= content_for(:title) || "HimRate" %></title>
     <meta name="description" content="<%= content_for(:description) %>">
-    <link rel="canonical" href="<%= canonical_url %>">
+    <link rel="canonical" href="<%= page_canonical %>">
     <link rel="icon" type="image/svg+xml" href="<%= asset_path("brand/favicon.svg") %>">
     <meta property="og:type" content="website">
     <meta property="og:site_name" content="HimRate">
     <meta property="og:title" content="<%= content_for(:title) || "HimRate" %>">
-    <meta property="og:url" content="<%= canonical_url %>">
-    <meta property="og:locale" content="ru_RU">
+    <meta property="og:url" content="<%= page_canonical %>">
+    <meta property="og:locale" content="<%= page_lang == "en" ? "en_US" : "ru_RU" %>">
 
     <% if analytics_enabled? %><%= javascript_include_tag "landing/analytics", async: true %><% end %>
 

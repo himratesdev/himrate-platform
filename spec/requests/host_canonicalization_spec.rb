@@ -40,6 +40,22 @@ RSpec.describe "Host canonicalization", type: :request do
 
       expect(response).to have_http_status(:ok)
     end
+
+    # The support page is public like the legal ones — it belongs on the apex too.
+    it "301s the support page served on the app host → apex" do
+      host! "app.himrate.com"
+      get "/support"
+
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://himrate.com/support")
+    end
+
+    it "serves the support page on the apex without redirect" do
+      host! "himrate.com"
+      get "/feedback"
+
+      expect(response).to have_http_status(:ok)
+    end
   end
 
   describe "product / LK canon = app host SHORT paths" do

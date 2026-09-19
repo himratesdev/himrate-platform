@@ -23,9 +23,16 @@ RSpec.describe "Sitemap + robots", type: :request do
     it "lists every indexable marketing + legal page on the canonical apex host" do
       get "/sitemap.xml"
 
-      %w[/ /streamers /brands /viewers /methodology /privacy /terms].each do |path|
+      %w[/ /streamers /brands /viewers /methodology /privacy /terms /support].each do |path|
         expect(response.body).to include("<loc>https://himrate.com#{path}</loc>")
       end
+    end
+
+    it "lists /support but not its twin /feedback (one page, one canonical URL)" do
+      get "/sitemap.xml"
+
+      expect(response.body).to include("<loc>https://himrate.com/support</loc>")
+      expect(response.body).not_to include("/feedback")
     end
 
     it "excludes LK app shells, login and API routes" do

@@ -283,6 +283,15 @@ class PagesController < ApplicationController
     render layout: "legal"
   end
 
+  # Support / feedback (same page, both URLs are linked from the extension). Same minimal legal
+  # layout as the pages above. Unlike them it is translated: this is the one public page a reader
+  # reaches from inside the extension, which runs in whatever language their browser is set to, so
+  # it follows the request locale (LocaleResolver — the same resolution the API uses) instead of
+  # being Russian-only. with_locale, not an assignment, so nothing leaks into the next request.
+  def support
+    I18n.with_locale(LocaleResolver.call(request.env)) { render layout: "legal" }
+  end
+
   private
 
   # Host-mapping (2026-09, canonical = app.himrate.com/<short>):
