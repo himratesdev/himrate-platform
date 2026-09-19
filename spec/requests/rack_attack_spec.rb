@@ -146,6 +146,18 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
       expect(discriminator("/api/v1/discover/live")).to eq("7.8.9.10")
     end
 
+    # Rails normalizes the path after Rack::Attack ran — these spellings reach the same actions.
+    it "cannot be dodged with a trailing or doubled slash" do
+      expect(discriminator("/api/v1/search/?q=ab")).to eq("7.8.9.10")
+      expect(discriminator("//api/v1/search?q=ab")).to eq("7.8.9.10")
+      expect(discriminator("/api/v1/discover/live/")).to eq("7.8.9.10")
+    end
+
+    it "leaves every other path alone" do
+      expect(discriminator("/api/v1/searching")).to be_nil
+      expect(discriminator("/api/v1/discover/games")).to be_nil
+    end
+
     it "never matches a caller that sends a token" do
       token = Auth::JwtService.encode_access(create(:user).id)
       expect(discriminator("/api/v1/search?q=ab", "HTTP_AUTHORIZATION" => "Bearer #{token}")).to be_nil

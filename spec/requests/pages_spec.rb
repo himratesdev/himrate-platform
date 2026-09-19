@@ -282,6 +282,20 @@ RSpec.describe "Public landing", type: :request do
       expect(response.body).to include('<link rel="canonical" href="https://himrate.com/support">')
     end
 
+    it "redirects /pricing from the app host straight to the apex (one hop, query kept)" do
+      host! "app.himrate.com"
+      get "/pricing?plan=premium"
+
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://himrate.com/methodology?plan=premium")
+    end
+
+    it "marks the support page as language-negotiated for shared caches" do
+      get "/support", headers: { "Accept-Language" => "en" }
+
+      expect(response.headers["Vary"].to_s).to include("Accept-Language")
+    end
+
     it "answers in the reader's language — the extension runs in whatever the browser is set to" do
       get "/support", headers: { "Accept-Language" => "ru" }
       expect(response.body).to include(I18n.t("support.heading", locale: :ru))

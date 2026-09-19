@@ -83,7 +83,10 @@ class Rack::Attack
   PUBLIC_DISCOVERY_PATHS = %w[/api/v1/search /api/v1/discover/live].freeze
 
   throttle("public_discovery/ip", limit: 30, period: 1.minute) do |req|
-    next unless PUBLIC_DISCOVERY_PATHS.include?(req.path) && !req.options?
+    # Rails normalizes the path AFTER this middleware (Journey squeezes `//`, drops a trailing `/`),
+    # so `/api/v1/search/` reaches the same action — match the normalized form or the budget is dodged.
+    path = req.path.squeeze("/").chomp("/")
+    next unless PUBLIC_DISCOVERY_PATHS.include?(path) && !req.options?
 
     anonymous = req.get_header("HTTP_AUTHORIZATION").blank? &&
                 req.cookies["hr_session"].blank? && req.cookies["hr_refresh"].blank?

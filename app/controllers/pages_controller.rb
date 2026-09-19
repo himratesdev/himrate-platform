@@ -289,6 +289,9 @@ class PagesController < ApplicationController
   # it follows the request locale (LocaleResolver — the same resolution the API uses) instead of
   # being Russian-only. with_locale, not an assignment, so nothing leaks into the next request.
   def support
+    # The only page whose body varies by Accept-Language — say so, or a shared cache (Cloudflare)
+    # may hand one reader the other language.
+    response.headers["Vary"] = "Accept-Language"
     I18n.with_locale(LocaleResolver.call(request.env)) { render layout: "legal" }
   end
 

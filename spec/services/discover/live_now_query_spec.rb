@@ -141,6 +141,13 @@ RSpec.describe Discover::LiveNowQuery do
       expect(logins(band: "grey")).to eq(%w[no_verdict])
     end
 
+    it "answers that channel with the same colour the filter matched it by" do
+      board_channel("no_verdict", verdict: false)
+
+      row = described_class.new(user: nil).call.find { |r| r[:login] == "no_verdict" }
+      expect(row[:erv_label_color]).to eq("grey")
+    end
+
     it "ignores unknown verdict colours instead of emptying the board" do
       board_channel("any_a")
 
