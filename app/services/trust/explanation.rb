@@ -65,16 +65,29 @@ module Trust
     end
 
     # Which arms formed the total under the rule that was in force.
+    #
+    # The NAMED arm counts only when the engine itself published it as a reason (HARD_NAMED_FRACTION)
+    # — DETECTION-AUDIT 2026-09-19, CR iter-1 SF-3. Below the named-fraction roster floor the engine
+    # still subtracts the named accounts from ERV (they are identity-level evidence), but it declines
+    # to accuse on a fraction of a 1-4 person chat; drawing that arm as a red «−X» next to the
+    # non-accusatory verdict would present as decisive the very evidence the verdict set aside. The
+    # max-rule winner is still picked on the RAW amounts, so a set-aside named arm is never replaced
+    # by a runner-up that did not form the total.
     def applied_arms
       if sum_disjoint?
         return [ "self_history" ] if f_self > (f_hard + f_soft)
 
-        %w[named deficit].select { |k| (k == "named" ? f_hard : f_soft).positive? }
+        %w[named deficit].select { |k| k == "named" ? named_decisive? : f_soft.positive? }
       else
         best = { "named" => f_hard, "deficit" => f_soft, "self_history" => f_self }.max_by { |_, v| v }
-        best.last.positive? ? [ best.first ] : []
+        return [] unless best.last.positive?
+        return [] if best.first == "named" && !named_reason
+
+        [ best.first ]
       end
     end
+
+    def named_decisive? = f_hard.positive? && !named_reason.nil?
 
     def arms
       applied = applied_arms
@@ -98,11 +111,17 @@ module Trust
     end
 
     def named_params
-      @named_params ||= begin
-        row = (@tih.reason_codes || []).find do |c|
-          (c.is_a?(Hash) ? (c["code"] || c[:code]) : c).to_s == "HARD_NAMED_FRACTION"
-        end
-        row.is_a?(Hash) ? (row["params"] || row[:params]) : nil
+      row = named_reason
+      row.is_a?(Hash) ? (row["params"] || row[:params]) : nil
+    end
+
+    # The engine's own statement that the named arm accuses. Checked on the CODE, not on params, so a
+    # reason persisted without params still counts. nil when absent (memoized either way).
+    def named_reason
+      return @named_reason if defined?(@named_reason)
+
+      @named_reason = (@tih.reason_codes || []).find do |c|
+        (c.is_a?(Hash) ? (c["code"] || c[:code]) : c).to_s == "HARD_NAMED_FRACTION"
       end
     end
 
@@ -133,6 +152,10 @@ module Trust
         writers_effective: @tih.eihc&.to_f&.round,
         quality: @tih.q_score&.to_f,
         named_fraction: @tih.n_frac&.to_f,
+        # The roster that fraction divides by — «0.44» reads very differently over 2 chatters than
+        # over 200 (CR iter-1 SF-3). NULL on rows persisted before the column existed → key omitted,
+        # so those payloads are unchanged.
+        roster: @tih.n_chat_eff&.to_i,
         convention: @tih.rho_convention
       }.compact
     end

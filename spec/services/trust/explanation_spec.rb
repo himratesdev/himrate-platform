@@ -98,6 +98,48 @@ RSpec.describe Trust::Explanation do
     end
   end
 
+  # DETECTION-AUDIT 2026-09-19 (CR iter-1 SF-3): below the named-fraction roster floor the engine
+  # still subtracts the named accounts but declines to accuse on them — the public explanation must
+  # not draw that arm as the decisive «−X» next to the non-accusatory verdict.
+  describe "named arm below the named-fraction roster floor" do
+    # Live shape: one spam account in a 2-chatter, CCV-3 channel. No HARD_NAMED_FRACTION (the floor
+    # held the accusation back) → AMBER; the arm still measured something.
+    def micro_row(**over)
+      snapshot(ccv: 3, erv: 2, erv_lo: 2, erv_hi: 2, f_hard: 0.98, f_hard_lo: 0.44, f_soft: 0.0,
+               f_soft_lo: 0.0, f_soft_hi: 0.0, f_hat: 0.98, f_hat_lo: 0.98, f_hat_hi: 0.98, n_frac: 0.4378,
+               n_chat_eff: 2, band_color: "amber", reason_codes: [], **over)
+    end
+
+    it "reports the arm but does not mark it applied — under either fusion rule" do
+      %w[windowed cumulative].each do |convention|
+        result = described_class.call(micro_row(rho_convention: convention), channel: channel)
+        named = result[:arms].find { |a| a[:kind] == "named" }
+
+        expect(named).to include(amount: 1.0, applied: false)
+        expect(result[:fusion][:applied]).to eq([]) # never handed to a runner-up that did not form the total
+      end
+    end
+
+    it "shows the roster next to the fraction, so 0.44 reads as «of 2 chatters»" do
+      expect(described_class.call(micro_row, channel: channel)[:chat]).to include(named_fraction: 0.4378, roster: 2)
+    end
+
+    it "control: at/above the floor WITH the reason code the arm is applied exactly as before" do
+      result = described_class.call(snapshot(n_chat_eff: 96), channel: channel)
+
+      expect(result[:arms].find { |a| a[:kind] == "named" }[:applied]).to be(true)
+      expect(result[:fusion][:applied]).to contain_exactly("named", "deficit")
+      expect(result[:chat][:roster]).to eq(96)
+    end
+
+    it "rows persisted before the column existed (n_chat_eff NULL) keep their payload — no roster key" do
+      result = described_class.call(snapshot(n_chat_eff: nil), channel: channel)
+
+      expect(result[:chat]).not_to have_key(:roster)
+      expect(result[:chat]).to eq(writers_effective: 96, quality: 0.82, named_fraction: 0.1458, convention: "windowed")
+    end
+  end
+
   it "reports the chat measurements the subtraction rests on" do
     result = described_class.call(snapshot, channel: channel)
 
