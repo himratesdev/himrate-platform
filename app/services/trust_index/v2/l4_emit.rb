@@ -109,9 +109,11 @@ module TrustIndex
       # which is where every live c_hard fire of 19.09 came from (~160 false YELLOWs/day on channels
       # with a handful of viewers — and each one also published the account's name into
       # named_bot_evidences, since Persistence writes evidence on c_hard). The sibling integer path
-      # (c_hard_abs) has always had this floor; the fraction path had none. Above the floor NOTHING
-      # changes — same φ_yellow, same φ_red. respond_to? keeps isolated-K unit doubles on the
-      # pre-floor behaviour (mirrors every other constant guard in this file).
+      # (c_hard_abs) has always had a roster floor; the fraction path had none. This one sits at the
+      # smallest roster where a SINGLE named account can no longer clear φ_yellow (default 5, the
+      # measured false class is exactly ≤4 — see Registry), so a small chat with SEVERAL named bots
+      # stays accusable. Above the floor NOTHING changes — same φ_yellow, same φ_red. respond_to?
+      # keeps isolated-K unit doubles on the pre-floor behaviour (mirrors every other constant guard).
       def roster_above_named_fraction_floor?
         return true unless @k.respond_to?(:chard_frac_roster_min)
 

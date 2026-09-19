@@ -115,19 +115,23 @@ module Calibration
       # cross-channel-flagged) counts (mc nil → dedicated) — it's a named bot regardless. Calibrated flip
       # value ≈ 8 (keeps mc=3-6 dedicated botnets, excludes mc≥15 roaming). PO-gated data update (no redeploy).
       chard_abs_mc_max: 999.0,
-      # DETECTION-AUDIT 2026-09-19 (ENGINE-RCA Q1) — minimum chat roster for the NAMED-FRACTION
-      # accusation. N_frac = P5(F_hard)/n_chat_eff is a FRACTION, and a fraction of one is not
-      # evidence: a single roaming spam account (jeetbot) sitting in channels with 1-4 chatters
-      # yields n_frac 0.11-0.44, clears φ_yellow every time, and produced ~160 false YELLOWs a day —
-      # every single c_hard fire of 19.09. The sibling INTEGER path has required roster ≥
-      # chard_abs_roster_min since M3; the fraction path had no size floor at all. Same floor, its
-      # own key so the two can be tuned apart without a deploy (ADR DEC-3).
-      # DEFAULT 30 = the abs path's CALIBRATED live value, deliberately not its 999 illustrative
-      # backstop: that backstop is safe there only because chard_abs_enabled gates the whole path,
-      # and the fraction path has no enabled gate — a 999 default here would silently switch the
-      # entire named-fraction accusation off until someone wrote a DB row. Raising this only removes
-      # accusations; lowering it re-opens the micro-channel false-positive class.
-      chard_frac_roster_min: 30.0,
+      # DETECTION-AUDIT 2026-09-19 (ENGINE-RCA Q1, CR iter-1 SF-2) — minimum chat roster for the
+      # NAMED-FRACTION accusation. N_frac = P5(F_hard)/n_chat_eff is a fraction with no minimum
+      # sample: ONE named account (p_u 0.910 → P5 0.4376) clears φ_yellow 0.10 whenever
+      # n_chat_eff ≤ 4 (0.44 / 0.22 / 0.15 / 0.11 at 1-4 chatters) — one roaming spam account
+      # (jeetbot) was the whole ~160 false YELLOWs/day. MEASURED (trust_index_histories, c_hard=true,
+      # the 14 days to 19.09): after the Shared-Chat fix (13.09+) 163 fires on 7 channels, EVERY one at
+      # eihc < 5 (avg CCV 3); ZERO at 5-29 chatters, ZERO at ≥30. The pre-13.09 fires were Shared-Chat
+      # relays (invalid evidence, not a population to calibrate on). So the proven false class is
+      # exactly n_chat_eff ≤ 4, and 5 is the smallest roster on which a single named account can no
+      # longer reach φ_yellow (0.4376 / 5 = 0.088). Deliberately NOT the integer path's 30: RECALL >>
+      # FP — a 20-chatter channel with 12 named bots must stay accusable, a multi-bot small chat is
+      # precisely what this path exists to catch, and nothing in the data justifies blinding it.
+      # Own key (not chard_abs_roster_min) so the two tune apart; tunable live via
+      # calibration_constants, no deploy (ADR DEC-3). No enabled gate exists here, so the default IS
+      # the live value — never park a 999-style backstop on this key (it would silently switch the
+      # named-fraction accusation off fleet-wide).
+      chard_frac_roster_min: 5.0,
       # TI v2.1 deficit_min_ccv (FULL-CHAIN M4, shared deficit-family absolute floor, 2026-07-27). Every
       # deficit-family accusation (F_soft label, F_self eligibility, C_self^SP [P2] online_elevated,
       # C_pop) rests on a per-viewer chat-share statistic that becomes integer-quantization NOISE below

@@ -12,6 +12,16 @@ RSpec.describe Calibration::Registry do
     expect(k.llr_known_bot).to eq(3.40)
   end
 
+  # DETECTION-AUDIT 2026-09-19 (CR iter-1 SF-2): the named-fraction floor has NO enabled gate, so its
+  # default is the live value. 5 = the smallest roster on which one named account can't clear
+  # φ_yellow; the measured false class is exactly ≤4. A 999-style backstop here would silently switch
+  # the whole named-fraction accusation off; 30 would blind it on small, heavily botted chats.
+  it "defaults the named-fraction roster floor to the measured boundary (5), tunable from the DB" do
+    expect(described_class.load.chard_frac_roster_min).to eq(5.0)
+    CalibrationConstant.create!(key: "chard_frac_roster_min", value: 8)
+    expect(described_class.load.chard_frac_roster_min).to eq(8.0)
+  end
+
   it "overrides a default with the stored (GATE-0-calibrated) value" do
     CalibrationConstant.create!(key: "phi_red", value: 0.42, source: "gate0_holdout", calibrated: true)
     CalibrationConstant.create!(key: "tau_hard", value: 0.95)
@@ -36,7 +46,7 @@ RSpec.describe Calibration::Registry do
       :cpop_enabled, :cpop_n_windows, :cpop_density_frac, :cpop_elevated_margin,
       # FULL-CHAIN M3 c_hard hybrid integer named-count trigger (dormant) + M3.1 mc-filter (dormant)
       :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share, :chard_abs_mc_max,
-      # DETECTION-AUDIT 2026-09-19: named-FRACTION roster floor (LIVE at 30, not a dormant backstop)
+      # DETECTION-AUDIT 2026-09-19: named-FRACTION roster floor (LIVE at 5, not a dormant backstop)
       :chard_frac_roster_min,
       # FULL-CHAIN M4 shared deficit-family absolute floor (dormant)
       :deficit_min_ccv,

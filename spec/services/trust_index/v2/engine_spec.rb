@@ -41,7 +41,7 @@ module EngineSpecDoubles
                     deficit_min_ccv: 0.0, # DORMANT default (mirror Registry)
                     chard_abs_enabled: 0.0, chard_abs_count: 999.0, chard_abs_roster_min: 999.0, chard_abs_share: 999.0,
                     chard_abs_mc_max: 999.0, # M3.1 dormant (mirror Registry — count all mc)
-                    chard_frac_roster_min: 30.0 # named-fraction roster floor (mirror Registry)
+                    chard_frac_roster_min: 5.0 # named-fraction roster floor (mirror Registry)
                   )
 end
 

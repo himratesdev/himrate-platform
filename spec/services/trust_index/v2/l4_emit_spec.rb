@@ -30,7 +30,7 @@ module L4EmitSpecDoubles
   # Registry default. The base K above lacks the key entirely (the respond_to? guard → no floor),
   # which is what keeps every pre-floor example in this file exercising the old behaviour.
   K_FRAC_FLOOR = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :chard_frac_roster_min)
-                     .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8, chard_frac_roster_min: 30.0)
+                     .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8, chard_frac_roster_min: 5.0)
 end
 
 RSpec.describe TrustIndex::V2::L4Emit do
@@ -238,13 +238,33 @@ RSpec.describe TrustIndex::V2::L4Emit do
       expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
     end
 
-    it "control: the SAME fraction on a roster at the floor accuses exactly as before" do
-      # 30 chatters, 7 named (P5 6.6) → n_frac 0.22 ≥ φ_yellow, roster == the floor → unchanged YELLOW.
-      r = emit(hard: hard(6.6), soft: soft(0.0), fraud: fraud(6.6), v: 60, n_chat_eff: 30, named_count: 7,
+    # CR iter-1 SF-2: the boundary sits where a SINGLE named account stops clearing φ_yellow
+    # (0.4378/5 = 0.088) — the measured false class is exactly ≤4 chatters. Two named bots (P5 1.15)
+    # are a real signal on 5 chatters and must still accuse; on 4 the roster is too small to say.
+    it "boundary: 4 chatters → not accusable, 5 chatters → accusable (same two named bots)" do
+      below = emit(hard: hard(1.15), soft: soft(0.0), fraud: fraud(1.15), v: 6, n_chat_eff: 4, named_count: 2,
+                   k_override: L4EmitSpecDoubles::K_FRAC_FLOOR)
+      expect(below.c_hard).to be(false)
+      expect(%w[red yellow]).not_to include(below.band.color)
+
+      at = emit(hard: hard(1.15), soft: soft(0.0), fraud: fraud(1.15), v: 6, n_chat_eff: 5, named_count: 2,
+                k_override: L4EmitSpecDoubles::K_FRAC_FLOOR)
+      expect(at.c_hard).to be(true) # n_frac 0.23 ≥ φ_yellow
+      expect([ at.band.row, at.band.color ]).to eq([ 2, "yellow" ])
+      expect(at.reason_codes.map(&:code)).to include("HARD_NAMED_FRACTION")
+    end
+
+    it "a single named account can't cross φ_yellow even at the floor (the class is closed by arithmetic)" do
+      r = micro(5, L4EmitSpecDoubles::K_FRAC_FLOOR) # 0.4378 / 5 = 0.088 < 0.10
+      expect(r.c_hard).to be(false)
+    end
+
+    # RECALL >> FP: the floor must not blind the path on the small, heavily botted chat it exists for.
+    it "recall: 12 named bots among 20 chatters is still accused (RED off the fraction)" do
+      r = emit(hard: hard(9.29), soft: soft(0.0), fraud: fraud(9.29), v: 25, n_chat_eff: 20, named_count: 12,
                k_override: L4EmitSpecDoubles::K_FRAC_FLOOR)
-      expect(r.c_hard).to be(true)
-      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
-      expect(r.reason_codes.map(&:code)).to include("HARD_NAMED_FRACTION")
+      expect(r.c_hard).to be(true) # n_frac 0.46 ≥ φ_red
+      expect([ r.band.row, r.band.color ]).to eq([ 1, "red" ])
     end
 
     it "control: a big-roster RED is untouched by the floor (φ_red path)" do
