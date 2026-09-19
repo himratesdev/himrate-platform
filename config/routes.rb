@@ -276,7 +276,14 @@ Rails.application.routes.draw do
   # site brief puts on the methodology page, so this is the final destination, not a stopgap.
   # `redirect(path:)` (not the String form) carries the query string over — the extension sends
   # ?plan=premium&utm_source=extension&utm_medium=settings and that attribution must survive.
-  get "pricing", to: redirect(path: "/methodology", status: 301)
+  # One hop from anywhere: on the app host the target is the apex directly (a host-relative
+  # redirect would land on app.himrate.com/methodology and bounce once more through
+  # canonicalize_host); every other host (apex, stand, dev) redirects in place.
+  get "pricing", to: redirect(status: 301) { |_params, req|
+    origin = req.host == "app.himrate.com" ? "https://himrate.com" : "#{req.protocol}#{req.host_with_port}"
+    query = req.query_string.presence
+    "#{origin}/methodology#{"?#{query}" if query}"
+  }
   get "support", to: "pages#support"
   # Feedback goes to the same inbox, so it is the same page. /support is the canonical of the two
   # (the view declares it) and the only one in the sitemap; /feedback stays a working URL because

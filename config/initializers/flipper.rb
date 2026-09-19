@@ -155,7 +155,6 @@ module FlipperDefaults
     billing_auto_subscription_creation
     farm_clips_poller
     farm_capture
-    coordination_engine
   ].freeze
   # ^ 2026-08-28 HOSTKEY-loss incident: these ten lived in HOOK_FLAGS and were manually
   # Flipper.enable'd on the old staging box — Redis-only state that died with the server.
@@ -178,6 +177,13 @@ module FlipperDefaults
   # но НЕ auto-enabled. Production state управляется отдельно (миграция / admin UI /
   # rake task). Каждая запись = namespaced :flag => "TASK-XXX reference" для traceability.
   HOOK_FLAGS = {
+    # coordination_engine: the rings engine is INVALID — its co-firing bursts turned out to be Twitch
+    # Shared Chat relays, not coordinated accounts (2026-09-12). It used to sit in STAGING_ALL_FLAGS,
+    # where the boot loop re-enabled it on every deploy, so a manual disable never survived and the
+    # false «группа координации» plaque kept coming back on public cards. As a hook it stays OFF
+    # unless someone enables it on purpose; OFF darkens BOTH the recompute (workers) and every
+    # public read (Coordination::Presenter). Re-enable only with a re-validated engine.
+    coordination_engine: "WEB-CONSOLIDATION",
     channel_prune: "TASK-251.2", # Destructive ChannelPruneWorker (unmonitor banned non-pinned).
     # OFF by default — enabled per-env only after a dry-run review confirms the prune set.
     # pva (TASK-113): PVA is SHIPPED → moved to ALL_FLAGS (auto-enabled every boot) 2026-07-22.

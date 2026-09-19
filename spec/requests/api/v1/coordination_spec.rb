@@ -13,8 +13,8 @@ RSpec.describe "Api::V1::Coordination" do
   end
 
   before do
-    # :coordination_engine is a STAGING_ALL_FLAGS member — never auto-on in RAILS_ENV=test — so the
-    # engine-on behaviour below has to switch it on explicitly. The flag-off contract is pinned in
+    # :coordination_engine is a HOOK flag (registered, never auto-enabled — the engine is invalid),
+    # so the engine-on behaviour below has to switch it on explicitly. The flag-off contract is pinned in
     # its own context at the end of the file.
     Flipper.enable(:coordination_engine)
     %w[ring_focus ring_b ring_c].each_with_index do |l, i|

@@ -141,7 +141,7 @@ module Discover
     def verdict_copy(row)
       band_row = row["band_row"].to_i
       [ I18n.t(TrustIndex::V2::BandClassifier.label_key_for(band_row), default: nil),
-        row["band_color"],
+        row["band_color"] || "grey", # no verdict yet = grey: the same value the `band` filter matches on
         I18n.t(TrustIndex::V2::BandClassifier.tooltip_key_for(band_row), default: nil) ]
     end
   end
