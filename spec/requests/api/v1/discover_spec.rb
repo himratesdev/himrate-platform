@@ -17,9 +17,18 @@ RSpec.describe "Api::V1::Discover", type: :request do
   end
 
   describe "GET /api/v1/discover/live" do
-    it "requires auth" do
+    # The home page's live board — open BY CODE, not through the open-house demo session (which
+    # stays OFF here: HOOK_FLAGS are registered but never enabled).
+    it "answers a guest without a session; nothing is marked as watched" do
+      expect(Flipper.enabled?(:open_house_guest_access)).to be(false)
+      live_channel(login: "public_live", ccv: 100, ti: 90)
+
       get "/api/v1/discover/live"
-      expect(response).to have_http_status(:unauthorized)
+
+      expect(response).to have_http_status(:ok)
+      row = response.parsed_body["data"].sole
+      expect(row["login"]).to eq("public_live")
+      expect(row["is_watched_by_user"]).to be(false)
     end
 
     it "returns live channels ranked by REAL audience (native v2 erv), with headline fields" do

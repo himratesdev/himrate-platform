@@ -57,15 +57,17 @@ RSpec.describe "Open-house access switch", type: :request do
   describe "no-login mode (:open_house_guest_access)" do
     after { Flipper.disable(:open_house_guest_access) }
 
+    # A registered-only surface (the live board and search are guest-open by code since
+    # WEB-CONSOLIDATION, so they can no longer tell the switch's two states apart).
     it "401s a session-less request while OFF" do
       Flipper.disable(:open_house_guest_access)
-      get "/api/v1/discover/live"
+      get "/api/v1/watchlists"
       expect(response).to have_http_status(:unauthorized)
     end
 
     it "serves a session-less request from the shared demo account while ON" do
       Flipper.enable(:open_house_guest_access)
-      get "/api/v1/discover/live"
+      get "/api/v1/watchlists"
       expect(response).to have_http_status(:ok)
       expect(User.find_by(email: User::DEMO_EMAIL)).to be_present
     end

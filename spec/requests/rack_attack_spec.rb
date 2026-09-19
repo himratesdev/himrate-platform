@@ -116,6 +116,52 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
     end
   end
 
+  # WEB-CONSOLIDATION: search + live board are guest-open by code; anonymous callers get their own
+  # per-IP budget there, signed-in readers keep exactly the general budgets.
+  describe "anonymous public discovery (30/min)" do
+    around { |ex| freeze_time { ex.run } }
+
+    def discriminator(path, headers = {})
+      env = Rack::MockRequest.env_for(path, headers.merge("REMOTE_ADDR" => "7.8.9.10"))
+      Rack::Attack.throttles["public_discovery/ip"].block.call(Rack::Attack::Request.new(env))
+    end
+
+    it "blocks an anonymous caller after 30 searches" do
+      30.times { get "/api/v1/search", params: { q: "ab" }, headers: { "REMOTE_ADDR" => "8.9.10.11" } }
+      get "/api/v1/search", params: { q: "ab" }, headers: { "REMOTE_ADDR" => "8.9.10.11" }
+
+      expect(response).to have_http_status(429)
+    end
+
+    it "shares one budget across search and the live board" do
+      15.times { get "/api/v1/search", params: { q: "ab" }, headers: { "REMOTE_ADDR" => "9.10.11.12" } }
+      15.times { get "/api/v1/discover/live", headers: { "REMOTE_ADDR" => "9.10.11.12" } }
+      get "/api/v1/discover/live", headers: { "REMOTE_ADDR" => "9.10.11.12" }
+
+      expect(response).to have_http_status(429)
+    end
+
+    it "keys an anonymous caller by IP on both paths" do
+      expect(discriminator("/api/v1/search?q=ab")).to eq("7.8.9.10")
+      expect(discriminator("/api/v1/discover/live")).to eq("7.8.9.10")
+    end
+
+    it "never matches a caller that sends a token" do
+      token = Auth::JwtService.encode_access(create(:user).id)
+      expect(discriminator("/api/v1/search?q=ab", "HTTP_AUTHORIZATION" => "Bearer #{token}")).to be_nil
+    end
+
+    it "never matches a web-session reader" do
+      expect(discriminator("/api/v1/discover/live", "HTTP_COOKIE" => "hr_session=opaque")).to be_nil
+      expect(discriminator("/api/v1/discover/live", "HTTP_COOKIE" => "hr_refresh=opaque")).to be_nil
+    end
+
+    it "leaves every other path to the general budgets" do
+      expect(discriminator("/api/v1/discover/games")).to be_nil
+      expect(discriminator("/api/v1/channels/solo/card")).to be_nil
+    end
+  end
+
   describe "localhost safelist" do
     it "does not throttle localhost" do
       100.times { get "/api/v1/channels", headers: { "REMOTE_ADDR" => "127.0.0.1" } }

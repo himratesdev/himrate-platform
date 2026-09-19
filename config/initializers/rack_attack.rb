@@ -74,6 +74,22 @@ class Rack::Attack
     req.ip if req.path.match?(%r{\A/top(/[^/]+)?\z}) && !req.options?
   end
 
+  # WEB-CONSOLIDATION: the home page's search box and live board answer guests by code. Search is a
+  # LIKE scan over channels + social links, the board a LATERAL ranking over every live channel, so
+  # an ANONYMOUS visitor gets half the general per-IP budget on these two paths (same as the OG
+  # renderer). Anonymous = no Authorization header and no web-session cookie: a signed-in reader
+  # never matches this rule and keeps exactly today's budgets (api/ip + api/user). A forged header
+  # only buys back the general api/ip budget, which applies to everyone anyway.
+  PUBLIC_DISCOVERY_PATHS = %w[/api/v1/search /api/v1/discover/live].freeze
+
+  throttle("public_discovery/ip", limit: 30, period: 1.minute) do |req|
+    next unless PUBLIC_DISCOVERY_PATHS.include?(req.path) && !req.options?
+
+    anonymous = req.get_header("HTTP_AUTHORIZATION").blank? &&
+                req.cookies["hr_session"].blank? && req.cookies["hr_refresh"].blank?
+    req.ip if anonymous
+  end
+
   # General API per IP
   throttle("api/ip", limit: 60, period: 1.minute) do |req|
     req.ip if req.path.start_with?("/api/") && !req.options?

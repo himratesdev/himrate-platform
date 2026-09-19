@@ -2,15 +2,18 @@
 
 module Api
   module V1
-    # Free-text channel search (by nickname OR linked social handle). Registered-only, no paywall —
-    # finding a channel is navigation, not a paid analytic. Every surface that shows a search box
-    # (brand streamer search, blogger search, watchlists "add channel") talks to this one endpoint.
+    # Free-text channel search (by nickname OR linked social handle). Open to guests, no paywall —
+    # finding a channel is navigation, not a paid analytic, and the home page's search box is the
+    # first thing a visitor touches. Every surface that shows a search box (brand streamer search,
+    # blogger search, watchlists "add channel", the home page) talks to this one endpoint.
+    # Anonymous traffic has its own per-IP budget in config/initializers/rack_attack.rb
+    # ("public_discovery/ip") — the LIKE scan is not free.
     class SearchController < Api::BaseController
-      before_action :authenticate_user!
+      before_action :authenticate_user_optional!
 
       # GET /api/v1/search?q=hellgirl
       def index
-        authorize current_user, :search?, policy_class: SearchPolicy
+        authorize :search, :search?
 
         results = ::Search::ChannelLookup.new(params[:q], limit: params[:limit] || 20).call
         render json: { data: results.map { |r| serialize(r) }, query: params[:q].to_s.strip }

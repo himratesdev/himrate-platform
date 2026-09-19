@@ -2,8 +2,8 @@
 
 module Discover
   # Screen 04 «Куда пойти» — live-now channels ranked by REAL audience (latest TIH), the same honest
-  # metric the public card / brand search use. Viewer-free (any signed-in user, access-model v2).
-  # Compute-on-read, no schema.
+  # metric the public card / brand search use. Open to guests (user: nil); the only per-user field,
+  # is_watched_by_user, is false for a guest by construction. Compute-on-read, no schema.
   #
   # V1-RETIRE (2026-09-02): v2-only — real = native `erv` count, % = `authenticity`, label from
   # band_row via BandClassifier. Wire keys `erv_percent`/`ti_score` KEPT as legacy names carrying
@@ -68,6 +68,8 @@ module Discover
     end
 
     def watched_ids
+      return Set.new unless @user
+
       @user.tracked_channels.where(tracking_enabled: true).pluck(:channel_id).to_set
     end
 

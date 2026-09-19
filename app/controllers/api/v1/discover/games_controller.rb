@@ -11,7 +11,7 @@ module Api
 
         # GET /api/v1/discover/games
         def index
-          authorize current_user, :live?, policy_class: DiscoverPolicy
+          authorize current_user, :games?, policy_class: DiscoverPolicy
 
           cached = Rails.cache.read(::Grow::OpportunitiesRefreshWorker::CACHE_KEY)
           if cached.nil?

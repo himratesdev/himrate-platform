@@ -12,9 +12,22 @@ RSpec.describe "Channel search API", type: :request do
   let(:user) { create(:user) }
   let!(:channel) { create(:channel, login: "dear_hellgirl", display_name: "dear_hellgirl", followers_total: 61_167) }
 
-  it "requires auth" do
-    get "/api/v1/search", params: { q: "dear" }
-    expect(response).to have_http_status(:unauthorized)
+  # The home page's search box is the first thing a visitor touches — open BY CODE, not through the
+  # open-house demo session (which stays OFF here: HOOK_FLAGS are registered but never enabled).
+  it "answers a guest without a session" do
+    expect(Flipper.enabled?(:open_house_guest_access)).to be(false)
+
+    get "/api/v1/search", params: { q: "hellgirl" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body["data"].map { |r| r["login"] }).to eq([ "dear_hellgirl" ])
+  end
+
+  it "treats a token that no longer decodes as a guest instead of 401ing" do
+    get "/api/v1/search", params: { q: "hellgirl" }, headers: { "Authorization" => "Bearer not-a-jwt" }
+
+    expect(response).to have_http_status(:ok)
+    expect(response.parsed_body["data"].first["login"]).to eq("dear_hellgirl")
   end
 
   it "finds a channel by its Twitch nickname" do
