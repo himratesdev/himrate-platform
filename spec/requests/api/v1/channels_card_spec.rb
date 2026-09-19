@@ -23,6 +23,28 @@ RSpec.describe "Channel Card API (T1-061)", type: :request do
     expect(layers["period_depth"]["cta"]["action"]).to eq("open_dashboard")
   end
 
+  # Live 2026-09-19: a years-old channel read «создан 3 дня назад» — the card was serving our own
+  # row timestamp as the channel's age.
+  describe "channel.created_at — the Twitch account date, never our row timestamp" do
+    it "serves the Twitch account creation date" do
+      channel.update!(twitch_created_at: Time.utc(2014, 5, 7, 12, 0, 0))
+
+      get "/api/v1/channels/#{channel.id}/card"
+
+      expect(response.parsed_body.dig("data", "channel", "created_at")).to eq("2014-05-07T12:00:00Z")
+    end
+
+    it "is null while Twitch has not been asked yet — no fallback to the row timestamp" do
+      channel.update!(twitch_created_at: nil)
+
+      get "/api/v1/channels/#{channel.id}/card"
+
+      meta = response.parsed_body.dig("data", "channel")
+      expect(meta).to have_key("created_at")
+      expect(meta["created_at"]).to be_nil
+    end
+  end
+
   it "returns 404 for an unknown channel" do
     get "/api/v1/channels/#{SecureRandom.uuid}/card"
     expect(response).to have_http_status(:not_found)

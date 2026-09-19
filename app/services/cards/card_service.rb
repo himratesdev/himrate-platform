@@ -52,13 +52,17 @@ module Cards
       @live_drill_granted = @policy.card_live_drill?
     end
 
+    # `created_at` is the channel's age on the card: the Twitch ACCOUNT creation date (Helix
+    # /users created_at, written by Channel#assign_helix_metadata on each metadata refresh). It used
+    # to be our own row timestamp — «3 days ago» for a years-old channel we had just started
+    # observing. nil until the first metadata refresh fills the column; never the row timestamp.
     def channel_meta
       {
         login: @channel.login,
         display_name: @channel.display_name,
         avatar_url: @channel.profile_image_url,
         partner_status: @channel.broadcaster_type,
-        created_at: @channel.created_at.iso8601,
+        created_at: @channel.twitch_created_at&.iso8601,
         followers_count: @channel.followers_total
       }
     end
