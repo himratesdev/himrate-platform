@@ -251,7 +251,7 @@ RSpec.describe TrustIndex::ContextBuilder do
     # channel_protection_score that no writer has ever filled (0 non-null of 3 307 live rows), so
     # ctx.cps was nil on every verdict. CPS is scored from the settings themselves now.
     it "cps scored from the channel's protection settings, not the never-written column" do
-      config = ChannelProtectionConfig.create!(channel: channel, channel_protection_score: nil,
+      config = ChannelProtectionConfig.create!(channel: channel,
                                                verified_account_required: true, subs_only_enabled: true,
                                                slow_mode_seconds: 30, followers_only_duration_min: 0)
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a], config: config))
