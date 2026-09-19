@@ -118,7 +118,7 @@ module TrustIndex
         unattributed_surge: false, # provenance-source wiring (host/shoutout/category) = follow-up EPIC
         thin_sample: chatters.size < THIN_SAMPLE_MIN,
         reputation: v2_reputation(channel),
-        cps: context_hash[:channel_protection_config]&.channel_protection_score&.to_f,
+        cps: v2_cps(context_hash[:channel_protection_config]),
         ccv_chat_divergence: v2_ccv_chat_divergence(context_hash),
         l2_roster_usernames: l2_roster,
         v_w: v_w,
@@ -548,6 +548,19 @@ module TrustIndex
         return nil if vals.empty?
 
         vals[vals.size / 2]
+      end
+
+      # Signal #6 CPS for the v2 engagement axis (DETECTION-AUDIT 2026-09-19). Was read straight off
+      # `config.channel_protection_score`, a column NOTHING writes (0 non-null of 3 307 live rows) →
+      # ctx.cps nil on every verdict, TIH.cps NULL, the extension's protection axis permanently blank.
+      # Scored on the fly from the SAME settings the v1 signal uses (one implementation, no stored
+      # duplicate to drift). Display-only in v2 — CPS is evicted from the fraud score (BR-012,
+      # axes_builder) — so this changes what is SHOWN, never a band/ERV/reason. nil config → nil.
+      def v2_cps(config)
+        Signals::ChannelProtectionScore.for_config(config)
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 cps failed (#{e.message})")
+        nil
       end
 
       # cell = category × V-bucket × chat-mode × language → per-cell ρ* baseline, EC-18 coarsest fallback.

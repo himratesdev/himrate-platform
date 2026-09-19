@@ -92,6 +92,20 @@ RSpec.describe TrustIndex::Signals::ChannelProtectionScore do
     end
   end
 
+  # DETECTION-AUDIT 2026-09-19: the TI v2 context scores CPS through this seam instead of the
+  # never-written channel_protection_score column — one implementation, both engines.
+  describe ".for_config (the v2 context seam)" do
+    it "scores the same number the v1 signal reports in its metadata" do
+      config = make_config(verified_account_required: true, subs_only_enabled: true, slow_mode_seconds: 60)
+      expect(described_class.for_config(config)).to eq(65) # 30 + 20 + 15
+      expect(signal.calculate(channel_protection_config: config).metadata[:cps]).to eq(65)
+    end
+
+    it "returns nil without a config — absence of data, not a 0 score (wide-open chat)" do
+      expect(described_class.for_config(nil)).to be_nil
+    end
+  end
+
   describe "individual component scoring" do
     it "verified_account_required contributes 30 pts" do
       result = signal.calculate(channel_protection_config: make_config(verified_account_required: true))

@@ -74,7 +74,15 @@ module TrustIndex
         )
       end
 
-      private
+      # PUBLIC seam (DETECTION-AUDIT 2026-09-19). The TI v2 context used to read CPS off
+      # `channel_protection_configs.channel_protection_score` — a column no writer has ever filled
+      # (0 non-null of 3 307 live rows), so ctx.cps was nil on every verdict and the protection axis
+      # rendered blank. CPS is a pure function of the config row, so v2 scores through THIS
+      # implementation instead of a stored duplicate that could drift from it. nil config → nil
+      # («no data»), never 0 — 0 is a real score meaning «chat wide open».
+      def self.for_config(config)
+        config && new.compute_cps(config)
+      end
 
       # BUG-251.32: recalibrated CPS components matching the post-schema-shift fields Twitch
       # actually exposes today (chatSettings.requireVerifiedAccount replaces the removed
@@ -128,6 +136,8 @@ module TrustIndex
 
         [ score, 100 ].min
       end
+
+      private
 
       def cps_breakdown(config)
         {

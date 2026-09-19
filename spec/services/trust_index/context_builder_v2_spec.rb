@@ -247,10 +247,19 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(c.unattributed_surge).to be(false)
     end
 
-    it "cps read from the stored channel_protection_score" do
-      config = ChannelProtectionConfig.create!(channel: channel, channel_protection_score: 42)
+    # DETECTION-AUDIT 2026-09-19: signal #6 was blind. The context read a STORED
+    # channel_protection_score that no writer has ever filled (0 non-null of 3 307 live rows), so
+    # ctx.cps was nil on every verdict. CPS is scored from the settings themselves now.
+    it "cps scored from the channel's protection settings, not the never-written column" do
+      config = ChannelProtectionConfig.create!(channel: channel, channel_protection_score: nil,
+                                               verified_account_required: true, subs_only_enabled: true,
+                                               slow_mode_seconds: 30, followers_only_duration_min: 0)
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a], config: config))
-      expect(c.cps).to eq(42.0)
+      expect(c.cps).to eq(75) # 30 verified + 20 subs-only + 15 follower-only(any) + 10 slow(≤30s)
+    end
+
+    it "cps nil without a config — no data, NOT 0 (0 is a real score meaning wide-open chat)" do
+      expect(described_class.build_v2(stream, ctx_hash(chatters: %w[a])).cps).to be_nil
     end
 
     it "cold_start_tier maps ColdStartGuard status onto the 3-tier enum" do
