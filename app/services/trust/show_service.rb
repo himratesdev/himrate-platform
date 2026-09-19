@@ -69,8 +69,10 @@ module Trust
     end
 
     # SRS §4A axes — single source: TrustIndex::V2::AxesBuilder (same shape the engine emits).
-    # Reputation from the domain cache; chat_share = persisted windowed/cumulative ρ_obs; CPS null
-    # until the protection-score pipeline feeds the v2 context (extension tolerates null).
+    # Reputation from the domain cache; chat_share = persisted windowed/cumulative ρ_obs; CPS =
+    # the persisted TIH.cps (DETECTION-AUDIT 2026-09-19: the v2 context scores it and the row stores
+    # it since 7c86d10 — this axis hardcoded nil and would have stayed blank). NULL on rows persisted
+    # before that → null, which the extension already tolerates.
     def axes_v2(tih)
       TrustIndex::V2::AxesBuilder.call(
         authenticity: tih&.authenticity&.to_f,
@@ -78,7 +80,7 @@ module Trust
         authenticity_hi: tih&.authenticity_hi&.to_f,
         reputation: reputation_band_cached,
         rho_obs: tih&.rho_obs&.to_f,
-        cps: nil
+        cps: tih&.cps
       ).to_h
     end
 
@@ -94,13 +96,24 @@ module Trust
       (tih&.reason_codes || []).map { |c| c.is_a?(Hash) ? (c["code"] || c[:code]) : c }.compact
     end
 
-    # SRS: provenance names the corroboration that let the plashka render — hard named-bot
-    # evidence or the channel's own inflation self-history. nil when nothing is confirmed.
+    # SRS: provenance names the corroboration that let the plashka render. nil when nothing is
+    # confirmed. Values are the reason code the engine emits for that path, so provenance and
+    # reason_codes always speak the same vocabulary.
+    #
+    # DETECTION-AUDIT 2026-09-19 (CR iter-1 Nit-6): the plashka has FIVE paths, not two. A YELLOW/RED
+    # carried by the integer named-count trigger, the CCV-shape inflation corroborator or the
+    # population corroborator came back confirmed_anomaly:true with provenance:nil — an accusation
+    # with no stated basis. Precedence mirrors ReasonCodeBuilder's dedup: named evidence first (the
+    # count trigger names the SAME B_hard members, hence the same code), then self-history, then the
+    # CCV step, then population. Rows persisted before these columns existed hold NULL → skipped →
+    # their provenance is exactly what it was.
     def provenance_v2(tih)
       return nil unless tih&.confirmed_anomaly
 
-      return "HARD_NAMED_FRACTION" if tih.c_hard
+      return "HARD_NAMED_FRACTION" if tih.c_hard || tih.c_hard_abs
       return "SELF_HISTORY_INFLATION_EVENT" if tih.c_self
+      return "INFLATION_EVENT_CORROBORATION" if tih.c_inflation
+      return "POPULATION_CHAT_DEFICIT" if tih.c_pop
 
       nil
     end

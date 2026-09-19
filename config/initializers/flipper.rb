@@ -109,8 +109,9 @@ module FlipperDefaults
   # on every boot while NOTHING in app/lib/bin/config ever called Flipper.enabled? on them — six
   # switches that looked like kill switches for shipped features and controlled nothing. Registering
   # a no-op flag is worse than having none: an operator flips it during an incident and believes the
-  # feature is off. Dropped from the registry; their Redis/AR keys survive the deploy and need a
-  # one-off manual delete (they are inert either way — no reader).
+  # feature is off. Dropped from the registry and listed in REMOVED_FLAGS (below), which the boot
+  # loop deletes from the store — leaving ALL_FLAGS alone only stops the re-enable, the /flipper UI
+  # would keep showing them ON forever.
   ALL_FLAGS = [
     :pundit_authorization,
     :compare_unlimited,
@@ -226,6 +227,23 @@ module FlipperDefaults
     # is Redis-only → reverts OFF on redeploy, PVA lesson). The added load is DSV-verified safe (win_pg
     # ~1ms; PG +0.4% at duty 1/4). The VERDICT stays cumulative (separate flag ti_v2_cowindowed_rho, OFF).
   }.freeze
+
+  # Retired flags — once registered + auto-enabled, now read by nothing. Taking a name out of
+  # ALL_FLAGS only stops the re-enable: the store keeps it listed ON. The boot loop DELETES these,
+  # every boot, idempotently (removing an absent feature is a no-op), so no manual Redis/AR cleanup
+  # is ever needed. A name here must not appear in any live registry (pinned by the registry spec).
+  # DETECTION-AUDIT 2026-09-19: the six no-op flags (see the ALL_FLAGS note above).
+  REMOVED_FLAGS = %i[bot_raid_chain audience_overlap ad_calculator social_presence panel_tracking trends_tab].freeze
+
+  # Boot-safe: a store failure (Redis down → AR fallback down too, a DB hiccup) is logged and left
+  # for the next boot — retiring a dead switch must never take a container down.
+  def self.remove_retired_flags
+    REMOVED_FLAGS.each do |flag|
+      Flipper.remove(flag)
+    rescue StandardError => e
+      Rails.logger.warn("Flipper: retired flag #{flag} not removed (#{e.class}: #{e.message}) — retrying next boot")
+    end
+  end
 end
 
 # On every boot: ensure all flags exist and are enabled.
@@ -275,4 +293,7 @@ unless ENV["SECRET_KEY_BASE_DUMMY"].present?
   FlipperDefaults::HOOK_FLAGS.each_key do |flag|
     Flipper.add(flag)
   end
+
+  # Retired flags: delete from the store (idempotent, never raises — see FlipperDefaults).
+  FlipperDefaults.remove_retired_flags
 end

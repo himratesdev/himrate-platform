@@ -16,8 +16,9 @@ module TrustIndex
     # EDGE (DETECTION-AUDIT 2026-09-19, ENGINE-RCA Q1): the named-fraction branches of rows 1-2 were
     # the only accusation in this table with no minimum sample, and a fraction of a 1-4 chatter
     # roster is noise — ONE roaming spam account read n_frac 0.11-0.44 and drove ~160 false YELLOWs a
-    # day. L4 evaluates the roster floor (chard_frac_roster_min, mirroring the integer path's
-    # chard_abs_roster_min) and passes the answer in as named_fraction_accusable. Such a channel
+    # day. L4 evaluates the roster floor (chard_frac_roster_min, default 5 — the smallest roster on
+    # which one named account alone can't clear φ_yellow; several named bots in a small chat stay
+    # accusable) and passes the answer in as named_fraction_accusable. Such a channel
     # falls through to the AMBER catch-all, NOT to a green row: rows 3-4 still require
     # n_frac < φ_yellow, so the engine WITHHOLDS the positive affirmation rather than granting it off
     # a fraction it has just declared meaningless (opening that up is a separate product decision).
