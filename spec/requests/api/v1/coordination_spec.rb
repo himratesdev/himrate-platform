@@ -13,6 +13,10 @@ RSpec.describe "Api::V1::Coordination" do
   end
 
   before do
+    # :coordination_engine is a STAGING_ALL_FLAGS member — never auto-on in RAILS_ENV=test — so the
+    # engine-on behaviour below has to switch it on explicitly. The flag-off contract is pinned in
+    # its own context at the end of the file.
+    Flipper.enable(:coordination_engine)
     %w[ring_focus ring_b ring_c].each_with_index do |l, i|
       group.members.create!(channel_login: l, ties: 40 - i, accounts: 30, events: 300)
     end
@@ -87,6 +91,33 @@ RSpec.describe "Api::V1::Coordination" do
 
       expect(response).to have_http_status(:not_found)
       expect(response.parsed_body.dig("error", "code")).to eq("GROUP_NOT_FOUND")
+    end
+  end
+
+  # The engine's bursts were Twitch Shared Chat relay, not a botnet. Switching the flag off must
+  # darken every public read path even though the persisted rows are still there — same shapes a
+  # ring-less channel and an unknown group already get, so no client has to change.
+  context "when :coordination_engine is off" do
+    before { Flipper.disable(:coordination_engine) }
+
+    it "reports no ring for a channel whose group rows still exist" do
+      get "/api/v1/channels/#{login}/coordination"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.parsed_body["data"]).to eq("login" => login, "in_group" => false)
+      expect(CoordinationGroup.for_channel_login(login)).to exist
+    end
+
+    it "does not serve the evidence panel of an existing group" do
+      get "/api/v1/coordination/groups/#{group.id}?focus=#{login}"
+
+      expect(response).to have_http_status(:not_found)
+      expect(response.parsed_body.dig("error", "code")).to eq("GROUP_NOT_FOUND")
+    end
+
+    it "keeps the persisted rows untouched for the post-mortem" do
+      expect { get "/api/v1/channels/#{login}/coordination" }
+        .not_to change(CoordinationGroupMember, :count)
     end
   end
 end

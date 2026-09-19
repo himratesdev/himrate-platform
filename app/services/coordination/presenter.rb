@@ -16,6 +16,14 @@ module Coordination
   #                     2026-09-09 licenses the accusatory headline in this case only.
   #   * "observation" — everything else: state the numbers, name nothing. The reader concludes.
   # Both carry the same evidence, so an observation is not a weaker product — just a truthful one.
+  #
+  # KILL SWITCH. `:coordination_engine` gates the READ side too, not just the recompute workers
+  # (Coordination::EventsWorker / GroupsWorker). Without this the flag was a half-switch: turning it
+  # off stopped the recompute but every already-persisted group kept being served forever — the
+  # engine's bursts turned out to be Twitch Shared Chat relay, so a stale ring would keep accusing
+  # channels off a hypothesis we withdrew. With the flag off the read side answers exactly as it does
+  # for a channel that is in no ring — same shape, no client change, and the rows stay on disk for
+  # the post-mortem. Flipping it back on restores the previous behaviour with no migration.
   class Presenter
     # Evidence rows handed to the panel in one go. The table is sortable client-side; beyond this
     # the payload stops being a page and starts being a dataset.
@@ -24,13 +32,19 @@ module Coordination
     class << self
       def for_channel(login)
         login = login.to_s.downcase
+        return { login: login, in_group: false } unless enabled?
+
         group = CoordinationGroup.for_channel_login(login).first
         return { login: login, in_group: false } unless group
 
         { login: login, in_group: true, group: summary(group, focus: login) }
       end
 
+      # nil → the controller's 404 GROUP_NOT_FOUND, the same answer an unknown id already gets:
+      # with the engine off no group is publicly addressable.
       def for_group(id, focus: nil)
+        return nil unless enabled?
+
         group = CoordinationGroup.find_by(id: id)
         return nil unless group
 
@@ -41,6 +55,10 @@ module Coordination
       end
 
       private
+
+      def enabled?
+        Flipper.enabled?(:coordination_engine)
+      end
 
       def summary(group, focus: nil)
         {
