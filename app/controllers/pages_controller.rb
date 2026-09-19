@@ -239,7 +239,8 @@ class PagesController < ApplicationController
   # App host (SEO-hygiene 2026-09-05): ALLOW crawling — Google must be able to FETCH the
   # pages to see their noindex (meta + X-Robots-Tag); a robots Disallow blocked that and
   # left "inaccessible page" stubs piling up in Search Console. Deindexing canon: crawl
-  # allowed + noindex served. Every other host serves the marketing policy.
+  # allowed + noindex served. The WEB-CONSOLIDATION stand host follows the same canon. Every other
+  # host serves the marketing policy.
   APEX_ROBOTS = <<~ROBOTS.freeze
     # See https://www.robotstxt.org/robotstxt.html for documentation on how to use the robots.txt file
     User-agent: *
@@ -259,7 +260,7 @@ class PagesController < ApplicationController
   APP_ROBOTS = "User-agent: *\nAllow: /\n"
 
   def robots
-    body = request.host == APP_HOST ? APP_ROBOTS : APEX_ROBOTS
+    body = noindex_host? ? APP_ROBOTS : APEX_ROBOTS
     render plain: body, content_type: "text/plain"
   end
 
@@ -288,6 +289,13 @@ class PagesController < ApplicationController
   # Staging serves every surface unredirected on /app/*; dev/localhost untouched.
   APP_HOST  = "app.himrate.com"
   APEX_HOST = "himrate.com"
+  # WEB-CONSOLIDATION stand: the hostname where the consolidated site (one app, no landing/app
+  # split) is assembled page by page against the real DB before it takes over the apex. Same web
+  # container, zero runtime cost. ENV-driven (config/deploy.staging.yml env.clear) so the cutover /
+  # teardown is a value change, not a code hunt; nil = no stand → every stand branch is inert.
+  # The stand serves EVERY surface unredirected (new pages override per route in routes.rb, the
+  # rest falls through to today's pages) and is deindexed exactly like the app host.
+  STAND_HOST = ENV["STAND_HOST"].presence
 
   # Short (prefixless) LK paths on the app host. SIMPLE heads are product as bare segments;
   # NESTED heads are product only WITH a second segment — a bare /streamers on the app host is
@@ -298,6 +306,9 @@ class PagesController < ApplicationController
 
   def canonicalize_host
     host = request.host
+    # The stand must be skipped BEFORE anything below: the /app-prefix strip and the /login →
+    # app-host rule would each bounce it off to a production host.
+    return if stand_host?
     return unless host == APEX_HOST || host.end_with?(".himrate.com")
     # SEO-hygiene 2026-09-05: the staging hostname serves the SAME app/DB as production —
     # a browsable duplicate site Google was indexing («торчащие урлы»). Page requests now
@@ -332,7 +343,22 @@ class PagesController < ApplicationController
   end
 
   def noindex_app_host
-    response.set_header("X-Robots-Tag", "noindex, follow") if request.host == APP_HOST
+    if stand_host?
+      # nofollow too: the stand's links lead to half-assembled pages — nothing worth a crawl.
+      response.set_header("X-Robots-Tag", "noindex, nofollow")
+    elsif request.host == APP_HOST
+      response.set_header("X-Robots-Tag", "noindex, follow")
+    end
+  end
+
+  def stand_host?
+    STAND_HOST.present? && request.host == STAND_HOST
+  end
+
+  # Hosts deindexed by the project canon: crawl ALLOWED + noindex served (a robots Disallow would
+  # hide the noindex from Google — SEO-hygiene 2026-09-05).
+  def noindex_host?
+    request.host == APP_HOST || stand_host?
   end
 
   # The product surfaces — login + the /app/* dashboards (@brand_dashboard) — render on the `app`

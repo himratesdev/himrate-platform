@@ -221,6 +221,79 @@ RSpec.describe "Host canonicalization", type: :request do
     end
   end
 
+  # WEB-CONSOLIDATION stand: the consolidated site is assembled on its own hostname (same web
+  # container, real DB) before it takes over the apex. The stand serves EVERY surface unredirected
+  # and is deindexed by the same canon as the app host (crawl allowed + noindex served).
+  describe "WEB-CONSOLIDATION stand host" do
+    before { stub_const("PagesController::STAND_HOST", "next.himrate.com") }
+
+    it "serves the root on the stand without bouncing to the apex" do
+      host! "next.himrate.com"
+      get "/"
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "serves /login on the stand (no 301 to the app host)" do
+      host! "next.himrate.com"
+      get "/login"
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "serves a legacy /app/* page on the stand (no prefix-strip redirect)" do
+      host! "next.himrate.com"
+      get "/app/home"
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "serves the public channel card on the stand" do
+      create(:channel, login: "standcheck")
+      host! "next.himrate.com"
+      get "/c/standcheck"
+
+      expect(response).to have_http_status(:ok)
+    end
+
+    it "deindexes every stand page by header (noindex, nofollow)" do
+      host! "next.himrate.com"
+      get "/"
+
+      expect(response.headers["X-Robots-Tag"]).to eq("noindex, nofollow")
+    end
+
+    it "stand robots.txt ALLOWS crawling (the noindex must stay visible) and never redirects" do
+      host! "next.himrate.com"
+      get "/robots.txt"
+
+      expect(response).to have_http_status(:ok)
+      expect(response.body).to include("Allow: /")
+      expect(response.body).not_to include("Disallow: /")
+      expect(response.body).not_to include("Sitemap:")
+    end
+
+    it "leaves the production hosts exactly as they were" do
+      host! "himrate.com"
+      get "/login"
+      expect(response.location).to eq("https://app.himrate.com/login")
+
+      host! "himrate.com"
+      get "/streamers"
+      expect(response).to have_http_status(:ok)
+      expect(response.headers["X-Robots-Tag"]).to be_nil
+    end
+
+    it "is inert without STAND_HOST — the hostname canonicalizes like any other alias" do
+      stub_const("PagesController::STAND_HOST", nil)
+      host! "next.himrate.com"
+      get "/brands"
+
+      expect(response).to have_http_status(:moved_permanently)
+      expect(response.location).to eq("https://himrate.com/brands")
+    end
+  end
+
   describe "non-production hosts are left untouched" do
     it "does NOT redirect dev / localhost (default request host)" do
       get "/login" # default host is www.example.com — not a himrate.com host

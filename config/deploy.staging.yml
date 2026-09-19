@@ -14,7 +14,7 @@ proxy:
   # multiple proxy hosts (Kamal::Configuration::Proxy#hosts). A `hosts:` array would
   # deep-merge ALONGSIDE the inherited base `host:` and trip kamal's mutually-exclusive
   # "Specify one of 'host' or 'hosts', not both" validator → deploy aborts.
-  host: staging.himrate.com,himrate.com,api.himrate.com,app.himrate.com
+  host: staging.himrate.com,himrate.com,api.himrate.com,app.himrate.com,next.himrate.com
 
 env:
   clear:
@@ -22,6 +22,9 @@ env:
     WEB_CONCURRENCY: 1
     # TASK-251.14: app connects to the staging CH database (matches the accessory CLICKHOUSE_DB below).
     CLICKHOUSE_DATABASE: himrate_staging
+    # WEB-CONSOLIDATION stand (PagesController::STAND_HOST): the consolidated site is assembled here
+    # page by page before it takes over the apex. Must also be listed in proxy.host above.
+    STAND_HOST: next.himrate.com
 
 accessories:
   db:

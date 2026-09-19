@@ -247,7 +247,8 @@ Rails.application.routes.draw do
     # On the app host the sitemap belongs to the apex (avoid duplicate-content signal).
     get "sitemap.xml", to: redirect("https://himrate.com/sitemap.xml", status: 301)
   end
-  # robots.txt is host-aware (app host = Disallow all); served from PagesController, not public/.
+  # robots.txt is host-aware (app host + WEB-CONSOLIDATION stand = crawl allowed, deindexed by
+  # noindex; every other host = the marketing policy); served from PagesController, not public/.
   get "robots.txt", to: "pages#robots", defaults: { format: "text" }
 
   # --- Public marketing landing (TASK-060) ---
