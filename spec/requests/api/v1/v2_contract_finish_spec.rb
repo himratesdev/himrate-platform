@@ -48,6 +48,18 @@ RSpec.describe "TI v2 contract finish", type: :request do
       expect(data["confirmed_anomaly"]).to have_key("provenance")
     end
 
+    # DETECTION-AUDIT 2026-09-19: signal #6 is scored and persisted on the row now — the served
+    # axis must carry it instead of a hardcoded null (and stay null for rows that predate it).
+    it "serves the persisted CPS on the engagement axis" do
+      tih.update!(cps: 65)
+      get "/api/v1/channels/#{channel.id}/trust", headers: headers_free
+      expect(response.parsed_body.dig("data", "axes", "engagement_context", "cps")).to eq(65)
+
+      tih.update!(cps: nil)
+      axes = Trust::ShowService.new(channel: channel, view: :headline).call[:axes]
+      expect(axes[:engagement_context][:cps]).to be_nil
+    end
+
     it "reports provenance for a hard-corroborated confirmed anomaly" do
       tih.update!(confirmed_anomaly: true, c_hard: true, band_row: 2, band_color: "yellow")
 

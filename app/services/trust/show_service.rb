@@ -69,8 +69,10 @@ module Trust
     end
 
     # SRS §4A axes — single source: TrustIndex::V2::AxesBuilder (same shape the engine emits).
-    # Reputation from the domain cache; chat_share = persisted windowed/cumulative ρ_obs; CPS null
-    # until the protection-score pipeline feeds the v2 context (extension tolerates null).
+    # Reputation from the domain cache; chat_share = persisted windowed/cumulative ρ_obs; CPS =
+    # the persisted TIH.cps (DETECTION-AUDIT 2026-09-19: the v2 context scores it and the row stores
+    # it since 7c86d10 — this axis hardcoded nil and would have stayed blank). NULL on rows persisted
+    # before that → null, which the extension already tolerates.
     def axes_v2(tih)
       TrustIndex::V2::AxesBuilder.call(
         authenticity: tih&.authenticity&.to_f,
@@ -78,7 +80,7 @@ module Trust
         authenticity_hi: tih&.authenticity_hi&.to_f,
         reputation: reputation_band_cached,
         rho_obs: tih&.rho_obs&.to_f,
-        cps: nil
+        cps: tih&.cps
       ).to_h
     end
 
