@@ -259,8 +259,11 @@ RSpec.describe "Public landing", type: :request do
     it "keeps the extension's query string across the redirect (plan + utm attribution)" do
       get "/pricing?plan=premium&utm_source=extension&utm_medium=settings"
 
-      expect(response.location)
-        .to end_with("/methodology?plan=premium&utm_source=extension&utm_medium=settings")
+      # Rails re-serializes the params (Hash#to_query sorts the keys) — assert the pairs, not the order.
+      expect(response.location).to include("/methodology?")
+      %w[plan=premium utm_source=extension utm_medium=settings].each do |pair|
+        expect(response.location).to include(pair)
+      end
     end
 
     it "GET /support → 200 with the support inbox" do
