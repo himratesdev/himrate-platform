@@ -295,8 +295,10 @@ class PagesController < ApplicationController
   #   app  /app/x  → https://app.himrate.com/x   (strip prefix)
   #   app  /<marketing path> → apex              (unchanged)
   #   app  /       → serves LK home (routes app-host root → pages#viewer_home; no redirect)
-  #   stand (STAND_HOST) /anything → NO canonicalization at all, every surface served as-is
-  # Staging serves every surface unredirected on /app/*; dev/localhost untouched.
+  #   stand (STAND_HOST) /anything → skipped by this method, never redirected; WHAT exists there
+  #                                   is decided by routes.rb alone (see STAND_HOST below)
+  # staging.himrate.com canonicalizes like any other alias (SEO-hygiene 2026-09-05; /api/* is not
+  # PagesController traffic and stays put); dev/localhost untouched.
   APP_HOST  = "app.himrate.com"
   APEX_HOST = "himrate.com"
   # WEB-CONSOLIDATION stand: the hostname where the consolidated site (one app, no landing/app
@@ -309,11 +311,13 @@ class PagesController < ApplicationController
   # `constraints host: "app.himrate.com"` in routes.rb and therefore 404 on the stand; the stand
   # gets its own host-constrained routes block with the first ported page (new pages override per
   # route, the rest keeps falling through).
-  # Three things still LEAVE the stand, by design: the bare `/app` (an unconstrained route-level
-  # redirect → app.himrate.com/home), a login INITIATED on the stand (the OAuth callback URIs are
+  # What still LEAVES the stand today (known, by design — the list is not exhaustive, today's
+  # pages were never written for a third host): the bare `/app` (an unconstrained route-level
+  # redirect → app.himrate.com/home); a login INITIATED on the stand (the OAuth callback URIs are
   # pinned to the production hosts — log in on the app host instead: the session cookie is scoped
-  # to .himrate.com and is already valid here), and the two hardcoded app.himrate.com/login links
-  # in the current channel card.
+  # to .himrate.com and is already valid here); the two hardcoded app.himrate.com/login links in
+  # the current channel card; card links from /app/graph (landing/graph.js CARD_BASE matches any
+  # *.himrate.com and points at the apex). Ported pages must use relative links only.
   # Deindexing: robots Disallow (STAND_ROBOTS) first; X-Robots-Tag noindex,nofollow as the fallback.
   STAND_HOST = ENV["STAND_HOST"].presence
 

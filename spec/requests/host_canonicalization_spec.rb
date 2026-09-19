@@ -222,9 +222,11 @@ RSpec.describe "Host canonicalization", type: :request do
   end
 
   # WEB-CONSOLIDATION stand: the consolidated site is assembled on its own hostname (same web
-  # container, real DB) before it takes over the apex. The stand serves EVERY surface unredirected
-  # and is kept out of the index twice over: robots Disallow (fresh host — nothing indexed to hide)
-  # plus X-Robots-Tag noindex,nofollow on every page.
+  # container, real DB) before it takes over the apex. canonicalize_host skips the stand, so
+  # nothing there is ever redirected; what EXISTS there is decided by routes.rb (apex-level pages
+  # and the /app/* aliases today — the short LK paths 404 until the stand gets its own routes).
+  # Kept out of the index by robots Disallow (fresh host — nothing indexed to hide), with
+  # X-Robots-Tag noindex,nofollow on PagesController responses as the fallback.
   describe "WEB-CONSOLIDATION stand host" do
     before { stub_const("PagesController::STAND_HOST", "next.himrate.com") }
 
