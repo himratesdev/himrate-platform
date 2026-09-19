@@ -149,8 +149,12 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
     # Rails normalizes the path after Rack::Attack ran — these spellings reach the same actions.
     it "cannot be dodged with a trailing or doubled slash" do
       expect(discriminator("/api/v1/search/?q=ab")).to eq("7.8.9.10")
-      expect(discriminator("//api/v1/search?q=ab")).to eq("7.8.9.10")
       expect(discriminator("/api/v1/discover/live/")).to eq("7.8.9.10")
+
+      # A request-target of `//api/v1/search` arrives as PATH_INFO verbatim; MockRequest would parse
+      # the leading `//` as a URI authority (host "api"), so set PATH_INFO the way a server does.
+      env = Rack::MockRequest.env_for("/", "REMOTE_ADDR" => "7.8.9.10").merge("PATH_INFO" => "//api/v1/search")
+      expect(Rack::Attack.throttles["public_discovery/ip"].block.call(Rack::Attack::Request.new(env))).to eq("7.8.9.10")
     end
 
     it "leaves every other path alone" do
