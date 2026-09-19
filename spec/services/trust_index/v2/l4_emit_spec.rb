@@ -26,6 +26,11 @@ module L4EmitSpecDoubles
                                :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share)
                        .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8,
                             chard_abs_enabled: 1.0, chard_abs_count: 3.0, chard_abs_roster_min: 30.0, chard_abs_share: 0.02)
+  # DETECTION-AUDIT 2026-09-19 — PRODUCTION shape: K carries the named-fraction roster floor at its
+  # Registry default. The base K above lacks the key entirely (the respond_to? guard → no floor),
+  # which is what keeps every pre-floor example in this file exercising the old behaviour.
+  K_FRAC_FLOOR = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :chard_frac_roster_min)
+                     .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8, chard_frac_roster_min: 30.0)
 end
 
 RSpec.describe TrustIndex::V2::L4Emit do
@@ -182,6 +187,74 @@ RSpec.describe TrustIndex::V2::L4Emit do
     expect(r.erv).to eq(3000.0)
   end
 
+  # DETECTION-AUDIT 2026-09-19 (ENGINE-RCA Q2) — the emit result carries EVERY corroboration path,
+  # not just the two that had columns. The band/ERV assertions are repeated verbatim from the
+  # dormant + enabled C_inflation cases above, so the added fields cannot ride along with a changed
+  # verdict unnoticed.
+  describe "corroboration-path observability (no verdict effect)" do
+    it "carries the dormant paths out as false, with the roster, leaving the AMBER verdict identical" do
+      r = emit(hard: hard(0.0), soft: soft(1250.0), fraud: fraud(1250.0), ccv_chat_divergence: 0.9)
+      expect([ r.c_inflation, r.c_hard_abs, r.c_pop ]).to eq([ false, false, false ])
+      expect(r.n_chat_eff).to eq(500)
+      expect([ r.band.row, r.band.color ]).to eq([ 6, "amber" ]) # identical to the dormant case above
+      expect(r.erv).to eq(3750.0)
+    end
+
+    it "carries a FIRED C_inflation out on the row — the YELLOW that used to look uncorroborated" do
+      r = emit(hard: hard(0.0), soft: soft(1250.0), fraud: fraud(1250.0),
+               ccv_chat_divergence: 0.5, k_override: L4EmitSpecDoubles::K_INFLATION_ON)
+      expect([ r.c_hard, r.c_self, r.c_inflation ]).to eq([ false, false, true ])
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ]) # identical to the enabled case above
+    end
+
+    it "passes C_pop through untouched (the engine decides it; L4 only carries it)" do
+      expect(emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(50.0), c_pop: true).c_pop).to be(true)
+    end
+  end
+
+  # DETECTION-AUDIT 2026-09-19 (ENGINE-RCA Q1) — the named-FRACTION accusation needs a real roster.
+  # Live shape of the false-positive class: ONE spam account (p_u 0.910 → P5 0.4378) in channels with
+  # a CCV median of 1-3 → n_frac 0.4378 / 0.2189 / 0.1459 / 0.1094 at 1/2/3/4 chatters, all ≥ φ_yellow
+  # → YELLOW, ~160 times a day, every c_hard fire of 19.09.
+  describe "named-fraction roster floor (chard_frac_roster_min)" do
+    def micro(chatters, k_override)
+      emit(hard: hard(0.4378), soft: soft(0.0), fraud: fraud(0.4378),
+           v: 3, n_chat_eff: chatters, named_count: 1, q: 0.9, k_override: k_override)
+    end
+
+    it "one named bot among 1-4 chatters no longer fires C_hard or YELLOW" do
+      (1..4).each do |chatters|
+        r = micro(chatters, L4EmitSpecDoubles::K_FRAC_FLOOR)
+        expect(r.c_hard).to be(false), "c_hard fired at #{chatters} chatters"
+        expect(%w[red yellow]).not_to include(r.band.color), "accused at #{chatters} chatters"
+        expect(r.confirmed_anomaly).to be(false)
+        expect(r.reason_codes.map(&:code)).not_to include("HARD_NAMED_FRACTION")
+      end
+    end
+
+    it "is the ONLY thing that changed: the same fixture without the floor still fires (regression frame)" do
+      r = micro(2, L4EmitSpecDoubles::K) # base K lacks the key → pre-floor behaviour
+      expect(r.c_hard).to be(true)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
+    end
+
+    it "control: the SAME fraction on a roster at the floor accuses exactly as before" do
+      # 30 chatters, 7 named (P5 6.6) → n_frac 0.22 ≥ φ_yellow, roster == the floor → unchanged YELLOW.
+      r = emit(hard: hard(6.6), soft: soft(0.0), fraud: fraud(6.6), v: 60, n_chat_eff: 30, named_count: 7,
+               k_override: L4EmitSpecDoubles::K_FRAC_FLOOR)
+      expect(r.c_hard).to be(true)
+      expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
+      expect(r.reason_codes.map(&:code)).to include("HARD_NAMED_FRACTION")
+    end
+
+    it "control: a big-roster RED is untouched by the floor (φ_red path)" do
+      r = emit(hard: hard(290.0), soft: soft(0.0), fraud: fraud(3000.0), named_count: 290,
+               k_override: L4EmitSpecDoubles::K_FRAC_FLOOR)
+      expect([ r.band.row, r.band.color ]).to eq([ 1, "red" ])
+      expect(r.c_hard).to be(true)
+    end
+  end
+
   # FULL-CHAIN M3 c_hard_abs — the integer named-count trigger.
   describe "c_hard hybrid integer named-count trigger (c_hard_abs)" do
     it "DORMANT: base K lacks chard_abs_enabled → respond_to? guard → no accusation on a mid-roster cluster" do
@@ -203,6 +276,14 @@ RSpec.describe TrustIndex::V2::L4Emit do
       r = emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(0.0), named_count: 2, n_chat_eff: 100,
                k_override: L4EmitSpecDoubles::K_CHARD_ABS_ON)
       expect(r.band.row).to be > 2
+    end
+
+    # The audit's Q2 blind spot: this trigger accuses off the SAME named list as the fraction path but
+    # never set c_hard, so its YELLOWs persisted as "no corroborator".
+    it "is carried out separately from c_hard (the fraction path stays false)" do
+      r = emit(hard: hard(0.0), soft: soft(0.0), fraud: fraud(0.0), named_count: 5, n_chat_eff: 100, q: 0.9,
+               k_override: L4EmitSpecDoubles::K_CHARD_ABS_ON)
+      expect([ r.c_hard, r.c_hard_abs ]).to eq([ false, true ])
     end
 
     it "FP guard: roster below floor (< 30) → no fire even with 5 named (micro-channel self-inflation)" do

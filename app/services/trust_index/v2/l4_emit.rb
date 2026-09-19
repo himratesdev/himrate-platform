@@ -10,7 +10,12 @@ module TrustIndex
     class L4Emit
       EmitResult = Data.define(:erv, :erv_lo, :erv_hi, :authenticity, :a_hat, :n_frac,
                                :band, :reason_codes, :confirmed_anomaly, :cold_start_tier,
-                               :confidence_marker, :c_hard, :c_self)
+                               :confidence_marker, :c_hard, :c_self,
+                               # DETECTION-AUDIT 2026-09-19 — observability, NOT inputs. The plashka and
+                               # the band read four corroboration paths; only two of them (c_hard/c_self)
+                               # ever reached the row. These three carry the other paths out, plus the
+                               # roster n_frac divides by, so a verdict is reproducible from its own row.
+                               :c_inflation, :c_hard_abs, :c_pop, :n_chat_eff)
 
       # hard — L1 HardFloor (f_hard_lo → N_frac). soft — L2 SoftBound (f_soft_lo → band rows 1-2).
       # fraud — L3 FraudCount. ctx — v, n_chat_eff, q, i_event, raid_window, cold_start_tier,
@@ -46,7 +51,11 @@ module TrustIndex
           reason_codes: ReasonCodeBuilder.call(band: band, ctx: reason_ctx),
           confirmed_anomaly: c_hard || c_self || ((c_inflation || @c.c_pop || c_hard_abs) && band.row <= 2),
           cold_start_tier: @c.cold_start_tier,
-          confidence_marker: confidence_marker, c_hard: c_hard, c_self: c_self
+          confidence_marker: confidence_marker, c_hard: c_hard, c_self: c_self,
+          # The three paths that decide an accusation WITHOUT setting c_hard/c_self, carried out as
+          # they were evaluated (c_pop is decided in the engine and rides the ctx untouched — a ctx
+          # that never computed it passes nil through, which reads as "not evaluated", not "false").
+          c_inflation: c_inflation, c_hard_abs: c_hard_abs, c_pop: @c.c_pop, n_chat_eff: @c.n_chat_eff
         )
       end
 
@@ -92,7 +101,21 @@ module TrustIndex
       end
 
       def c_hard
-        n_frac >= @k.phi_yellow
+        roster_above_named_fraction_floor? && n_frac >= @k.phi_yellow
+      end
+
+      # DETECTION-AUDIT 2026-09-19 (ENGINE-RCA Q1). N_frac is a FRACTION, so below a real roster it
+      # measures nothing: ONE named account among 1-4 chatters reads 0.11-0.44 and clears φ_yellow,
+      # which is where every live c_hard fire of 19.09 came from (~160 false YELLOWs/day on channels
+      # with a handful of viewers — and each one also published the account's name into
+      # named_bot_evidences, since Persistence writes evidence on c_hard). The sibling integer path
+      # (c_hard_abs) has always had this floor; the fraction path had none. Above the floor NOTHING
+      # changes — same φ_yellow, same φ_red. respond_to? keeps isolated-K unit doubles on the
+      # pre-floor behaviour (mirrors every other constant guard in this file).
+      def roster_above_named_fraction_floor?
+        return true unless @k.respond_to?(:chard_frac_roster_min)
+
+        @c.n_chat_eff.to_i >= @k.chard_frac_roster_min.to_f
       end
 
       # FULL-CHAIN M3 c_hard hybrid — the INTEGER named-count trigger. The fraction path (c_hard) is
@@ -146,6 +169,10 @@ module TrustIndex
         BandClassifier::Drivers.new(
           n_frac: n_frac, f_self_ratio: ratio_band(@f.f_self), f_soft_lo_ratio: ratio_band(@soft.f_soft_lo),
           a_hat: ratio_band(@f.f_hat), q: @c.q, i_event: @c.i_event, c_hard: c_hard, c_self: c_self,
+          # RCA Q1: the band reads n_frac DIRECTLY (rows 1-2), so the roster floor has to travel with
+          # it — gating only c_hard would leave the YELLOW/RED branches firing on the same
+          # meaningless micro-roster fraction.
+          named_fraction_accusable: roster_above_named_fraction_floor?,
           c_inflation: c_inflation, raid_window: @c.raid_window, cold_start_tier: @c.cold_start_tier,
           cell_calibrated: @c.cell_calibrated, i_event_sustained: @c.i_event_sustained, c_pop: @c.c_pop,
           c_hard_abs: c_hard_abs

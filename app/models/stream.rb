@@ -21,7 +21,6 @@ class Stream < ApplicationRecord
   has_many :chatters_snapshots, dependent: :destroy
   # PR 1e-B (TASK-251.14): chat_messages PG table dropped + ChatMessage model deleted.
   # Removed has_many :chat_messages — would NameError on eager_load in production boot.
-  has_many :erv_estimates, dependent: :destroy
   has_many :per_user_bot_scores, dependent: :destroy
   has_many :trust_index_histories, dependent: :destroy
   has_many :raid_attributions, dependent: :destroy

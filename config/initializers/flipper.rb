@@ -104,14 +104,16 @@ module FlipperDefaults
   # got whitespace-split into ~40 symbol "flags" (:the, :boot, :"2026-07-29.", :"#", …) that
   # the boot loop below registered AND enabled on every Rails boot (incident 2026-08-05).
   # Name shape is pinned by spec/flipper/flipper_flag_registry_spec.rb.
+  # DETECTION-AUDIT 2026-09-19 (PIPELINE-HEALTH #13): bot_raid_chain, audience_overlap,
+  # ad_calculator, social_presence, panel_tracking and trends_tab were registered and auto-enabled
+  # on every boot while NOTHING in app/lib/bin/config ever called Flipper.enabled? on them — six
+  # switches that looked like kill switches for shipped features and controlled nothing. Registering
+  # a no-op flag is worse than having none: an operator flips it during an incident and believes the
+  # feature is off. Dropped from the registry; their Redis/AR keys survive the deploy and need a
+  # one-off manual delete (they are inert either way — no reader).
   ALL_FLAGS = [
     :pundit_authorization,
-    :bot_raid_chain,
     :compare_unlimited,
-    :audience_overlap,
-    :ad_calculator,
-    :social_presence,
-    :panel_tracking,
     :tracking_requests,
     :irc_monitor,
     :stream_monitor,
@@ -122,7 +124,6 @@ module FlipperDefaults
     :accessory_drift_detection,
     :stream_summary_endpoint,
     :cleanup_worker,
-    :trends_tab,
     :trends_aggregation_nightly,
     :pva,
     :ti_v2_cowindowed_shadow,

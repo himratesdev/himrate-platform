@@ -76,7 +76,11 @@ class BotScoringWorker
       end
     end
 
-    # Batch upsert
+    # Batch upsert. The ONLY writer of per_user_bot_scores. created_at (DETECTION-AUDIT 2026-09-19)
+    # is deliberately absent from update_only: a re-score of the same (stream, username) refreshes
+    # the score but must NOT move the timestamp — the column answers «when did this chatter first
+    # get scored on this stream», which is what makes the stage's freshness readable. Rails fills it
+    # on INSERT (record_timestamps); the column default is the belt under any non-AR writer.
     if scores.any?
       PerUserBotScore.upsert_all(
         scores,

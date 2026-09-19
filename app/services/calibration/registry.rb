@@ -115,6 +115,19 @@ module Calibration
       # cross-channel-flagged) counts (mc nil → dedicated) — it's a named bot regardless. Calibrated flip
       # value ≈ 8 (keeps mc=3-6 dedicated botnets, excludes mc≥15 roaming). PO-gated data update (no redeploy).
       chard_abs_mc_max: 999.0,
+      # DETECTION-AUDIT 2026-09-19 (ENGINE-RCA Q1) — minimum chat roster for the NAMED-FRACTION
+      # accusation. N_frac = P5(F_hard)/n_chat_eff is a FRACTION, and a fraction of one is not
+      # evidence: a single roaming spam account (jeetbot) sitting in channels with 1-4 chatters
+      # yields n_frac 0.11-0.44, clears φ_yellow every time, and produced ~160 false YELLOWs a day —
+      # every single c_hard fire of 19.09. The sibling INTEGER path has required roster ≥
+      # chard_abs_roster_min since M3; the fraction path had no size floor at all. Same floor, its
+      # own key so the two can be tuned apart without a deploy (ADR DEC-3).
+      # DEFAULT 30 = the abs path's CALIBRATED live value, deliberately not its 999 illustrative
+      # backstop: that backstop is safe there only because chard_abs_enabled gates the whole path,
+      # and the fraction path has no enabled gate — a 999 default here would silently switch the
+      # entire named-fraction accusation off until someone wrote a DB row. Raising this only removes
+      # accusations; lowering it re-opens the micro-channel false-positive class.
+      chard_frac_roster_min: 30.0,
       # TI v2.1 deficit_min_ccv (FULL-CHAIN M4, shared deficit-family absolute floor, 2026-07-27). Every
       # deficit-family accusation (F_soft label, F_self eligibility, C_self^SP [P2] online_elevated,
       # C_pop) rests on a per-viewer chat-share statistic that becomes integer-quantization NOISE below

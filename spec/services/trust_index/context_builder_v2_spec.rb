@@ -199,6 +199,9 @@ RSpec.describe TrustIndex::ContextBuilder do
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a]))
       expect(c.clean_self_history).to be(true)
       expect(c.rho_self_lo).to be_within(0.001).of(0.02)
+      # DETECTION-AUDIT 2026-09-19: the baseline CENTRE rides the same sorted array as its P10 floor,
+      # so a persisted self-deficit can say what it fell below. Nothing gates on it.
+      expect(c.rho_self).to be_within(0.001).of(0.03)
     end
 
     it "moat-audit de-poison: BOTTED (non-green) self-history rows are excluded from the baseline" do
@@ -244,10 +247,19 @@ RSpec.describe TrustIndex::ContextBuilder do
       expect(c.unattributed_surge).to be(false)
     end
 
-    it "cps read from the stored channel_protection_score" do
-      config = ChannelProtectionConfig.create!(channel: channel, channel_protection_score: 42)
+    # DETECTION-AUDIT 2026-09-19: signal #6 was blind. The context read a STORED
+    # channel_protection_score that no writer has ever filled (0 non-null of 3 307 live rows), so
+    # ctx.cps was nil on every verdict. CPS is scored from the settings themselves now.
+    it "cps scored from the channel's protection settings, not the never-written column" do
+      config = ChannelProtectionConfig.create!(channel: channel, channel_protection_score: nil,
+                                               verified_account_required: true, subs_only_enabled: true,
+                                               slow_mode_seconds: 30, followers_only_duration_min: 0)
       c = described_class.build_v2(stream, ctx_hash(chatters: %w[a], config: config))
-      expect(c.cps).to eq(42.0)
+      expect(c.cps).to eq(75) # 30 verified + 20 subs-only + 15 follower-only(any) + 10 slow(≤30s)
+    end
+
+    it "cps nil without a config — no data, NOT 0 (0 is a real score meaning wide-open chat)" do
+      expect(described_class.build_v2(stream, ctx_hash(chatters: %w[a])).cps).to be_nil
     end
 
     it "cold_start_tier maps ColdStartGuard status onto the 3-tier enum" do
@@ -304,6 +316,8 @@ RSpec.describe TrustIndex::ContextBuilder do
         # FULL-CHAIN M3 c_hard hybrid dormant (enabled 0.0; 999 backstops) + M3.1 mc-filter dormant (999)
         chard_abs_enabled: 0.0, chard_abs_count: 999.0, chard_abs_roster_min: 999.0, chard_abs_share: 999.0,
         chard_abs_mc_max: 999.0,
+        # DETECTION-AUDIT 2026-09-19 named-fraction roster floor (live, not dormant — Registry default)
+        chard_frac_roster_min: 30.0,
         # FULL-CHAIN M4 shared deficit-family floor dormant (0.0)
         deficit_min_ccv: 0.0,
         # TI v2.1 recurrence_gate dormant (enabled 0.0; r_full=1.0 ∧ new_floor=1.0 neutral backstop)

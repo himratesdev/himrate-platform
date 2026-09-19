@@ -103,7 +103,7 @@ module TrustIndex
         # lower bucket would otherwise be judged against the wrong, more-lenient cell. Dormant when v_w nil
         # (cowindowed OFF / no 60min window) → v_eff == v → byte-identical cell lookup. Display/ERV keep instant v.
         cell: v2_cell(stream, context_hash, (v_w && v ? [ v_w, v ].min : v)),
-        rho_self_lo: sh[:rho_self_lo], clean_self_history: sh[:clean_self_history],
+        rho_self_lo: sh[:rho_self_lo], rho_self: sh[:rho_self], clean_self_history: sh[:clean_self_history],
         self_history_stable: sh[:self_history_stable],
         i_event: false, # engine derive_i_event composes the FINAL gated i_event (needs L2 soft.eihc for [1])
         # [2]∧[4]∧[5]∧[6] pre-ANDed here; gated (dormant → false, ZERO added fetches). [1] rho_dropped + [3]
@@ -118,7 +118,7 @@ module TrustIndex
         unattributed_surge: false, # provenance-source wiring (host/shoutout/category) = follow-up EPIC
         thin_sample: chatters.size < THIN_SAMPLE_MIN,
         reputation: v2_reputation(channel),
-        cps: context_hash[:channel_protection_config]&.channel_protection_score&.to_f,
+        cps: v2_cps(context_hash[:channel_protection_config]),
         ccv_chat_divergence: v2_ccv_chat_divergence(context_hash),
         l2_roster_usernames: l2_roster,
         v_w: v_w,
@@ -550,6 +550,19 @@ module TrustIndex
         vals[vals.size / 2]
       end
 
+      # Signal #6 CPS for the v2 engagement axis (DETECTION-AUDIT 2026-09-19). Was read straight off
+      # `config.channel_protection_score`, a column NOTHING writes (0 non-null of 3 307 live rows) →
+      # ctx.cps nil on every verdict, TIH.cps NULL, the extension's protection axis permanently blank.
+      # Scored on the fly from the SAME settings the v1 signal uses (one implementation, no stored
+      # duplicate to drift). Display-only in v2 — CPS is evicted from the fraud score (BR-012,
+      # axes_builder) — so this changes what is SHOWN, never a band/ERV/reason. nil config → nil.
+      def v2_cps(config)
+        Signals::ChannelProtectionScore.for_config(config)
+      rescue StandardError => e
+        Rails.logger.warn("ContextBuilder: v2 cps failed (#{e.message})")
+        nil
+      end
+
       # cell = category × V-bucket × chat-mode × language → per-cell ρ* baseline, EC-18 coarsest fallback.
       def v2_cell(stream, context_hash, v)
         TrustIndex::V2::CellResolver.call(
@@ -611,15 +624,23 @@ module TrustIndex
           .pluck(:rho_obs, :ccv)
         rho = rows.filter_map { |r, _| r&.to_f }
         own_ccv = rows.filter_map { |_, c| c&.to_i } # clean-only, convention-scoped own-CCV history for [2]
-        return { rho_self_lo: nil, clean_self_history: false, self_history_stable: false, own_ccv_history: own_ccv } if rho.size < SELF_HISTORY_MIN_CLEAN
+        if rho.size < SELF_HISTORY_MIN_CLEAN
+          return { rho_self: nil, rho_self_lo: nil, clean_self_history: false, self_history_stable: false,
+                   own_ccv_history: own_ccv }
+        end
 
-        { rho_self_lo: percentile(rho.sort, 0.10),
+        # DETECTION-AUDIT 2026-09-19: rho_self (the baseline's CENTRE) comes off the SAME sorted array
+        # as the P10 floor — free, and it is what makes a persisted F_self deficit readable ("ρ_obs
+        # 0.04 vs own 0.12, floor 0.09"). Nothing gates on it; only rho_self_lo does.
+        sorted = rho.sort
+        { rho_self: percentile(sorted, 0.50),
+          rho_self_lo: percentile(sorted, 0.10),
           clean_self_history: true,
           self_history_stable: rho.size >= SELF_HISTORY_STABLE_MIN,
           own_ccv_history: own_ccv }
       rescue StandardError => e
         Rails.logger.warn("ContextBuilder: v2 self-history failed (#{e.message})")
-        { rho_self_lo: nil, clean_self_history: false, self_history_stable: false, own_ccv_history: [] }
+        { rho_self: nil, rho_self_lo: nil, clean_self_history: false, self_history_stable: false, own_ccv_history: [] }
       end
 
       # TI v2.1 C_self^SP durability ledger — the CURRENT stream's LEADING run of consecutive windowed

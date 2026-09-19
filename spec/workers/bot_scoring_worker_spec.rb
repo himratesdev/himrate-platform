@@ -71,6 +71,27 @@ RSpec.describe BotScoringWorker do
     end
   end
 
+  # DETECTION-AUDIT 2026-09-19 (PIPELINE-HEALTH #12): the table had no time column, so the stage's
+  # freshness was unreadable. The bulk upsert must actually stamp it — and a re-score must NOT move
+  # it, or «first scored at» degrades into «last touched at» and a stalled writer still looks alive.
+  it "stamps created_at on insert and leaves it untouched when the same chatter is re-scored" do
+    channel = Channel.create!(twitch_id: "911", login: "ts_channel", display_name: "TS")
+    stream = Stream.create!(channel: channel, started_at: 2.hours.ago, ended_at: 1.hour.ago)
+    allow(Clickhouse::ChatQueries).to receive(:chatter_aggregations).with(stream).and_return(
+      "user_0" => aggregation("user_0")
+    )
+    allow_any_instance_of(KnownBotService).to receive(:check_batch)
+      .and_return("user_0" => { bot: false, confidence: 0.0, sources: [] })
+
+    worker.perform(stream.id)
+    first_seen = PerUserBotScore.find_by(stream: stream, username: "user_0").created_at
+    expect(first_seen).to be_present
+    expect(first_seen).to be_within(1.minute).of(Time.current)
+
+    worker.perform(stream.id) # same roster again → the UPDATE branch of the upsert
+    expect(PerUserBotScore.find_by(stream: stream, username: "user_0").created_at).to eq(first_seen)
+  end
+
   it "skips when Flipper disabled" do
     allow(Flipper).to receive(:enabled?).with(:bot_scoring).and_return(false)
     expect { worker.perform("some-id") }.not_to change(PerUserBotScore, :count)

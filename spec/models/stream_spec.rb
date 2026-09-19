@@ -8,7 +8,7 @@ RSpec.describe Stream, type: :model do
     it { is_expected.to have_many(:signals).class_name("TiSignal").dependent(:destroy) }
     it { is_expected.to have_many(:ccv_snapshots).dependent(:destroy) }
     # PR 1e-B (TASK-251.14): chat_messages PG table dropped; has_many removed from Stream.
-    it { is_expected.to have_many(:erv_estimates).dependent(:destroy) }
+    # DETECTION-AUDIT 2026-09-19: erv_estimates dropped the same way (0 rows, no writer, no reader).
     it { is_expected.to have_many(:per_user_bot_scores).dependent(:destroy) }
     it { is_expected.to have_one(:post_stream_report).dependent(:destroy) }
     # 2026-06-01: macro declarations + integration test below proving cascade actually fires.
