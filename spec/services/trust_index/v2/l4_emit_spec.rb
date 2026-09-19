@@ -9,28 +9,30 @@ module L4EmitSpecDoubles
   Ctx = Data.define(:v, :n_chat_eff, :q, :i_event, :raid_window, :cold_start_tier, :named_count,
                     :self_history_stable, :chatter_quality_high, :stream_count, :unattributed_surge,
                     :thin_sample, :ccv_chat_divergence, :v_w, :cell_calibrated, :i_event_sustained, :c_pop)
-  K = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi).new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8)
+  # PRODUCTION shape (CR iter-1 Nit-4): every K below carries the named-fraction roster floor at its
+  # live Registry default (5 — it has no enabled gate, so the default IS what production runs).
+  # K_NO_FLOOR (floor 0) exists ONLY for the regression frame that shows what the floor removed.
+  K = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :chard_frac_roster_min)
+       .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8, chard_frac_roster_min: 5.0)
+  K_NO_FLOOR = K.with(chard_frac_roster_min: 0.0)
   # TI v2.1 — K variant with the inflation corroborator ENABLED (for the escalation test). The
   # dormant default (enabled 0.0) is exercised by the base K above, which lacks the keys entirely →
   # L4's respond_to? guard makes C_inflation false (byte-identical to pre-v2.1).
-  K_INFLATION_ON = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :inflation_corrob_enabled, :phi_inflation)
-                       .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8,
+  K_INFLATION_ON = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :chard_frac_roster_min,
+                               :inflation_corrob_enabled, :phi_inflation)
+                       .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8, chard_frac_roster_min: 5.0,
                             inflation_corrob_enabled: 1.0, phi_inflation: 0.30)
   # PRODUCTION dormant shape: K RESPONDS to inflation_corrob_enabled but the value is 0.0 (the real
   # Registry default). Exercises the .positive? flip-guard, not just the respond_to? guard.
-  K_INFLATION_OFF = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :inflation_corrob_enabled, :phi_inflation)
-                        .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8,
+  K_INFLATION_OFF = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :chard_frac_roster_min,
+                                :inflation_corrob_enabled, :phi_inflation)
+                        .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8, chard_frac_roster_min: 5.0,
                              inflation_corrob_enabled: 0.0, phi_inflation: 0.30)
   # FULL-CHAIN M3 — K with the c_hard hybrid integer trigger ENABLED (count 3 / roster 30 / share 0.02).
-  K_CHARD_ABS_ON = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi,
+  K_CHARD_ABS_ON = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :chard_frac_roster_min,
                                :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share)
-                       .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8,
+                       .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8, chard_frac_roster_min: 5.0,
                             chard_abs_enabled: 1.0, chard_abs_count: 3.0, chard_abs_roster_min: 30.0, chard_abs_share: 0.02)
-  # DETECTION-AUDIT 2026-09-19 — PRODUCTION shape: K carries the named-fraction roster floor at its
-  # Registry default. The base K above lacks the key entirely (the respond_to? guard → no floor),
-  # which is what keeps every pre-floor example in this file exercising the old behaviour.
-  K_FRAC_FLOOR = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi, :chard_frac_roster_min)
-                     .new(phi_yellow: 0.10, phi_red: 0.35, q_mid: 0.5, q_hi: 0.8, chard_frac_roster_min: 5.0)
 end
 
 RSpec.describe TrustIndex::V2::L4Emit do
@@ -217,14 +219,14 @@ RSpec.describe TrustIndex::V2::L4Emit do
   # a CCV median of 1-3 → n_frac 0.4378 / 0.2189 / 0.1459 / 0.1094 at 1/2/3/4 chatters, all ≥ φ_yellow
   # → YELLOW, ~160 times a day, every c_hard fire of 19.09.
   describe "named-fraction roster floor (chard_frac_roster_min)" do
-    def micro(chatters, k_override)
+    def micro(chatters, k_override = nil)
       emit(hard: hard(0.4378), soft: soft(0.0), fraud: fraud(0.4378),
            v: 3, n_chat_eff: chatters, named_count: 1, q: 0.9, k_override: k_override)
     end
 
     it "one named bot among 1-4 chatters no longer fires C_hard or YELLOW" do
       (1..4).each do |chatters|
-        r = micro(chatters, L4EmitSpecDoubles::K_FRAC_FLOOR)
+        r = micro(chatters)
         expect(r.c_hard).to be(false), "c_hard fired at #{chatters} chatters"
         expect(%w[red yellow]).not_to include(r.band.color), "accused at #{chatters} chatters"
         expect(r.confirmed_anomaly).to be(false)
@@ -233,7 +235,7 @@ RSpec.describe TrustIndex::V2::L4Emit do
     end
 
     it "is the ONLY thing that changed: the same fixture without the floor still fires (regression frame)" do
-      r = micro(2, L4EmitSpecDoubles::K) # base K lacks the key → pre-floor behaviour
+      r = micro(2, L4EmitSpecDoubles::K_NO_FLOOR) # floor 0 → exactly the pre-floor engine
       expect(r.c_hard).to be(true)
       expect([ r.band.row, r.band.color ]).to eq([ 2, "yellow" ])
     end
@@ -242,34 +244,30 @@ RSpec.describe TrustIndex::V2::L4Emit do
     # (0.4378/5 = 0.088) — the measured false class is exactly ≤4 chatters. Two named bots (P5 1.15)
     # are a real signal on 5 chatters and must still accuse; on 4 the roster is too small to say.
     it "boundary: 4 chatters → not accusable, 5 chatters → accusable (same two named bots)" do
-      below = emit(hard: hard(1.15), soft: soft(0.0), fraud: fraud(1.15), v: 6, n_chat_eff: 4, named_count: 2,
-                   k_override: L4EmitSpecDoubles::K_FRAC_FLOOR)
+      below = emit(hard: hard(1.15), soft: soft(0.0), fraud: fraud(1.15), v: 6, n_chat_eff: 4, named_count: 2)
       expect(below.c_hard).to be(false)
       expect(%w[red yellow]).not_to include(below.band.color)
 
-      at = emit(hard: hard(1.15), soft: soft(0.0), fraud: fraud(1.15), v: 6, n_chat_eff: 5, named_count: 2,
-                k_override: L4EmitSpecDoubles::K_FRAC_FLOOR)
+      at = emit(hard: hard(1.15), soft: soft(0.0), fraud: fraud(1.15), v: 6, n_chat_eff: 5, named_count: 2)
       expect(at.c_hard).to be(true) # n_frac 0.23 ≥ φ_yellow
       expect([ at.band.row, at.band.color ]).to eq([ 2, "yellow" ])
       expect(at.reason_codes.map(&:code)).to include("HARD_NAMED_FRACTION")
     end
 
     it "a single named account can't cross φ_yellow even at the floor (the class is closed by arithmetic)" do
-      r = micro(5, L4EmitSpecDoubles::K_FRAC_FLOOR) # 0.4378 / 5 = 0.088 < 0.10
+      r = micro(5) # 0.4378 / 5 = 0.088 < 0.10
       expect(r.c_hard).to be(false)
     end
 
     # RECALL >> FP: the floor must not blind the path on the small, heavily botted chat it exists for.
     it "recall: 12 named bots among 20 chatters is still accused (RED off the fraction)" do
-      r = emit(hard: hard(9.29), soft: soft(0.0), fraud: fraud(9.29), v: 25, n_chat_eff: 20, named_count: 12,
-               k_override: L4EmitSpecDoubles::K_FRAC_FLOOR)
+      r = emit(hard: hard(9.29), soft: soft(0.0), fraud: fraud(9.29), v: 25, n_chat_eff: 20, named_count: 12)
       expect(r.c_hard).to be(true) # n_frac 0.46 ≥ φ_red
       expect([ r.band.row, r.band.color ]).to eq([ 1, "red" ])
     end
 
     it "control: a big-roster RED is untouched by the floor (φ_red path)" do
-      r = emit(hard: hard(290.0), soft: soft(0.0), fraud: fraud(3000.0), named_count: 290,
-               k_override: L4EmitSpecDoubles::K_FRAC_FLOOR)
+      r = emit(hard: hard(290.0), soft: soft(0.0), fraud: fraud(3000.0), named_count: 290)
       expect([ r.band.row, r.band.color ]).to eq([ 1, "red" ])
       expect(r.c_hard).to be(true)
     end
