@@ -15,9 +15,10 @@ class PagesController < ApplicationController
   # canonical URL. Scoped to PagesController → API / auth / og / up traffic (other controllers)
   # is never touched. Skips the staging test host and dev/localhost.
   before_action :canonicalize_host
-  # Header-level noindex for the product host (meta noindex = suspenders; this = belt —
-  # survives any layout/meta drift and covers non-HTML responses).
-  after_action :noindex_app_host
+  # Header-level noindex for the two deindexed host classes — the product host and the
+  # WEB-CONSOLIDATION stand (meta noindex = suspenders; this = belt — survives any layout/meta
+  # drift and covers non-HTML responses).
+  after_action :noindex_deindexed_host
 
   PAGES = %w[index streamers brands viewers methodology login].freeze
 
@@ -239,8 +240,7 @@ class PagesController < ApplicationController
   # App host (SEO-hygiene 2026-09-05): ALLOW crawling — Google must be able to FETCH the
   # pages to see their noindex (meta + X-Robots-Tag); a robots Disallow blocked that and
   # left "inaccessible page" stubs piling up in Search Console. Deindexing canon: crawl
-  # allowed + noindex served. The WEB-CONSOLIDATION stand host follows the same canon. Every other
-  # host serves the marketing policy.
+  # allowed + noindex served. Every other production host serves the marketing policy.
   APEX_ROBOTS = <<~ROBOTS.freeze
     # See https://www.robotstxt.org/robotstxt.html for documentation on how to use the robots.txt file
     User-agent: *
@@ -258,10 +258,18 @@ class PagesController < ApplicationController
     Sitemap: https://himrate.com/sitemap.xml
   ROBOTS
   APP_ROBOTS = "User-agent: *\nAllow: /\n"
+  # The stand is a fresh, short-lived host with ZERO index history, so the «crawl allowed» canon
+  # above does not apply — there is nothing indexed for a Disallow to hide. Crawl-allowed would do
+  # harm instead: stand pages carry rel=canonical to the APEX (landing layout) next to their
+  # noindex header, and Google may carry a noindex over to the canonical target — i.e. onto the
+  # production /c/ and /top pages. Disallow keeps the crawler off the host entirely; it also
+  # covers the non-PagesController surfaces (sitemap.xml, /og/*, /health) the header never reaches.
+  STAND_ROBOTS = "User-agent: *\nDisallow: /\n"
 
   def robots
-    body = noindex_host? ? APP_ROBOTS : APEX_ROBOTS
-    render plain: body, content_type: "text/plain"
+    return render(plain: STAND_ROBOTS, content_type: "text/plain") if stand_host?
+
+    render plain: (request.host == APP_HOST ? APP_ROBOTS : APEX_ROBOTS), content_type: "text/plain"
   end
 
   # Legal pages (Privacy Policy + Terms). Own minimal readable layout (no Pencil JS).
@@ -286,6 +294,7 @@ class PagesController < ApplicationController
   #   app  /app/x  → https://app.himrate.com/x   (strip prefix)
   #   app  /<marketing path> → apex              (unchanged)
   #   app  /       → serves LK home (routes app-host root → pages#viewer_home; no redirect)
+  #   stand (STAND_HOST) /anything → NO canonicalization at all, every surface served as-is
   # Staging serves every surface unredirected on /app/*; dev/localhost untouched.
   APP_HOST  = "app.himrate.com"
   APEX_HOST = "himrate.com"
@@ -294,7 +303,9 @@ class PagesController < ApplicationController
   # container, zero runtime cost. ENV-driven (config/deploy.staging.yml env.clear) so the cutover /
   # teardown is a value change, not a code hunt; nil = no stand → every stand branch is inert.
   # The stand serves EVERY surface unredirected (new pages override per route in routes.rb, the
-  # rest falls through to today's pages) and is deindexed exactly like the app host.
+  # rest falls through to today's pages). One exception lives outside this controller: the bare
+  # `/app` is a route-level redirect (routes.rb) and still lands on app.himrate.com/home.
+  # Deindexing: robots Disallow (STAND_ROBOTS) + X-Robots-Tag noindex,nofollow on every page.
   STAND_HOST = ENV["STAND_HOST"].presence
 
   # Short (prefixless) LK paths on the app host. SIMPLE heads are product as bare segments;
@@ -342,7 +353,7 @@ class PagesController < ApplicationController
     PRODUCT_SHORT_HEADS_NESTED.include?(head) && rest.present?
   end
 
-  def noindex_app_host
+  def noindex_deindexed_host
     if stand_host?
       # nofollow too: the stand's links lead to half-assembled pages — nothing worth a crawl.
       response.set_header("X-Robots-Tag", "noindex, nofollow")
@@ -353,12 +364,6 @@ class PagesController < ApplicationController
 
   def stand_host?
     STAND_HOST.present? && request.host == STAND_HOST
-  end
-
-  # Hosts deindexed by the project canon: crawl ALLOWED + noindex served (a robots Disallow would
-  # hide the noindex from Google — SEO-hygiene 2026-09-05).
-  def noindex_host?
-    request.host == APP_HOST || stand_host?
   end
 
   # The product surfaces — login + the /app/* dashboards (@brand_dashboard) — render on the `app`

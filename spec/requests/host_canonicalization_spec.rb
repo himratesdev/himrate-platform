@@ -263,14 +263,25 @@ RSpec.describe "Host canonicalization", type: :request do
       expect(response.headers["X-Robots-Tag"]).to eq("noindex, nofollow")
     end
 
-    it "stand robots.txt ALLOWS crawling (the noindex must stay visible) and never redirects" do
+    # Fresh host, zero index history → nothing for a Disallow to hide; crawl-allowed would expose
+    # noindex pages that canonical to the apex (a conflicting pair that can hurt the PRODUCTION URL).
+    it "stand robots.txt keeps crawlers off the host entirely and never redirects" do
       host! "next.himrate.com"
       get "/robots.txt"
 
       expect(response).to have_http_status(:ok)
+      expect(response.body).to eq("User-agent: *\nDisallow: /\n")
+    end
+
+    it "leaves the production robots policies untouched while the stand is up" do
+      host! "app.himrate.com"
+      get "/robots.txt"
       expect(response.body).to include("Allow: /")
       expect(response.body).not_to include("Disallow: /")
-      expect(response.body).not_to include("Sitemap:")
+
+      host! "himrate.com"
+      get "/robots.txt"
+      expect(response.body).to include("Sitemap: https://himrate.com/sitemap.xml")
     end
 
     it "leaves the production hosts exactly as they were" do
