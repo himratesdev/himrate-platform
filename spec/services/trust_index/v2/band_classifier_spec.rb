@@ -7,7 +7,7 @@ require "rails_helper"
 module BandClassifierSpecDoubles
   Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
                         :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier, :cell_calibrated,
-                        :i_event_sustained, :c_pop, :c_hard_abs)
+                        :i_event_sustained, :c_pop, :c_hard_abs, :named_fraction_accusable)
   Thresholds = Data.define(:phi_yellow, :phi_red, :q_mid, :q_hi)
 end
 
@@ -19,7 +19,8 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     base = { n_frac: 0.0, f_self_ratio: 0.0, f_soft_lo_ratio: 0.0, a_hat: 0.0, q: 0.9,
              i_event: false, c_hard: false, c_self: false, c_inflation: false,
              raid_window: false, cold_start_tier: "full", cell_calibrated: true,
-             i_event_sustained: false, c_pop: false, c_hard_abs: false }
+             i_event_sustained: false, c_pop: false, c_hard_abs: false,
+             named_fraction_accusable: true } # a real roster (L4's floor cleared) unless a test says otherwise
     BandClassifierSpecDoubles::Drivers.new(**base.merge(over))
   end
 
@@ -257,6 +258,36 @@ RSpec.describe TrustIndex::V2::BandClassifier do
     it "the FRACTION path (n_frac ≥ phi_red) still reaches RED independently of c_hard_abs" do
       b = classify(n_frac: 0.40, c_hard_abs: false, a_hat: 0.40, cold_start_tier: "full")
       expect([ b.row, b.color ]).to eq([ 1, "red" ]) # named FRACTION RED bar unchanged
+    end
+  end
+
+  # DETECTION-AUDIT 2026-09-19 (ENGINE-RCA Q1): the named-FRACTION branches had no minimum sample, so
+  # one roaming spam account among 1-4 chatters cleared φ_yellow (and often φ_red) — ~160 false
+  # YELLOWs a day. L4 decides whether the roster is large enough; this table must honour that.
+  describe "named-fraction roster floor" do
+    it "a below-floor roster cannot reach YELLOW off the fraction (micro-channel, one named bot)" do
+      b = classify(n_frac: 0.22, c_hard: false, a_hat: 0.15, named_fraction_accusable: false)
+      expect(b.row).to be > 2
+    end
+
+    it "a below-floor roster cannot reach RED off the fraction either (the 1-chatter 0.44 case)" do
+      b = classify(n_frac: 0.44, c_hard: false, a_hat: 0.15, named_fraction_accusable: false)
+      expect(%w[red yellow]).not_to include(b.color)
+    end
+
+    it "control: the SAME fractions above the floor accuse exactly as before" do
+      expect(classify(n_frac: 0.22, c_hard: true, a_hat: 0.15).row).to eq(2)
+      expect(classify(n_frac: 0.44, c_hard: true, a_hat: 0.30).row).to eq(1)
+    end
+
+    it "only the fraction branch is gated — the integer named-count trigger still accuses" do
+      b = classify(c_hard_abs: true, n_frac: 0.22, a_hat: 0.05, named_fraction_accusable: false)
+      expect([ b.row, b.color ]).to eq([ 2, "yellow" ])
+    end
+
+    it "only the fraction branch is gated — a corroborated soft deficit still accuses" do
+      b = classify(f_soft_lo_ratio: 0.60, c_inflation: true, a_hat: 0.60, named_fraction_accusable: false)
+      expect(b.row).to eq(1)
     end
   end
 

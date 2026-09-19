@@ -27,7 +27,10 @@ module EngineSpecDoubles
                   :deficit_min_ccv,
                   # FULL-CHAIN M3 c_hard hybrid integer named-count trigger — dormant defaults (mirror Registry);
                   # k.with(...) flips them in the M3 describe block. M3.1 mc-filter (chard_abs_mc_max) dormant 999.
-                  :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share, :chard_abs_mc_max).new(
+                  :chard_abs_enabled, :chard_abs_count, :chard_abs_roster_min, :chard_abs_share, :chard_abs_mc_max,
+                  # DETECTION-AUDIT 2026-09-19 — the named-FRACTION roster floor at its Registry default
+                  # (NOT dormant: it is live from the deploy, and k.with(0.0) removes it in the spec below).
+                  :chard_frac_roster_min).new(
                     pi0: 0.02, tau_hard: 0.9, tau_delta: 0.5, phi_yellow: 0.10, phi_red: 0.35,
                     q_mid: 0.5, q_hi: 0.8, llr_temporal_r2: 1.1, llr_temporal_r3: 2.2,
                     llr_temporal_r4: 2.9, llr_temporal_r7: 4.6, llr_per_user_bot_score: 3.9,
@@ -37,7 +40,8 @@ module EngineSpecDoubles
                     cpop_enabled: 0.0, cpop_n_windows: 999.0, cpop_density_frac: 999.0, cpop_elevated_margin: 0.30,
                     deficit_min_ccv: 0.0, # DORMANT default (mirror Registry)
                     chard_abs_enabled: 0.0, chard_abs_count: 999.0, chard_abs_roster_min: 999.0, chard_abs_share: 999.0,
-                    chard_abs_mc_max: 999.0 # M3.1 dormant (mirror Registry — count all mc)
+                    chard_abs_mc_max: 999.0, # M3.1 dormant (mirror Registry — count all mc)
+                    chard_frac_roster_min: 30.0 # named-fraction roster floor (mirror Registry)
                   )
 end
 
@@ -107,6 +111,26 @@ RSpec.describe TrustIndex::V2::Engine do
     expect(r.cps).to eq(70)
     expect(r.f_hard_hi).to eq(0.0) # P95 of an empty named set
     expect(r.band.color).to eq("green") # the clean-channel verdict from the first example, unchanged
+  end
+
+  # DETECTION-AUDIT 2026-09-19 (ENGINE-RCA Q1), end-to-end: one named spam account in a channel with
+  # 1-4 chatters used to publish a YELLOW — and the account's name into named_bot_evidences — off a
+  # fraction of a roster too small to mean anything. ~160 a day; the entire c_hard population of 19.09.
+  it "named-fraction floor: a micro-roster is not accused, the same bots on a real roster still are" do
+    micro = context([ chatter("spam", bot: true), chatter("h1") ], v: 3, n_chat_eff: 2)
+    r = described_class.compute(context: micro, k: k)
+    expect(r.c_hard).to be(false)
+    expect(%w[red yellow]).not_to include(r.band.color)
+    expect(r.confirmed_anomaly).to be(false)
+    expect(r.b_hard.map(&:username)).to eq([ "spam" ]) # still NAMED internally — just not accused on it
+
+    # The floor is the only difference: remove it and the identical fixture accuses again.
+    expect(described_class.compute(context: micro, k: k.with(chard_frac_roster_min: 0.0)).c_hard).to be(true)
+
+    # And a roster above the floor with the same kind of named fraction is untouched.
+    big = context(Array.new(10) { |i| chatter("b#{i}", bot: true) } + Array.new(30) { |i| chatter("h#{i}") },
+                  v: 200, n_chat_eff: 40)
+    expect(described_class.compute(context: big, k: k).c_hard).to be(true)
   end
 
   it "EC-15: nothing is evaluated at V≤0 → the corroboration paths are NULL, not false" do

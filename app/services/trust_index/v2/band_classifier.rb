@@ -10,8 +10,17 @@ module TrustIndex
     #
     # drivers — responds to: n_frac, f_self_ratio (F_self/V), f_soft_lo_ratio (F_soft_lo/V), a_hat (F̂/V),
     #   q, i_event, c_hard, c_self, c_inflation, c_pop, raid_window, cold_start_tier, cell_calibrated,
-    #   i_event_sustained.
+    #   i_event_sustained, named_fraction_accusable.
     # k — calibration thresholds: phi_yellow, phi_red, q_mid, q_hi.
+    #
+    # EDGE (DETECTION-AUDIT 2026-09-19, ENGINE-RCA Q1): the named-fraction branches of rows 1-2 were
+    # the only accusation in this table with no minimum sample, and a fraction of a 1-4 chatter
+    # roster is noise — ONE roaming spam account read n_frac 0.11-0.44 and drove ~160 false YELLOWs a
+    # day. L4 evaluates the roster floor (chard_frac_roster_min, mirroring the integer path's
+    # chard_abs_roster_min) and passes the answer in as named_fraction_accusable. Such a channel
+    # falls through to the AMBER catch-all, NOT to a green row: rows 3-4 still require
+    # n_frac < φ_yellow, so the engine WITHHOLDS the positive affirmation rather than granting it off
+    # a fraction it has just declared meaningless (opening that up is a separate product decision).
     class BandClassifier
       Band = Data.define(:row, :color, :label_key, :sub)
 
@@ -48,9 +57,13 @@ module TrustIndex
       # c_hard_abs (FULL-CHAIN M3): the integer named-count trigger — a YELLOW-only row2 driver that catches
       # a mid-roster confirmed-bot cluster the P5-diluted n_frac fraction path misses. NOT in
       # independently_corroborated? (never public RED off an absolute count — B2 red-team).
+      # named_fraction_accusable (DETECTION-AUDIT 2026-09-19): the chat roster cleared the minimum the
+      # named-FRACTION accusation needs to mean anything (L4 owns the threshold — see the EDGE note
+      # above). False ⇒ rows 1-2 ignore n_frac entirely; every other branch is untouched.
       Drivers = Data.define(:n_frac, :f_self_ratio, :f_soft_lo_ratio, :a_hat, :q, :i_event,
                             :c_hard, :c_self, :c_inflation, :raid_window, :cold_start_tier,
-                            :cell_calibrated, :i_event_sustained, :c_pop, :c_hard_abs)
+                            :cell_calibrated, :i_event_sustained, :c_pop, :c_hard_abs,
+                            :named_fraction_accusable)
 
       def self.call(drivers:, k:)
         new(drivers, k).call
@@ -101,15 +114,20 @@ module TrustIndex
         @d.c_hard || @d.c_inflation || (@d.c_self && !i_event_sustained?)
       end
 
+      # nil (an isolated driver double built before the floor) reads as accusable → pre-floor behaviour.
+      def named_fraction_accusable?
+        @d.named_fraction_accusable != false
+      end
+
       def row1?
-        @d.n_frac >= @k.phi_red ||
+        (named_fraction_accusable? && @d.n_frac >= @k.phi_red) ||
           (accusable_tier? && @d.i_event && @d.f_self_ratio >= 0.50 && !@d.raid_window &&
             (!i_event_sustained? || @d.c_hard || @d.c_inflation)) ||
           (accusable_tier? && cell_calibrated? && @d.f_soft_lo_ratio >= 0.50 && independently_corroborated?)
       end
 
       def row2?
-        @d.n_frac >= @k.phi_yellow ||
+        (named_fraction_accusable? && @d.n_frac >= @k.phi_yellow) ||
           # FULL-CHAIN M3: the integer named-count trigger (YELLOW-only; full-tier gated as defense-in-depth,
           # mirroring the other accusatory branches — never accuse a thin-history channel). Nil → false.
           (accusable_tier? && @d.c_hard_abs == true) ||
