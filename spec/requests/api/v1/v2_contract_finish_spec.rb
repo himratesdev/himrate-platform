@@ -112,6 +112,39 @@ RSpec.describe "TI v2 contract finish", type: :request do
         expect(provenance_for(c_inflation: nil, c_hard_abs: nil, c_pop: nil)).to eq(shown: true, provenance: nil)
       end
     end
+
+    # CR iter-2 SF-4: the row's OWN codes decide, because the c_* flags cannot reproduce what the
+    # engine published. The cascade above still answers those rows — CHATTER_QUALITY_LOW is not an
+    # accusatory code, so they fall through to it exactly as before.
+    describe "provenance is read off the row's published reason codes" do
+      def coded_provenance(codes, **flags)
+        tih.update!(confirmed_anomaly: true, band_row: 2, band_color: "yellow",
+                    reason_codes: codes.map { |c| { "code" => c, "params" => {} } }, **flags)
+        Trust::ShowService.new(channel: channel, view: :headline).call.dig(:confirmed_anomaly, :provenance)
+      end
+
+      # i_event_sustained is not a persisted column, so the flag cascade answered the abrupt-STEP
+      # code for a row whose verdict actually rested on the sustained one.
+      it "names the sustained self-history variant the engine actually emitted" do
+        expect(coded_provenance(%w[SELF_HISTORY_SUSTAINED_INFLATION], c_self: true))
+          .to eq("SELF_HISTORY_SUSTAINED_INFLATION")
+      end
+
+      it "follows the published code when the flags would have named a different basis" do
+        expect(coded_provenance(%w[INFLATION_EVENT_CORROBORATION], c_hard_abs: true, c_inflation: true))
+          .to eq("INFLATION_EVENT_CORROBORATION")
+      end
+
+      it "takes the first accusatory code in the builder's order and ignores the rest" do
+        codes = %w[HARD_NAMED_FRACTION POPULATION_CHAT_DEFICIT RAID_HOST_EMBED_WINDOW]
+        expect(coded_provenance(codes, c_pop: true)).to eq("HARD_NAMED_FRACTION")
+      end
+
+      it "falls back to the flag cascade for a confirmed row that published no accusatory code" do
+        expect(coded_provenance(%w[CHATTER_QUALITY_LOW], c_pop: true)).to eq("POPULATION_CHAT_DEFICIT")
+        expect(coded_provenance([], c_self: true)).to eq("SELF_HISTORY_INFLATION_EVENT")
+      end
+    end
   end
 
   describe "Trust::ShowService :drill_down — decomposition fields (extension CardLiveDrillData)" do

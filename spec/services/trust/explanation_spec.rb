@@ -98,30 +98,71 @@ RSpec.describe Trust::Explanation do
     end
   end
 
-  # DETECTION-AUDIT 2026-09-19 (CR iter-1 SF-3): below the named-fraction roster floor the engine
-  # still subtracts the named accounts but declines to accuse on them — the public explanation must
-  # not draw that arm as the decisive «−X» next to the non-accusatory verdict.
+  # DETECTION-AUDIT 2026-09-19 (CR iter-2 MF-2, superseding iter-1 SF-3). `applied` is ARITHMETIC:
+  # ERV = V − F̂ subtracts the named accounts whether or not the verdict accused on them, so greying
+  # the row would put a sum that does not add up on a card open to guests (~15k rows/day carry
+  # f_hard > 0 with no HARD_NAMED_FRACTION). The accusation side is a SEPARATE flag: `set_aside`,
+  # only where the row can prove the chat was too small for a fraction to mean anything.
   describe "named arm below the named-fraction roster floor" do
     # Live shape: one spam account in a 2-chatter, CCV-3 channel. No HARD_NAMED_FRACTION (the floor
-    # held the accusation back) → AMBER; the arm still measured something.
+    # held the accusation back) → AMBER; the arm still measured something and was still subtracted.
     def micro_row(**over)
       snapshot(ccv: 3, erv: 2, erv_lo: 2, erv_hi: 2, f_hard: 0.98, f_hard_lo: 0.44, f_soft: 0.0,
                f_soft_lo: 0.0, f_soft_hi: 0.0, f_hat: 0.98, f_hat_lo: 0.98, f_hat_hi: 0.98, n_frac: 0.4378,
                n_chat_eff: 2, band_color: "amber", reason_codes: [], **over)
     end
 
-    it "reports the arm but does not mark it applied — under either fusion rule" do
+    it "keeps the arm applied — it formed the total — and marks it set aside instead" do
       %w[windowed cumulative].each do |convention|
         result = described_class.call(micro_row(rho_convention: convention), channel: channel)
         named = result[:arms].find { |a| a[:kind] == "named" }
 
-        expect(named).to include(amount: 1.0, applied: false)
-        expect(result[:fusion][:applied]).to eq([]) # never handed to a runner-up that did not form the total
+        expect(named).to include(amount: 1.0, applied: true, set_aside: true)
+        expect(result[:fusion][:applied]).to eq([ "named" ])
       end
+    end
+
+    it "carries the reason in words, resolved in the request locale" do
+      named = I18n.with_locale(:ru) do
+        described_class.call(micro_row(n_chat_eff: 3), channel: channel)[:arms].find { |a| a[:kind] == "named" }
+      end
+
+      expect(named[:set_aside_note]).to eq(I18n.t("explanation.named_set_aside", n: 3, locale: :ru))
+      expect(named[:set_aside_note]).to include("3")
+    end
+
+    it "sets the arm aside at any roster below the live floor, and never at or above it" do
+      floor = Calibration::Registry.load.chard_frac_roster_min.to_i # 5 unless calibrated otherwise
+
+      below = described_class.call(micro_row(n_chat_eff: floor - 1), channel: channel)
+      at_floor = described_class.call(micro_row(n_chat_eff: floor), channel: channel)
+
+      expect(below[:arms].find { |a| a[:kind] == "named" }[:set_aside]).to be(true)
+      expect(at_floor[:arms].find { |a| a[:kind] == "named" }).not_to have_key(:set_aside)
+    end
+
+    it "never sets aside an arm the engine itself published as a reason" do
+      coded = micro_row(reason_codes: [ { "code" => "HARD_NAMED_FRACTION", "params" => { "n" => 1, "pct" => 44.0 } } ])
+      named = described_class.call(coded, channel: channel)[:arms].find { |a| a[:kind] == "named" }
+
+      expect(named).to include(applied: true)
+      expect(named).not_to have_key(:set_aside)
     end
 
     it "shows the roster next to the fraction, so 0.44 reads as «of 2 chatters»" do
       expect(described_class.call(micro_row, channel: channel)[:chat]).to include(named_fraction: 0.4378, roster: 2)
+    end
+
+    # The 15k-rows/day class the iter-1 rule broke: a green row that measured named accounts but
+    # carries no code, on a roster far above the floor.
+    it "a green row with no code, well above the floor, is applied and not set aside" do
+      result = described_class.call(snapshot(n_chat_eff: 96, band_color: "green", reason_codes: []), channel: channel)
+      named = result[:arms].find { |a| a[:kind] == "named" }
+
+      expect(named).to include(amount: 180.0, applied: true)
+      expect(named).not_to have_key(:set_aside)
+      expect(named).not_to have_key(:set_aside_note)
+      expect(result[:fusion][:applied]).to contain_exactly("named", "deficit")
     end
 
     it "control: at/above the floor WITH the reason code the arm is applied exactly as before" do
@@ -137,6 +178,14 @@ RSpec.describe Trust::Explanation do
 
       expect(result[:chat]).not_to have_key(:roster)
       expect(result[:chat]).to eq(writers_effective: 96, quality: 0.82, named_fraction: 0.1458, convention: "windowed")
+    end
+
+    # Same row, no code either — the pre-branch shape has to come back byte-for-byte, keys included.
+    it "a NULL-roster row without the reason code carries no set-aside keys at all" do
+      named = described_class.call(snapshot(n_chat_eff: nil, reason_codes: []), channel: channel)[:arms]
+                             .find { |a| a[:kind] == "named" }
+
+      expect(named).to eq(kind: "named", amount: 180.0, lo: 170.0, applied: true)
     end
   end
 

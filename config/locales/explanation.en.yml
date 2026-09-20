@@ -1,0 +1,5 @@
+# English mirror of explanation.ru.yml. Same rule: explain what was measured, never accuse — the
+# words "bots" and "fake" stay out. See the Russian file's header.
+en:
+  explanation:
+    named_set_aside: "a chat of %{n} — a share of that is not taken as proof"

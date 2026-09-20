@@ -123,8 +123,11 @@ module Calibration
       # the 14 days to 19.09): after the Shared-Chat fix (13.09+) 163 fires on 7 channels, EVERY one at
       # eihc < 5 (avg CCV 3); ZERO at 5-29 chatters, ZERO at ≥30. The pre-13.09 fires were Shared-Chat
       # relays (invalid evidence, not a population to calibrate on). So the proven false class is
-      # exactly n_chat_eff ≤ 4, and 5 is the smallest roster on which a single named account can no
-      # longer reach φ_yellow (0.4376 / 5 = 0.088). Deliberately NOT the integer path's 30: RECALL >>
+      # exactly n_chat_eff ≤ 4, and 5 is the smallest chat where one account cannot reach φ_yellow at
+      # the current maximum single-account P5 of 0.44 (live, since 2026-09-13): 0.4376 / 5 = 0.088.
+      # That bound is DATA, not algebra — it holds while max P5 < 0.5; a per-user model that pushes a
+      # single account past 0.5 moves the smallest safe roster to 6, so re-measure the live maximum
+      # before treating 5 as proven. Deliberately NOT the integer path's 30: RECALL >>
       # FP — a 20-chatter channel with 12 named bots must stay accusable, a multi-bot small chat is
       # precisely what this path exists to catch, and nothing in the data justifies blinding it.
       # Own key (not chard_abs_roster_min) so the two tune apart; tunable live via

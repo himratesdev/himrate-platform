@@ -64,30 +64,20 @@ module Trust
       }
     end
 
-    # Which arms formed the total under the rule that was in force.
-    #
-    # The NAMED arm counts only when the engine itself published it as a reason (HARD_NAMED_FRACTION)
-    # — DETECTION-AUDIT 2026-09-19, CR iter-1 SF-3. Below the named-fraction roster floor the engine
-    # still subtracts the named accounts from ERV (they are identity-level evidence), but it declines
-    # to accuse on a fraction of a 1-4 person chat; drawing that arm as a red «−X» next to the
-    # non-accusatory verdict would present as decisive the very evidence the verdict set aside. The
-    # max-rule winner is still picked on the RAW amounts, so a set-aside named arm is never replaced
-    # by a runner-up that did not form the total.
+    # Which arms formed the total under the rule that was in force. Pure arithmetic on the persisted
+    # amounts: ERV = V − F̂ subtracts every arm that formed F̂, including a named arm the verdict
+    # declined to accuse on — so «applied» must say so, or the card greys an amount that WAS taken off
+    # (see `set_aside` on the named arm for the accusation side).
     def applied_arms
       if sum_disjoint?
         return [ "self_history" ] if f_self > (f_hard + f_soft)
 
-        %w[named deficit].select { |k| k == "named" ? named_decisive? : f_soft.positive? }
+        %w[named deficit].select { |k| (k == "named" ? f_hard : f_soft).positive? }
       else
         best = { "named" => f_hard, "deficit" => f_soft, "self_history" => f_self }.max_by { |_, v| v }
-        return [] unless best.last.positive?
-        return [] if best.first == "named" && !named_reason
-
-        [ best.first ]
+        best.last.positive? ? [ best.first ] : []
       end
     end
-
-    def named_decisive? = f_hard.positive? && !named_reason.nil?
 
     def arms
       applied = applied_arms
@@ -107,7 +97,42 @@ module Trust
         lo: round1(@tih.f_hard_lo),
         accounts: p["n"] || p[:n],
         share_of_chat_pct: p["pct"] || p[:pct]
+      }.compact.merge(set_aside_payload)
+    end
+
+    # DETECTION-AUDIT 2026-09-19 (CR iter-2 MF-2). Below the named-fraction roster floor the engine
+    # still subtracts the named accounts from ERV (identity-level evidence) but declines to ACCUSE on a
+    # fraction of a 1-4 person chat. The amount stays `applied` — it WAS taken off, and greying it while
+    # ERV = V − F̂ still counts it would put arithmetic on the public card that does not add up. This
+    # pair says the other half: draw the «−X» muted, with the reason in words. Copy is server-resolved
+    # in the request locale, like `erv_label` and the reason texts — the card carries no bundle.
+    # Nothing is emitted unless the row can prove it: n_chat_eff present (NULL on rows persisted before
+    # the column existed → no keys at all, payload byte-identical) and no HARD_NAMED_FRACTION.
+    def set_aside_payload
+      return {} unless named_set_aside?
+
+      {
+        set_aside: true,
+        set_aside_note: I18n.t("explanation.named_set_aside", n: @tih.n_chat_eff.to_i, default: nil)
       }.compact
+    end
+
+    def named_set_aside?
+      return false if @tih.n_chat_eff.nil? || named_reason
+
+      floor = named_fraction_roster_floor
+      !floor.nil? && @tih.n_chat_eff.to_i < floor
+    end
+
+    # The live floor, read the way L4 reads it (Calibration::Registry → chard_frac_roster_min), so the
+    # card and the verdict agree on where "too small a chat" starts. nil when it cannot be read — then
+    # nothing is marked set aside.
+    def named_fraction_roster_floor
+      k = Calibration::Registry.load
+      k.respond_to?(:chard_frac_roster_min) ? k.chard_frac_roster_min.to_f : nil
+    rescue StandardError => e
+      Rails.logger.warn("Trust::Explanation roster floor read failed: #{e.class}: #{e.message}")
+      nil
     end
 
     def named_params

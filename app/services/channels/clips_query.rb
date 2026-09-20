@@ -15,8 +15,10 @@ module Channels
   # conservative: momentum is a bonus on top of an absolute audience, not a replacement, so one
   # burst cannot displace the channel's actual best clip.
   #
-  # Two bounded queries, no N+1: the candidate pool (CANDIDATE_POOL clips by raw views,
-  # index-served by farm_clips.broadcaster_twitch_id) and ONE aggregate over that pool's snapshots
+  # Two bounded queries, no N+1: the candidate pool (CANDIDATE_POOL clips by raw views, index-served
+  # by idx_farm_clips_broadcaster_views — [broadcaster_twitch_id, view_count DESC,
+  # twitch_created_at DESC], which is the pool's ORDER spelled out, so the read is a bounded index
+  # scan with no sort step) and ONE aggregate over that pool's snapshots
   # (index-served by [farm_clip_id, captured_at]). A clip outside the pool can only be missed if its
   # PROJECTION_HOURS bonus exceeds its gap to the pool's tail — bounded by construction, and the
   # pool is generously wider than MAX_LIMIT.
