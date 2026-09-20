@@ -278,6 +278,15 @@ module Calibration
 
     # The engine's own key (TrustIndex::V2::CellKey) — category from the stream's game, V-bucket as the
     # engine bucketed it (SQL above), chat mode from the channel's protection settings, language verbatim.
+    #
+    # ⚠ AS-OF LIMITATION. The V-bucket is recovered from the verdict itself (eihc/ρ_obs), but category
+    # and chat_mode are read from the CURRENT Stream and ChannelProtectionConfig rows — neither is
+    # versioned, so there is nothing to read "as of" a verdict. A channel that turned followers-only
+    # on after the window, or a stream whose game_name was last set to something it played late,
+    # contributes its ρ_obs to the cell it belongs to TODAY rather than the one the engine judged it
+    # in. Bounded rather than fixed: the window is days, game_name is per-stream (it can only drift
+    # inside one stream, not across a channel's week), and a mis-filed channel is one vote among the
+    # ≥8 a cell needs. Removing the caveat needs a verdict-time cell stamp on trust_index_histories.
     def cell(stream, v_bucket, config)
       Reseed::Cell.new(category: TrustIndex::V2::CellKey.category_for(stream), v_bucket: v_bucket,
                        chat_mode: TrustIndex::V2::CellKey.chat_mode(config),
