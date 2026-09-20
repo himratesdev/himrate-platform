@@ -68,8 +68,11 @@ module Calibration
           meta: {
             window: "#{since.iso8601} .. #{@until.iso8601} (#{format('%.1f', (@until - since) / 86_400.0)}d)",
             sampling: since > @since ? "window shortened from #{format('%.1f', (@until - @since) / 86_400.0)}d to fit the IO budget" : "full requested window, partner channels only",
-            est_heap_read: format("%.0f MB (budget %.0f MB)", est_bytes(since, stats[:bytes_per_row], rows_per_hour) / 1_048_576.0, @budget_bytes / 1_048_576.0),
-            table: format("%.1fM rows, %.0f B/row", stats[:reltuples] / 1e6, stats[:bytes_per_row]),
+            est_heap_read: format("%.0f MB of %.0f MB budget — a FLOOR: main fork only, the index pages the " \
+                                  "scan walks and any TOAST are NOT counted (total relation is %.1f× the heap)",
+                                  est_bytes(since, stats[:bytes_per_row], rows_per_hour) / 1_048_576.0,
+                                  @budget_bytes / 1_048_576.0, stats[:total_ratio]),
+            table: format("%.1fM rows, %.0f B/row heap", stats[:reltuples] / 1e6, stats[:bytes_per_row]),
             fleet: "#{fleet_meta[:rows]} verdicts in last #{@fleet_minutes} min (#{fleet_meta[:cumulative]} cumulative-convention)",
             corpus: obs_meta,
             min_v: @min_v, deficit_min_ccv_live: floor,
@@ -108,13 +111,20 @@ module Calibration
       end
     end
 
+    # pg_relation_size is the MAIN FORK ONLY — no indexes, no TOAST. That is the right per-row unit
+    # (what the range scan pays is a heap fetch per matched row), but it makes the estimate a FLOOR
+    # rather than a full IO account: the index pages the scan walks to get there are not in it. The
+    # total/heap ratio comes back with it so the printed number can say how much is left uncounted.
     def table_stats
       row = conn.select_one(<<~SQL)
-        SELECT c.reltuples::float8 AS reltuples, pg_relation_size(c.oid)::float8 AS bytes
+        SELECT c.reltuples::float8 AS reltuples, pg_relation_size(c.oid)::float8 AS heap_bytes,
+               pg_total_relation_size(c.oid)::float8 AS total_bytes
         FROM pg_class c WHERE c.relname = '#{TABLE}' AND c.relkind IN ('r', 'p')
       SQL
       tuples = [ row["reltuples"].to_f, 1.0 ].max
-      { reltuples: tuples, bytes_per_row: row["bytes"].to_f / tuples }
+      heap = row["heap_bytes"].to_f
+      { reltuples: tuples, bytes_per_row: heap / tuples,
+        total_ratio: heap.positive? ? row["total_bytes"].to_f / heap : 1.0 }
     end
 
     def est_bytes(since, bytes_per_row, rows_per_hour)
@@ -123,7 +133,9 @@ module Calibration
 
     # The window, not the sampling density, is what fits the IO budget: the scan has to stay ONE
     # contiguous range or the planner stops using the calculated_at index (see the class note), so
-    # there is nothing to thin out — only a nearer @since to move to.
+    # there is nothing to thin out — only a nearer @since to move to. bytes_per_row is heap-only
+    # (table_stats), so the window this returns is the most generous one the budget allows, not a
+    # cautious one — leave headroom when the box is already loaded.
     def fit_since(bytes_per_row, rows_per_hour)
       per_hour = [ rows_per_hour * bytes_per_row, 1.0 ].max
       affordable = @budget_bytes / per_hour
