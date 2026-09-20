@@ -267,6 +267,13 @@ module Calibration
                       plan.rejected.sort_by { |_, v| -v }.map { |k, v| "#{k}=#{v}" }.join(" "))
       lines << format("  %-22s %s", "outliers dropped", plan.dropped_outliers.empty? ? "none" : plan.dropped_outliers)
       lines << ""
+      # The two right-hand columns are NOT a verdict forecast. They evaluate one inequality
+      # (rho_obs < YELLOW_ZONE * rho*) over the persisted rho_obs, while a real band also goes
+      # through L3 fusion, the q-gate, n_frac, the inflation event and the lurker collapse — every
+      # one of which can only move a row AWAY from the accusatory side. So read them as the upper
+      # bound of exposure the new cells allow, never as "this many channels will turn amber".
+      lines << "  amber / yzone columns = UPPER BOUND of exposure (one inequality over stored rho_obs), not a forecast"
+      lines << ""
       lines << format("%-48s %-10s %4s %7s  %-15s %-15s %-15s %-13s %-13s %7s  %-13s %-13s",
                       "cell", "status", "n", "hon.v", "rho* now>new", "rho_lo now>new", "rho_hi now>new",
                       "hon<lo now>new", "hon.yz now>new", "fleet/h", "amber now>new", "yzone now>new")
