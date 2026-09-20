@@ -73,7 +73,9 @@ module Calibration
             fleet: "#{fleet_meta[:rows]} verdicts in last #{@fleet_minutes} min (#{fleet_meta[:cumulative]} cumulative-convention)",
             corpus: obs_meta,
             min_v: @min_v, deficit_min_ccv_live: floor,
-            current_cells: "#{current.size} rows (#{current.count(&:calibrated)} calibrated, #{current.count(&:parent_cell_id)} with parent), " \
+            # A non-zero parent count REFUSES the plan (Reseed#refuse_parent_cells!) — this planner
+            # does not walk the chain CellResolver walks, so it would diff against the wrong baseline.
+            current_cells: "#{current.size} rows (#{current.count(&:calibrated)} calibrated, #{current.count(&:parent_cell_id)} with parent — any is a refusal), " \
                            "last update #{current.map(&:updated_at).compact.max&.utc&.iso8601}"
           }
         )

@@ -136,6 +136,7 @@ module Calibration
     end
 
     def plan(observations:, current:, fleet: [])
+      refuse_parent_cells!(current)
       @current = index_current(current)
       rejected = Hash.new(0)
       honest = []
@@ -432,8 +433,26 @@ module Calibration
       )
     end
 
-    # Mirrors TrustIndex::V2::CellResolver: exact cell → "default" category → engine DEFAULT.
-    # (The parent-cell chain is not walked: no live row has a parent; corpus meta reports if one does.)
+    # Refuses the whole run — dryrun included, because the dryrun report is what the apply decision is
+    # made on — if any current row carries a parent. TrustIndex::V2::CellResolver finishes with
+    # `cell.resolved`, which climbs parent_cell while the node is uncalibrated; resolve_now below
+    # stops at the "default" category. With a parent in play those two disagree, and then "now" in the
+    # diff, honest_below_lo_now and the whole honest-safety gate are measured against a baseline the
+    # engine is not using. No live row has one today (that is why resolve_now is allowed to be the
+    # simpler thing), so this is a tripwire for the day the hierarchy is actually populated, not a
+    # limitation to work around.
+    def refuse_parent_cells!(current)
+      parented = current.select { |row| row.parent_cell_id.present? }
+      return if parented.empty?
+
+      raise Refused, "refusing to run: #{parented.size} current baseline row(s) carry parent_cell_id " \
+                     "(#{parented.map { |row| cell_of(row).key }.join('; ')}). CellResolver resolves those up the " \
+                     "parent chain and this planner does not, so every diff and safety-gate share for them would " \
+                     "be measured against the wrong baseline. Teach resolve_now the chain before re-seeding."
+    end
+
+    # Mirrors TrustIndex::V2::CellResolver minus the parent chain: exact cell → "default" category →
+    # engine DEFAULT. Safe only because refuse_parent_cells! has already proved no row has a parent.
     def resolve_now(cell)
       row = @current[cell.key] || @current[cell.with(category: "default").key]
       if row

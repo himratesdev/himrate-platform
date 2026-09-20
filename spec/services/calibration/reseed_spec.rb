@@ -157,6 +157,23 @@ RSpec.describe Calibration::Reseed do
       expect(cp.honest_below_lo_new).to eq(0.1)   # new ρ_lo = 0.12 → only the 0.10 channel
     end
 
+    # CellResolver finishes with cell.resolved (climbs parent_cell while uncalibrated); resolve_now
+    # stops at the "default" category. No live row has a parent — so the planner refuses rather than
+    # silently diff against a baseline the engine is not using.
+    it "refuses the whole run — dryrun included — when any current row carries a parent_cell" do
+      parent = current_row(gaming, star: 0.2, lo: 0.1, hi: 0.3)
+      child = current_row(jc, star: 0.33, lo: 0.17, hi: 0.44, calibrated: false)
+      child.parent_cell_id = SecureRandom.uuid
+
+      expect { plan_for(channels([ 0.2 ] * 8), current: [ parent, child ]) }
+        .to raise_error(described_class::Refused, /parent_cell_id.*#{Regexp.escape(jc.key)}/m)
+    end
+
+    it "plans normally when no current row carries a parent" do
+      expect { plan_for(channels([ 0.2 ] * 8), current: [ current_row(jc, star: 0.33, lo: 0.17, hi: 0.44) ]) }
+        .not_to raise_error
+    end
+
     it "resolves an uncovered cell to the engine DEFAULT (uncalibrated) as 'now'" do
       cp = cell_plan(plan_for(channels([ 0.2 ] * 8, cell: gaming), current: []), gaming)
 
