@@ -11,7 +11,8 @@
 #   bin/rails 'calibration:reseed_restore[storage/calibration/reseed-….json]'
 #
 # Corpus knobs (ENV, all optional): RESEED_SINCE (ISO8601) | RESEED_WINDOW_DAYS (7) | RESEED_IO_BUDGET_MB (900)
-#   | RESEED_MIN_V (50) | RESEED_TIMEOUT_S (300). Plan knobs: RESEED_MIN_CHANNELS (8).
+#   | RESEED_MIN_V (50) | RESEED_TIMEOUT_S (300). Plan knobs: RESEED_MIN_CHANNELS (8, never below 3 —
+#   fewer votes than that get no quantiles at all and the run refuses).
 # ⚠ apply changes the deficit baseline — and therefore AMBER/YELLOW exposure — for every channel in the
 #   touched cells. PO decision only; always read the dryrun first.
 namespace :calibration do

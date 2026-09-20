@@ -121,6 +121,15 @@ module Calibration
       raise ArgumentError, "unknown reseed option(s): #{unknown.join(', ')}" if unknown.any?
 
       @p = DEFAULTS.merge(opts)
+      # RESEED_MIN_CHANNELS is an operator knob, so it can be set below the floor under which no
+      # quantiles are computed at all — a cell would then clear the n-gate with nothing to write
+      # (status_for reads proposed.rho_lo). Refused rather than clamped: a run asked for a bar it
+      # cannot have should say so, not silently re-seed on a different one.
+      if @p[:min_channels] < INDICATIVE_MIN
+        raise ArgumentError, "min_channels=#{@p[:min_channels]} is below INDICATIVE_MIN=#{INDICATIVE_MIN}: " \
+                             "a cell with fewer than #{INDICATIVE_MIN} votes gets no quantiles at all, so it " \
+                             "could pass the n-gate with nothing to propose (canon MIN_N=#{DEFAULTS[:min_channels]})"
+      end
     end
 
     def plan(observations:, current:, fleet: [])
@@ -317,6 +326,7 @@ module Calibration
         return [ exists ? :held_thin : (n.positive? ? :thin : :no_data), notes ]
       end
 
+      # n ≥ min_channels ≥ INDICATIVE_MIN (enforced in the constructor) ⟹ proposed is never nil here.
       unless proposed.rho_lo.positive? && proposed.rho_lo <= proposed.rho_star && proposed.rho_star <= proposed.rho_hi
         return [ :unsafe, notes << "invalid interval lo=#{proposed.rho_lo} star=#{proposed.rho_star} hi=#{proposed.rho_hi}" ]
       end

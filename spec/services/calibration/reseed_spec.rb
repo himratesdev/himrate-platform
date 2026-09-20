@@ -133,6 +133,17 @@ RSpec.describe Calibration::Reseed do
     it "honours a custom min_channels" do
       expect(cell_plan(plan_for(channels([ 0.2 ] * 5), min_channels: 5)).status).to eq(:new)
     end
+
+    # RESEED_MIN_CHANNELS is an ENV knob; below INDICATIVE_MIN a cell would clear the n-gate with no
+    # quantiles computed for it at all, and status_for would read rho_lo off nil.
+    it "refuses a min_channels below the indicative floor instead of planning a cell it cannot propose" do
+      expect { plan_for(channels([ 0.2 ] * 2), min_channels: 2) }
+        .to raise_error(ArgumentError, /below INDICATIVE_MIN=3/)
+    end
+
+    it "still accepts min_channels exactly at the indicative floor" do
+      expect(cell_plan(plan_for(channels([ 0.2 ] * 3), min_channels: 3)).status).to eq(:new)
+    end
   end
 
   describe "diff against the live cells" do
