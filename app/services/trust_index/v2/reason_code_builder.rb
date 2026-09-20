@@ -10,6 +10,18 @@ module TrustIndex
     # ENGAGEMENT_DEFICIT_UNCORROBORATED (row 6a).
     class ReasonCodeBuilder
       Code = Data.define(:code, :params)
+      # The codes `accusatory` can emit, in the order it emits them (named evidence, then the
+      # channel's own history, then the CCV step, then the population). A consumer that needs to
+      # name WHY a row accuses reads the row's own codes against this list — `codes & ACCUSATORY_CODES`
+      # keeps the persisted order, which is this one — instead of re-deriving it from the c_* flags,
+      # which cannot tell the two self-history variants apart (i_event_sustained is not persisted).
+      ACCUSATORY_CODES = %w[
+        HARD_NAMED_FRACTION
+        SELF_HISTORY_SUSTAINED_INFLATION
+        SELF_HISTORY_INFLATION_EVENT
+        INFLATION_EVENT_CORROBORATION
+        POPULATION_CHAT_DEFICIT
+      ].freeze
       # Canonical ctx contract (L4 builds this; the class stays duck-typed for isolated tests).
       Ctx = Data.define(:c_hard, :c_self, :c_inflation, :i_event_sustained, :c_pop, :named_count, :named_pct,
                         :self_history_stable, :chatter_quality_high, :cold_start_tier, :stream_count,

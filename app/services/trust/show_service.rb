@@ -100,15 +100,22 @@ module Trust
     # confirmed. Values are the reason code the engine emits for that path, so provenance and
     # reason_codes always speak the same vocabulary.
     #
-    # DETECTION-AUDIT 2026-09-19 (CR iter-1 Nit-6): the plashka has FIVE paths, not two. A YELLOW/RED
-    # carried by the integer named-count trigger, the CCV-shape inflation corroborator or the
-    # population corroborator came back confirmed_anomaly:true with provenance:nil — an accusation
-    # with no stated basis. Precedence mirrors ReasonCodeBuilder's dedup: named evidence first (the
-    # count trigger names the SAME B_hard members, hence the same code), then self-history, then the
-    # CCV step, then population. Rows persisted before these columns existed hold NULL → skipped →
-    # their provenance is exactly what it was.
+    # DETECTION-AUDIT 2026-09-19 (CR iter-1 Nit-6 → iter-2 SF-4). Built from the row's OWN accusatory
+    # codes, not re-derived from the c_* flags: the flags cannot reproduce what the engine published.
+    # A sustained C_self emits SELF_HISTORY_SUSTAINED_INFLATION, but i_event_sustained is not a
+    # persisted column, so a flag cascade answers SELF_HISTORY_INFLATION_EVENT — naming a basis the
+    # verdict never stated. The codes are persisted in ReasonCodeBuilder's own order and `&` keeps
+    # the receiver's, so the first hit IS the builder's precedence (named evidence, then the
+    # channel's own history, then the CCV step, then population).
+    #
+    # The flag cascade stays as the fallback for a confirmed row that published no accusatory code
+    # at all — pre-code rows and the c_hard_abs paths that sit outside the row ≤ 2 gate. Rows
+    # persisted before these columns existed hold NULL → skipped → their provenance is unchanged.
     def provenance_v2(tih)
       return nil unless tih&.confirmed_anomaly
+
+      stated = reason_code_strings(tih).map(&:to_s) & TrustIndex::V2::ReasonCodeBuilder::ACCUSATORY_CODES
+      return stated.first if stated.any?
 
       return "HARD_NAMED_FRACTION" if tih.c_hard || tih.c_hard_abs
       return "SELF_HISTORY_INFLATION_EVENT" if tih.c_self

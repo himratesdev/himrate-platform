@@ -93,4 +93,33 @@ RSpec.describe TrustIndex::V2::ReasonCodeBuilder do
     expect(codes(band(6, "6a"), raid_window_suppressed_i: true, unattributed_surge: true, thin_sample: true))
       .to include("RAID_HOST_EMBED_WINDOW", "UNATTRIBUTED_SURGE", "WIDE_INTERVAL_THIN_SAMPLE")
   end
+
+  # CR iter-2 SF-4: Trust::ShowService names a confirmed anomaly's provenance by matching the row's
+  # PERSISTED codes against this list, because the c_* flags cannot reproduce what was published (no
+  # i_event_sustained column). A new accusatory path that forgets the list would put the plashka back
+  # on a stale basis, so the list is pinned to what `accusatory` can actually emit.
+  describe "ACCUSATORY_CODES" do
+    it "holds exactly the codes the accusatory rows can emit" do
+      emitted = [ codes(band(1), c_hard: true, c_self: true),
+                  codes(band(2), c_self: true, i_event_sustained: true),
+                  codes(band(2), c_inflation: true),
+                  codes(band(2), c_pop: true) ].flatten.uniq
+
+      expect(emitted).to match_array(described_class::ACCUSATORY_CODES)
+    end
+
+    it "is ordered the way the builder emits, so the first match is the builder's precedence" do
+      emitted = codes(band(1), c_hard: true, c_self: true)
+
+      expect(emitted).to eq(emitted.sort_by { |c| described_class::ACCUSATORY_CODES.index(c) })
+    end
+
+    it "excludes every non-accusatory code" do
+      non_accusatory = codes(band(3), self_history_stable: true, chatter_quality_high: true) +
+                       codes(band(5), cold_start_tier: "insufficient") +
+                       codes(band(6, "6a"), raid_window_suppressed_i: true, thin_sample: true)
+
+      expect(described_class::ACCUSATORY_CODES & non_accusatory).to be_empty
+    end
+  end
 end
