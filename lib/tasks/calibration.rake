@@ -10,7 +10,7 @@
 #                                                 # restore snapshot to storage/calibration/ first
 #   bin/rails 'calibration:reseed_restore[storage/calibration/reseed-….json]'
 #
-# Corpus knobs (ENV, all optional): RESEED_SINCE (ISO8601) | RESEED_WINDOW_DAYS (7) | RESEED_IO_BUDGET_MB (500)
+# Corpus knobs (ENV, all optional): RESEED_SINCE (ISO8601) | RESEED_WINDOW_DAYS (7) | RESEED_IO_BUDGET_MB (900)
 #   | RESEED_MIN_V (50) | RESEED_TIMEOUT_S (300). Plan knobs: RESEED_MIN_CHANNELS (8).
 # ⚠ apply changes the deficit baseline — and therefore AMBER/YELLOW exposure — for every channel in the
 #   touched cells. PO decision only; always read the dryrun first.
@@ -21,7 +21,7 @@ namespace :calibration do
     corpus_opts = {
       since: ENV["RESEED_SINCE"].presence&.then { |s| Time.iso8601(s) },
       window_days: (ENV["RESEED_WINDOW_DAYS"] || 7).to_f,
-      io_budget_mb: (ENV["RESEED_IO_BUDGET_MB"] || 500).to_f,
+      io_budget_mb: (ENV["RESEED_IO_BUDGET_MB"] || 900).to_f,
       min_v: (ENV["RESEED_MIN_V"] || 50).to_f,
       statement_timeout_s: (ENV["RESEED_TIMEOUT_S"] || 300).to_i
     }

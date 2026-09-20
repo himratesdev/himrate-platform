@@ -13,10 +13,12 @@ module Calibration
   #
   # Load discipline (the box is shared and often saturated):
   #   * one READ ONLY transaction with a statement_timeout; nothing is written anywhere;
-  #   * the window is read as hourly TIME SLICES sized to an IO budget (per-stream medians and
-  #     verdict shares are robust to a systematic time sample), via LATERAL so each slice is one
-  #     parameterised range on the calculated_at index — and the plan is EXPLAIN-checked first:
-  #     a sequential scan of trust_index_histories aborts before the query runs.
+  #   * ONE contiguous window, driven off the ~700 partner channels, so the planner reads it as a
+  #     range on the calculated_at index. Sub-sampling the window into disjoint slices (the first
+  #     shape this took) makes the planner give up on the index and sequentially scan all 7.9M rows
+  #     instead — measured, not guessed. So the WINDOW is what gets fitted to the IO budget, not the
+  #     sampling density; and the plan is EXPLAIN-checked first: a sequential scan of
+  #     trust_index_histories aborts before the query runs.
   class ReseedCorpus
     Result = Data.define(:observations, :current, :fleet, :fleet_hours, :meta)
 
@@ -29,10 +31,14 @@ module Calibration
     ACCUSATORY_MAX_ROW = 2
     ALWAYS_FLAGS = %w[confirmed_anomaly c_hard c_self].freeze
     OPTIONAL_FLAGS = %w[c_inflation c_hard_abs c_pop].freeze
-    MIN_SLICE_MINUTES = 10
+    # Never shrink the window below this — under a day the thin cells (5k-20k, 20k+, sub-only) lose
+    # every channel they have and the run reports "no data" where it should report a baseline.
+    MIN_WINDOW_HOURS = 24
 
     # plan_guard: false only for specs — a near-empty test table always plans as a seq scan.
-    def initialize(since: nil, until_at: nil, window_days: 7, io_budget_mb: 500, min_v: 50,
+    # io_budget_mb 900 ≈ 3 days at the current ~27k verdicts/h × ~440 B/row — enough for the thin
+    # cells to collect channels, small enough that the index range stays inside the page cache.
+    def initialize(since: nil, until_at: nil, window_days: 7, io_budget_mb: 900, min_v: 50,
                    fleet_minutes: 60, statement_timeout_s: 300, plan_guard: true)
       @until = (until_at || Time.current).utc
       @since = (since || (@until - window_days.to_f.days)).utc
@@ -54,15 +60,15 @@ module Calibration
         fleet_raw, fleet_meta = fleet_rows(floor)
         stats = table_stats
         rows_per_hour = fleet_meta[:rows] * 60.0 / @fleet_minutes
-        slice = slice_minutes(stats[:bytes_per_row], rows_per_hour)
-        observations, obs_meta = build_observations(corpus_rows(slices(slice)))
+        since = fit_since(stats[:bytes_per_row], rows_per_hour)
+        observations, obs_meta = build_observations(corpus_rows(since))
         fleet = build_fleet(fleet_raw)
         result = Result.new(
           observations: observations, current: current, fleet: fleet, fleet_hours: @fleet_minutes / 60.0,
           meta: {
-            window: "#{@since.iso8601} .. #{@until.iso8601}",
-            sampling: slice >= 60 ? "full window" : "#{slice} min of every hour (time slices)",
-            est_heap_read: format("%.0f MB (budget %.0f MB)", est_bytes(slice, stats[:bytes_per_row], rows_per_hour) / 1_048_576.0, @budget_bytes / 1_048_576.0),
+            window: "#{since.iso8601} .. #{@until.iso8601} (#{format('%.1f', (@until - since) / 86_400.0)}d)",
+            sampling: since > @since ? "window shortened from #{format('%.1f', (@until - @since) / 86_400.0)}d to fit the IO budget" : "full requested window, partner channels only",
+            est_heap_read: format("%.0f MB (budget %.0f MB)", est_bytes(since, stats[:bytes_per_row], rows_per_hour) / 1_048_576.0, @budget_bytes / 1_048_576.0),
             table: format("%.1fM rows, %.0f B/row", stats[:reltuples] / 1e6, stats[:bytes_per_row]),
             fleet: "#{fleet_meta[:rows]} verdicts in last #{@fleet_minutes} min (#{fleet_meta[:cumulative]} cumulative-convention)",
             corpus: obs_meta,
@@ -109,36 +115,20 @@ module Calibration
       { reltuples: tuples, bytes_per_row: row["bytes"].to_f / tuples }
     end
 
-    def est_bytes(slice, bytes_per_row, rows_per_hour)
-      hours = (@until - @since) / 3600.0
-      rows_per_hour * hours * bytes_per_row * (slice / 60.0)
+    def est_bytes(since, bytes_per_row, rows_per_hour)
+      rows_per_hour * ((@until - since) / 3600.0) * bytes_per_row
     end
 
-    def slice_minutes(bytes_per_row, rows_per_hour)
-      full = est_bytes(60, bytes_per_row, rows_per_hour)
-      return 60 if full <= @budget_bytes
+    # The window, not the sampling density, is what fits the IO budget: the scan has to stay ONE
+    # contiguous range or the planner stops using the calculated_at index (see the class note), so
+    # there is nothing to thin out — only a nearer @since to move to.
+    def fit_since(bytes_per_row, rows_per_hour)
+      per_hour = [ rows_per_hour * bytes_per_row, 1.0 ].max
+      affordable = @budget_bytes / per_hour
+      requested = (@until - @since) / 3600.0
+      return @since if requested <= affordable
 
-      m = ((@budget_bytes / full) * 60).floor / 5 * 5
-      m.clamp(MIN_SLICE_MINUTES, 60)
-    end
-
-    # Hourly slices [h+off, h+off+m) clipped to the window; the offset rotates (×17 mod 60−m) so the
-    # sample never locks onto an hourly-periodic pattern (crons at :20 / :50, hourly load waves).
-    def slices(m)
-      return [ [ @since, @until ] ] if m >= 60
-
-      out = []
-      h = @since.beginning_of_hour
-      i = 0
-      while h < @until
-        off = (i * 17) % (60 - m + 1)
-        lo = [ h + off.minutes, @since ].max
-        hi = [ h + (off + m).minutes, @until ].min
-        out << [ lo, hi ] if lo < hi
-        h += 1.hour
-        i += 1
-      end
-      out
+      @until - [ affordable, MIN_WINDOW_HOURS.to_f ].max.hours
     end
 
     def accused_sql
@@ -167,29 +157,29 @@ module Calibration
       [ rows, { rows: rows.sum { |r| r["verdicts"].to_i }, cumulative: rows.sum { |r| r["cumulative"].to_i } } ]
     end
 
-    # The honest-candidate corpus over the (sliced) window. Partner rows only carry arrays; every
-    # stream still returns its flags so the rejection counts are honest.
-    def corpus_rows(slices)
-      values = slices.map { |lo, hi| "(#{ts(lo)}::timestamp, #{ts(hi)}::timestamp)" }.join(", ")
+    # The honest-candidate corpus over one contiguous window, DRIVEN FROM the ~700 partner channels
+    # (of ~3.5k) so the planner joins them against a calculated_at index range. Non-partner verdicts
+    # were never corpus material — the honest anchor has to be a partner — so scanning them only to
+    # count them costs a full table scan; the last-hour fleet query carries the fleet-wide picture
+    # instead. Rejection counts are therefore partner-scoped: "of the anchors we could have used,
+    # this many were disqualified, for these reasons".
+    def corpus_rows(since)
       usable = "t.rho_convention = 'windowed' AND t.rho_obs IS NOT NULL AND (#{V_EFF_SQL}) >= #{@min_v}"
-      partner = "c.broadcaster_type = #{conn.quote(ANCHOR_BROADCASTER_TYPE)}"
       sql = <<~SQL
         SELECT t.stream_id, t.channel_id, #{self.class.v_bucket_sql(V_EFF_SQL)} AS vb,
-               bool_or(#{partner}) AS partner,
+               true AS partner,
                count(*) AS n_rows,
                bool_or(#{accused_sql}) AS accused,
                bool_and(COALESCE(t.cold_start_tier, '') = 'full') AS full_tier,
                (array_agg(t.q_score::float8 ORDER BY t.calculated_at DESC))[1] AS q_last,
                max(t.calculated_at) AS last_at,
-               array_agg(t.rho_obs::float8) FILTER (WHERE #{partner} AND #{usable}) AS rhos,
+               array_agg(t.rho_obs::float8) FILTER (WHERE #{usable}) AS rhos,
                percentile_disc(0.5) WITHIN GROUP (ORDER BY t.rho_obs::float8)
-                 FILTER (WHERE #{partner} AND #{usable} AND t.band_color = 'green') AS green_median
-        FROM (VALUES #{values}) AS s(lo, hi)
-        CROSS JOIN LATERAL (
-          SELECT * FROM #{TABLE} x
-          WHERE x.calculated_at >= s.lo AND x.calculated_at < s.hi AND x.engine_version = 'v2'
-        ) t
-        LEFT JOIN channels c ON c.id = t.channel_id
+                 FILTER (WHERE #{usable} AND t.band_color = 'green') AS green_median
+        FROM channels c
+        JOIN #{TABLE} t ON t.channel_id = c.id
+          AND t.calculated_at >= #{ts(since)} AND t.calculated_at < #{ts(@until)}
+        WHERE c.broadcaster_type = #{conn.quote(ANCHOR_BROADCASTER_TYPE)} AND t.engine_version = 'v2'
         GROUP BY 1, 2, 3
       SQL
       guard_plan!(sql)
