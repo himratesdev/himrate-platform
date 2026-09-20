@@ -154,13 +154,43 @@ RSpec.describe Calibration::Reseed do
       expect(cp.status).to eq(:new)
     end
 
-    it "refuses a cell whose new ρ_lo would park more than the gate's share of honest verdicts in the YELLOW zone" do
+    it "refuses a cell that does not accuse today and whose new ρ_lo would clear the absolute gate" do
       spread = (0...10).map { |i| obs(channel: "s#{i}", rhos: [ 0.01, 0.5, 0.5 ]) } # medians 0.5, a third of verdicts at 0.01
-      cp = cell_plan(plan_for(spread))
+      cp = cell_plan(plan_for(spread)) # no current row → engine DEFAULT, uncalibrated → accuses nobody now
 
       expect(cp.status).to eq(:unsafe)
       expect(cp.apply?).to be(false)
+      expect(cp.honest_yellow_zone_now).to eq(0.0)
       expect(cp.honest_yellow_zone_new).to be_within(1e-9).of(1 / 3.0)
+    end
+
+    # Votes are all 0.20 (each channel's stream median), so the proposal is lo=star=hi=0.20 and the
+    # YELLOW zone after is ρ_obs < 0.16 — the 0.05 verdict of each channel, a third of the traffic.
+    let(:third_exposed) { (0...10).map { |i| obs(channel: "s#{i}", rhos: [ 0.05, 0.20, 0.20 ]) } }
+
+    it "applies a stale-high cell whose re-seed NARROWS honest exposure, even above the absolute gate" do
+      # ρ_lo 0.60 today puts EVERY one of these honest verdicts in the YELLOW zone (all < 0.48); the
+      # re-seed cuts that to a third. Over the 10% bar either way — refusing it strands the other 2/3.
+      cp = cell_plan(plan_for(third_exposed, current: [ current_row(jc, star: 0.9, lo: 0.6, hi: 1.2) ]))
+
+      expect(cp.honest_yellow_zone_now).to eq(1.0)
+      expect(cp.honest_yellow_zone_new).to be_within(1e-9).of(1 / 3.0)
+      expect(cp.status).to eq(:update)
+      expect(cp.apply?).to be(true)
+      expect(cp.notes.join).to include("NARROWER than today")
+    end
+
+    it "still refuses a calibrated cell whose re-seed WIDENS honest exposure past the bar" do
+      # ρ_lo 0.01 today accuses nobody here (nothing is under 0.008); the re-seed would lift ρ_lo to
+      # 0.20 and newly expose a third of the honest traffic. Narrower is the only excuse for clearing
+      # the bar, and this is wider.
+      cp = cell_plan(plan_for(third_exposed, current: [ current_row(jc, star: 0.015, lo: 0.01, hi: 0.02) ]))
+
+      expect(cp.honest_yellow_zone_now).to eq(0.0)
+      expect(cp.honest_yellow_zone_new).to be_within(1e-9).of(1 / 3.0)
+      expect(cp.status).to eq(:unsafe)
+      expect(cp.apply?).to be(false)
+      expect(cp.notes.join).to include("widens exposure")
     end
   end
 

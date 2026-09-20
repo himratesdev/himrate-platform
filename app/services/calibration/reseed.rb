@@ -55,7 +55,7 @@ module Calibration
 
     CellPlan = Data.define(:cell, :status, :n_channels, :honest_verdicts, :now, :proposed,
                            :green_only_star, :honest_below_lo_now, :honest_below_lo_new,
-                           :honest_yellow_zone_new, :fleet, :notes) do
+                           :honest_yellow_zone_now, :honest_yellow_zone_new, :fleet, :notes) do
       # :new / :update are written by apply; everything else is report-only.
       def apply? = %i[new update].include?(status)
     end
@@ -74,8 +74,8 @@ module Calibration
       # Offline honest-safety gate — replaces the old workflow's live honest re-scan (which re-ran the
       # engine per stream against ClickHouse). Share of honest verdicts the new ρ_lo would place in the
       # YELLOW-eligible deficit zone (band row2: F_soft_lo/V ≥ 0.20 ⟺ ρ_obs < 0.8·ρ_lo). Honest
-      # channels carry no corroborator, so this is exposure, not an accusation; a cell that would put
-      # more than this share of honest traffic one corroborator away from YELLOW is not applied.
+      # channels carry no corroborator, so this is exposure, not an accusation. This is the ABSOLUTE
+      # arm of the gate; see honest_safe? for why it is not the only arm.
       max_honest_yellow_zone: 0.10,
       fleet_hours: 1.0
     }.freeze
@@ -215,17 +215,18 @@ module Calibration
                       plan.rejected.sort_by { |_, v| -v }.map { |k, v| "#{k}=#{v}" }.join(" "))
       lines << format("  %-22s %s", "outliers dropped", plan.dropped_outliers.empty? ? "none" : plan.dropped_outliers)
       lines << ""
-      lines << format("%-48s %-10s %4s %7s  %-15s %-15s %-15s %-13s %7s  %-13s %-13s",
+      lines << format("%-48s %-10s %4s %7s  %-15s %-15s %-15s %-13s %-13s %7s  %-13s %-13s",
                       "cell", "status", "n", "hon.v", "rho* now>new", "rho_lo now>new", "rho_hi now>new",
-                      "hon<lo now>new", "fleet/h", "amber now>new", "yzone now>new")
+                      "hon<lo now>new", "hon.yz now>new", "fleet/h", "amber now>new", "yzone now>new")
       plan.cells.each do |c|
         next if c.status == :no_data && c.fleet.verdicts_per_hour < 1
 
-        lines << format("%-48s %-10s %4d %7d  %-15s %-15s %-15s %-13s %7.0f  %-13s %-13s",
+        lines << format("%-48s %-10s %4d %7d  %-15s %-15s %-15s %-13s %-13s %7.0f  %-13s %-13s",
                         c.cell.key, c.status, c.n_channels, c.honest_verdicts,
                         arrow(c.now.rho_star, c.proposed&.rho_star, c.now), arrow(c.now.rho_lo, c.proposed&.rho_lo, c.now),
                         arrow(c.now.rho_hi, c.proposed&.rho_hi, c.now),
                         pct_arrow(c.honest_below_lo_now, c.honest_below_lo_new),
+                        pct_arrow(c.honest_yellow_zone_now, c.honest_yellow_zone_new),
                         c.fleet.verdicts_per_hour,
                         pct_arrow(c.fleet.amber_now, c.fleet.amber_new), pct_arrow(c.fleet.yellow_zone_now, c.fleet.yellow_zone_new))
         c.notes.each { |n| lines << "    · #{n}" }
@@ -292,7 +293,7 @@ module Calibration
       now = resolve_now(cell)
       proposed = kept.size >= INDICATIVE_MIN ? quantiles(kept) : nil
       verdicts = acc[:verdicts].key?(key) ? acc[:verdicts][key] : []
-      status, notes = status_for(key, kept.size, proposed, verdicts)
+      status, notes = status_for(key, kept.size, proposed, verdicts, now)
       applied = %i[new update].include?(status) ? proposed : nil
 
       greens = acc[:greens].key?(key) ? acc[:greens][key].values.map { |ms| median(ms) }.reject { |v| v > @p[:outlier_rho] } : []
@@ -302,12 +303,13 @@ module Calibration
         green_only_star: greens.size >= INDICATIVE_MIN ? nearest_rank(greens.sort, @p[:p_star]) : nil,
         honest_below_lo_now: share(verdicts) { |r| r < now.rho_lo },
         honest_below_lo_new: proposed && share(verdicts) { |r| r < proposed.rho_lo },
+        honest_yellow_zone_now: yellow_zone_now(verdicts, now),
         honest_yellow_zone_new: proposed && share(verdicts) { |r| r < YELLOW_ZONE * proposed.rho_lo },
         fleet: fleet_effect(fleet_obs, now, applied), notes: notes
       )
     end
 
-    def status_for(key, n, proposed, verdicts)
+    def status_for(key, n, proposed, verdicts, now)
       notes = []
       exists = @current.key?(key)
       if n < @p[:min_channels]
@@ -315,16 +317,48 @@ module Calibration
         return [ exists ? :held_thin : (n.positive? ? :thin : :no_data), notes ]
       end
 
-      yz = share(verdicts) { |r| r < YELLOW_ZONE * proposed.rho_lo }
       unless proposed.rho_lo.positive? && proposed.rho_lo <= proposed.rho_star && proposed.rho_star <= proposed.rho_hi
         return [ :unsafe, notes << "invalid interval lo=#{proposed.rho_lo} star=#{proposed.rho_star} hi=#{proposed.rho_hi}" ]
       end
-      if yz && yz > @p[:max_honest_yellow_zone]
-        return [ :unsafe, notes << format("honest YELLOW-zone share %.1f%% > %.0f%% gate — not applied", yz * 100, @p[:max_honest_yellow_zone] * 100) ]
+
+      yz_new = share(verdicts) { |r| r < YELLOW_ZONE * proposed.rho_lo }
+      yz_now = yellow_zone_now(verdicts, now)
+      unless honest_safe?(yz_now, yz_new)
+        return [ :unsafe, notes << format("honest YELLOW-zone share %.1f%%→%.1f%%: widens exposure and clears the %.0f%% gate — not applied",
+                                          (yz_now || 0) * 100, yz_new * 100, @p[:max_honest_yellow_zone] * 100) ]
       end
 
+      notes << format("honest YELLOW-zone exposure %.1f%%→%.1f%% (above the %.0f%% bar, but NARROWER than today's ρ_lo)",
+                      (yz_now || 0) * 100, yz_new * 100, @p[:max_honest_yellow_zone] * 100) if yz_new && yz_new > @p[:max_honest_yellow_zone]
       notes << "n=#{n} < #{@p[:mature_channels]} (maturity) — thin, applied but watch it" if n < @p[:mature_channels]
       [ exists ? :update : :new, notes ]
+    end
+
+    # The honest-safety gate has TWO arms and passing EITHER is enough.
+    #
+    # Absolute: the new ρ_lo leaves at most max_honest_yellow_zone of honest traffic one corroborator
+    # away from YELLOW. This is the arm that governs a cell which does not accuse today — an
+    # uncalibrated one, where BandClassifier#cell_calibrated? refuses the deficit branch outright.
+    # Calibrating it switches accusation ON for the whole cell, so it must clear the bar on its own.
+    #
+    # Relative: the new ρ_lo does not WIDEN exposure versus the ρ_lo in force right now — the shape of
+    # the old workflow's own dryrun gate ("honest AMBER must go DOWN"). Without this arm the gate is
+    # perverse: a cell whose stale-high ρ_lo already parks 47% of honest traffic in the deficit zone
+    # gets refused a re-seed that would cut it to 18%, purely because 18% is over an absolute bar the
+    # cell has been violating for weeks. Refusing to improve a cell is not a safe default; it just
+    # leaves the honest channels in it where they are.
+    def honest_safe?(yz_now, yz_new)
+      return true if yz_new.nil?
+
+      yz_new <= @p[:max_honest_yellow_zone] || (yz_now && yz_new <= yz_now)
+    end
+
+    # An uncalibrated cell accuses nobody (cell_calibrated? gates the deficit branch), so its honest
+    # YELLOW-zone exposure today is zero whatever its illustrative ρ_lo would arithmetically imply.
+    def yellow_zone_now(verdicts, now)
+      return verdicts.empty? ? nil : 0.0 unless now.calibrated
+
+      share(verdicts) { |r| r < YELLOW_ZONE * now.rho_lo }
     end
 
     # applied = the proposal apply would write for this cell (nil → the cell stays as it is now).
