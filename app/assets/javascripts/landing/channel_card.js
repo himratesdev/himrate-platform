@@ -219,8 +219,12 @@
       var zero = !arm.amount;
       var title = zero && copy.zero ? copy.zero : copy.title;
       var amount = arm.applied ? "−" + fmt(arm.amount) : zero ? "0" : fmt(arm.amount);
-      var colour = arm.applied ? "#F0616D" : MUTED;
-      table.appendChild(explainRow(title, amount, colour, armDetail(arm)));
+      // A set-aside arm WAS subtracted — the «−X» has to stay or the column stops adding up — but
+      // the verdict declined to accuse on it (too small a chat for a fraction to mean anything), so
+      // it is drawn muted with the server's reason line instead of the decisive red. An ordinary
+      // arm renders exactly as before.
+      var colour = arm.applied && !arm.set_aside ? "#F0616D" : MUTED;
+      table.appendChild(explainRow(title, amount, colour, armNote(arm)));
     });
 
     var real = e.real || {};
@@ -254,6 +258,16 @@
     row.appendChild(top);
     if (note) row.appendChild(mk("span", "color:" + MUTED + ";font:400 12.5px/1.5 Inter,system-ui,sans-serif;", note));
     return row;
+  }
+
+  // The arm's detail line, plus the server-resolved «set aside» reason when the verdict declined to
+  // accuse on it. Both can be present (a named arm keeps its head-count either way), so they are
+  // joined rather than one replacing the other. The note is already in the reader's locale — the
+  // card resolves no copy of its own, same as erv_label and the reason texts.
+  function armNote(arm) {
+    var detail = armDetail(arm);
+    if (!arm.set_aside_note) return detail;
+    return detail ? detail + "; " + arm.set_aside_note : arm.set_aside_note;
   }
 
   function armDetail(arm) {
