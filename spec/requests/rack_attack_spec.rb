@@ -147,9 +147,15 @@ RSpec.describe "Rack::Attack rate limiting", type: :request do
     end
 
     # Rails normalizes the path after Rack::Attack ran — these spellings reach the same actions.
-    it "cannot be dodged with a trailing or doubled slash" do
+    it "cannot be dodged with a trailing or doubled slash, or with a format suffix" do
       expect(discriminator("/api/v1/search/?q=ab")).to eq("7.8.9.10")
       expect(discriminator("/api/v1/discover/live/")).to eq("7.8.9.10")
+
+      # Neither route declares `format: false`, so Journey accepts the `(.:format)` suffix and
+      # `/api/v1/search.json` is the same action with :format => "json" (CR iter-2 SF-3).
+      expect(discriminator("/api/v1/search.json?q=ab")).to eq("7.8.9.10")
+      expect(discriminator("/api/v1/discover/live.json")).to eq("7.8.9.10")
+      expect(discriminator("/api/v1/discover/live.json/")).to eq("7.8.9.10")
 
       # A request-target of `//api/v1/search` arrives as PATH_INFO verbatim; MockRequest would parse
       # the leading `//` as a URI authority (host "api"), so set PATH_INFO the way a server does.

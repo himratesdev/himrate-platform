@@ -85,7 +85,10 @@ class Rack::Attack
   throttle("public_discovery/ip", limit: 30, period: 1.minute) do |req|
     # Rails normalizes the path AFTER this middleware (Journey squeezes `//`, drops a trailing `/`),
     # so `/api/v1/search/` reaches the same action — match the normalized form or the budget is dodged.
-    path = req.path.squeeze("/").chomp("/")
+    # Neither route declares `format: false`, so Journey also accepts the `(.:format)` suffix every
+    # Rails route carries: `/api/v1/search.json` is the SAME action with :format => "json". Strip a
+    # trailing extension too, or the budget is dodged one `.anything` at a time (CR iter-2 SF-3).
+    path = req.path.squeeze("/").chomp("/").sub(/\.[^\/.]+\z/, "")
     next unless PUBLIC_DISCOVERY_PATHS.include?(path) && !req.options?
 
     anonymous = req.get_header("HTTP_AUTHORIZATION").blank? &&
