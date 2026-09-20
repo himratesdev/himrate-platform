@@ -10,6 +10,11 @@
 #                                                 # restore snapshot to storage/calibration/ first
 #   bin/rails 'calibration:reseed_restore[storage/calibration/reseed-….json]'
 #
+# ⚠ SNAPSHOTS ARE A STACK, NOT A "BEFORE" BUTTON. Each snapshot holds the cells as they stood before
+#   THAT apply, so a second apply snapshots the values the FIRST one wrote. Only the EARLIEST file
+#   restores the pre-re-seed cells; undoing several applies means restoring them newest-first. Keep
+#   every file in storage/calibration/ — there is no other history of what a cell used to be.
+#
 # Corpus knobs (ENV, all optional): RESEED_SINCE (ISO8601) | RESEED_WINDOW_DAYS (7) | RESEED_IO_BUDGET_MB (900)
 #   | RESEED_MIN_V (50) | RESEED_TIMEOUT_S (300). Plan knobs: RESEED_MIN_CHANNELS (8, never below 3 —
 #   fewer votes than that get no quantiles at all and the run refuses).
@@ -42,6 +47,15 @@ namespace :calibration do
   task :reseed_restore, [ :snapshot ] => :environment do |_, args|
     path = args[:snapshot].presence or abort("usage: bin/rails 'calibration:reseed_restore[path/to/reseed-….json]'")
     abort "no such snapshot: #{path}" unless File.exist?(path)
+
+    # Each snapshot only knows the state the apply that wrote it replaced, so restoring anything but
+    # the newest one first re-instates an intermediate state rather than the pre-re-seed cells.
+    siblings = Dir.glob(File.join(File.dirname(path), "reseed-*.json")).sort_by { |f| File.mtime(f) }
+    if siblings.size > 1 && File.expand_path(siblings.last) != File.expand_path(path)
+      puts "⚠ this is NOT the newest snapshot in #{File.dirname(path)} (newest: #{File.basename(siblings.last)})."
+      puts "  A snapshot holds the values the apply that wrote it replaced — undo a stack of applies NEWEST-FIRST,"
+      puts "  or the cells end up in an intermediate state instead of the one you are aiming at."
+    end
 
     n = Calibration::Reseed.restore!(path)
     puts "restored #{n} cell(s) from #{path}"

@@ -277,5 +277,41 @@ RSpec.describe Calibration::Reseed do
         expect(CalibrationCellBaseline.find_by(category: "gaming", v_bucket: "0-1k")).to be_nil # apply created it → restore deletes it
       end
     end
+
+    # A snapshot holds the cells as they stood before THAT apply — the second one captures what the
+    # first wrote. Restoring them out of order lands on an intermediate state, not the original.
+    it "stacks snapshots: two applies walk back to the original only newest-first" do
+      Dir.mktmpdir do |dir|
+        first_snap = described_class.run(mode: "apply", confirm: "yes", corpus_loader: -> { corpus },
+                                         snapshot_dir: dir, io: out)[:snapshot]
+        expect(existing.reload.rho_star.to_f).to eq(0.15)
+
+        second = corpus.with(observations: channels([ 0.25 ] * 10), current: CalibrationCellBaseline.all.to_a)
+        second_snap = described_class.run(mode: "apply", confirm: "yes", corpus_loader: -> { second },
+                                          snapshot_dir: dir, io: out)[:snapshot]
+        expect(existing.reload.rho_star.to_f).to eq(0.25)
+        expect(second_snap).not_to eq(first_snap) # same second, different file
+        expect(JSON.parse(File.read(second_snap))["cells"].first["previous"]["rho_star"].to_f).to eq(0.15)
+
+        described_class.restore!(second_snap)
+        expect(existing.reload.rho_star.to_f).to eq(0.15) # the FIRST apply's values, not the original
+
+        described_class.restore!(first_snap)
+        expect([ existing.reload.rho_star, existing.rho_lo, existing.rho_hi ].map(&:to_f)).to eq([ 0.328, 0.174, 0.444 ])
+        expect(out.string).to include("only the EARLIEST file restores the pre-re-seed cells")
+      end
+    end
+
+    it "leaves NO snapshot behind when the apply fails — the file is published by the commit, not the write" do
+      allow_any_instance_of(CalibrationCellBaseline).to receive(:save!).and_raise(ActiveRecord::StatementInvalid, "boom")
+
+      Dir.mktmpdir do |dir|
+        expect { described_class.run(mode: "apply", confirm: "yes", corpus_loader: -> { corpus }, snapshot_dir: dir, io: out) }
+          .to raise_error(ActiveRecord::StatementInvalid)
+
+        expect(Dir.children(dir)).to be_empty # neither the .partial nor a restorable snapshot
+        expect(existing.reload.rho_star.to_f).to eq(0.328)
+      end
+    end
   end
 end

@@ -109,6 +109,9 @@ module Calibration
 
       path = apply!(plan, snapshot_dir: snapshot_dir || default_snapshot_dir)
       io.puts "\nAPPLIED #{plan.cells.count(&:apply?)} cell(s). Restore: bin/rails 'calibration:reseed_restore[#{path}]'"
+      io.puts "  ⚠ this snapshot holds the cells as they stood BEFORE THIS apply. A SECOND apply snapshots what"
+      io.puts "    THIS one wrote — only the EARLIEST file restores the pre-re-seed cells, and several applies"
+      io.puts "    must be undone newest-first. Keep every snapshot; they are the only history there is."
       { plan: plan, snapshot: path }
     end
 
@@ -156,34 +159,61 @@ module Calibration
     end
 
     # ---------------------------------------------------------------------------------------------
-    # Writers (apply only). One transaction: snapshot the rows about to change to a JSON file FIRST
-    # (no snapshot → nothing written), then upsert. A cell that did not exist is recorded with
-    # previous: nil so restore deletes it rather than leaving an uncalibrated row the resolver would
-    # still hand to the engine.
+    # Writers (apply only). One transaction, and the snapshot of the rows about to change is on disk
+    # BEFORE the first row is written — but under a `.partial` name, renamed into place only once the
+    # transaction has committed. The invariant has two halves and a plain write inside the transaction
+    # only holds one of them: a file written inside SURVIVES a rollback, so a failed apply left a
+    # snapshot of writes that never happened — an operator restoring from it would "undo" values that
+    # are still live. Writing after the commit instead would lose the other half (a committed apply
+    # with no snapshot if the process dies in between). Write-then-rename keeps both: the data is
+    # durable before the first write, and only a commit publishes it under the restorable name.
+    #
+    # A cell that did not exist is recorded with previous: nil so restore deletes it rather than
+    # leaving an uncalibrated row the resolver would still hand to the engine.
+    #
+    # ⚠ SNAPSHOT SEMANTICS: the file holds the cells as they stood BEFORE THIS apply. Apply twice and
+    # the second snapshot captures what the FIRST one wrote — only the EARLIEST file restores the
+    # pre-re-seed cells, and a stack of applies has to be undone newest-first.
     def self.apply!(plan, snapshot_dir:)
       rows = plan.cells.select(&:apply?)
       raise Refused, "nothing to apply — no cell passed min_channels and the honest-safety gate" if rows.empty?
 
-      path = nil
-      CalibrationCellBaseline.transaction do
-        snapshot = rows.map do |cp|
-          rec = CalibrationCellBaseline.lock.find_by(**cp.cell.to_h)
-          { "cell" => cp.cell.to_h.transform_keys(&:to_s),
-            "previous" => rec&.attributes&.slice(*RESTORABLE)&.transform_values { |v| v.is_a?(BigDecimal) ? v.to_s : v },
-            "applied" => cp.proposed.to_h.transform_keys(&:to_s) }
+      path = snapshot_path(snapshot_dir)
+      partial = "#{path}.partial"
+      committed = false
+      begin
+        CalibrationCellBaseline.transaction do
+          snapshot = rows.map do |cp|
+            rec = CalibrationCellBaseline.lock.find_by(**cp.cell.to_h)
+            { "cell" => cp.cell.to_h.transform_keys(&:to_s),
+              "previous" => rec&.attributes&.slice(*RESTORABLE)&.transform_values { |v| v.is_a?(BigDecimal) ? v.to_s : v },
+              "applied" => cp.proposed.to_h.transform_keys(&:to_s) }
+          end
+          write_snapshot!(snapshot, partial)
+          rows.each do |cp|
+            b = CalibrationCellBaseline.find_or_initialize_by(**cp.cell.to_h)
+            b.assign_attributes(rho_star: cp.proposed.rho_star, rho_lo: cp.proposed.rho_lo,
+                                rho_hi: cp.proposed.rho_hi, sample_size: cp.proposed.sample_size, calibrated: true)
+            b.save!
+          end
         end
-        path = write_snapshot!(snapshot, snapshot_dir)
-        rows.each do |cp|
-          b = CalibrationCellBaseline.find_or_initialize_by(**cp.cell.to_h)
-          b.assign_attributes(rho_star: cp.proposed.rho_star, rho_lo: cp.proposed.rho_lo,
-                              rho_hi: cp.proposed.rho_hi, sample_size: cp.proposed.sample_size, calibrated: true)
-          b.save!
-        end
+        committed = true
+      ensure
+        FileUtils.rm_f(partial) unless committed
+      end
+
+      begin
+        File.rename(partial, path)
+      rescue SystemCallError => e
+        raise Refused, "the cells ARE written and committed, but the snapshot could not be renamed to " \
+                       "#{path} — restore from #{partial} instead (#{e.message})"
       end
       path
     end
 
-    # Puts every cell named in an apply snapshot back exactly as it was (deleting the ones apply created).
+    # Puts every cell named in an apply snapshot back exactly as it was (deleting the ones apply
+    # created). Restoring a stack of applies means newest-first: each file only knows the state the
+    # apply that wrote it replaced.
     def self.restore!(snapshot_path)
       doc = JSON.parse(File.read(snapshot_path))
       CalibrationCellBaseline.transaction do
@@ -202,10 +232,22 @@ module Calibration
       doc.fetch("cells").size
     end
 
-    def self.write_snapshot!(cells, dir)
-      FileUtils.mkdir_p(dir)
-      path = File.join(dir, "reseed-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}.json")
+    def self.write_snapshot!(cells, path)
+      FileUtils.mkdir_p(File.dirname(path))
       File.write(path, JSON.pretty_generate({ "written_at" => Time.now.utc.iso8601, "cells" => cells }))
+      path
+    end
+
+    # Second-resolution name, suffixed if taken: two applies inside the same second must not share a
+    # file, because the older of the two is the only one that restores the pre-re-seed cells.
+    def self.snapshot_path(dir)
+      base = File.join(dir, "reseed-#{Time.now.utc.strftime('%Y%m%dT%H%M%SZ')}")
+      path = "#{base}.json"
+      n = 1
+      while File.exist?(path) || File.exist?("#{path}.partial")
+        n += 1
+        path = "#{base}-#{n}.json"
+      end
       path
     end
 
